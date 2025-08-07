@@ -19,7 +19,7 @@ async function replaceInFile(filePath, searchStr, replaceStr) {
   return false;
 }
 
-async function fixAllFiles(dir, appName, targetPrefix) {
+async function fixAllFiles(dir, appName, useRelativePaths = false) {
   const walkDir = async (currentDir) => {
     const entries = await fs.readdir(currentDir, { withFileTypes: true });
     
@@ -32,18 +32,24 @@ async function fixAllFiles(dir, appName, targetPrefix) {
         // Fix paths in all text files
         const ext = path.extname(entry.name).toLowerCase();
         if ([".html", ".js", ".css", ".json", ".txt"].includes(ext) || !ext) {
-          // Replace absolute paths
-          let modified = await replaceInFile(fullPath, `"/${appName}/`, `"${targetPrefix}/`);
-          modified = await replaceInFile(fullPath, `'/${appName}/`, `'${targetPrefix}/`) || modified;
-          modified = await replaceInFile(fullPath, `\`/${appName}/`, `\`${targetPrefix}/`) || modified;
+          let modified = false;
           
-          // Also replace in URL constructions
-          modified = await replaceInFile(fullPath, `"/${appName}/_next/`, `"${targetPrefix}/_next/`) || modified;
-          modified = await replaceInFile(fullPath, `'/${appName}/_next/`, `'${targetPrefix}/_next/`) || modified;
-          
-          // Fix favicon references
-          modified = await replaceInFile(fullPath, '"/favicon.ico"', `"${targetPrefix}/favicon.ico"`) || modified;
-          modified = await replaceInFile(fullPath, "'/favicon.ico'", `'${targetPrefix}/favicon.ico'`) || modified;
+          if (useRelativePaths) {
+            // Convert to relative paths
+            modified = await replaceInFile(fullPath, `"/${appName}/`, `"./`) || modified;
+            modified = await replaceInFile(fullPath, `'/${appName}/`, `'./`) || modified;
+            modified = await replaceInFile(fullPath, `\`/${appName}/`, `\`./`) || modified;
+            modified = await replaceInFile(fullPath, '"/favicon.ico"', '"./favicon.ico"') || modified;
+            modified = await replaceInFile(fullPath, "'/favicon.ico'", "'./favicon.ico'") || modified;
+          } else {
+            // Replace with full paths including app name
+            const targetPrefix = `/openai/${appName}`;
+            modified = await replaceInFile(fullPath, `"/${appName}/`, `"${targetPrefix}/`) || modified;
+            modified = await replaceInFile(fullPath, `'/${appName}/`, `'${targetPrefix}/`) || modified;
+            modified = await replaceInFile(fullPath, `\`/${appName}/`, `\`${targetPrefix}/`) || modified;
+            modified = await replaceInFile(fullPath, '"/favicon.ico"', `"${targetPrefix}/favicon.ico"`) || modified;
+            modified = await replaceInFile(fullPath, "'/favicon.ico'", `'${targetPrefix}/favicon.ico'`) || modified;
+          }
           
           if (modified) {
             console.log(`  Fixed: ${path.relative(dir, fullPath)}`);
@@ -60,15 +66,15 @@ async function main() {
   const frontEndDir = path.resolve(__dirname, "..");
   const publicDir = path.join(frontEndDir, "public");
   
-  // Fix asteroid-game in OpenAI directory
+  // Fix asteroid-game in OpenAI directory (use full paths with app name)
   console.log("Fixing asteroid-game paths...");
   const asteroidDir = path.join(publicDir, "openai", "asteroid-game");
-  await fixAllFiles(asteroidDir, "asteroid-game", "/openai/asteroid-game");
+  await fixAllFiles(asteroidDir, "asteroid-game", false); // false = use full paths
   
-  // Fix espresso in OpenAI directory  
+  // Fix espresso in OpenAI directory (use full paths with app name)
   console.log("Fixing espresso paths...");
   const espressoDir = path.join(publicDir, "openai", "espresso");
-  await fixAllFiles(espressoDir, "espresso", "/openai/espresso");
+  await fixAllFiles(espressoDir, "espresso", false); // false = use full paths
   
   console.log("Done fixing Next.js app paths.");
 }
