@@ -95,6 +95,19 @@ async function main() {
   }
 
   console.log(`[copy-apps] Done.`);
+  
+  // Fix Next.js paths
+  console.log(`[copy-apps] Fixing Next.js paths...`);
+  const { exec } = await import("child_process");
+  const { promisify } = await import("util");
+  const execAsync = promisify(exec);
+  
+  try {
+    await execAsync("node scripts/fix-nextjs-paths.mjs", { cwd: frontEndDir });
+    console.log(`[copy-apps] Next.js paths fixed.`);
+  } catch (err) {
+    console.error(`[copy-apps] Failed to fix Next.js paths:`, err);
+  }
 }
 
 main().catch((err) => {
