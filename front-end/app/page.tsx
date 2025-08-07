@@ -27,6 +27,16 @@ export default async function Home() {
             </svg>
             View on GitHub
           </a>
+          <p className="text-sm text-gray-600 mt-2">
+            <a 
+              href="https://github.com/with-logic/gpt-5-vs-opus-4-1-coding-examples" 
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:underline break-all"
+            >
+              https://github.com/with-logic/gpt-5-vs-opus-4-1-coding-examples
+            </a>
+          </p>
         </div>
 
         <div className="mb-8 bg-white rounded-lg shadow-md p-6">
