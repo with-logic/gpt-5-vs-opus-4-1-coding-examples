@@ -44,6 +44,19 @@ async function main() {
     await fs.copyFile(logoSrc, logoDest);
   }
   
+  // Fix Next.js app paths (use absolute paths to handle Vercel's trailing slash removal)
+  console.log(`[post-build] Fixing Next.js app paths...`);
+  const { exec } = await import("child_process");
+  const { promisify } = await import("util");
+  const execAsync = promisify(exec);
+  
+  try {
+    await execAsync("node scripts/fix-nextjs-absolute-paths.mjs", { cwd: frontEndDir });
+    console.log(`[post-build] Next.js paths fixed.`);
+  } catch (err) {
+    console.error(`[post-build] Failed to fix Next.js paths:`, err);
+  }
+  
   console.log(`[post-build] Done.`);
 }
 
