@@ -29,8 +29,8 @@ const nextConfig: NextConfig = {
       destination: `/${slug}/index.html`,
     }));
   },
-  // Optional: if you ever add next/image back, uncomment below
-  // images: { unoptimized: true },
+  // Required for Next/Image with static export
+  images: { unoptimized: true },
 };
 
 export default nextConfig;
