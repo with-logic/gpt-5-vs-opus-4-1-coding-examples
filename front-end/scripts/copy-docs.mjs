@@ -104,6 +104,7 @@ async function main() {
   
   try {
     await execAsync("node scripts/fix-nextjs-paths.mjs", { cwd: frontEndDir });
+    await execAsync("node scripts/fix-nextjs-apps.mjs", { cwd: frontEndDir });
     console.log(`[copy-apps] Next.js paths fixed.`);
   } catch (err) {
     console.error(`[copy-apps] Failed to fix Next.js paths:`, err);
