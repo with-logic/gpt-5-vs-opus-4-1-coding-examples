@@ -48,30 +48,50 @@ async function copyDir(src, dest) {
 async function main() {
   const frontEndDir = path.resolve(__dirname, "..");
   const repoRoot = path.resolve(frontEndDir, "..");
-  const srcDir = path.join(repoRoot, "apps");
+  const openaiDir = path.join(repoRoot, "openai-apps");
+  const claudeDir = path.join(repoRoot, "claude-apps");
   const publicDir = path.join(frontEndDir, "public");
-
-  if (!(await exists(srcDir))) {
-    console.log(`[copy-apps] No apps directory found at ${srcDir}, skipping.`);
-    return;
-  }
 
   await fs.mkdir(publicDir, { recursive: true });
 
-  // Copy only subdirectories from apps/ to public/ directly.
-  const entries = await fs.readdir(srcDir, { withFileTypes: true });
-  for (const entry of entries) {
-    const s = path.join(srcDir, entry.name);
-    const d = path.join(publicDir, entry.name);
+  // Copy OpenAI apps to public/openai/
+  if (await exists(openaiDir)) {
+    const openaiPublicDir = path.join(publicDir, "openai");
+    await rimrafDirIfExists(openaiPublicDir);
+    await fs.mkdir(openaiPublicDir, { recursive: true });
+    
+    const openaiEntries = await fs.readdir(openaiDir, { withFileTypes: true });
+    for (const entry of openaiEntries) {
+      const s = path.join(openaiDir, entry.name);
+      const d = path.join(openaiPublicDir, entry.name);
 
-    if (entry.isDirectory()) {
-      console.log(`[copy-apps] Copying ${s} -> ${d}`);
-      await rimrafDirIfExists(d);
-      await copyDir(s, d);
-    } else if (entry.isFile()) {
-      // Avoid copying top-level files like apps/index.html to prevent clobbering Next's routes.
-      console.log(`[copy-apps] Skipping top-level file: ${entry.name}`);
+      if (entry.isDirectory()) {
+        console.log(`[copy-apps] Copying OpenAI ${s} -> ${d}`);
+        await copyDir(s, d);
+      }
     }
+  } else {
+    console.log(`[copy-apps] No openai-apps directory found at ${openaiDir}, skipping.`);
+  }
+
+  // Copy Claude apps to public/claude/
+  if (await exists(claudeDir)) {
+    const claudePublicDir = path.join(publicDir, "claude");
+    await rimrafDirIfExists(claudePublicDir);
+    await fs.mkdir(claudePublicDir, { recursive: true });
+    
+    const claudeEntries = await fs.readdir(claudeDir, { withFileTypes: true });
+    for (const entry of claudeEntries) {
+      const s = path.join(claudeDir, entry.name);
+      const d = path.join(claudePublicDir, entry.name);
+
+      if (entry.isDirectory()) {
+        console.log(`[copy-apps] Copying Claude ${s} -> ${d}`);
+        await copyDir(s, d);
+      }
+    }
+  } else {
+    console.log(`[copy-apps] No claude-apps directory found at ${claudeDir}, skipping.`);
   }
 
   console.log(`[copy-apps] Done.`);
