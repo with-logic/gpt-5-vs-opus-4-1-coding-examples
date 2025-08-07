@@ -22,7 +22,7 @@ export function ComparisonCard({ app }: { app: CodeExample }) {
         <h3 className="font-semibold text-lg mb-3">{app.title}</h3>
         <div className="flex gap-2">
           <a 
-            href={`/openai/${app.id}/index.html`}
+            href={`/openai/${app.id}`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex-1 bg-emerald-500 text-white py-2 px-3 rounded text-center hover:bg-emerald-600 transition-colors text-sm font-medium shadow-sm"
@@ -30,7 +30,7 @@ export function ComparisonCard({ app }: { app: CodeExample }) {
             GPT-5 Version
           </a>
           <a 
-            href={`/claude/${app.id}/index.html`}
+            href={`/claude/${app.id}`}
             target="_blank"
             rel="noopener noreferrer"
             className="flex-1 bg-amber-500 text-white py-2 px-3 rounded text-center hover:bg-amber-600 transition-colors text-sm font-medium shadow-sm"
