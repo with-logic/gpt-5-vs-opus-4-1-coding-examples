@@ -20,22 +20,30 @@ export function ComparisonCard({ app }: { app: CodeExample }) {
       </div>
       <div className="p-4">
         <h3 className="font-semibold text-lg mb-3">{app.title}</h3>
-        <div className="flex gap-2">
-          <a 
-            href={`/openai/${app.id}`}
+        <div className="flex flex-col gap-2">
+          <a
+            href={`/gpt-5/${app.id}/index.html`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex-1 bg-emerald-500 text-white py-2 px-3 rounded text-center hover:bg-emerald-600 transition-colors text-sm font-medium shadow-sm"
+            className="bg-emerald-500 text-white py-2 px-3 rounded text-center hover:bg-emerald-600 transition-colors text-sm font-medium shadow-sm"
           >
-            GPT-5 Version
+            GPT-5
           </a>
-          <a 
-            href={`/claude/${app.id}`}
+          <a
+            href={`/opus-4.1/${app.id}/index.html`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex-1 bg-amber-500 text-white py-2 px-3 rounded text-center hover:bg-amber-600 transition-colors text-sm font-medium shadow-sm"
+            className="bg-amber-500 text-white py-2 px-3 rounded text-center hover:bg-amber-600 transition-colors text-sm font-medium shadow-sm"
           >
-            Claude Version
+            Opus 4.1
+          </a>
+          <a
+            href={`/sonnet-4.5/${app.id}/index.html`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="bg-purple-500 text-white py-2 px-3 rounded text-center hover:bg-purple-600 transition-colors text-sm font-medium shadow-sm"
+          >
+            Sonnet 4.5
           </a>
         </div>
         {app.tags && app.tags.length > 0 && (
