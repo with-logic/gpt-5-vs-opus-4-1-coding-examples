@@ -22,7 +22,7 @@ export function ComparisonCard({ app }: { app: CodeExample }) {
         <h3 className="font-semibold text-lg mb-3">{app.title}</h3>
         <div className="flex flex-col gap-2">
           <a
-            href={`/gpt-5/${app.id}/index.html`}
+            href={`/gpt-5/${app.id}`}
             target="_blank"
             rel="noopener noreferrer"
             className="bg-emerald-500 text-white py-2 px-3 rounded text-center hover:bg-emerald-600 transition-colors text-sm font-medium shadow-sm"
@@ -30,7 +30,7 @@ export function ComparisonCard({ app }: { app: CodeExample }) {
             GPT-5
           </a>
           <a
-            href={`/opus-4.1/${app.id}/index.html`}
+            href={`/opus-4.1/${app.id}`}
             target="_blank"
             rel="noopener noreferrer"
             className="bg-amber-500 text-white py-2 px-3 rounded text-center hover:bg-amber-600 transition-colors text-sm font-medium shadow-sm"
@@ -38,7 +38,7 @@ export function ComparisonCard({ app }: { app: CodeExample }) {
             Opus 4.1
           </a>
           <a
-            href={`/sonnet-4.5/${app.id}/index.html`}
+            href={`/sonnet-4.5/${app.id}`}
             target="_blank"
             rel="noopener noreferrer"
             className="bg-purple-500 text-white py-2 px-3 rounded text-center hover:bg-purple-600 transition-colors text-sm font-medium shadow-sm"
