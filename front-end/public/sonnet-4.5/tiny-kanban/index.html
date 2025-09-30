@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tiny Kanban</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: Arial, sans-serif;
+            background: #f5f6f8;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 2.5rem;
+        }
+        .controls {
+            max-width: 1400px;
+            margin: 0 auto 20px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        input, select, button {
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+        }
+        input {
+            flex: 1;
+            min-width: 200px;
+        }
+        button {
+            background: #3498db;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover {
+            background: #2980b9;
+        }
+        .board {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+        }
+        .column {
+            background: #ecf0f1;
+            border-radius: 10px;
+            padding: 15px;
+            min-height: 500px;
+        }
+        .column-header {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .wip-limit {
+            font-size: 1rem;
+            color: #7f8c8d;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            cursor: move;
+            border-left: 4px solid #3498db;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .card.high { border-left-color: #e74c3c; }
+        .card.medium { border-left-color: #f39c12; }
+        .card.low { border-left-color: #95a5a6; }
+        .card.dragging {
+            opacity: 0.5;
+        }
+        .card-title {
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 1.1rem;
+        }
+        .card-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9rem;
+            color: #7f8c8d;
+            margin-top: 10px;
+        }
+        .card-assignee {
+            background: #3498db;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+        }
+        .delete-btn {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+        @media (max-width: 768px) {
+            .board {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>📋 Tiny Kanban</h1>
+
+    <div class="controls">
+        <input type="text" id="taskInput" placeholder="New task..." onkeypress="if(event.key==='Enter') addTask()">
+        <select id="prioritySelect">
+            <option value="low">Low</option>
+            <option value="medium" selected>Medium</option>
+            <option value="high">High</option>
+        </select>
+        <input type="text" id="assigneeInput" placeholder="Assignee" style="max-width: 150px;">
+        <button onclick="addTask()">Add Task</button>
+        <input type="text" id="searchInput" placeholder="Search..." oninput="filterTasks()" style="max-width: 200px;">
+    </div>
+
+    <div class="board">
+        <div class="column" id="todo" ondrop="drop(event)" ondragover="allowDrop(event)">
+            <div class="column-header">
+                <span>📝 To Do</span>
+                <span class="wip-limit">∞</span>
+            </div>
+        </div>
+        <div class="column" id="doing" ondrop="drop(event)" ondragover="allowDrop(event)">
+            <div class="column-header">
+                <span>🚀 Doing</span>
+                <span class="wip-limit" id="doingLimit">0/3</span>
+            </div>
+        </div>
+        <div class="column" id="done" ondrop="drop(event)" ondragover="allowDrop(event)">
+            <div class="column-header">
+                <span>✅ Done</span>
+                <span class="wip-limit">∞</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let tasks = JSON.parse(localStorage.getItem('kanbanTasks')) || [];
+        const DOING_LIMIT = 3;
+
+        function addTask() {
+            const title = document.getElementById('taskInput').value.trim();
+            const priority = document.getElementById('prioritySelect').value;
+            const assignee = document.getElementById('assigneeInput').value.trim();
+
+            if (!title) {
+                alert('Please enter a task title');
+                return;
+            }
+
+            tasks.push({
+                id: Date.now(),
+                title,
+                priority,
+                assignee,
+                column: 'todo'
+            });
+
+            document.getElementById('taskInput').value = '';
+            document.getElementById('assigneeInput').value = '';
+
+            saveTasks();
+            renderBoard();
+        }
+
+        function renderBoard() {
+            ['todo', 'doing', 'done'].forEach(column => {
+                const columnEl = document.getElementById(column);
+                const header = columnEl.querySelector('.column-header');
+                columnEl.innerHTML = '';
+                columnEl.appendChild(header);
+
+                const columnTasks = tasks.filter(t => t.column === column);
+
+                if (column === 'doing') {
+                    document.getElementById('doingLimit').textContent = `${columnTasks.length}/${DOING_LIMIT}`;
+                }
+
+                columnTasks.forEach(task => {
+                    const card = document.createElement('div');
+                    card.className = `card ${task.priority}`;
+                    card.draggable = true;
+                    card.dataset.id = task.id;
+                    card.ondragstart = drag;
+
+                    card.innerHTML = `
+                        <div class="card-title">${task.title}</div>
+                        <div class="card-meta">
+                            ${task.assignee ? `<span class="card-assignee">${task.assignee}</span>` : '<span></span>'}
+                            <button class="delete-btn" onclick="deleteTask(${task.id})">×</button>
+                        </div>
+                    `;
+
+                    columnEl.appendChild(card);
+                });
+            });
+        }
+
+        function drag(event) {
+            event.dataTransfer.setData('text', event.target.dataset.id);
+            event.target.classList.add('dragging');
+        }
+
+        function allowDrop(event) {
+            event.preventDefault();
+        }
+
+        function drop(event) {
+            event.preventDefault();
+            const taskId = parseInt(event.dataTransfer.getData('text'));
+            const task = tasks.find(t => t.id === taskId);
+
+            let targetColumn = event.target.id;
+            if (!targetColumn) {
+                targetColumn = event.target.closest('.column').id;
+            }
+
+            if (targetColumn === 'doing') {
+                const doingTasks = tasks.filter(t => t.column === 'doing');
+                if (doingTasks.length >= DOING_LIMIT && task.column !== 'doing') {
+                    alert(`WIP limit reached! Maximum ${DOING_LIMIT} tasks in Doing.`);
+                    document.querySelector('.dragging')?.classList.remove('dragging');
+                    return;
+                }
+            }
+
+            task.column = targetColumn;
+            saveTasks();
+            renderBoard();
+        }
+
+        function deleteTask(id) {
+            if (confirm('Delete this task?')) {
+                tasks = tasks.filter(t => t.id !== id);
+                saveTasks();
+                renderBoard();
+            }
+        }
+
+        function filterTasks() {
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            const cards = document.querySelectorAll('.card');
+
+            cards.forEach(card => {
+                const title = card.querySelector('.card-title').textContent.toLowerCase();
+                const assignee = card.querySelector('.card-assignee')?.textContent.toLowerCase() || '';
+
+                if (title.includes(search) || assignee.includes(search)) {
+                    card.style.display = 'block';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        }
+
+        function saveTasks() {
+            localStorage.setItem('kanbanTasks', JSON.stringify(tasks));
+        }
+
+        // Initialize with sample tasks if empty
+        if (tasks.length === 0) {
+            tasks = [
+                { id: 1, title: 'Setup project', priority: 'high', assignee: 'Alice', column: 'done' },
+                { id: 2, title: 'Design UI mockups', priority: 'medium', assignee: 'Bob', column: 'doing' },
+                { id: 3, title: 'Write documentation', priority: 'low', assignee: 'Charlie', column: 'todo' }
+            ];
+        }
+
+        renderBoard();
+    </script>
+</body>
+</html>

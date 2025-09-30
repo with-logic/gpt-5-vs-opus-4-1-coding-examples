@@ -19,20 +19,27 @@ async function main() {
   const outDir = path.join(frontEndDir, "out");
   const publicDir = path.join(frontEndDir, "public");
   
-  // Copy openai and claude directories to out if they exist
-  const openaiSrc = path.join(publicDir, "openai");
-  const claudeSrc = path.join(publicDir, "claude");
-  const openaiDest = path.join(outDir, "openai");
-  const claudeDest = path.join(outDir, "claude");
-  
-  if (await exists(openaiSrc)) {
-    console.log(`[post-build] Copying ${openaiSrc} -> ${openaiDest}`);
-    await fs.cp(openaiSrc, openaiDest, { recursive: true, force: true });
+  // Copy gpt-5, opus-4.1, and sonnet-4.5 directories to out if they exist
+  const gpt5Src = path.join(publicDir, "gpt-5");
+  const opus41Src = path.join(publicDir, "opus-4.1");
+  const sonnet45Src = path.join(publicDir, "sonnet-4.5");
+  const gpt5Dest = path.join(outDir, "gpt-5");
+  const opus41Dest = path.join(outDir, "opus-4.1");
+  const sonnet45Dest = path.join(outDir, "sonnet-4.5");
+
+  if (await exists(gpt5Src)) {
+    console.log(`[post-build] Copying ${gpt5Src} -> ${gpt5Dest}`);
+    await fs.cp(gpt5Src, gpt5Dest, { recursive: true, force: true });
   }
-  
-  if (await exists(claudeSrc)) {
-    console.log(`[post-build] Copying ${claudeSrc} -> ${claudeDest}`);
-    await fs.cp(claudeSrc, claudeDest, { recursive: true, force: true });
+
+  if (await exists(opus41Src)) {
+    console.log(`[post-build] Copying ${opus41Src} -> ${opus41Dest}`);
+    await fs.cp(opus41Src, opus41Dest, { recursive: true, force: true });
+  }
+
+  if (await exists(sonnet45Src)) {
+    console.log(`[post-build] Copying ${sonnet45Src} -> ${sonnet45Dest}`);
+    await fs.cp(sonnet45Src, sonnet45Dest, { recursive: true, force: true });
   }
   
   // Copy logo

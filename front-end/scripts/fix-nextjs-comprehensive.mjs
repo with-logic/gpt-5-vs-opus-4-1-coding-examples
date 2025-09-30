@@ -29,21 +29,21 @@ async function fixNextJsApp(appDir, appName) {
             // Fix all possible path patterns
             const replacements = [
               // Convert absolute paths to include app name
-              [`"/${appName}/_next/`, `"/openai/${appName}/_next/`],
-              [`'/${appName}/_next/`, `'/openai/${appName}/_next/`],
-              [`\`/${appName}/_next/`, `\`/openai/${appName}/_next/`],
-              [`"/${appName}/`, `"/openai/${appName}/`],
-              [`'/${appName}/`, `'/openai/${appName}/`],
-              [`\`/${appName}/`, `\`/openai/${appName}/`],
+              [`"/${appName}/_next/`, `"/gpt-5/${appName}/_next/`],
+              [`'/${appName}/_next/`, `'/gpt-5/${appName}/_next/`],
+              [`\`/${appName}/_next/`, `\`/gpt-5/${appName}/_next/`],
+              [`"/${appName}/`, `"/gpt-5/${appName}/`],
+              [`'/${appName}/`, `'/gpt-5/${appName}/`],
+              [`\`/${appName}/`, `\`/gpt-5/${appName}/`],
               
               // Fix favicon
-              [`"/favicon.ico"`, `"/openai/${appName}/favicon.ico"`],
-              [`'/favicon.ico'`, `'/openai/${appName}/favicon.ico'`],
+              [`"/favicon.ico"`, `"/gpt-5/${appName}/favicon.ico"`],
+              [`'/favicon.ico'`, `'/gpt-5/${appName}/favicon.ico'`],
               
               // Fix any remaining paths that might be missing the app name
-              [`"/openai/_next/`, `"/openai/${appName}/_next/`],
-              [`'/openai/_next/`, `'/openai/${appName}/_next/'`],
-              [`\`/openai/_next/`, `\`/openai/${appName}/_next/`],
+              [`"/gpt-5/_next/`, `"/gpt-5/${appName}/_next/`],
+              [`'/gpt-5/_next/`, `'/gpt-5/${appName}/_next/'`],
+              [`\`/gpt-5/_next/`, `\`/gpt-5/${appName}/_next/`],
             ];
             
             for (const [search, replace] of replacements) {
@@ -74,11 +74,11 @@ async function main() {
   const outDir = path.join(frontEndDir, "out");
   
   // Fix asteroid-game
-  const asteroidDir = path.join(outDir, "openai", "asteroid-game");
+  const asteroidDir = path.join(outDir, "gpt-5", "asteroid-game");
   await fixNextJsApp(asteroidDir, "asteroid-game");
   
   // Fix espresso
-  const espressoDir = path.join(outDir, "openai", "espresso");
+  const espressoDir = path.join(outDir, "gpt-5", "espresso");
   await fixNextJsApp(espressoDir, "espresso");
   
   console.log("Done fixing Next.js apps.");

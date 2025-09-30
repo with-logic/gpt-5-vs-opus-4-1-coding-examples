@@ -93,16 +93,21 @@ async function main() {
   const frontEndDir = path.resolve(__dirname, "..");
   const publicDir = path.join(frontEndDir, "public");
   
-  // Fix OpenAI apps
-  const openaiDir = path.join(publicDir, "openai");
-  console.log("Fixing Next.js paths in OpenAI apps...");
-  await fixNextJsPaths(openaiDir, "openai");
-  
-  // Fix Claude apps (in case any are Next.js apps)
-  const claudeDir = path.join(publicDir, "claude");
-  console.log("Fixing Next.js paths in Claude apps...");
-  await fixNextJsPaths(claudeDir, "claude");
-  
+  // Fix GPT-5 apps
+  const gpt5Dir = path.join(publicDir, "gpt-5");
+  console.log("Fixing Next.js paths in GPT-5 apps...");
+  await fixNextJsPaths(gpt5Dir, "gpt-5");
+
+  // Fix Opus 4.1 apps
+  const opus41Dir = path.join(publicDir, "opus-4.1");
+  console.log("Fixing Next.js paths in Opus 4.1 apps...");
+  await fixNextJsPaths(opus41Dir, "opus-4.1");
+
+  // Fix Sonnet 4.5 apps
+  const sonnet45Dir = path.join(publicDir, "sonnet-4.5");
+  console.log("Fixing Next.js paths in Sonnet 4.5 apps...");
+  await fixNextJsPaths(sonnet45Dir, "sonnet-4.5");
+
   console.log("Done fixing Next.js paths.");
 }
 

@@ -29,28 +29,28 @@ async function fixNextJsApp(appDir, appName) {
             // Convert relative paths to absolute paths
             const replacements = [
               // Convert relative _next paths to absolute
-              [`"./_next/`, `"/openai/${appName}/_next/`],
-              [`'./_next/`, `'/openai/${appName}/_next/'`],
-              [`\`./_next/`, `\`/openai/${appName}/_next/`],
-              
+              [`"./_next/`, `"/gpt-5/${appName}/_next/`],
+              [`'./_next/`, `'/gpt-5/${appName}/_next/'`],
+              [`\`./_next/`, `\`/gpt-5/${appName}/_next/`],
+
               // Convert any existing paths that need the app name
-              [`"/${appName}/_next/`, `"/openai/${appName}/_next/`],
-              [`'/${appName}/_next/`, `'/openai/${appName}/_next/'`],
-              [`\`/${appName}/_next/`, `\`/openai/${appName}/_next/`],
-              [`"/${appName}/`, `"/openai/${appName}/`],
-              [`'/${appName}/`, `'/openai/${appName}/'`],
-              [`\`/${appName}/`, `\`/openai/${appName}/`],
-              
+              [`"/${appName}/_next/`, `"/gpt-5/${appName}/_next/`],
+              [`'/${appName}/_next/`, `'/gpt-5/${appName}/_next/'`],
+              [`\`/${appName}/_next/`, `\`/gpt-5/${appName}/_next/`],
+              [`"/${appName}/`, `"/gpt-5/${appName}/`],
+              [`'/${appName}/`, `'/gpt-5/${appName}/'`],
+              [`\`/${appName}/`, `\`/gpt-5/${appName}/`],
+
               // Fix favicon - both relative and absolute
-              [`"./favicon.ico"`, `"/openai/${appName}/favicon.ico"`],
-              [`'./favicon.ico'`, `'/openai/${appName}/favicon.ico'`],
-              [`"/favicon.ico"`, `"/openai/${appName}/favicon.ico"`],
-              [`'/favicon.ico'`, `'/openai/${appName}/favicon.ico'`],
-              
-              // Fix any paths that might be using /openai/ without app name
-              [`"/openai/_next/`, `"/openai/${appName}/_next/`],
-              [`'/openai/_next/`, `'/openai/${appName}/_next/'`],
-              [`\`/openai/_next/`, `\`/openai/${appName}/_next/`],
+              [`"./favicon.ico"`, `"/gpt-5/${appName}/favicon.ico"`],
+              [`'./favicon.ico'`, `'/gpt-5/${appName}/favicon.ico'`],
+              [`"/favicon.ico"`, `"/gpt-5/${appName}/favicon.ico"`],
+              [`'/favicon.ico'`, `'/gpt-5/${appName}/favicon.ico'`],
+
+              // Fix any paths that might be using /gpt-5/ without app name
+              [`"/gpt-5/_next/`, `"/gpt-5/${appName}/_next/`],
+              [`'/gpt-5/_next/`, `'/gpt-5/${appName}/_next/'`],
+              [`\`/gpt-5/_next/`, `\`/gpt-5/${appName}/_next/`],
             ];
             
             for (const [search, replace] of replacements) {
@@ -81,11 +81,11 @@ async function main() {
   const outDir = path.join(frontEndDir, "out");
   
   // Fix asteroid-game
-  const asteroidDir = path.join(outDir, "openai", "asteroid-game");
+  const asteroidDir = path.join(outDir, "gpt-5", "asteroid-game");
   await fixNextJsApp(asteroidDir, "asteroid-game");
-  
+
   // Fix espresso
-  const espressoDir = path.join(outDir, "openai", "espresso");
+  const espressoDir = path.join(outDir, "gpt-5", "espresso");
   await fixNextJsApp(espressoDir, "espresso");
   
   console.log("Done fixing Next.js apps with absolute paths.");
