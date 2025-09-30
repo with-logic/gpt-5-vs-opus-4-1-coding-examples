@@ -2,32 +2,44 @@ import type { NextConfig } from "next";
 import fs from "fs";
 import path from "path";
 
-function detectPublicSlugs(): string[] {
+function detectAppPaths(): Array<{ source: string; destination: string }> {
+  const rewrites: Array<{ source: string; destination: string }> = [];
+
   try {
     const publicDir = path.join(__dirname, "public");
-    const entries = fs.readdirSync(publicDir, { withFileTypes: true });
-    return entries
-      .filter(
-        (e) =>
-          e.isDirectory() &&
-          fs.existsSync(path.join(publicDir, e.name, "index.html"))
-      )
-      .map((e) => e.name);
-  } catch {
-    return [];
-  }
-}
+    const modelDirs = ["gpt-5", "opus-4.1", "sonnet-4.5"];
 
-const slugs = detectPublicSlugs();
+    for (const modelDir of modelDirs) {
+      const modelPath = path.join(publicDir, modelDir);
+
+      if (fs.existsSync(modelPath)) {
+        const entries = fs.readdirSync(modelPath, { withFileTypes: true });
+
+        for (const entry of entries) {
+          if (entry.isDirectory()) {
+            const indexPath = path.join(modelPath, entry.name, "index.html");
+            if (fs.existsSync(indexPath)) {
+              rewrites.push({
+                source: `/${modelDir}/${entry.name}`,
+                destination: `/${modelDir}/${entry.name}/index.html`,
+              });
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Error detecting app paths:", err);
+  }
+
+  return rewrites;
+}
 
 const nextConfig: NextConfig = {
   output: "export",
   async rewrites() {
-    // Allow pretty URLs in dev by serving /slug -> /slug/index.html
-    return slugs.map((slug) => ({
-      source: `/${slug}`,
-      destination: `/${slug}/index.html`,
-    }));
+    // Allow pretty URLs in dev by serving /model/app -> /model/app/index.html
+    return detectAppPaths();
   },
   // Required for Next/Image with static export
   images: { unoptimized: true },
