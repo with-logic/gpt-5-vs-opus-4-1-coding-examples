@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Studio Beats | Virtual Drum Kit</title>
+    <style>
+        body {
+            margin: 0;
+            background-color: #1a1a1a;
+            color: #eee;
+            font-family: 'Segoe UI', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            user-select: none;
+        }
+
+        h1 { margin-bottom: 20px; color: #ffcc00; text-transform: uppercase; letter-spacing: 2px; }
+
+        .studio-panel {
+            background: #252525;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border: 2px solid #333;
+            position: relative;
+        }
+
+        .drum-set {
+            display: grid;
+            grid-template-columns: repeat(3, 120px);
+            grid-gap: 20px;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .pad {
+            width: 120px;
+            height: 120px;
+            background: radial-gradient(circle at 30% 30%, #444, #111);
+            border-radius: 50%;
+            border: 4px solid #666;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.05s, border-color 0.05s;
+            position: relative;
+        }
+
+        .pad:active, .pad.active {
+            transform: scale(0.95);
+            border-color: #ffcc00;
+            background: radial-gradient(circle at 30% 30%, #555, #222);
+        }
+
+        .pad-label {
+            font-weight: bold;
+            color: #ccc;
+            pointer-events: none;
+        }
+
+        .pad-key {
+            font-size: 0.8rem;
+            color: #ffcc00;
+            margin-top: 5px;
+            pointer-events: none;
+        }
+
+        /* Special shapes for cymbals */
+        .cymbal {
+            background: radial-gradient(circle at 30% 30%, #d4af37, #8a6e08);
+            border-color: #b8860b;
+            border-radius: 50%;
+        }
+
+        /* Controls */
+        .controls {
+            margin-top: 30px;
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        button {
+            background: #333;
+            color: #fff;
+            border: 1px solid #555;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        button:hover { background: #444; }
+        
+        button.record.recording {
+            background: #ff3b30;
+            border-color: #ff3b30;
+            animation: pulse 1s infinite;
+        }
+
+        button.play.playing {
+            background: #4cd964;
+            border-color: #4cd964;
+            color: #000;
+        }
+
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+        .status-bar {
+            margin-top: 15px;
+            height: 20px;
+            color: #888;
+            font-size: 0.9rem;
+            text-align: center;
+        }
+
+    </style>
+</head>
+<body>
+
+    <h1>Studio Beats</h1>
+
+    <div class="studio-panel">
+        <div class="drum-set">
+            <div class="pad cymbal" data-key="q" onclick="play('crash')">
+                <span class="pad-label">Crash</span><span class="pad-key">[Q]</span>
+            </div>
+            <div class="pad" data-key="w" onclick="play('tom1')">
+                <span class="pad-label">Tom 1</span><span class="pad-key">[W]</span>
+            </div>
+            <div class="pad cymbal" data-key="e" onclick="play('ride')">
+                <span class="pad-label">Ride</span><span class="pad-key">[E]</span>
+            </div>
+            <div class="pad cymbal" data-key="a" onclick="play('hihat')">
+                <span class="pad-label">Hi-Hat</span><span class="pad-key">[A]</span>
+            </div>
+            <div class="pad" data-key="s" onclick="play('snare')">
+                <span class="pad-label">Snare</span><span class="pad-key">[S]</span>
+            </div>
+            <div class="pad" data-key="d" onclick="play('tom2')">
+                <span class="pad-label">Tom 2</span><span class="pad-key">[D]</span>
+            </div>
+            <div class="pad" data-key="z" onclick="play('kick')">
+                <span class="pad-label">Kick</span><span class="pad-key">[Z]</span>
+            </div>
+            <div class="pad" data-key="x" onclick="play('floor')">
+                <span class="pad-label">Floor</span><span class="pad-key">[X]</span>
+            </div>
+            <div class="pad cymbal" data-key="c" onclick="play('clap')">
+                <span class="pad-label">Clap</span><span class="pad-key">[C]</span>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button class="record" id="recBtn" onclick="toggleRecord()">Record</button>
+            <button class="play" id="playBtn" onclick="playRecording()">Play Loop</button>
+            <button onclick="clearRecording()">Clear</button>
+        </div>
+        <div class="status-bar" id="status">Ready</div>
+    </div>
+
+    <script>
+        // Audio Engine (Synthesis)
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function createNoiseBuffer() {
+            const bufferSize = audioCtx.sampleRate * 2; // 2 seconds
+            const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const output = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                output[i] = Math.random() * 2 - 1;
+            }
+            return buffer;
+        }
+        const noiseBuffer = createNoiseBuffer();
+
+        const sounds = {
+            kick: (t) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.frequency.setValueAtTime(150, t);
+                osc.frequency.exponentialRampToValueAtTime(0.01, t + 0.5);
+                gain.gain.setValueAtTime(1, t);
+                gain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
+                osc.start(t);
+                osc.stop(t + 0.5);
+            },
+            snare: (t) => {
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = noiseBuffer;
+                const noiseFilter = audioCtx.createBiquadFilter();
+                noiseFilter.type = 'highpass';
+                noiseFilter.frequency.value = 1000;
+                const noiseGain = audioCtx.createGain();
+                noise.connect(noiseFilter);
+                noiseFilter.connect(noiseGain);
+                noiseGain.connect(audioCtx.destination);
+                noiseGain.gain.setValueAtTime(1, t);
+                noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+                noise.start(t);
+                noise.stop(t + 0.2);
+                
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.frequency.setValueAtTime(250, t);
+                gain.gain.setValueAtTime(0.5, t);
+                gain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
+                osc.start(t);
+                osc.stop(t + 0.1);
+            },
+            hihat: (t) => {
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = noiseBuffer;
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'highpass';
+                filter.frequency.value = 7000;
+                const gain = audioCtx.createGain();
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(audioCtx.destination);
+                gain.gain.setValueAtTime(0.3, t);
+                gain.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
+                noise.start(t);
+                noise.stop(t + 0.05);
+            },
+            tom1: (t) => playTom(t, 200),
+            tom2: (t) => playTom(t, 150),
+            floor: (t) => playTom(t, 100),
+            crash: (t) => {
+                const noise = audioCtx.createBufferSource();
+                noise.buffer = noiseBuffer;
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'highpass';
+                filter.frequency.value = 3000;
+                const gain = audioCtx.createGain();
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(audioCtx.destination);
+                gain.gain.setValueAtTime(0.5, t);
+                gain.gain.exponentialRampToValueAtTime(0.01, t + 1.5);
+                noise.start(t);
+                noise.stop(t + 1.5);
+            },
+            ride: (t) => {
+                // Metallic ping
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'square'; // harmonic rich
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.frequency.setValueAtTime(500, t);
+                gain.gain.setValueAtTime(0.2, t);
+                gain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
+                osc.start(t);
+                osc.stop(t + 0.5);
+            },
+            clap: (t) => {
+               const noise = audioCtx.createBufferSource();
+               noise.buffer = noiseBuffer;
+               const filter = audioCtx.createBiquadFilter();
+               filter.type = 'bandpass';
+               filter.frequency.value = 1500;
+               const gain = audioCtx.createGain();
+               noise.connect(filter);
+               filter.connect(gain);
+               gain.connect(audioCtx.destination);
+               gain.gain.setValueAtTime(0, t);
+               gain.gain.linearRampToValueAtTime(0.5, t + 0.01);
+               gain.gain.exponentialRampToValueAtTime(0.01, t + 0.15);
+               noise.start(t);
+               noise.stop(t + 0.2);
+            }
+        };
+
+        function playTom(t, freq) {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.frequency.setValueAtTime(freq, t);
+            osc.frequency.exponentialRampToValueAtTime(freq * 0.5, t + 0.4);
+            gain.gain.setValueAtTime(0.8, t);
+            gain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
+            osc.start(t);
+            osc.stop(t + 0.4);
+        }
+
+        // UI & Logic
+        let recording = [];
+        let isRecording = false;
+        let recordStartTime = 0;
+        let playbackTimeout = null;
+
+        function play(id) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            // Visual
+            const btnId = Object.keys(keyMap).find(key => keyMap[key] === id) || getPadId(id);
+            const pad = document.querySelector(`.pad[onclick*="${id}"]`);
+            if (pad) {
+                pad.classList.add('active');
+                setTimeout(() => pad.classList.remove('active'), 100);
+            }
+
+            // Audio
+            sounds[id](audioCtx.currentTime);
+
+            // Record
+            if (isRecording) {
+                recording.push({
+                    id: id,
+                    time: Date.now() - recordStartTime
+                });
+            }
+        }
+
+        function getPadId(soundId) {
+            // helper
+        }
+
+        const keyMap = {
+            'q': 'crash', 'w': 'tom1', 'e': 'ride',
+            'a': 'hihat', 's': 'snare', 'd': 'tom2',
+            'z': 'kick', 'x': 'floor', 'c': 'clap'
+        };
+
+        window.addEventListener('keydown', e => {
+            const sound = keyMap[e.key.toLowerCase()];
+            if (sound) play(sound);
+        });
+
+        function toggleRecord() {
+            const btn = document.getElementById('recBtn');
+            const status = document.getElementById('status');
+            
+            if (isRecording) {
+                isRecording = false;
+                btn.classList.remove('recording');
+                btn.textContent = 'Record';
+                status.textContent = `Recorded ${recording.length} beats.`;
+            } else {
+                recording = [];
+                isRecording = true;
+                recordStartTime = Date.now();
+                btn.classList.add('recording');
+                btn.textContent = 'Stop';
+                status.textContent = 'Recording...';
+            }
+        }
+
+        function playRecording() {
+            if (recording.length === 0) return;
+            
+            const btn = document.getElementById('playBtn');
+            btn.classList.add('playing');
+            document.getElementById('status').textContent = 'Playing...';
+
+            recording.forEach(note => {
+                setTimeout(() => {
+                    play(note.id);
+                }, note.time);
+            });
+
+            // Loop handling (basic: stop status after last note)
+            const lastTime = recording[recording.length - 1].time;
+            setTimeout(() => {
+                btn.classList.remove('playing');
+                document.getElementById('status').textContent = 'Finished.';
+            }, lastTime + 500);
+        }
+
+        function clearRecording() {
+            recording = [];
+            document.getElementById('status').textContent = 'Cleared.';
+        }
+
+    </script>
+</body>
+</html>

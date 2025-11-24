@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lumina | Festival Lights Control</title>
+    <link href="https://fonts.googleapis.com/css2?family=Audiowide&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            color: #fff;
+            font-family: 'Audiowide', cursive;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+        }
+
+        #stage {
+            flex-grow: 1;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            perspective: 800px;
+        }
+
+        #grid {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            gap: 15px;
+            width: 80vmin;
+            height: 50vmin;
+            transform: rotateX(20deg);
+            transform-style: preserve-3d;
+        }
+
+        .light {
+            background-color: #333;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(0,0,0,0.5);
+            transition: background-color 0.05s, box-shadow 0.05s;
+        }
+
+        /* Control Panel */
+        #controls {
+            width: 100%;
+            background: rgba(20, 20, 20, 0.9);
+            border-top: 1px solid #333;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+            z-index: 10;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+
+        label {
+            font-size: 0.8rem;
+            color: #888;
+        }
+
+        button {
+            background: #222;
+            color: #fff;
+            border: 1px solid #444;
+            padding: 10px 20px;
+            font-family: inherit;
+            cursor: pointer;
+            border-radius: 4px;
+            text-transform: uppercase;
+            transition: all 0.2s;
+        }
+
+        button:hover {
+            border-color: #fff;
+            background: #333;
+        }
+
+        button.active {
+            background: #00e5ff;
+            color: #000;
+            box-shadow: 0 0 15px #00e5ff;
+            border-color: #00e5ff;
+        }
+
+        input[type="color"] {
+            border: none;
+            width: 40px;
+            height: 40px;
+            cursor: pointer;
+            background: none;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            background: #333;
+            height: 5px;
+            border-radius: 5px;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 15px;
+            height: 15px;
+            background: #fff;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="stage">
+        <div id="grid">
+            <!-- Lights injected here -->
+        </div>
+    </div>
+
+    <div id="controls">
+        <div class="control-group">
+            <label>Mode</label>
+            <div style="display:flex; gap:5px;">
+                <button class="mode-btn active" onclick="setMode('static')">Static</button>
+                <button class="mode-btn" onclick="setMode('pulse')">Pulse</button>
+                <button class="mode-btn" onclick="setMode('wave')">Wave</button>
+                <button class="mode-btn" onclick="setMode('strobe')">Strobe</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>Colors</label>
+            <div style="display:flex; gap:5px; align-items:center;">
+                <input type="color" id="color1" value="#ff0000">
+                <input type="color" id="color2" value="#0000ff">
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>Speed</label>
+            <input type="range" id="speed" min="1" max="50" value="25">
+        </div>
+        
+        <div class="control-group">
+            <label>Audio</label>
+            <button id="musicBtn" onclick="toggleMusic()">Play Music</button>
+        </div>
+    </div>
+
+    <script>
+        const grid = document.getElementById('grid');
+        const rows = 10;
+        const cols = 10;
+        const lights = [];
+
+        // Init Grid
+        for (let i = 0; i < rows * cols; i++) {
+            const l = document.createElement('div');
+            l.className = 'light';
+            grid.appendChild(l);
+            lights.push(l);
+        }
+
+        // State
+        let mode = 'static';
+        let frame = 0;
+        let speed = 0.1;
+        let audioCtx;
+        let isPlaying = false;
+        let analyser;
+        let dataArray;
+        let source;
+
+        // UI Listeners
+        function setMode(m) {
+            mode = m;
+            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+            document.querySelector(`button[onclick="setMode('${m}')"]`).classList.add('active');
+        }
+
+        document.getElementById('speed').addEventListener('input', (e) => {
+            speed = e.target.value / 100; // 0.01 to 0.5
+        });
+
+        // Loop
+        function animate() {
+            frame += speed * 10;
+            const c1 = document.getElementById('color1').value;
+            const c2 = document.getElementById('color2').value;
+            const rgb1 = hexToRgb(c1);
+            const rgb2 = hexToRgb(c2);
+
+            // Audio Mod
+            let audioMod = 1;
+            if (isPlaying && analyser) {
+                analyser.getByteFrequencyData(dataArray);
+                // Get average volume of low freqs
+                let sum = 0;
+                for(let i=0; i<10; i++) sum += dataArray[i];
+                const avg = sum / 10;
+                audioMod = 0.5 + (avg / 255) * 2; // Bass scaling
+            }
+
+            for (let i = 0; i < lights.length; i++) {
+                const x = i % cols;
+                const y = Math.floor(i / cols);
+                
+                let brightness = 0;
+                let colorRatio = 0; // 0 = c1, 1 = c2
+
+                switch (mode) {
+                    case 'static':
+                        brightness = 1;
+                        colorRatio = x / cols;
+                        break;
+                    case 'pulse':
+                        brightness = (Math.sin(frame * 0.1) + 1) / 2;
+                        colorRatio = 0.5;
+                        break;
+                    case 'wave':
+                        const dist = Math.sqrt(Math.pow(x - cols/2, 2) + Math.pow(y - rows/2, 2));
+                        brightness = (Math.sin(dist - frame * 0.5) + 1) / 2;
+                        colorRatio = brightness;
+                        break;
+                    case 'strobe':
+                         if (Math.random() > 0.8) brightness = 1;
+                         colorRatio = Math.random();
+                         break;
+                }
+
+                // Apply Audio Mod
+                if (mode === 'pulse' || mode === 'strobe') brightness *= audioMod;
+                if (mode === 'static') brightness *= audioMod; // Make static dance too
+
+                // Clamp
+                brightness = Math.min(1, Math.max(0.1, brightness));
+
+                // Mix Colors
+                const r = Math.floor(rgb1.r + (rgb2.r - rgb1.r) * colorRatio);
+                const g = Math.floor(rgb1.g + (rgb2.g - rgb1.g) * colorRatio);
+                const b = Math.floor(rgb1.b + (rgb2.b - rgb1.b) * colorRatio);
+
+                lights[i].style.backgroundColor = `rgb(${r * brightness}, ${g * brightness}, ${b * brightness})`;
+                lights[i].style.boxShadow = `0 0 ${20 * brightness}px rgb(${r}, ${g}, ${b})`;
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+
+        // Audio Logic
+        function toggleMusic() {
+            const btn = document.getElementById('musicBtn');
+            if (isPlaying) {
+                if (audioCtx) audioCtx.suspend();
+                isPlaying = false;
+                btn.classList.remove('active');
+                btn.textContent = "Play Music";
+            } else {
+                initAudio();
+                audioCtx.resume();
+                isPlaying = true;
+                btn.classList.add('active');
+                btn.textContent = "Stop Music";
+            }
+        }
+
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 64;
+            dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+            // Simple Oscillator for "Music"
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            
+            // LFO for beat
+            const lfo = audioCtx.createOscillator();
+            lfo.frequency.value = 2; // 120 BPM ish beat
+            const lfoGain = audioCtx.createGain();
+            lfoGain.gain.value = 500;
+            
+            osc.type = 'sawtooth';
+            osc.frequency.value = 100; // Bass
+
+            lfo.connect(lfoGain);
+            lfoGain.connect(osc.frequency); // FM Synthesis for wub wub
+
+            osc.connect(gain);
+            gain.connect(analyser);
+            analyser.connect(audioCtx.destination);
+            
+            osc.start();
+            lfo.start();
+            
+            // We just need noise to drive visuals
+            gain.gain.value = 0.1; 
+        }
+
+        function hexToRgb(hex) {
+            const bigint = parseInt(hex.substring(1), 16);
+            const r = (bigint >> 16) & 255;
+            const g = (bigint >> 8) & 255;
+            const b = bigint & 255;
+            return { r, g, b };
+        }
+
+    </script>
+</body>
+</html>
