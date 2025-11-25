@@ -25,11 +25,12 @@ export function AppComparisonView({
   app,
   apps = [],
   isOpen,
-  onClose,
+  onClose: _onClose,
   initialModels = ["gpt-5", "opus-4.5"],
   initialView = "side-by-side",
   initialTab = "gpt-5"
 }: AppComparisonViewProps) {
+  void _onClose; // Required prop for interface but handled via history.back()
   const [selectedModels, setSelectedModels] = useState<string[]>(initialModels);
   const [viewMode, setViewMode] = useState<"side-by-side" | "tabs">(initialView);
   const [activeTab, setActiveTab] = useState(initialTab);

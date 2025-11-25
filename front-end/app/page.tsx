@@ -15,7 +15,7 @@ export default async function Home() {
           <Link href="/" className="flex items-center gap-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logic_brandmark.png" alt="Logic" className="w-8 h-8" />
-            <span className="font-semibold text-neutral-900">Logic's Agentic Coding Arena</span>
+            <span className="font-semibold text-neutral-900">Logic&apos;s Agentic Coding Arena</span>
           </Link>
           <div className="flex items-center gap-4">
             <a
