@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Audio Step Sequencer</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #050510;
+        --panel: #111124;
+        --grid: #1f1f3c;
+        --accent: #56e6ff;
+        --accent-two: #ff5ef4;
+      }
+      body {
+        margin: 0;
+        font-family: "Space Grotesk", "Inter", system-ui, sans-serif;
+        background: radial-gradient(circle at top, rgba(23, 16, 68, 0.8), transparent 55%), var(--bg);
+        color: #f8fbff;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem clamp(1rem, 5vw, 4rem);
+      }
+      .app {
+        width: min(1100px, 100%);
+        background: var(--panel);
+        border-radius: 1.5rem;
+        padding: 2rem;
+        box-shadow: 0 40px 100px rgba(0, 0, 0, 0.45);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+      }
+      h1 {
+        margin: 0;
+        text-transform: uppercase;
+        letter-spacing: 0.2em;
+      }
+      .tag {
+        font-size: 0.85rem;
+        padding: 0.25rem 0.75rem;
+        border-radius: 999px;
+        background: linear-gradient(120deg, var(--accent), var(--accent-two));
+        color: #050510;
+      }
+      .controls {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+      }
+      .control-card {
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 1rem;
+        padding: 1rem;
+        border: 1px solid rgba(255, 255, 255, 0.07);
+      }
+      label {
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #9aa7ff;
+        display: block;
+        margin-bottom: 0.5rem;
+      }
+      input[type="range"],
+      input[type="text"],
+      select {
+        width: 100%;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 0.75rem;
+        padding: 0.4rem 0.6rem;
+        color: #fff;
+        font-size: 1rem;
+      }
+      button {
+        width: 100%;
+        padding: 0.7rem 1rem;
+        border-radius: 0.75rem;
+        border: none;
+        font-size: 0.95rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        cursor: pointer;
+        color: #050510;
+        font-weight: 600;
+      }
+      button.primary {
+        background: linear-gradient(90deg, var(--accent-two), var(--accent));
+      }
+      button.secondary {
+        background: rgba(255, 255, 255, 0.15);
+        color: #f8fbff;
+      }
+      .grid {
+        display: grid;
+        gap: 0.5rem;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 120px repeat(16, minmax(0, 1fr));
+        gap: 0.25rem;
+        align-items: center;
+      }
+      .row-title {
+        text-transform: uppercase;
+        letter-spacing: 0.2em;
+        font-size: 0.8rem;
+        opacity: 0.7;
+      }
+      .step {
+        aspect-ratio: 1 / 1;
+        border-radius: 0.6rem;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: var(--grid);
+        position: relative;
+        transition: transform 0.15s ease, background 0.2s;
+      }
+      .step.active {
+        background: linear-gradient(135deg, rgba(86, 230, 255, 0.2), rgba(255, 94, 244, 0.2));
+        border-color: var(--accent);
+      }
+      .step.playing::after {
+        content: "";
+        position: absolute;
+        inset: 4px;
+        border-radius: 0.4rem;
+        border: 2px solid var(--accent);
+        animation: pulse 0.3s ease;
+      }
+      @keyframes pulse {
+        from {
+          opacity: 1;
+        }
+        to {
+          opacity: 0;
+        }
+      }
+      footer {
+        margin-top: 1.5rem;
+        text-align: center;
+        opacity: 0.7;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <header>
+        <h1>Audio Step Sequencer</h1>
+        <span class="tag">16 step · Chrome or Edge recommended</span>
+      </header>
+      <section class="controls" aria-label="Sequencer controls">
+        <div class="control-card">
+          <label for="tempo">Tempo <span id="tempoValue">120 BPM</span></label>
+          <input type="range" id="tempo" min="60" max="180" value="120" />
+        </div>
+        <div class="control-card">
+          <label for="swing">Swing <span id="swingValue">0%</span></label>
+          <input type="range" id="swing" min="0" max="60" value="0" />
+        </div>
+        <div class="control-card">
+          <label for="patternName">Pattern name</label>
+          <input type="text" id="patternName" placeholder="Neon Groove" />
+          <button class="primary" id="save">Save Pattern</button>
+        </div>
+        <div class="control-card">
+          <label for="patternList">Load</label>
+          <select id="patternList"></select>
+          <button class="secondary" id="load">Load Pattern</button>
+        </div>
+        <div class="control-card">
+          <label>Playback</label>
+          <button class="primary" id="play">Play / Pause</button>
+          <button class="secondary" id="export">Export WAV</button>
+        </div>
+      </section>
+
+      <section class="grid" role="grid" aria-label="16 step drum grid">
+        <!-- Rows injected by JS -->
+      </section>
+
+      <footer>
+        Made with square waves, noise bursts, and a pinch of swing.
+      </footer>
+    </main>
+
+    <script>
+      const instruments = [
+        { name: "Kick", type: "kick" },
+        { name: "Snare", type: "snare" },
+        { name: "Hat", type: "hat" },
+        { name: "Clap", type: "clap" },
+      ];
+      const steps = 16;
+      let pattern = instruments.map(() => Array(steps).fill(false));
+      const grid = document.querySelector(".grid");
+      const tempo = document.getElementById("tempo");
+      const swing = document.getElementById("swing");
+      const tempoValue = document.getElementById("tempoValue");
+      const swingValue = document.getElementById("swingValue");
+      const playButton = document.getElementById("play");
+      const saveButton = document.getElementById("save");
+      const loadButton = document.getElementById("load");
+      const exportButton = document.getElementById("export");
+      const patternNameInput = document.getElementById("patternName");
+      const patternList = document.getElementById("patternList");
+
+      let ctx;
+      let currentStep = 0;
+      let playing = false;
+      let timer;
+      function initGrid() {
+        instruments.forEach((instrument, rowIndex) => {
+          const row = document.createElement("div");
+          row.className = "row";
+          const title = document.createElement("div");
+          title.className = "row-title";
+          title.textContent = instrument.name;
+          row.appendChild(title);
+          for (let i = 0; i < steps; i++) {
+            const cell = document.createElement("button");
+            cell.setAttribute("role", "gridcell");
+            cell.setAttribute("aria-pressed", "false");
+            cell.className = "step";
+            cell.addEventListener("click", () => toggleStep(rowIndex, i, cell));
+            row.appendChild(cell);
+          }
+          grid.appendChild(row);
+        });
+      }
+      function toggleStep(row, column, cell) {
+        pattern[row][column] = !pattern[row][column];
+        cell.classList.toggle("active", pattern[row][column]);
+        cell.setAttribute("aria-pressed", pattern[row][column]);
+      }
+      function updateDisplayValues() {
+        tempoValue.textContent = `${tempo.value} BPM`;
+        swingValue.textContent = `${swing.value}%`;
+      }
+      tempo.addEventListener("input", updateDisplayValues);
+      swing.addEventListener("input", updateDisplayValues);
+
+      function ensureAudio() {
+        if (!ctx) {
+          ctx = new AudioContext();
+        }
+      }
+
+      function schedulePlay() {
+        ensureAudio();
+        const beatDuration = 60 / tempo.value / 4; // 16th note
+        clearInterval(timer);
+        timer = setInterval(() => {
+          tick(beatDuration);
+        }, beatDuration * 1000 * 0.5);
+      }
+
+      function tick(beatDuration) {
+        const now = ctx.currentTime;
+        const swingRatio = Number(swing.value) / 100;
+        const swingOffset = currentStep % 2 === 0 ? 0 : beatDuration * swingRatio;
+        instruments.forEach((instrument, rowIndex) => {
+          const rowActive = pattern[rowIndex][currentStep];
+          const stepCell = grid.children[rowIndex].children[currentStep + 1];
+          stepCell.classList.add("playing");
+          setTimeout(() => stepCell.classList.remove("playing"), beatDuration * 1000);
+          if (rowActive) {
+            triggerSound(instrument.type, now + swingOffset);
+          }
+        });
+        currentStep = (currentStep + 1) % steps;
+      }
+
+      function triggerSound(type, when = ctx.currentTime) {
+        switch (type) {
+          case "kick":
+            playKick(when);
+            break;
+          case "snare":
+            playSnare(when);
+            break;
+          case "hat":
+            playHat(when);
+            break;
+          case "clap":
+            playClap(when);
+            break;
+        }
+      }
+
+      function playKick(time) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.setValueAtTime(150, time);
+        osc.frequency.exponentialRampToValueAtTime(40, time + 0.3);
+        gain.gain.setValueAtTime(1, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.3);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(time);
+        osc.stop(time + 0.31);
+      }
+      function playSnare(time) {
+        const noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 0.2, ctx.sampleRate);
+        const data = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < data.length; i++) {
+          data[i] = Math.random() * 2 - 1;
+        }
+        const noise = ctx.createBufferSource();
+        noise.buffer = noiseBuffer;
+        const filter = ctx.createBiquadFilter();
+        filter.type = "highpass";
+        filter.frequency.setValueAtTime(1800, time);
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(1, time);
+        gain.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
+        noise.connect(filter).connect(gain).connect(ctx.destination);
+        noise.start(time);
+        noise.stop(time + 0.21);
+      }
+      function playHat(time) {
+        const noiseBuffer = ctx.createBuffer(1, ctx.sampleRate * 0.05, ctx.sampleRate);
+        const data = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < data.length; i++) {
+          data[i] = Math.random() * 2 - 1;
+        }
+        const noise = ctx.createBufferSource();
+        noise.buffer = noiseBuffer;
+        const filter = ctx.createBiquadFilter();
+        filter.type = "highpass";
+        filter.frequency.setValueAtTime(7000, time);
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.6, time);
+        gain.gain.exponentialRampToValueAtTime(0.01, time + 0.05);
+        noise.connect(filter).connect(gain).connect(ctx.destination);
+        noise.start(time);
+        noise.stop(time + 0.06);
+      }
+      function playClap(time) {
+        for (let i = 0; i < 3; i++) {
+          playSnare(time + i * 0.01);
+        }
+      }
+
+      playButton.addEventListener("click", () => {
+        playing = !playing;
+        playButton.textContent = playing ? "Pause" : "Play";
+        if (playing) {
+          currentStep = 0;
+          schedulePlay();
+        } else {
+          clearInterval(timer);
+          grid.querySelectorAll(".step").forEach((step) => step.classList.remove("playing"));
+        }
+      });
+
+      function getStoredPatterns() {
+        return JSON.parse(localStorage.getItem("neonPatterns") || "{}");
+      }
+      function savePatterns(data) {
+        localStorage.setItem("neonPatterns", JSON.stringify(data));
+      }
+      function refreshPatternList() {
+        const stored = getStoredPatterns();
+        patternList.innerHTML = "";
+        Object.keys(stored).forEach((name) => {
+          const option = document.createElement("option");
+          option.value = name;
+          option.textContent = name;
+          patternList.appendChild(option);
+        });
+      }
+
+      saveButton.addEventListener("click", () => {
+        const name = patternNameInput.value.trim() || `Pattern ${Date.now()}`;
+        const stored = getStoredPatterns();
+        stored[name] = pattern;
+        savePatterns(stored);
+        refreshPatternList();
+      });
+      loadButton.addEventListener("click", () => {
+        const name = patternList.value;
+        if (!name) return;
+        const stored = getStoredPatterns();
+        if (!stored[name]) return;
+        pattern = stored[name].map((row) => row.slice());
+        updateGridFromPattern();
+      });
+
+      function updateGridFromPattern() {
+        pattern.forEach((row, rowIndex) => {
+          row.forEach((active, column) => {
+            const cell = grid.children[rowIndex].children[column + 1];
+            cell.classList.toggle("active", active);
+            cell.setAttribute("aria-pressed", active);
+          });
+        });
+      }
+
+      exportButton.addEventListener("click", async () => {
+        ensureAudio();
+        const bpm = Number(tempo.value);
+        const beatDuration = 60 / bpm / 4;
+        const duration = beatDuration * steps;
+        const offline = new OfflineAudioContext(2, ctx.sampleRate * duration, ctx.sampleRate);
+        const when = (stepIndex) => stepIndex * beatDuration;
+        pattern.forEach((row, rowIndex) => {
+          row.forEach((active, stepIndex) => {
+            if (!active) return;
+            const start = when(stepIndex);
+            const target = rowIndex;
+            scheduleOfflineSound(target, start, offline);
+          });
+        });
+        const buffer = await offline.startRendering();
+        const wav = bufferToWave(buffer);
+        const blob = new Blob([wav], { type: "audio/wav" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${patternNameInput.value || "sequence"}.wav`;
+        link.click();
+        URL.revokeObjectURL(url);
+      });
+
+      function scheduleOfflineSound(rowIndex, time, offline) {
+        const destination = offline.destination;
+        const sampleRate = offline.sampleRate;
+        function noiseBuffer(length) {
+          const buffer = offline.createBuffer(1, sampleRate * length, sampleRate);
+          const data = buffer.getChannelData(0);
+          for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+          return buffer;
+        }
+        switch (instruments[rowIndex].type) {
+          case "kick": {
+            const osc = offline.createOscillator();
+            const gain = offline.createGain();
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(150, time);
+            osc.frequency.exponentialRampToValueAtTime(40, time + 0.3);
+            gain.gain.setValueAtTime(1, time);
+            gain.gain.exponentialRampToValueAtTime(0.001, time + 0.3);
+            osc.connect(gain).connect(destination);
+            osc.start(time);
+            osc.stop(time + 0.31);
+            break;
+          }
+          case "snare": {
+            const noise = offline.createBufferSource();
+            noise.buffer = noiseBuffer(0.2);
+            const filter = offline.createBiquadFilter();
+            filter.type = "highpass";
+            filter.frequency.setValueAtTime(1800, time);
+            const gain = offline.createGain();
+            gain.gain.setValueAtTime(1, time);
+            gain.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
+            noise.connect(filter).connect(gain).connect(destination);
+            noise.start(time);
+            noise.stop(time + 0.21);
+            break;
+          }
+          case "hat": {
+            const noise = offline.createBufferSource();
+            noise.buffer = noiseBuffer(0.05);
+            const filter = offline.createBiquadFilter();
+            filter.type = "highpass";
+            filter.frequency.setValueAtTime(7000, time);
+            const gain = offline.createGain();
+            gain.gain.setValueAtTime(0.6, time);
+            gain.gain.exponentialRampToValueAtTime(0.01, time + 0.05);
+            noise.connect(filter).connect(gain).connect(destination);
+            noise.start(time);
+            noise.stop(time + 0.06);
+            break;
+          }
+          case "clap": {
+            for (let i = 0; i < 3; i++) {
+              scheduleOfflineSound(1, time + i * 0.01, offline);
+            }
+            break;
+          }
+        }
+      }
+
+      function bufferToWave(buffer) {
+        const numOfChan = buffer.numberOfChannels;
+        const length = buffer.length * numOfChan * 2 + 44;
+        const bufferArray = new ArrayBuffer(length);
+        const view = new DataView(bufferArray);
+        let offset = 0;
+        function writeString(str) {
+          for (let i = 0; i < str.length; i++) {
+            view.setUint8(offset++, str.charCodeAt(i));
+          }
+        }
+        writeString("RIFF");
+        view.setUint32(offset, 36 + buffer.length * numOfChan * 2, true);
+        offset += 4;
+        writeString("WAVEfmt ");
+        view.setUint32(offset, 16, true);
+        offset += 4;
+        view.setUint16(offset, 1, true);
+        offset += 2;
+        view.setUint16(offset, numOfChan, true);
+        offset += 2;
+        view.setUint32(offset, buffer.sampleRate, true);
+        offset += 4;
+        view.setUint32(offset, buffer.sampleRate * numOfChan * 2, true);
+        offset += 4;
+        view.setUint16(offset, numOfChan * 2, true);
+        offset += 2;
+        view.setUint16(offset, 16, true);
+        offset += 2;
+        writeString("data");
+        view.setUint32(offset, buffer.length * numOfChan * 2, true);
+        offset += 4;
+        for (let i = 0; i < buffer.length; i++) {
+          for (let channel = 0; channel < numOfChan; channel++) {
+            const sample = buffer.getChannelData(channel)[i];
+            const clamped = Math.max(-1, Math.min(1, sample));
+            view.setInt16(offset, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
+            offset += 2;
+          }
+        }
+        return bufferArray;
+      }
+
+      initGrid();
+      refreshPatternList();
+      updateDisplayValues();
+    </script>
+  </body>
+</html>

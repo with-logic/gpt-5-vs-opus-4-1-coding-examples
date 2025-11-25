@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Asteroid Ace</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: "Inter", system-ui, sans-serif;
+      }
+      body {
+        margin: 0;
+        background: radial-gradient(circle at top, #202840, #03050f 60%);
+        color: #f0f6ff;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+      header {
+        text-align: center;
+        margin-bottom: 1rem;
+      }
+      canvas {
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        background: radial-gradient(circle at 30% 20%, rgba(68, 93, 160, 0.4), transparent 50%)
+            ,
+          #050812;
+        border-radius: 1rem;
+        max-width: min(100vw - 2rem, 900px);
+        max-height: 80vh;
+      }
+      .hud {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        text-align: right;
+        font-size: 0.95rem;
+        line-height: 1.4;
+      }
+      .controls {
+        position: absolute;
+        left: 1rem;
+        bottom: 1rem;
+        font-size: 0.9rem;
+        opacity: 0.85;
+        background: rgba(5, 8, 18, 0.8);
+        padding: 0.75rem 1rem;
+        border-radius: 0.75rem;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .modal {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(4px);
+        color: #fff;
+        font-size: 1.25rem;
+      }
+      .badge {
+        display: inline-flex;
+        gap: 0.5rem;
+        align-items: center;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Asteroid Ace</h1>
+      <p>WASD or arrow keys to fly · Space to fire · Shift to boost</p>
+    </header>
+    <canvas id="game" width="900" height="600" role="img" aria-label="Asteroid battle game"></canvas>
+    <div class="hud" aria-live="polite">
+      <div class="badge">Score: <span id="score">0</span></div>
+      <div class="badge">Lives: <span id="lives">3</span></div>
+      <div class="badge">Wave: <span id="wave">1</span></div>
+    </div>
+    <div class="controls">
+      <p>
+        Boosting drains energy but lets you out-turn AI raiders. Destroy asteroids to
+        charge super shots!
+      </p>
+    </div>
+    <div class="modal" id="modal" hidden>
+      <div>
+        <p id="modalText"></p>
+        <p>Press Enter to relaunch.</p>
+      </div>
+    </div>
+
+    <script>
+      const canvas = document.getElementById("game");
+      const ctx = canvas.getContext("2d");
+      const scoreEl = document.getElementById("score");
+      const livesEl = document.getElementById("lives");
+      const waveEl = document.getElementById("wave");
+      const modal = document.getElementById("modal");
+      const modalText = document.getElementById("modalText");
+
+      const keys = new Set();
+      document.addEventListener("keydown", (e) => {
+        keys.add(e.key.toLowerCase());
+        if (modal.hidden === false && e.key === "Enter") {
+          startGame();
+        }
+      });
+      document.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+
+      const rand = (min, max) => Math.random() * (max - min) + min;
+      const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+      const world = {
+        width: canvas.width,
+        height: canvas.height,
+      };
+
+      class Body {
+        constructor(x, y, angle = 0) {
+          this.x = x;
+          this.y = y;
+          this.vx = 0;
+          this.vy = 0;
+          this.angle = angle;
+          this.dead = false;
+        }
+        wrap() {
+          this.x = (this.x + world.width) % world.width;
+          this.y = (this.y + world.height) % world.height;
+        }
+      }
+
+      class Ship extends Body {
+        constructor(x, y, player = false) {
+          super(x, y);
+          this.player = player;
+          this.cooldown = 0;
+          this.energy = 1;
+          this.super = 0;
+          this.aiTimer = rand(1, 3);
+        }
+        update(dt) {
+          if (this.player) {
+            const thrust = keys.has("w") || keys.has("arrowup");
+            const back = keys.has("s") || keys.has("arrowdown");
+            const left = keys.has("a") || keys.has("arrowleft");
+            const right = keys.has("d") || keys.has("arrowright");
+            const boost = keys.has("shift");
+            const turnSpeed = (boost ? 3 : 2) * dt;
+            if (left) this.angle -= turnSpeed;
+            if (right) this.angle += turnSpeed;
+            const accel = thrust ? (boost ? 220 : 140) : back ? -60 : 0;
+            if (boost && this.energy > 0) {
+              this.energy = Math.max(0, this.energy - dt * 0.3);
+            } else {
+              this.energy = Math.min(1, this.energy + dt * 0.15);
+            }
+            this.vx += Math.cos(this.angle) * accel * dt;
+            this.vy += Math.sin(this.angle) * accel * dt;
+            if ((keys.has(" ") || keys.has("space")) && this.cooldown <= 0) {
+              fireBullet(this);
+              this.cooldown = this.super >= 1 ? 0.05 : 0.2;
+              if (this.super >= 1) {
+                fireBullet(this, 0.15);
+                fireBullet(this, -0.15);
+                this.super = 0;
+              }
+            }
+          } else {
+            // simple AI
+            this.aiTimer -= dt;
+            const target = player;
+            const desired = Math.atan2(target.y - this.y, target.x - this.x);
+            let diff = ((desired - this.angle + Math.PI) % (Math.PI * 2)) - Math.PI;
+            this.angle += Math.sign(diff) * Math.min(Math.abs(diff), 1.5 * dt);
+            const shouldFire = Math.abs(diff) < 0.2 && dist(this, target) < 500;
+            if (shouldFire && this.cooldown <= 0) {
+              fireBullet(this);
+              this.cooldown = 0.6;
+            }
+            const accel = 90;
+            this.vx += Math.cos(this.angle) * accel * dt;
+            this.vy += Math.sin(this.angle) * accel * dt;
+          }
+          this.cooldown = Math.max(0, this.cooldown - dt);
+          const drag = 0.99;
+          this.vx *= drag;
+          this.vy *= drag;
+          this.x += this.vx * dt;
+          this.y += this.vy * dt;
+          this.wrap();
+        }
+        render(shapeColor) {
+          ctx.save();
+          ctx.translate(this.x, this.y);
+          ctx.rotate(this.angle);
+          ctx.strokeStyle = shapeColor;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(18, 0);
+          ctx.lineTo(-12, -12);
+          ctx.lineTo(-6, 0);
+          ctx.lineTo(-12, 12);
+          ctx.closePath();
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      class Asteroid extends Body {
+        constructor(size = 3) {
+          const edge = Math.random() < 0.5 ? rand(0, world.width) : Math.random() < 0.5 ? 0 : world.height;
+          const x = edge === 0 || edge === world.height ? rand(0, world.width) : edge;
+          const y = edge === 0 || edge === world.height ? edge : rand(0, world.height);
+          super(x, y);
+          this.size = size;
+          this.vx = rand(-40, 40);
+          this.vy = rand(-40, 40);
+          this.points = Array.from({ length: 7 }, () => rand(0.6, 1.2));
+          this.angleSpeed = rand(-0.6, 0.6);
+        }
+        update(dt) {
+          this.angle += this.angleSpeed * dt;
+          this.x += this.vx * dt;
+          this.y += this.vy * dt;
+          this.wrap();
+        }
+        render() {
+          const radius = this.size * 15 + 10;
+          ctx.save();
+          ctx.translate(this.x, this.y);
+          ctx.rotate(this.angle);
+          ctx.strokeStyle = "#c6d6ff";
+          ctx.beginPath();
+          this.points.forEach((mag, idx) => {
+            const angle = (idx / this.points.length) * Math.PI * 2;
+            const r = radius * mag;
+            const x = Math.cos(angle) * r;
+            const y = Math.sin(angle) * r;
+            if (idx === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          });
+          ctx.closePath();
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      class Bullet extends Body {
+        constructor(owner, spread = 0) {
+          super(owner.x, owner.y, owner.angle + spread);
+          const speed = 360;
+          this.vx = Math.cos(this.angle) * speed + owner.vx;
+          this.vy = Math.sin(this.angle) * speed + owner.vy;
+          this.life = 1.4;
+          this.owner = owner;
+        }
+        update(dt) {
+          this.life -= dt;
+          if (this.life <= 0) this.dead = true;
+          this.x += this.vx * dt;
+          this.y += this.vy * dt;
+          this.wrap();
+        }
+        render() {
+          ctx.strokeStyle = this.owner.player ? "#92f7ff" : "#ff7f7f";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(this.x, this.y);
+          ctx.lineTo(this.x - Math.cos(this.angle) * 8, this.y - Math.sin(this.angle) * 8);
+          ctx.stroke();
+        }
+      }
+
+      let player, asteroids, bullets, enemies, score, lives, wave, gameOver;
+
+      function startGame() {
+        player = new Ship(world.width / 2, world.height / 2, true);
+        asteroids = [];
+        bullets = [];
+        enemies = [];
+        score = 0;
+        lives = 3;
+        wave = 1;
+        gameOver = false;
+        spawnWave();
+        modal.hidden = true;
+      }
+
+      function spawnWave() {
+        for (let i = 0; i < 3 + wave; i++) {
+          asteroids.push(new Asteroid(rand(1, 3)));
+        }
+        for (let i = 0; i < Math.min(1 + Math.floor(wave / 2), 4); i++) {
+          const enemy = new Ship(rand(0, world.width), rand(0, world.height));
+          enemy.player = false;
+          enemies.push(enemy);
+        }
+      }
+
+      function fireBullet(ship, spread = 0) {
+        bullets.push(new Bullet(ship, spread));
+      }
+
+      function splitAsteroid(asteroid) {
+        if (asteroid.size > 1) {
+          for (let i = 0; i < 2; i++) {
+            const child = new Asteroid(asteroid.size - 1);
+            child.x = asteroid.x;
+            child.y = asteroid.y;
+            child.vx = asteroid.vx + rand(-30, 30);
+            child.vy = asteroid.vy + rand(-30, 30);
+            asteroids.push(child);
+          }
+        }
+      }
+
+      function handleCollisions() {
+        bullets.forEach((bullet) => {
+          if (bullet.dead) return;
+          asteroids.forEach((ast) => {
+            if (!ast.dead && dist(bullet, ast) < ast.size * 15 + 15) {
+              bullet.dead = true;
+              ast.dead = true;
+              splitAsteroid(ast);
+              score += 50 * ast.size;
+              player.super = Math.min(1.5, player.super + 0.15);
+            }
+          });
+          const foes = bullet.owner.player ? enemies : [player];
+          foes.forEach((ship) => {
+            if (!ship.dead && dist(bullet, ship) < 18) {
+              bullet.dead = true;
+              ship.dead = true;
+              if (ship === player) loseLife();
+              else score += 200;
+            }
+          });
+        });
+
+        asteroids.forEach((ast) => {
+          if (!player.dead && dist(player, ast) < ast.size * 15 + 18) {
+            ast.dead = true;
+            splitAsteroid(ast);
+            loseLife();
+          }
+        });
+      }
+
+      function loseLife() {
+        lives--;
+        player.dead = false;
+        player.x = rand(0, world.width);
+        player.y = rand(0, world.height);
+        player.vx = player.vy = 0;
+        if (lives <= 0) {
+          endGame();
+        }
+      }
+
+      function endGame() {
+        modal.hidden = false;
+        modalText.textContent = `Mission over — final score ${score}`;
+        gameOver = true;
+      }
+
+      let last = 0;
+      function loop(timestamp = 0) {
+        const dt = Math.min((timestamp - last) / 1000, 0.05);
+        last = timestamp;
+        if (!gameOver) update(dt);
+        render();
+        requestAnimationFrame(loop);
+      }
+
+      function update(dt) {
+        player.update(dt);
+        asteroids.forEach((ast) => ast.update(dt));
+        bullets.forEach((b) => b.update(dt));
+        enemies.forEach((e) => e.update(dt));
+        handleCollisions();
+        asteroids = asteroids.filter((a) => !a.dead);
+        bullets = bullets.filter((b) => !b.dead);
+        enemies = enemies.filter((e) => !e.dead);
+        if (asteroids.length === 0 && enemies.length === 0) {
+          wave++;
+          spawnWave();
+        }
+        scoreEl.textContent = score;
+        livesEl.textContent = lives;
+        waveEl.textContent = wave;
+      }
+
+      function renderStars() {
+        ctx.fillStyle = "#050812";
+        ctx.fillRect(0, 0, world.width, world.height);
+        const stars = 60;
+        ctx.fillStyle = "rgba(255,255,255,0.4)";
+        for (let i = 0; i < stars; i++) {
+          const x = (i * 73 + (Date.now() / 30)) % world.width;
+          const y = (i * 41) % world.height;
+          ctx.fillRect(x, y, 2, 2);
+        }
+      }
+
+      function render() {
+        renderStars();
+        asteroids.forEach((ast) => ast.render());
+        bullets.forEach((b) => b.render());
+        enemies.forEach((e) => e.render("#ff8f8f"));
+        player.render("#8df7ff");
+        // energy arc
+        ctx.strokeStyle = "#5cf5d6";
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, 26, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * player.energy);
+        ctx.stroke();
+        // super meter
+        ctx.strokeStyle = "#ffe66d";
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, 30, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * player.super);
+        ctx.stroke();
+      }
+
+      startGame();
+      requestAnimationFrame(loop);
+    </script>
+  </body>
+</html>

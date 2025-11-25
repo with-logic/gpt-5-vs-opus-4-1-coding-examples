@@ -34,7 +34,7 @@ export function AppGridWithRouting({ apps }: AppGridWithRoutingProps) {
 
           if (models) {
             const validModels = models.split(",").filter(m =>
-              ["gpt-5", "opus-4.1", "opus-4.5", "sonnet-4.5", "gemini-3"].includes(m)
+              ["gpt-5", "gpt-5.1", "opus-4.1", "opus-4.5", "sonnet-4.5", "gemini-3"].includes(m)
             );
             if (validModels.length > 0) {
               setInitialModels(validModels);
@@ -43,7 +43,7 @@ export function AppGridWithRouting({ apps }: AppGridWithRoutingProps) {
           if (view === "side-by-side" || view === "tabs") {
             setInitialView(view);
           }
-          if (tab && ["gpt-5", "opus-4.1", "opus-4.5", "sonnet-4.5", "gemini-3"].includes(tab)) {
+          if (tab && ["gpt-5", "gpt-5.1", "opus-4.1", "opus-4.5", "sonnet-4.5", "gemini-3"].includes(tab)) {
             setInitialTab(tab);
           }
 
@@ -68,7 +68,10 @@ export function AppGridWithRouting({ apps }: AppGridWithRoutingProps) {
     return () => window.removeEventListener("popstate", handlePopState);
   }, [apps]);
 
-  const handleOpenApp = useCallback((app: CodeExample) => {
+  const handleOpenApp = useCallback((e: React.MouseEvent, app: CodeExample) => {
+    // Let middle-click, ctrl+click, cmd+click open in new tab naturally
+    if (e.button !== 0 || e.ctrlKey || e.metaKey) return;
+    e.preventDefault();
     setInitialModels(["gpt-5", "opus-4.5"]); // Reset to defaults
     setInitialView("side-by-side");
     setInitialTab("gpt-5");
@@ -83,10 +86,11 @@ export function AppGridWithRouting({ apps }: AppGridWithRoutingProps) {
     <>
       <div className="grid gap-px bg-neutral-200 sm:grid-cols-2 lg:grid-cols-3 border border-neutral-200 overflow-hidden">
         {apps.map((app) => (
-          <div
+          <a
             key={app.id}
+            href={`/compare/${app.id}?models=gpt-5,opus-4.5&view=side-by-side`}
             className="group bg-white p-4 cursor-pointer hover:bg-neutral-50 transition-colors"
-            onClick={() => handleOpenApp(app)}
+            onClick={(e) => handleOpenApp(e, app)}
           >
             <div className="aspect-video bg-neutral-100 overflow-hidden mb-3">
               {app.poster && (
@@ -129,13 +133,14 @@ export function AppGridWithRouting({ apps }: AppGridWithRoutingProps) {
                 )}
               </div>
             )}
-          </div>
+          </a>
         ))}
       </div>
 
       {selectedApp && (
         <AppComparisonView
           app={selectedApp}
+          apps={apps}
           isOpen={true}
           onClose={handleClose}
           initialModels={initialModels}
