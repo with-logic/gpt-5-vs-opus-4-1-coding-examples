@@ -108,6 +108,11 @@ async function main() {
   console.log("Fixing Next.js paths in Sonnet 4.5 apps...");
   await fixNextJsPaths(sonnet45Dir, "sonnet-4.5");
 
+  // Fix Gemini 3 apps
+  const gemini3Dir = path.join(publicDir, "gemini-3");
+  console.log("Fixing Next.js paths in Gemini 3 apps...");
+  await fixNextJsPaths(gemini3Dir, "gemini-3");
+
   console.log("Done fixing Next.js paths.");
 }
 

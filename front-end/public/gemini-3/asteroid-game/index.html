@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Asteroid Dogfight</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            color: #fff;
+            font-family: 'Courier New', Courier, monospace;
+        }
+        canvas {
+            display: block;
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            pointer-events: none;
+        }
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            display: none;
+        }
+        button {
+            background: #fff;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            font-family: inherit;
+            margin-top: 20px;
+            pointer-events: auto;
+        }
+        button:hover {
+            background: #ccc;
+        }
+        .controls-hint {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            opacity: 0.5;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div>Score: <span id="score">0</span></div>
+        <div>Health: <span id="health">100</span>%</div>
+        <div>Wave: <span id="wave">1</span></div>
+    </div>
+    
+    <div id="gameOver">
+        <h1 style="color: red; font-size: 48px;">GAME OVER</h1>
+        <p>Final Score: <span id="finalScore">0</span></p>
+        <button onclick="startGame()">Restart Mission</button>
+    </div>
+
+    <div class="controls-hint">
+        WASD / Arrow Keys to Move • Mouse to Aim • Click / Space to Shoot
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const healthEl = document.getElementById('health');
+        const waveEl = document.getElementById('wave');
+        const gameOverEl = document.getElementById('gameOver');
+        const finalScoreEl = document.getElementById('finalScore');
+
+        let width, height;
+        let animationId;
+        let lastTime = 0;
+        let gameActive = false;
+
+        // Game State
+        let player;
+        let bullets = [];
+        let asteroids = [];
+        let enemies = [];
+        let particles = [];
+        let score = 0;
+        let wave = 1;
+        let keys = {};
+        let mouse = { x: 0, y: 0 };
+
+        // Constants
+        const PLAYER_SPEED = 5;
+        const BULLET_SPEED = 10;
+        const ENEMY_SPEED = 3;
+        const ASTEROID_SPEED_BASE = 1;
+        const FRICTION = 0.95;
+
+        class Vector {
+            constructor(x, y) { this.x = x; this.y = y; }
+            add(v) { this.x += v.x; this.y += v.y; }
+            sub(v) { return new Vector(this.x - v.x, this.y - v.y); }
+            mult(n) { this.x *= n; this.y *= n; }
+            mag() { return Math.sqrt(this.x*this.x + this.y*this.y); }
+            normalize() {
+                let m = this.mag();
+                if (m > 0) this.mult(1/m);
+            }
+            static sub(v1, v2) { return new Vector(v1.x - v2.x, v1.y - v2.y); }
+        }
+
+        class Entity {
+            constructor(x, y, radius, color) {
+                this.pos = new Vector(x, y);
+                this.vel = new Vector(0, 0);
+                this.radius = radius;
+                this.color = color;
+                this.dead = false;
+                this.angle = 0;
+            }
+
+            update() {
+                this.pos.add(this.vel);
+                
+                // Screen wrap
+                if (this.pos.x < -this.radius) this.pos.x = width + this.radius;
+                if (this.pos.x > width + this.radius) this.pos.x = -this.radius;
+                if (this.pos.y < -this.radius) this.pos.y = height + this.radius;
+                if (this.pos.y > height + this.radius) this.pos.y = -this.radius;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.closePath();
+            }
+            
+            checkCollision(other) {
+                const dist = Math.hypot(this.pos.x - other.pos.x, this.pos.y - other.pos.y);
+                return dist < this.radius + other.radius;
+            }
+        }
+
+        class Player extends Entity {
+            constructor() {
+                super(width/2, height/2, 15, '#00ffcc');
+                this.health = 100;
+                this.cooldown = 0;
+            }
+
+            update() {
+                // Movement
+                if (keys['w'] || keys['arrowup']) this.vel.y -= 0.5;
+                if (keys['s'] || keys['arrowdown']) this.vel.y += 0.5;
+                if (keys['a'] || keys['arrowleft']) this.vel.x -= 0.5;
+                if (keys['d'] || keys['arrowright']) this.vel.x += 0.5;
+
+                // Friction
+                this.vel.mult(FRICTION);
+
+                super.update();
+
+                // Aim angle
+                this.angle = Math.atan2(mouse.y - this.pos.y, mouse.x - this.pos.x);
+
+                // Shooting
+                if ((keys[' '] || keys['mousedown']) && this.cooldown <= 0) {
+                    this.shoot();
+                    this.cooldown = 10;
+                }
+                if (this.cooldown > 0) this.cooldown--;
+            }
+
+            shoot() {
+                const vel = new Vector(Math.cos(this.angle), Math.sin(this.angle));
+                vel.mult(BULLET_SPEED);
+                // Add player velocity influence for better feel
+                const bVel = new Vector(vel.x + this.vel.x * 0.2, vel.y + this.vel.y * 0.2);
+                bullets.push(new Bullet(this.pos.x, this.pos.y, bVel, true)); // true = from player
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.pos.x, this.pos.y);
+                ctx.rotate(this.angle);
+                
+                // Ship Design
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(20, 0); // Nose
+                ctx.lineTo(-15, 15); // Bottom Left
+                ctx.lineTo(-5, 0); // Engine
+                ctx.lineTo(-15, -15); // Top Left
+                ctx.closePath();
+                ctx.stroke();
+                
+                // Engine flame
+                if (this.vel.mag() > 1) {
+                    ctx.beginPath();
+                    ctx.moveTo(-8, 0);
+                    ctx.lineTo(-25 - Math.random() * 10, 0);
+                    ctx.strokeStyle = '#ff9900';
+                    ctx.stroke();
+                }
+
+                ctx.restore();
+            }
+        }
+
+        class Enemy extends Entity {
+            constructor(x, y) {
+                super(x, y, 15, '#ff3333');
+                this.cooldown = 100 + Math.random() * 100;
+                this.angle = 0;
+            }
+
+            update() {
+                // AI: Follow player loosely
+                if (player && !player.dead) {
+                    let diff = Vector.sub(player.pos, this.pos);
+                    this.angle = Math.atan2(diff.y, diff.x);
+                    
+                    // Move towards player if far, orbit/slow if close
+                    let dist = diff.mag();
+                    if (dist > 200) {
+                        this.vel.x += Math.cos(this.angle) * 0.2;
+                        this.vel.y += Math.sin(this.angle) * 0.2;
+                    } else {
+                        // Strafe
+                        this.vel.x += Math.cos(this.angle + Math.PI/2) * 0.2;
+                        this.vel.y += Math.sin(this.angle + Math.PI/2) * 0.2;
+                    }
+                    
+                    // Shoot
+                    if (this.cooldown <= 0 && dist < 400) {
+                        this.shoot();
+                        this.cooldown = 60 + Math.random() * 60;
+                    }
+                }
+                
+                this.vel.mult(FRICTION);
+                this.cooldown--;
+                super.update();
+            }
+
+            shoot() {
+                const vel = new Vector(Math.cos(this.angle), Math.sin(this.angle));
+                vel.mult(BULLET_SPEED * 0.6); // Slower enemy bullets
+                bullets.push(new Bullet(this.pos.x, this.pos.y, vel, false));
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.pos.x, this.pos.y);
+                ctx.rotate(this.angle);
+                
+                // Enemy Ship Design
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(15, 0);
+                ctx.lineTo(-10, 10);
+                ctx.lineTo(-10, -10);
+                ctx.closePath();
+                ctx.stroke();
+
+                ctx.restore();
+            }
+        }
+
+        class Asteroid extends Entity {
+            constructor(x, y, radius) {
+                super(x, y, radius, '#888');
+                this.vel = new Vector((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2);
+                this.vertices = [];
+                const sides = 8 + Math.floor(Math.random() * 5);
+                for(let i=0; i<sides; i++) {
+                    this.vertices.push((Math.random() * 0.4 + 0.8) * radius);
+                }
+                this.rotation = 0;
+                this.rotSpeed = (Math.random() - 0.5) * 0.05;
+            }
+
+            update() {
+                super.update();
+                this.rotation += this.rotSpeed;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.pos.x, this.pos.y);
+                ctx.rotate(this.rotation);
+                ctx.strokeStyle = '#aaa';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                const angleStep = (Math.PI * 2) / this.vertices.length;
+                for(let i=0; i<this.vertices.length; i++) {
+                    const r = this.vertices[i];
+                    const a = i * angleStep;
+                    const x = Math.cos(a) * r;
+                    const y = Math.sin(a) * r;
+                    if(i===0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.closePath();
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+
+        class Bullet extends Entity {
+            constructor(x, y, vel, isPlayer) {
+                super(x, y, 2, isPlayer ? '#ffff00' : '#ff0000');
+                this.vel = vel;
+                this.life = 60;
+                this.isPlayer = isPlayer;
+            }
+            update() {
+                this.pos.add(this.vel);
+                this.life--;
+                if(this.life <= 0) this.dead = true;
+                
+                // No screen wrap for bullets, kill them
+                if (this.pos.x < 0 || this.pos.x > width || this.pos.y < 0 || this.pos.y > height) {
+                    this.dead = true;
+                }
+            }
+        }
+
+        class Particle extends Entity {
+            constructor(x, y, color) {
+                super(x, y, Math.random() * 3, color);
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 3;
+                this.vel = new Vector(Math.cos(angle) * speed, Math.sin(angle) * speed);
+                this.life = 30 + Math.random() * 20;
+            }
+            update() {
+                this.pos.add(this.vel);
+                this.life--;
+                this.radius *= 0.9;
+                if(this.life <= 0) this.dead = true;
+            }
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.globalAlpha = this.life / 50;
+                ctx.beginPath();
+                ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        // Setup & Loop
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+
+        window.addEventListener('resize', resize);
+        
+        // Input Handling
+        window.addEventListener('keydown', e => {
+            keys[e.key.toLowerCase()] = true;
+            if(e.code === 'Space') keys[' '] = true; // explicitly handle space
+        });
+        window.addEventListener('keyup', e => {
+            keys[e.key.toLowerCase()] = false;
+            if(e.code === 'Space') keys[' '] = false;
+        });
+        window.addEventListener('mousemove', e => {
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+        });
+        window.addEventListener('mousedown', () => keys['mousedown'] = true);
+        window.addEventListener('mouseup', () => keys['mousedown'] = false);
+
+        function spawnWave() {
+            asteroids = [];
+            enemies = [];
+            
+            // Spawn Asteroids
+            for (let i = 0; i < 3 + wave; i++) {
+                let x, y;
+                do {
+                    x = Math.random() * width;
+                    y = Math.random() * height;
+                } while (Math.hypot(x - width/2, y - height/2) < 200); // Don't spawn on player
+                
+                asteroids.push(new Asteroid(x, y, 30 + Math.random() * 20));
+            }
+
+            // Spawn Enemies
+            for (let i = 0; i < Math.floor(wave / 2); i++) {
+                 let x, y;
+                do {
+                    x = Math.random() * width;
+                    y = Math.random() * height;
+                } while (Math.hypot(x - width/2, y - height/2) < 300);
+
+                enemies.push(new Enemy(x, y));
+            }
+        }
+
+        function createExplosion(x, y, color, count=10) {
+            for(let i=0; i<count; i++) {
+                particles.push(new Particle(x, y, color));
+            }
+        }
+
+        function startGame() {
+            resize();
+            player = new Player();
+            bullets = [];
+            particles = [];
+            score = 0;
+            wave = 1;
+            gameActive = true;
+            scoreEl.textContent = score;
+            healthEl.textContent = player.health;
+            waveEl.textContent = wave;
+            gameOverEl.style.display = 'none';
+            
+            spawnWave();
+            
+            if (!animationId) loop();
+        }
+
+        function loop() {
+            animationId = requestAnimationFrame(loop);
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.2)'; // trails
+            ctx.fillRect(0, 0, width, height);
+
+            if (!gameActive) return;
+
+            // Update & Draw Player
+            if (!player.dead) {
+                player.update();
+                player.draw();
+            } else {
+                gameActive = false;
+                gameOverEl.style.display = 'block';
+                finalScoreEl.textContent = score;
+            }
+
+            // Update Bullets
+            bullets = bullets.filter(b => !b.dead);
+            bullets.forEach(b => {
+                b.update();
+                b.draw();
+            });
+
+            // Update Asteroids
+            asteroids = asteroids.filter(a => !a.dead);
+            asteroids.forEach(a => {
+                a.update();
+                a.draw();
+
+                // Collision with Player
+                if (a.checkCollision(player)) {
+                    player.health -= 20;
+                    healthEl.textContent = Math.max(0, Math.floor(player.health));
+                    createExplosion(player.pos.x, player.pos.y, '#ff0000', 5);
+                    a.dead = true;
+                    createExplosion(a.pos.x, a.pos.y, '#aaa', 15);
+                    if (player.health <= 0) player.dead = true;
+                }
+
+                // Collision with Bullets
+                bullets.forEach(b => {
+                    if (b.dead) return;
+                    if (a.checkCollision(b)) {
+                        b.dead = true;
+                        // Break asteroid? or just destroy
+                        if (a.radius > 20) {
+                            // Split
+                            let a1 = new Asteroid(a.pos.x, a.pos.y, a.radius / 2);
+                            let a2 = new Asteroid(a.pos.x, a.pos.y, a.radius / 2);
+                            asteroids.push(a1, a2);
+                        }
+                        a.dead = true;
+                        createExplosion(a.pos.x, a.pos.y, '#aaa', 10);
+                        if (b.isPlayer) {
+                            score += 100;
+                            scoreEl.textContent = score;
+                        }
+                    }
+                });
+            });
+
+            // Update Enemies
+            enemies = enemies.filter(e => !e.dead);
+            enemies.forEach(e => {
+                e.update();
+                e.draw();
+
+                // Collision with Bullets
+                bullets.forEach(b => {
+                    if (b.dead || !b.isPlayer) return; // Only player bullets hurt enemies
+                    if (e.checkCollision(b)) {
+                        b.dead = true;
+                        e.dead = true;
+                        createExplosion(e.pos.x, e.pos.y, '#ff3333', 20);
+                        score += 500;
+                        scoreEl.textContent = score;
+                    }
+                });
+                
+                // Collision with Player Bullet (Enemy Bullets hurt Player)
+                // Handled in Bullet update? No, need to check enemy bullets vs player
+            });
+
+            // Check enemy bullets vs player
+            bullets.forEach(b => {
+                if (b.dead || b.isPlayer) return;
+                if (player.checkCollision(b)) {
+                    b.dead = true;
+                    player.health -= 10;
+                    healthEl.textContent = Math.max(0, Math.floor(player.health));
+                    createExplosion(player.pos.x, player.pos.y, '#ff0000', 5);
+                    if (player.health <= 0) player.dead = true;
+                }
+            });
+
+            // Particles
+            particles = particles.filter(p => !p.dead);
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+
+            // Wave Clear
+            if (asteroids.length === 0 && enemies.length === 0) {
+                wave++;
+                waveEl.textContent = wave;
+                player.health = Math.min(100, player.health + 20); // Heal
+                healthEl.textContent = Math.floor(player.health);
+                spawnWave();
+            }
+        }
+
+        startGame();
+
+    </script>
+</body>
+</html>

@@ -115,17 +115,37 @@ async function main() {
     console.log(`[copy-apps] No sonnet-4.5-apps directory found at ${sonnet45Dir}, skipping.`);
   }
 
+  // Copy Gemini 3 apps to public/gemini-3/
+  const gemini3Dir = path.join(repoRoot, "gemini-3-apps");
+  if (await exists(gemini3Dir)) {
+    const gemini3PublicDir = path.join(publicDir, "gemini-3");
+    await rimrafDirIfExists(gemini3PublicDir);
+    await fs.mkdir(gemini3PublicDir, { recursive: true });
+
+    const gemini3Entries = await fs.readdir(gemini3Dir, { withFileTypes: true });
+    for (const entry of gemini3Entries) {
+      const s = path.join(gemini3Dir, entry.name);
+      const d = path.join(gemini3PublicDir, entry.name);
+
+      if (entry.isDirectory()) {
+        console.log(`[copy-apps] Copying Gemini 3 ${s} -> ${d}`);
+        await copyDir(s, d);
+      }
+    }
+  } else {
+    console.log(`[copy-apps] No gemini-3-apps directory found at ${gemini3Dir}, skipping.`);
+  }
+
   console.log(`[copy-apps] Done.`);
   
-  // Fix Next.js paths
+  // Fix Next.js paths (convert absolute app-specific paths to relative paths)
   console.log(`[copy-apps] Fixing Next.js paths...`);
   const { exec } = await import("child_process");
   const { promisify } = await import("util");
   const execAsync = promisify(exec);
-  
+
   try {
     await execAsync("node scripts/fix-nextjs-paths.mjs", { cwd: frontEndDir });
-    await execAsync("node scripts/fix-nextjs-apps.mjs", { cwd: frontEndDir });
     console.log(`[copy-apps] Next.js paths fixed.`);
   } catch (err) {
     console.error(`[copy-apps] Failed to fix Next.js paths:`, err);

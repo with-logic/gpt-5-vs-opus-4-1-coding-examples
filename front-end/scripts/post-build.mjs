@@ -23,9 +23,11 @@ async function main() {
   const gpt5Src = path.join(publicDir, "gpt-5");
   const opus41Src = path.join(publicDir, "opus-4.1");
   const sonnet45Src = path.join(publicDir, "sonnet-4.5");
+  const gemini3Src = path.join(publicDir, "gemini-3");
   const gpt5Dest = path.join(outDir, "gpt-5");
   const opus41Dest = path.join(outDir, "opus-4.1");
   const sonnet45Dest = path.join(outDir, "sonnet-4.5");
+  const gemini3Dest = path.join(outDir, "gemini-3");
 
   if (await exists(gpt5Src)) {
     console.log(`[post-build] Copying ${gpt5Src} -> ${gpt5Dest}`);
@@ -41,29 +43,21 @@ async function main() {
     console.log(`[post-build] Copying ${sonnet45Src} -> ${sonnet45Dest}`);
     await fs.cp(sonnet45Src, sonnet45Dest, { recursive: true, force: true });
   }
+
+  if (await exists(gemini3Src)) {
+    console.log(`[post-build] Copying ${gemini3Src} -> ${gemini3Dest}`);
+    await fs.cp(gemini3Src, gemini3Dest, { recursive: true, force: true });
+  }
   
   // Copy logo
   const logoSrc = path.join(publicDir, "logic_logo.png");
   const logoDest = path.join(outDir, "logic_logo.png");
-  
+
   if (await exists(logoSrc)) {
     console.log(`[post-build] Copying logo`);
     await fs.copyFile(logoSrc, logoDest);
   }
-  
-  // Fix Next.js app paths (use absolute paths to handle Vercel's trailing slash removal)
-  console.log(`[post-build] Fixing Next.js app paths...`);
-  const { exec } = await import("child_process");
-  const { promisify } = await import("util");
-  const execAsync = promisify(exec);
-  
-  try {
-    await execAsync("node scripts/fix-nextjs-absolute-paths.mjs", { cwd: frontEndDir });
-    console.log(`[post-build] Next.js paths fixed.`);
-  } catch (err) {
-    console.error(`[post-build] Failed to fix Next.js paths:`, err);
-  }
-  
+
   console.log(`[post-build] Done.`);
 }
 

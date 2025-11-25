@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Holiday Fun Card!</title>
+    <link href="https://fonts.googleapis.com/css2?family=Mountains+of+Christmas:wght@700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: radial-gradient(circle at center, #1a472a, #0d2b1d);
+            font-family: 'Mountains of Christmas', cursive;
+            touch-action: none;
+        }
+
+        #snowCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        h1 {
+            position: absolute;
+            top: 20px;
+            width: 100%;
+            text-align: center;
+            color: #d4af37;
+            font-size: 4rem;
+            text-shadow: 2px 2px 4px #000;
+            z-index: 20;
+            pointer-events: none;
+        }
+
+        #card-area {
+            position: absolute;
+            top: 15%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80%;
+            height: 70%;
+            background: rgba(255, 255, 255, 0.1);
+            border: 4px dashed #d4af37;
+            border-radius: 20px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            z-index: 5;
+        }
+
+        #toolbox {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px 20px;
+            border-radius: 50px;
+            display: flex;
+            gap: 15px;
+            z-index: 20;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            overflow-x: auto;
+            max-width: 90%;
+        }
+
+        .sticker {
+            font-size: 3rem;
+            cursor: grab;
+            user-select: none;
+            transition: transform 0.1s;
+        }
+
+        .sticker:hover { transform: scale(1.2); }
+        .sticker:active { cursor: grabbing; }
+
+        .placed-item {
+            position: absolute;
+            font-size: 4rem;
+            cursor: grab;
+            user-select: none;
+            filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.3));
+        }
+
+        .placed-item:active { cursor: grabbing; }
+
+        /* Animations */
+        @keyframes bounce {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+
+        .bouncing { animation: bounce 0.3s; }
+
+    </style>
+</head>
+<body>
+
+    <canvas id="snowCanvas"></canvas>
+    
+    <h1>Happy Holidays!</h1>
+
+    <div id="card-area">
+        <!-- Default items -->
+        <div class="placed-item" style="left: 10%; top: 60%;">🎄</div>
+        <div class="placed-item" style="left: 80%; top: 10%;">🎅</div>
+        <div class="placed-item" style="left: 40%; top: 40%;">⛄</div>
+    </div>
+
+    <div id="toolbox">
+        <div class="sticker" draggable="true">🎅</div>
+        <div class="sticker" draggable="true">🤶</div>
+        <div class="sticker" draggable="true">🦌</div>
+        <div class="sticker" draggable="true">⛄</div>
+        <div class="sticker" draggable="true">🎄</div>
+        <div class="sticker" draggable="true">🎁</div>
+        <div class="sticker" draggable="true">⭐</div>
+        <div class="sticker" draggable="true">❄️</div>
+        <div class="sticker" draggable="true">🍪</div>
+        <div class="sticker" draggable="true">🔔</div>
+    </div>
+
+    <script>
+        // --- Audio ---
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        const audioCtx = new AudioContext();
+
+        function playSound(type) {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            if (type === 'drop') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.3);
+            } else if (type === 'jingle') {
+                // Bell sound approximation
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(1000 + Math.random() * 500, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 1.0);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 1.0);
+            }
+        }
+
+        // --- Drag and Drop ---
+        const cardArea = document.getElementById('card-area');
+        const toolbox = document.getElementById('toolbox');
+        let draggedEmoji = null;
+        let isNewItem = false;
+        let activeItem = null;
+        let offset = { x: 0, y: 0 };
+
+        // Make existing items draggable
+        document.querySelectorAll('.placed-item').forEach(makeDraggable);
+
+        // Toolbox Items
+        document.querySelectorAll('.sticker').forEach(el => {
+            el.addEventListener('mousedown', (e) => {
+                draggedEmoji = e.target.textContent;
+                isNewItem = true;
+                startDrag(e);
+            });
+            el.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                draggedEmoji = e.target.textContent;
+                isNewItem = true;
+                // Touch logic is harder with cloning, simplified:
+                // Just spawn center screen for tap
+                spawnItem(draggedEmoji, cardArea.clientWidth/2, cardArea.clientHeight/2);
+            });
+        });
+
+        function makeDraggable(el) {
+            el.addEventListener('mousedown', (e) => {
+                isNewItem = false;
+                activeItem = el;
+                playSound('jingle');
+                el.classList.add('bouncing');
+                setTimeout(() => el.classList.remove('bouncing'), 300);
+                
+                const rect = el.getBoundingClientRect();
+                offset.x = e.clientX - rect.left;
+                offset.y = e.clientY - rect.top;
+                
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            });
+            
+            // Touch support for placed items
+             el.addEventListener('touchstart', (e) => {
+                e.preventDefault(); // prevent scroll
+                activeItem = el;
+                playSound('jingle');
+                const touch = e.touches[0];
+                const rect = el.getBoundingClientRect();
+                offset.x = touch.clientX - rect.left;
+                offset.y = touch.clientY - rect.top;
+                
+                document.addEventListener('touchmove', onTouchMove, { passive: false });
+                document.addEventListener('touchend', onTouchEnd);
+            });
+        }
+
+        // Mouse Drag
+        function startDrag(e) {
+            if (isNewItem) {
+                // Create temp item
+                spawnItem(draggedEmoji, e.clientX - cardArea.getBoundingClientRect().left, e.clientY - cardArea.getBoundingClientRect().top);
+                // Immediately switch to moving it
+                const rect = activeItem.getBoundingClientRect();
+                offset.x = rect.width / 2;
+                offset.y = rect.height / 2;
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            }
+        }
+
+        function onMove(e) {
+            if (!activeItem) return;
+            const areaRect = cardArea.getBoundingClientRect();
+            let x = e.clientX - areaRect.left - offset.x;
+            let y = e.clientY - areaRect.top - offset.y;
+            
+            activeItem.style.left = x + 'px';
+            activeItem.style.top = y + 'px';
+        }
+
+        function onUp() {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            playSound('drop');
+            activeItem = null;
+        }
+
+        // Touch Drag
+        function onTouchMove(e) {
+            if (!activeItem) return;
+            e.preventDefault();
+            const touch = e.touches[0];
+            const areaRect = cardArea.getBoundingClientRect();
+            let x = touch.clientX - areaRect.left - offset.x;
+            let y = touch.clientY - areaRect.top - offset.y;
+            
+            activeItem.style.left = x + 'px';
+            activeItem.style.top = y + 'px';
+        }
+
+        function onTouchEnd() {
+            document.removeEventListener('touchmove', onTouchMove);
+            document.removeEventListener('touchend', onTouchEnd);
+            playSound('drop');
+            activeItem = null;
+        }
+
+        function spawnItem(emoji, x, y) {
+            const el = document.createElement('div');
+            el.className = 'placed-item';
+            el.textContent = emoji;
+            el.style.left = x + 'px';
+            el.style.top = y + 'px';
+            cardArea.appendChild(el);
+            makeDraggable(el);
+            activeItem = el;
+            playSound('jingle');
+        }
+
+        // --- Snow Animation ---
+        const canvas = document.getElementById('snowCanvas');
+        const ctx = canvas.getContext('2d');
+        let width, height;
+        const particles = [];
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        for (let i = 0; i < 100; i++) {
+            particles.push({
+                x: Math.random() * width,
+                y: Math.random() * height,
+                r: Math.random() * 4 + 1,
+                d: Math.random() * 100 // density
+            });
+        }
+
+        function drawSnow() {
+            ctx.clearRect(0, 0, width, height);
+            ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+            ctx.beginPath();
+            for (let i = 0; i < 100; i++) {
+                const p = particles[i];
+                ctx.moveTo(p.x, p.y);
+                ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2, true);
+            }
+            ctx.fill();
+            updateSnow();
+            requestAnimationFrame(drawSnow);
+        }
+
+        let angle = 0;
+        function updateSnow() {
+            angle += 0.01;
+            for (let i = 0; i < 100; i++) {
+                const p = particles[i];
+                p.y += Math.cos(angle + p.d) + 1 + p.r / 2;
+                p.x += Math.sin(angle) * 2;
+
+                if (p.x > width + 5 || p.x < -5 || p.y > height) {
+                    if (i % 3 > 0) {
+                        particles[i] = { x: Math.random() * width, y: -10, r: p.r, d: p.d };
+                    } else {
+                        // Enter from the right
+                        if (Math.sin(angle) > 0) {
+                            particles[i] = { x: -5, y: Math.random() * height, r: p.r, d: p.d };
+                        } else {
+                            particles[i] = { x: width + 5, y: Math.random() * height, r: p.r, d: p.d };
+                        }
+                    }
+                }
+            }
+        }
+
+        drawSnow();
+
+    </script>
+</body>
+</html>

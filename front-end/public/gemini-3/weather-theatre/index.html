@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Theatre</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Courier+Prime&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            background: #111;
+            overflow: hidden;
+            color: white;
+            font-family: 'Cinzel', serif;
+        }
+
+        #theatre-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Curtains */
+        .curtain {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            width: 50%;
+            background: #800020;
+            background: linear-gradient(90deg, #4a0012 0%, #800020 50%, #4a0012 100%);
+            box-shadow: inset 0 0 50px rgba(0,0,0,0.8);
+            z-index: 100;
+            transition: transform 2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .curtain.left { left: 0; transform-origin: left top; }
+        .curtain.right { right: 0; transform-origin: right top; }
+
+        .curtain.open-left { transform: scaleX(0.1); }
+        .curtain.open-right { transform: scaleX(0.1); }
+
+        /* Stage */
+        #stage {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #000;
+            z-index: 10;
+            overflow: hidden;
+        }
+
+        /* Background Layers (Parallax) */
+        .layer {
+            position: absolute;
+            top: 0; left: 0; width: 110%; height: 110%;
+            background-size: cover;
+            background-position: center;
+            transition: filter 1s, transform 0.1s;
+        }
+
+        #bg-sky { z-index: 1; background: linear-gradient(to bottom, #87CEEB, #fff); }
+        #bg-mid { z-index: 2; bottom: 0; height: 50%; background: url('https://images.unsplash.com/photo-1519834785169-98be25ec3f84?q=80&w=2000&auto=format&fit=crop') no-repeat bottom center; background-size: cover; filter: grayscale(0.5); }
+        #bg-fore { z-index: 3; bottom: -50px; height: 30%; background: url('https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?q=80&w=2000&auto=format&fit=crop') no-repeat bottom center; background-size: cover; filter: contrast(1.2); }
+
+        /* Canvas for particles */
+        canvas {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        /* Spotlight */
+        .spotlight {
+            position: absolute;
+            top: 0; left: 50%;
+            width: 0; height: 0;
+            border-left: 200px solid transparent;
+            border-right: 200px solid transparent;
+            border-bottom: 100vh solid rgba(255, 255, 255, 0.1);
+            transform-origin: top center;
+            transform: translateX(-50%) rotate(0deg);
+            z-index: 20;
+            pointer-events: none;
+            animation: sweep 10s infinite ease-in-out;
+            opacity: 0;
+            transition: opacity 1s;
+        }
+
+        @keyframes sweep {
+            0% { transform: translateX(-50%) rotate(-20deg); }
+            50% { transform: translateX(-50%) rotate(20deg); }
+            100% { transform: translateX(-50%) rotate(-20deg); }
+        }
+
+        /* UI Overlay */
+        #ui-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 200;
+            background: rgba(0,0,0,0.8);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #d4af37;
+            width: 80%;
+            max-width: 600px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            opacity: 0;
+            transition: opacity 1s 2s;
+        }
+
+        .controls {
+            display: flex;
+            gap: 20px;
+            width: 100%;
+            justify-content: space-around;
+            margin-bottom: 15px;
+        }
+
+        .control-group {
+            text-align: center;
+        }
+
+        label { display: block; font-size: 0.8rem; color: #d4af37; margin-bottom: 5px; }
+        input[type="range"] { width: 100px; cursor: pointer; }
+
+        #subtitle {
+            font-family: 'Courier Prime', monospace;
+            font-size: 1.2rem;
+            min-height: 1.5em;
+            color: #fff;
+            text-align: center;
+        }
+
+        #toggle-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 200;
+            background: #d4af37;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            font-family: 'Cinzel', serif;
+            font-weight: bold;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 1s 2s;
+        }
+
+        /* Overlay Vignetee */
+        .vignette {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            box-shadow: inset 0 0 150px #000;
+            z-index: 50;
+            pointer-events: none;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div id="theatre-container">
+        <div class="curtain left" id="c-left"></div>
+        <div class="curtain right" id="c-right"></div>
+        
+        <button id="toggle-btn" onclick="toggleTime()">Night Mode</button>
+
+        <div id="stage">
+            <div class="layer" id="bg-sky"></div>
+            <div class="layer" id="bg-mid"></div>
+            <canvas id="fx-canvas"></canvas>
+            <div class="layer" id="bg-fore"></div>
+            <div class="spotlight" id="spot"></div>
+            <div class="vignette"></div>
+        </div>
+
+        <div id="ui-panel">
+            <div class="controls">
+                <div class="control-group">
+                    <label>Cosy</label>
+                    <input type="range" id="cosy" min="0" max="100" value="0">
+                </div>
+                <div class="control-group">
+                    <label>Eerie</label>
+                    <input type="range" id="eerie" min="0" max="100" value="0">
+                </div>
+                <div class="control-group">
+                    <label>Heroic</label>
+                    <input type="range" id="heroic" min="0" max="100" value="0">
+                </div>
+            </div>
+            <div id="subtitle"></div>
+        </div>
+    </div>
+
+    <script>
+        // Elements
+        const cLeft = document.getElementById('c-left');
+        const cRight = document.getElementById('c-right');
+        const ui = document.getElementById('ui-panel');
+        const toggleBtn = document.getElementById('toggle-btn');
+        const subEl = document.getElementById('subtitle');
+        const spot = document.getElementById('spot');
+        const bgSky = document.getElementById('bg-sky');
+        const bgMid = document.getElementById('bg-mid');
+        const bgFore = document.getElementById('bg-fore');
+        
+        const canvas = document.getElementById('fx-canvas');
+        const ctx = canvas.getContext('2d');
+
+        // State
+        let timeOfDay = 'matinee';
+        let values = { cosy: 0, eerie: 0, heroic: 0 };
+        let particles = [];
+        let width, height;
+
+        // Reveal
+        setTimeout(() => {
+            cLeft.classList.add('open-left');
+            cRight.classList.add('open-right');
+            ui.style.opacity = 1;
+            toggleBtn.style.opacity = 1;
+            typewriter("Welcome to the Weather Theatre.");
+        }, 500);
+
+        // Listeners
+        ['cosy', 'eerie', 'heroic'].forEach(id => {
+            document.getElementById(id).addEventListener('input', (e) => {
+                values[id] = parseInt(e.target.value);
+                updateScene();
+            });
+        });
+
+        function toggleTime() {
+            timeOfDay = timeOfDay === 'matinee' ? 'night' : 'matinee';
+            toggleBtn.textContent = timeOfDay === 'matinee' ? 'Night Mode' : 'Matinée Mode';
+            updateScene();
+        }
+
+        function updateScene() {
+            const { cosy, eerie, heroic } = values;
+            
+            // --- Lighting & Color ---
+            let skyColor = timeOfDay === 'matinee' ? 'linear-gradient(to bottom, #87CEEB, #fff)' : 'linear-gradient(to bottom, #0f2027, #2c5364)';
+            let filterVal = 'none';
+            let spotOpacity = 0;
+
+            if (eerie > 50) {
+                skyColor = 'linear-gradient(to bottom, #232526, #414345)'; // Dark grey
+                filterVal = `grayscale(${eerie}%) contrast(${100 + heroic}%)`;
+                // type caption
+                if (Math.random() > 0.9) typewriter("A storm is brewing...");
+            }
+            
+            if (cosy > 50) {
+                skyColor = 'linear-gradient(to bottom, #ff9966, #ff5e62)'; // Warm sunset
+                filterVal = `sepia(${cosy * 0.5}%) saturate(${100 + cosy}%)`;
+            }
+
+            if (heroic > 50) {
+                spotOpacity = heroic / 200; // max 0.5
+            }
+
+            bgSky.style.background = skyColor;
+            bgMid.style.filter = filterVal;
+            bgFore.style.filter = filterVal;
+            spot.style.opacity = spotOpacity;
+
+            // --- Particle Config ---
+            // Reset and re-init on major change? No, dynamic update
+        }
+
+        // --- Typewriter ---
+        let typeTimeout;
+        function typewriter(text) {
+            clearTimeout(typeTimeout);
+            subEl.textContent = "";
+            let i = 0;
+            function step() {
+                if (i < text.length) {
+                    subEl.textContent += text.charAt(i);
+                    i++;
+                    typeTimeout = setTimeout(step, 50);
+                }
+            }
+            step();
+        }
+
+        // --- Canvas FX ---
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Particle System
+        // Eerie = Rain, Cosy = Snow/Embers, Heroic = Wind speed
+        class Particle {
+            constructor() {
+                this.reset();
+            }
+            reset() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * height;
+                this.size = Math.random() * 2 + 1;
+                this.speed = Math.random() * 2 + 1;
+            }
+            update() {
+                const { cosy, eerie, heroic } = values;
+                
+                let dx = 0;
+                let dy = 0;
+
+                if (eerie > 30) {
+                    // Rain
+                    dy = this.speed * (1 + eerie/20);
+                    dx = (heroic / 50); // Wind
+                } else if (cosy > 30) {
+                    // Snow/Embers
+                    dy = this.speed * 0.5;
+                    dx = Math.sin(this.y * 0.01) + (heroic/50);
+                } else {
+                    // Idle dust
+                    dy = 0.2;
+                    dx = Math.sin(this.y * 0.01);
+                }
+
+                this.x += dx;
+                this.y += dy;
+
+                if (this.y > height || this.x > width) {
+                    this.y = -10;
+                    this.x = Math.random() * width;
+                }
+            }
+            draw() {
+                const { cosy, eerie } = values;
+                ctx.beginPath();
+                if (eerie > 30) {
+                    // Rain Drop
+                    ctx.strokeStyle = 'rgba(174, 194, 224, 0.5)';
+                    ctx.lineWidth = 1;
+                    ctx.moveTo(this.x, this.y);
+                    ctx.lineTo(this.x + (values.heroic/50), this.y + 10);
+                    ctx.stroke();
+                } else if (cosy > 30) {
+                    // Snow
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI*2);
+                    ctx.fill();
+                } else {
+                    // Dust
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                    ctx.arc(this.x, this.y, 1, 0, Math.PI*2);
+                    ctx.fill();
+                }
+            }
+        }
+
+        for(let i=0; i<200; i++) particles.push(new Particle());
+
+        function animate() {
+            ctx.clearRect(0, 0, width, height);
+            particles.forEach(p => {
+                p.update();
+                p.draw();
+            });
+            requestAnimationFrame(animate);
+        }
+        animate();
+
+        // Parallax Mouse
+        document.addEventListener('mousemove', (e) => {
+            const mx = (e.clientX - width/2) / 50;
+            const my = (e.clientY - height/2) / 50;
+            
+            bgMid.style.transform = `translate(${mx}px, ${my}px)`;
+            bgFore.style.transform = `translate(${mx * 2}px, ${my * 2}px)`;
+        });
+
+    </script>
+</body>
+</html>

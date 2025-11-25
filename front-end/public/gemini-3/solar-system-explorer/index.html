@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solar System Explorer</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            color: white;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            cursor: grab;
+        }
+
+        #ui {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(20, 20, 20, 0.8);
+            padding: 15px 30px;
+            border-radius: 50px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            backdrop-filter: blur(5px);
+            border: 1px solid #333;
+        }
+
+        input[type="range"] {
+            width: 150px;
+        }
+
+        label { font-size: 0.9rem; color: #ccc; }
+
+        #info-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 250px;
+            background: rgba(20, 20, 20, 0.9);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #444;
+            display: none;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+
+        h2 { margin-top: 0; color: #4dabf7; }
+        .prop { margin: 10px 0; color: #bbb; font-size: 0.9rem; }
+        .val { color: #fff; font-weight: bold; }
+
+        .star-bg {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: -1;
+            background-image: radial-gradient(white 1px, transparent 1px);
+            background-size: 50px 50px;
+            opacity: 0.1;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="star-bg"></div>
+    <div id="canvas-container">
+        <canvas id="scene"></canvas>
+    </div>
+
+    <div id="ui">
+        <label>Speed</label>
+        <input type="range" id="speed" min="0" max="5" step="0.1" value="1">
+        <label>Zoom</label>
+        <input type="range" id="zoom" min="0.1" max="3" step="0.1" value="1">
+    </div>
+
+    <div id="info-panel">
+        <h2 id="p-name">Planet</h2>
+        <div class="prop">Distance: <span id="p-dist" class="val"></span> AU</div>
+        <div class="prop">Diameter: <span id="p-diam" class="val"></span> km</div>
+        <div class="prop">Orbit: <span id="p-orbit" class="val"></span> days</div>
+        <div style="margin-top:15px; font-size:0.8rem; opacity:0.7; line-height:1.4;" id="p-desc"></div>
+        <button onclick="document.getElementById('info-panel').style.display='none'" style="margin-top:15px; background:#333; color:#fff; border:none; padding:5px 10px; cursor:pointer;">Close</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('scene');
+        const ctx = canvas.getContext('2d');
+        let width, height;
+
+        // Config
+        let speed = 1;
+        let scale = 1;
+        let camPitch = 0.5; // Radians (approx 30 deg)
+        let camYaw = 0;
+        let time = 0;
+
+        // Planets Data (Simplified scale)
+        const planets = [
+            { name: "Sun", color: "#FDB813", size: 20, dist: 0, speed: 0, desc: "The star at the center of our Solar System." },
+            { name: "Mercury", color: "#A5A5A5", size: 4, dist: 40, speed: 4.1, desc: "The smallest planet in the Solar System and the closest to the Sun." },
+            { name: "Venus", color: "#E3BB76", size: 7, dist: 70, speed: 1.6, desc: "Second planet from the Sun. It has the hottest surface of any planet." },
+            { name: "Earth", color: "#22A6B3", size: 7.5, dist: 100, speed: 1, desc: "Our home. The only known planet to support life." },
+            { name: "Mars", color: "#DD4C49", size: 5, dist: 140, speed: 0.53, desc: "The Red Planet. Home to Olympus Mons, the largest volcano." },
+            { name: "Jupiter", color: "#D9A66E", size: 16, dist: 220, speed: 0.08, desc: "The largest planet. A gas giant with a Great Red Spot." },
+            { name: "Saturn", color: "#F4D03F", size: 14, dist: 300, speed: 0.03, desc: "Famous for its prominent ring system." },
+            { name: "Uranus", color: "#73C6B6", size: 10, dist: 380, speed: 0.01, desc: "An ice giant. It rotates on its side." },
+            { name: "Neptune", color: "#3498DB", size: 10, dist: 450, speed: 0.006, desc: "The furthest known planet. Dark, cold, and whipped by supersonic winds." }
+        ];
+
+        // Listeners
+        window.addEventListener('resize', resize);
+        document.getElementById('speed').addEventListener('input', e => speed = parseFloat(e.target.value));
+        document.getElementById('zoom').addEventListener('input', e => scale = parseFloat(e.target.value));
+
+        // Mouse Drag for Rotation
+        let isDragging = false;
+        let lastX, lastY;
+        const container = document.getElementById('canvas-container');
+
+        container.addEventListener('mousedown', e => { isDragging = true; lastX = e.clientX; lastY = e.clientY; container.style.cursor = 'grabbing'; });
+        window.addEventListener('mouseup', () => { isDragging = false; container.style.cursor = 'grab'; });
+        window.addEventListener('mousemove', e => {
+            if (!isDragging) return;
+            const dx = e.clientX - lastX;
+            const dy = e.clientY - lastY;
+            camYaw += dx * 0.005;
+            camPitch += dy * 0.005;
+            // Clamp pitch
+            camPitch = Math.max(0.1, Math.min(Math.PI/2 - 0.1, camPitch));
+            lastX = e.clientX;
+            lastY = e.clientY;
+        });
+
+        // Click detection (Simple raycast approx)
+        container.addEventListener('click', e => {
+            const rect = canvas.getBoundingClientRect();
+            const mx = e.clientX - rect.left;
+            const my = e.clientY - rect.top;
+            checkClick(mx, my);
+        });
+
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        resize();
+
+        function project(x, y, z) {
+            // Rotate Y (Yaw)
+            let x1 = x * Math.cos(camYaw) - z * Math.sin(camYaw);
+            let z1 = x * Math.sin(camYaw) + z * Math.cos(camYaw);
+            
+            // Rotate X (Pitch)
+            let y2 = y * Math.cos(camPitch) - z1 * Math.sin(camPitch);
+            let z2 = y * Math.sin(camPitch) + z1 * Math.cos(camPitch);
+
+            // Perspective
+            const fov = 500;
+            const dist = fov + z2;
+            const scaleFactor = fov / dist;
+            
+            const px = x1 * scaleFactor * scale + width / 2;
+            const py = y2 * scaleFactor * scale + height / 2;
+            const size = scaleFactor * scale; // Multiplier for radius
+
+            return { x: px, y: py, s: size, z: z2 };
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, width, height);
+            
+            // Sort planets by Z depth for occlusion
+            const renderList = [];
+
+            planets.forEach(p => {
+                // Calculate 3D pos
+                const angle = time * p.speed;
+                const x = Math.cos(angle) * p.dist * 2; // Spread out a bit
+                const z = Math.sin(angle) * p.dist * 2;
+                const y = 0; // Flat plane
+
+                const proj = project(x, y, z);
+                renderList.push({ p, proj, x, z });
+            });
+
+            // Draw orbits (background)
+            planets.forEach(p => {
+                if(p.dist === 0) return;
+                ctx.beginPath();
+                // Approximate orbit as ellipse? 
+                // Hard in 3D projection point-by-point. 
+                // Let's just draw 100 segments
+                ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+                for(let i=0; i<=60; i++) {
+                    const a = (i/60) * Math.PI * 2;
+                    const ox = Math.cos(a) * p.dist * 2;
+                    const oz = Math.sin(a) * p.dist * 2;
+                    const pp = project(ox, 0, oz);
+                    if(i===0) ctx.moveTo(pp.x, pp.y);
+                    else ctx.lineTo(pp.x, pp.y);
+                }
+                ctx.stroke();
+            });
+
+            // Sort back-to-front
+            renderList.sort((a, b) => b.proj.z - a.proj.z);
+
+            // Draw Planets
+            renderList.forEach(item => {
+                const { p, proj } = item;
+                const r = Math.max(2, p.size * proj.s); // Min size 2px
+
+                ctx.beginPath();
+                ctx.arc(proj.x, proj.y, r, 0, Math.PI * 2);
+                ctx.fillStyle = p.color;
+                
+                // Shadow
+                // Basic lighting simulation: Sun is at 0,0,0
+                // Dot product logic is complex, just radial gradient for effect
+                const grad = ctx.createRadialGradient(proj.x - r*0.3, proj.y - r*0.3, r*0.1, proj.x, proj.y, r);
+                grad.addColorStop(0, p.color);
+                grad.addColorStop(1, '#000');
+                
+                if (p.name === 'Sun') {
+                    ctx.fillStyle = p.color;
+                    ctx.shadowBlur = 50 * proj.s;
+                    ctx.shadowColor = p.color;
+                } else {
+                    ctx.fillStyle = grad;
+                    ctx.shadowBlur = 0;
+                }
+                
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+                // Rings for Saturn
+                if (p.name === 'Saturn') {
+                    ctx.beginPath();
+                    ctx.ellipse(proj.x, proj.y, r * 2, r * 0.5, 0, 0, Math.PI * 2);
+                    ctx.strokeStyle = 'rgba(200, 200, 150, 0.5)';
+                    ctx.lineWidth = 4 * proj.s;
+                    ctx.stroke();
+                }
+                
+                // Store hit area
+                p.hitArea = { x: proj.x, y: proj.y, r: r };
+            });
+
+            time += 0.005 * speed;
+            requestAnimationFrame(draw);
+        }
+
+        function checkClick(mx, my) {
+            // Check planets (reverse order of draw? No, z-order matters but simple distance check is fine for sparse system)
+            // Actually need to check front-most first.
+            // Let's just loop.
+            for (let p of planets) {
+                if (!p.hitArea) continue;
+                const dx = mx - p.hitArea.x;
+                const dy = my - p.hitArea.y;
+                if (dx*dx + dy*dy < p.hitArea.r * p.hitArea.r + 100) { // +100 margin for small planets
+                    showInfo(p);
+                    return;
+                }
+            }
+        }
+
+        function showInfo(p) {
+            const panel = document.getElementById('info-panel');
+            document.getElementById('p-name').textContent = p.name;
+            document.getElementById('p-name').style.color = p.color;
+            document.getElementById('p-dist').textContent = p.dist * 1.5; // Fake scale
+            document.getElementById('p-diam').textContent = p.size * 1000;
+            document.getElementById('p-orbit').textContent = Math.round(365 / (p.speed || 1));
+            document.getElementById('p-desc').textContent = p.desc;
+            panel.style.display = 'block';
+        }
+
+        draw();
+
+    </script>
+</body>
+</html>
