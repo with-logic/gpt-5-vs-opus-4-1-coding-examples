@@ -11,10 +11,10 @@ export default async function Home() {
       <main className="mx-auto w-full max-w-7xl py-8 px-4">
         <div className="text-center mb-12">
           <h1 className="text-5xl font-bold font-mono mb-6">
-            GPT-5 vs Claude Opus 4.1 vs Sonnet 4.5
+            GPT-5 vs Claude Opus 4.1 vs Sonnet 4.5 vs Gemini 3
           </h1>
           <p className="text-lg text-gray-600 mb-4">
-            Three-way comparison of AI coding capabilities
+            Four-way comparison of AI coding capabilities
           </p>
           <a 
             href="https://github.com/with-logic/gpt-5-vs-opus-4-1-coding-examples" 
@@ -47,7 +47,7 @@ export default async function Home() {
             the success we&apos;ve already been having.
           </p>
           <p className="text-gray-700 mb-3">
-            Each example below was generated using identical prompts given to OpenAI&apos;s GPT-5, Anthropic&apos;s Claude Opus 4.1, and Anthropic&apos;s Claude Sonnet 4.5.
+            Each example below was generated using identical prompts given to OpenAI&apos;s GPT-5, Anthropic&apos;s Claude Opus 4.1, Anthropic&apos;s Claude Sonnet 4.5, and Google&apos;s Gemini 3.
             All applications were created in a single prompt without manual editing, showcasing the raw capabilities of each model.
           </p>
           <p className="text-gray-700">

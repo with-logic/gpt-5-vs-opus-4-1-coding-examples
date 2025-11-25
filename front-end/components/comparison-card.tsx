@@ -45,6 +45,14 @@ export function ComparisonCard({ app }: { app: CodeExample }) {
           >
             Sonnet 4.5
           </a>
+          <a
+            href={`/gemini-3/${app.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="bg-blue-500 text-white py-2 px-3 rounded text-center hover:bg-blue-600 transition-colors text-sm font-medium shadow-sm"
+          >
+            Gemini 3
+          </a>
         </div>
         {app.tags && app.tags.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1">

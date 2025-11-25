@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fruit Catcher</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Comic Sans MS', 'Chalkboard SE', sans-serif;
+            background: linear-gradient(#87CEEB, #E0F7FA);
+            touch-action: none;
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 2rem;
+            color: #fff;
+            text-shadow: 2px 2px 0 #000;
+            pointer-events: none;
+        }
+        
+        #lives {
+            color: #ff5252;
+        }
+
+        #start-screen, #game-over-screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.5);
+            color: white;
+            z-index: 10;
+        }
+        
+        h1 { font-size: 4rem; margin: 0; text-shadow: 3px 3px 0 #ff9800; }
+        
+        button {
+            margin-top: 20px;
+            padding: 15px 40px;
+            font-size: 2rem;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            font-family: inherit;
+            box-shadow: 0 5px 0 #2E7D32;
+            transition: transform 0.1s;
+        }
+        
+        button:active {
+            transform: translateY(5px);
+            box-shadow: 0 0 0 #2E7D32;
+        }
+
+        .hidden { display: none !important; }
+
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+        <div id="ui-layer">
+            Score: <span id="score">0</span><br>
+            Lives: <span id="lives">❤️❤️❤️</span>
+        </div>
+
+        <div id="start-screen">
+            <h1>Fruit Catcher</h1>
+            <p style="font-size: 1.5rem;">Catch the falling fruits!</p>
+            <button onclick="startGame()">PLAY</button>
+        </div>
+
+        <div id="game-over-screen" class="hidden">
+            <h1>Game Over</h1>
+            <p style="font-size: 2rem;">Score: <span id="final-score">0</span></p>
+            <button onclick="startGame()">TRY AGAIN</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        let width, height;
+
+        // Assets (Emojis)
+        const fruits = ['🍎', '🍌', '🍇', '🍊', '🍓', '🍉', '🍍'];
+        const basketIcon = '🧺';
+
+        // State
+        let gameActive = false;
+        let score = 0;
+        let lives = 3;
+        let entities = [];
+        let basket = { x: 0, width: 100, height: 60 };
+        let spawnRate = 60;
+        let frameCount = 0;
+        let speedMultiplier = 1;
+
+        // Setup
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            basket.y = height - 100;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Input
+        window.addEventListener('mousemove', e => {
+            basket.x = e.clientX - basket.width / 2;
+        });
+        
+        window.addEventListener('touchmove', e => {
+            basket.x = e.touches[0].clientX - basket.width / 2;
+        });
+
+        window.addEventListener('keydown', e => {
+            if(e.key === 'ArrowLeft') basket.x -= 30;
+            if(e.key === 'ArrowRight') basket.x += 30;
+        });
+
+        function startGame() {
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('game-over-screen').classList.add('hidden');
+            
+            score = 0;
+            lives = 3;
+            entities = [];
+            speedMultiplier = 1;
+            gameActive = true;
+            basket.x = width / 2 - basket.width / 2;
+            
+            updateUI();
+            loop();
+        }
+
+        function spawnFruit() {
+            const fruit = {
+                x: Math.random() * (width - 50),
+                y: -50,
+                type: fruits[Math.floor(Math.random() * fruits.length)],
+                size: 50,
+                speed: (3 + Math.random() * 3) * speedMultiplier
+            };
+            entities.push(fruit);
+        }
+
+        function update() {
+            frameCount++;
+            
+            // Difficulty
+            if (frameCount % 600 === 0) speedMultiplier += 0.2; // Speed up every 10s roughly
+
+            // Spawn
+            if (frameCount % Math.max(20, Math.floor(60 / speedMultiplier)) === 0) {
+                spawnFruit();
+            }
+
+            // Move Entities
+            for (let i = entities.length - 1; i >= 0; i--) {
+                let f = entities[i];
+                f.y += f.speed;
+
+                // Collision with Basket
+                // Simple box collision
+                if (
+                    f.x < basket.x + basket.width &&
+                    f.x + f.size > basket.x &&
+                    f.y < basket.y + basket.height &&
+                    f.y + f.size > basket.y
+                ) {
+                    // Caught
+                    score++;
+                    updateUI();
+                    entities.splice(i, 1);
+                    // Pop effect?
+                    continue;
+                }
+
+                // Missed
+                if (f.y > height) {
+                    lives--;
+                    updateUI();
+                    entities.splice(i, 1);
+                    if (lives <= 0) gameOver();
+                }
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, width, height);
+
+            // Draw Basket
+            ctx.font = '80px Arial';
+            ctx.fillText(basketIcon, basket.x, basket.y + 70);
+
+            // Draw Fruits
+            ctx.font = '50px Arial';
+            entities.forEach(f => {
+                ctx.fillText(f.type, f.x, f.y + 40);
+            });
+        }
+
+        function loop() {
+            if (!gameActive) return;
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        function updateUI() {
+            document.getElementById('score').textContent = score;
+            let hearts = '';
+            for(let i=0; i<lives; i++) hearts += '❤️';
+            document.getElementById('lives').textContent = hearts;
+        }
+
+        function gameOver() {
+            gameActive = false;
+            document.getElementById('final-score').textContent = score;
+            document.getElementById('game-over-screen').classList.remove('hidden');
+        }
+
+    </script>
+</body>
+</html>

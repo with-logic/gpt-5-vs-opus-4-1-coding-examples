@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloud Painter | Sky Studio</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: linear-gradient(to bottom, #87CEEB 0%, #E0F7FA 100%);
+            font-family: 'Fredoka One', cursive;
+            touch-action: none; /* Prevent scrolling on mobile */
+        }
+
+        #ui-container {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 15px;
+            border-radius: 50px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+            z-index: 10;
+        }
+
+        .tool-btn {
+            width: 60px;
+            height: 60px;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            background: white;
+            box-shadow: 0 5px 10px rgba(0,0,0,0.1);
+            transition: transform 0.2s, background 0.2s;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            outline: none;
+        }
+
+        .tool-btn:hover {
+            transform: scale(1.1);
+            background: #fff9c4;
+        }
+
+        .tool-btn.active {
+            background: #FFEB3B;
+            transform: scale(1.1);
+            border: 3px solid #FBC02D;
+        }
+
+        #canvas-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="10" fill="white" stroke="%23aaa" stroke-width="2" opacity="0.8"/></svg>') 16 16, auto;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        .instruction {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 2rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+            pointer-events: none;
+            user-select: none;
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateX(-50%) translateY(0); }
+            50% { transform: translateX(-50%) translateY(-10px); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="instruction">Paint the Sky!</div>
+
+    <div id="canvas-container">
+        <canvas id="skyCanvas"></canvas>
+    </div>
+
+    <div id="ui-container">
+        <button class="tool-btn active" onclick="setTool('fluffy')" title="Fluffy Cloud">☁️</button>
+        <button class="tool-btn" onclick="setTool('wispy')" title="Wispy Cloud">💨</button>
+        <button class="tool-btn" onclick="spawnPlane()" title="Launch Plane">✈️</button>
+        <button class="tool-btn" onclick="clearSky()" title="Clear Sky">🗑️</button>
+        <button class="tool-btn" onclick="saveImage()" title="Save Art">📷</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('skyCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let width, height;
+        let particles = [];
+        let planes = [];
+        let isDrawing = false;
+        let currentTool = 'fluffy';
+        let mouse = { x: 0, y: 0 };
+        
+        // Setup
+        function resize() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Interaction
+        canvas.addEventListener('mousedown', startPaint);
+        canvas.addEventListener('mousemove', paint);
+        canvas.addEventListener('mouseup', endPaint);
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            mouse.x = e.touches[0].clientX;
+            mouse.y = e.touches[0].clientY;
+            startPaint();
+        });
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            mouse.x = e.touches[0].clientX;
+            mouse.y = e.touches[0].clientY;
+            paint(e);
+        });
+        canvas.addEventListener('touchend', endPaint);
+
+        function startPaint(e) {
+            isDrawing = true;
+            if(e && e.clientX) {
+                mouse.x = e.clientX;
+                mouse.y = e.clientY;
+            }
+            spawnPuff();
+        }
+
+        function endPaint() {
+            isDrawing = false;
+        }
+
+        function paint(e) {
+            if (!isDrawing) return;
+            if(e && e.clientX) {
+                mouse.x = e.clientX;
+                mouse.y = e.clientY;
+            }
+            // Spawn particles based on speed? Just spawn frequently
+            if (Math.random() > 0.5) spawnPuff();
+        }
+
+        // Classes
+        class CloudPuff {
+            constructor(x, y, type) {
+                this.x = x + (Math.random() - 0.5) * 20;
+                this.y = y + (Math.random() - 0.5) * 20;
+                this.type = type;
+                this.vx = 0.2 + Math.random() * 0.3; // Drift right
+                this.vy = (Math.random() - 0.5) * 0.1;
+                
+                if (type === 'fluffy') {
+                    this.radius = 20 + Math.random() * 30;
+                    this.alpha = 0.8;
+                    this.growth = 1; // Growing initially
+                } else {
+                    this.radius = 10 + Math.random() * 40; // longer
+                    this.alpha = 0.4;
+                    this.growth = 0;
+                }
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                
+                if (this.growth > 0) {
+                    this.radius += 0.5;
+                    this.growth -= 0.05;
+                }
+
+                // Wrap around screen? Or just disappear?
+                // Let's wrap for endless sky
+                if (this.x > width + 100) this.x = -100;
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                if (this.type === 'fluffy') {
+                    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                } else {
+                    // Wispy is an ellipse
+                    ctx.ellipse(this.x, this.y, this.radius * 2, this.radius * 0.5, 0, 0, Math.PI*2);
+                }
+                ctx.fillStyle = `rgba(255, 255, 255, ${this.alpha})`;
+                ctx.fill();
+            }
+        }
+
+        class Plane {
+            constructor() {
+                this.x = -100;
+                this.y = 50 + Math.random() * (height - 200);
+                this.speed = 3 + Math.random() * 2;
+                this.scale = 0.5 + Math.random() * 0.5;
+                this.color = ['#ff5252', '#448aff', '#69f0ae'][Math.floor(Math.random() * 3)];
+                this.trail = [];
+            }
+
+            update() {
+                this.x += this.speed;
+                // Add trail puff
+                if(Math.random() > 0.8) {
+                    this.trail.push({x: this.x, y: this.y, alpha: 1});
+                }
+                
+                // Update trails
+                for(let i=this.trail.length-1; i>=0; i--) {
+                    this.trail[i].x -= 0.5; // Drift back
+                    this.trail[i].alpha -= 0.02;
+                    if(this.trail[i].alpha <= 0) this.trail.splice(i, 1);
+                }
+            }
+
+            draw(ctx) {
+                // Draw trails
+                ctx.fillStyle = 'rgba(255,255,255,0.6)';
+                this.trail.forEach(t => {
+                    ctx.beginPath();
+                    ctx.arc(t.x, t.y, 5, 0, Math.PI*2);
+                    ctx.fill();
+                });
+
+                // Draw Plane
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.scale(this.scale, this.scale);
+                
+                ctx.fillStyle = this.color;
+                // Fuselage
+                ctx.beginPath();
+                ctx.ellipse(0, 0, 40, 10, 0, 0, Math.PI*2);
+                ctx.fill();
+                // Wings
+                ctx.beginPath();
+                ctx.moveTo(-10, 0);
+                ctx.lineTo(-20, -30);
+                ctx.lineTo(10, 0);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.moveTo(-10, 0);
+                ctx.lineTo(-20, 20); // bottom wing perspective
+                ctx.lineTo(10, 0);
+                ctx.fill();
+                // Tail
+                ctx.beginPath();
+                ctx.moveTo(-30, 0);
+                ctx.lineTo(-40, -15);
+                ctx.lineTo(-35, 0);
+                ctx.fill();
+                
+                ctx.restore();
+            }
+        }
+
+        function spawnPuff() {
+            particles.push(new CloudPuff(mouse.x, mouse.y, currentTool));
+        }
+
+        // Animation Loop
+        function animate() {
+            ctx.clearRect(0, 0, width, height);
+
+            // Draw all particles
+            particles.forEach(p => {
+                p.update();
+                p.draw(ctx);
+            });
+
+            // Draw planes
+            planes.forEach((p, index) => {
+                p.update();
+                p.draw(ctx);
+                if (p.x > width + 100) planes.splice(index, 1);
+            });
+
+            requestAnimationFrame(animate);
+        }
+        animate();
+
+        // UI Functions
+        function setTool(tool) {
+            currentTool = tool;
+            document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+            if(tool === 'fluffy') document.querySelector('button[title="Fluffy Cloud"]').classList.add('active');
+            if(tool === 'wispy') document.querySelector('button[title="Wispy Cloud"]').classList.add('active');
+        }
+
+        function spawnPlane() {
+            planes.push(new Plane());
+        }
+
+        function clearSky() {
+            if(confirm("Clear the sky?")) {
+                particles = [];
+                planes = [];
+            }
+        }
+
+        function saveImage() {
+            const link = document.createElement('a');
+            link.download = 'my-sky-painting.png';
+            
+            // We need to composite the background first because canvas is transparent
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = width;
+            tempCanvas.height = height;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            // Draw gradient
+            const grd = tempCtx.createLinearGradient(0, 0, 0, height);
+            grd.addColorStop(0, "#87CEEB");
+            grd.addColorStop(1, "#E0F7FA");
+            tempCtx.fillStyle = grd;
+            tempCtx.fillRect(0, 0, width, height);
+            
+            // Draw existing canvas
+            tempCtx.drawImage(canvas, 0, 0);
+            
+            link.href = tempCanvas.toDataURL();
+            link.click();
+        }
+    </script>
+</body>
+</html>
