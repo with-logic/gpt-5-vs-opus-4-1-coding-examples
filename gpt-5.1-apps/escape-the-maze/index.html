@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Escape the Maze</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #0d111a;
+        --panel: #111a2b;
+        --wall: #8ec5ff;
+        --player: #ffb347;
+        --goal: #4ade80;
+        --text: #e2e8f0;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Space Grotesk", system-ui, sans-serif;
+        background: radial-gradient(circle at top, #1a2a4a, #05070b 70%);
+        color: var(--text);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+      }
+      .game {
+        width: min(680px, 100%);
+        background: var(--panel);
+        border-radius: 1.5rem;
+        padding: 2rem;
+        box-shadow: 0 40px 120px rgba(0, 0, 0, 0.6);
+      }
+      header {
+        text-align: center;
+        margin-bottom: 1.5rem;
+      }
+      h1 {
+        margin: 0;
+        letter-spacing: 0.2em;
+      }
+      .stats {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+        font-size: 0.95rem;
+      }
+      canvas {
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        border-radius: 1rem;
+        background: #05070b;
+        border: 2px solid rgba(142, 197, 255, 0.3);
+      }
+      button {
+        width: 100%;
+        border: none;
+        border-radius: 0.75rem;
+        padding: 0.9rem;
+        margin-top: 1rem;
+        background: var(--wall);
+        color: #051220;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .message {
+        margin-top: 1rem;
+        min-height: 1.2rem;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="game">
+      <header>
+        <h1>Escape the Maze</h1>
+        <p>Use arrow keys to guide the glowing marker from start to finish. Beat the shortest path for bonus bragging rights.</p>
+      </header>
+      <div class="stats">
+        <span>Time: <strong id="timer">0.0s</strong></span>
+        <span>Moves: <strong id="moves">0</strong></span>
+        <span>Optimal: <strong id="optimal">0</strong></span>
+      </div>
+      <canvas id="maze" width="500" height="500" role="img" aria-label="Maze board"></canvas>
+      <button id="replay">Generate new maze</button>
+      <div class="message" id="message"></div>
+    </div>
+
+    <script>
+      const size = 12;
+      const canvas = document.getElementById("maze");
+      const ctx = canvas.getContext("2d");
+      const timerEl = document.getElementById("timer");
+      const movesEl = document.getElementById("moves");
+      const optimalEl = document.getElementById("optimal");
+      const messageEl = document.getElementById("message");
+      const replayBtn = document.getElementById("replay");
+      const cellSize = canvas.width / size;
+      let grid, player, goal, timer, elapsed, moves, shortest;
+
+      function initGrid() {
+        grid = Array.from({ length: size }, (_, y) =>
+          Array.from({ length: size }, (_, x) => ({ x, y, walls: { top: true, right: true, bottom: true, left: true }, visited: false }))
+        );
+      }
+
+      function neighbors(cell) {
+        const { x, y } = cell;
+        const dirs = [
+          { dx: 0, dy: -1, wall: "top", opposite: "bottom" },
+          { dx: 1, dy: 0, wall: "right", opposite: "left" },
+          { dx: 0, dy: 1, wall: "bottom", opposite: "top" },
+          { dx: -1, dy: 0, wall: "left", opposite: "right" },
+        ];
+        return dirs
+          .map((dir) => ({ dir, cell: grid[y + dir.dy]?.[x + dir.dx] }))
+          .filter((entry) => entry.cell && !entry.cell.visited);
+      }
+
+      function carveMaze(cell) {
+        cell.visited = true;
+        const shuffled = neighbors(cell).sort(() => Math.random() - 0.5);
+        shuffled.forEach(({ dir, cell: next }) => {
+          if (!next.visited) {
+            cell.walls[dir.wall] = false;
+            next.walls[dir.opposite] = false;
+            carveMaze(next);
+          }
+        });
+      }
+
+      function drawMaze() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = "var(--wall)";
+        ctx.lineWidth = 3;
+        grid.forEach((row) => {
+          row.forEach((cell) => {
+            const x = cell.x * cellSize;
+            const y = cell.y * cellSize;
+            ctx.beginPath();
+            if (cell.walls.top) {
+              ctx.moveTo(x, y);
+              ctx.lineTo(x + cellSize, y);
+            }
+            if (cell.walls.right) {
+              ctx.moveTo(x + cellSize, y);
+              ctx.lineTo(x + cellSize, y + cellSize);
+            }
+            if (cell.walls.bottom) {
+              ctx.moveTo(x, y + cellSize);
+              ctx.lineTo(x + cellSize, y + cellSize);
+            }
+            if (cell.walls.left) {
+              ctx.moveTo(x, y);
+              ctx.lineTo(x, y + cellSize);
+            }
+            ctx.stroke();
+          });
+        });
+        drawGoal();
+        drawPlayer();
+      }
+
+      function drawPlayer() {
+        ctx.fillStyle = "var(--player)";
+        ctx.beginPath();
+        ctx.arc(player.x * cellSize + cellSize / 2, player.y * cellSize + cellSize / 2, cellSize / 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      function drawGoal() {
+        ctx.fillStyle = "var(--goal)";
+        ctx.fillRect(goal.x * cellSize + cellSize * 0.2, goal.y * cellSize + cellSize * 0.2, cellSize * 0.6, cellSize * 0.6);
+      }
+
+      function canMove(from, direction) {
+        const cell = grid[from.y][from.x];
+        if (cell.walls[direction]) return false;
+        const offsets = { top: { x: 0, y: -1 }, right: { x: 1, y: 0 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 } };
+        const dest = { x: from.x + offsets[direction].x, y: from.y + offsets[direction].y };
+        return dest.x >= 0 && dest.x < size && dest.y >= 0 && dest.y < size;
+      }
+
+      function move(direction) {
+        if (!canMove(player, direction)) return;
+        const offsets = { top: { x: 0, y: -1 }, right: { x: 1, y: 0 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 } };
+        player.x += offsets[direction].x;
+        player.y += offsets[direction].y;
+        moves += 1;
+        movesEl.textContent = moves;
+        drawMaze();
+        checkWin();
+      }
+
+      function handleKey(event) {
+        const map = {
+          ArrowUp: "top",
+          ArrowRight: "right",
+          ArrowDown: "bottom",
+          ArrowLeft: "left",
+        };
+        const direction = map[event.key];
+        if (direction) {
+          event.preventDefault();
+          if (!timer) startTimer();
+          move(direction);
+        }
+      }
+
+      function startTimer() {
+        timer = setInterval(() => {
+          elapsed += 0.1;
+          timerEl.textContent = `${elapsed.toFixed(1)}s`;
+        }, 100);
+      }
+
+      function stopTimer() {
+        clearInterval(timer);
+        timer = null;
+      }
+
+      function bfsShortest() {
+        const queue = [{ x: 0, y: 0, dist: 0 }];
+        const visited = new Set(["0-0"]);
+        while (queue.length) {
+          const current = queue.shift();
+          if (current.x === goal.x && current.y === goal.y) return current.dist;
+          const dirs = ["top", "right", "bottom", "left"];
+          dirs.forEach((dir) => {
+            if (!grid[current.y][current.x].walls[dir]) {
+              const offsets = { top: { x: 0, y: -1 }, right: { x: 1, y: 0 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 } };
+              const nx = current.x + offsets[dir].x;
+              const ny = current.y + offsets[dir].y;
+              const key = `${nx}-${ny}`;
+              if (!visited.has(key)) {
+                visited.add(key);
+                queue.push({ x: nx, y: ny, dist: current.dist + 1 });
+              }
+            }
+          });
+        }
+        return Infinity;
+      }
+
+      function checkWin() {
+        if (player.x === goal.x && player.y === goal.y) {
+          stopTimer();
+          const bonus = moves <= shortest ? "Perfect path!" : "Nice escape.";
+          messageEl.textContent = `${bonus} Time ${elapsed.toFixed(1)}s · Moves ${moves}`;
+        }
+      }
+
+      function reset() {
+        initGrid();
+        carveMaze(grid[0][0]);
+        player = { x: 0, y: 0 };
+        goal = { x: size - 1, y: size - 1 };
+        moves = 0;
+        elapsed = 0;
+        shortest = bfsShortest();
+        optimalEl.textContent = shortest;
+        movesEl.textContent = moves;
+        timerEl.textContent = "0.0s";
+        messageEl.textContent = "";
+        clearInterval(timer);
+        timer = null;
+        drawMaze();
+      }
+
+      document.addEventListener("keydown", handleKey);
+      replayBtn.addEventListener("click", reset);
+      reset();
+    </script>
+  </body>
+</html>

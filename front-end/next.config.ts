@@ -7,7 +7,7 @@ function detectAppPaths(): Array<{ source: string; destination: string }> {
 
   try {
     const publicDir = path.join(__dirname, "public");
-    const modelDirs = ["gpt-5", "opus-4.1", "opus-4.5", "sonnet-4.5", "gemini-3"];
+    const modelDirs = ["gpt-5", "gpt-5.1", "opus-4.1", "opus-4.5", "sonnet-4.5", "gemini-3"];
 
     for (const modelDir of modelDirs) {
       const modelPath = path.join(publicDir, modelDir);
@@ -39,8 +39,15 @@ const nextConfig: NextConfig = {
   output: "export",
   trailingSlash: true,
   async rewrites() {
-    // Allow pretty URLs in dev by serving /model/app -> /model/app/index.html
-    return detectAppPaths();
+    const appRewrites = detectAppPaths();
+    return [
+      // Client-side routing for compare pages (dev server only)
+      {
+        source: "/compare/:path*",
+        destination: "/",
+      },
+      ...appRewrites,
+    ];
   },
   // Required for Next/Image with static export
   images: { unoptimized: true },

@@ -19,41 +19,17 @@ async function main() {
   const outDir = path.join(frontEndDir, "out");
   const publicDir = path.join(frontEndDir, "public");
   
-  // Copy gpt-5, opus-4.1, opus-4.5, sonnet-4.5, and gemini-3 directories to out if they exist
-  const gpt5Src = path.join(publicDir, "gpt-5");
-  const opus41Src = path.join(publicDir, "opus-4.1");
-  const opus45Src = path.join(publicDir, "opus-4.5");
-  const sonnet45Src = path.join(publicDir, "sonnet-4.5");
-  const gemini3Src = path.join(publicDir, "gemini-3");
-  const gpt5Dest = path.join(outDir, "gpt-5");
-  const opus41Dest = path.join(outDir, "opus-4.1");
-  const opus45Dest = path.join(outDir, "opus-4.5");
-  const sonnet45Dest = path.join(outDir, "sonnet-4.5");
-  const gemini3Dest = path.join(outDir, "gemini-3");
+  // Copy model directories to out if they exist
+  const modelDirs = ["gpt-5", "gpt-5.1", "opus-4.1", "opus-4.5", "sonnet-4.5", "gemini-3"];
 
-  if (await exists(gpt5Src)) {
-    console.log(`[post-build] Copying ${gpt5Src} -> ${gpt5Dest}`);
-    await fs.cp(gpt5Src, gpt5Dest, { recursive: true, force: true });
-  }
+  for (const modelDir of modelDirs) {
+    const src = path.join(publicDir, modelDir);
+    const dest = path.join(outDir, modelDir);
 
-  if (await exists(opus41Src)) {
-    console.log(`[post-build] Copying ${opus41Src} -> ${opus41Dest}`);
-    await fs.cp(opus41Src, opus41Dest, { recursive: true, force: true });
-  }
-
-  if (await exists(opus45Src)) {
-    console.log(`[post-build] Copying ${opus45Src} -> ${opus45Dest}`);
-    await fs.cp(opus45Src, opus45Dest, { recursive: true, force: true });
-  }
-
-  if (await exists(sonnet45Src)) {
-    console.log(`[post-build] Copying ${sonnet45Src} -> ${sonnet45Dest}`);
-    await fs.cp(sonnet45Src, sonnet45Dest, { recursive: true, force: true });
-  }
-
-  if (await exists(gemini3Src)) {
-    console.log(`[post-build] Copying ${gemini3Src} -> ${gemini3Dest}`);
-    await fs.cp(gemini3Src, gemini3Dest, { recursive: true, force: true });
+    if (await exists(src)) {
+      console.log(`[post-build] Copying ${src} -> ${dest}`);
+      await fs.cp(src, dest, { recursive: true, force: true });
+    }
   }
   
   // Copy logo

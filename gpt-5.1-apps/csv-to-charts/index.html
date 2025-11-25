@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Data Visualization Playground</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #05060a;
+        --panel: #0c1020;
+        --accent: #7c5dff;
+        --muted: #7c829d;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: "Inter", system-ui, sans-serif;
+        background: radial-gradient(circle at top, #2b2e45, #05060a 60%);
+        color: #fdfdff;
+        min-height: 100vh;
+        padding: 2rem;
+      }
+      .app {
+        max-width: 1100px;
+        margin: 0 auto;
+        background: var(--panel);
+        border-radius: 2rem;
+        padding: clamp(1.5rem, 4vw, 3rem);
+        box-shadow: 0 40px 120px rgba(0, 0, 0, 0.5);
+      }
+      header {
+        margin-bottom: 2rem;
+      }
+      h1 {
+        margin-bottom: 0.5rem;
+      }
+      p {
+        margin: 0;
+        color: var(--muted);
+      }
+      .controls {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+      }
+      label {
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--muted);
+        display: block;
+        margin-bottom: 0.3rem;
+      }
+      input,
+      select,
+      button {
+        width: 100%;
+        border-radius: 0.8rem;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.04);
+        color: #fff;
+        padding: 0.75rem 1rem;
+        font: inherit;
+      }
+      button {
+        border: none;
+        background: var(--accent);
+        cursor: pointer;
+      }
+      .canvas-wrap {
+        background: rgba(255, 255, 255, 0.03);
+        border-radius: 1.5rem;
+        padding: 1rem;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        position: relative;
+      }
+      canvas {
+        width: 100%;
+        height: 480px;
+      }
+      .status {
+        margin-top: 0.5rem;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header>
+        <h1>Data Visualization Playground</h1>
+        <p>Drop a CSV, pick a chart type, remix the palette, and export a snapshot.</p>
+      </header>
+      <div class="controls">
+        <div>
+          <label for="csv">Upload CSV</label>
+          <input type="file" id="csv" accept=".csv" />
+        </div>
+        <div>
+          <label for="chartType">Chart type</label>
+          <select id="chartType">
+            <option value="bar">Bar</option>
+            <option value="line">Line</option>
+            <option value="scatter">Scatter</option>
+          </select>
+        </div>
+        <div>
+          <label for="color">Accent color</label>
+          <input type="color" id="color" value="#7c5dff" />
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button id="save">Save image</button>
+        </div>
+      </div>
+      <div class="canvas-wrap">
+        <canvas id="chart" width="1000" height="480" aria-label="Chart preview"></canvas>
+      </div>
+      <div class="status" id="status">Awaiting data… first column as labels, rest numeric.</div>
+    </div>
+
+    <script>
+      const fileInput = document.getElementById("csv");
+      const chartType = document.getElementById("chartType");
+      const colorInput = document.getElementById("color");
+      const canvas = document.getElementById("chart");
+      const ctx = canvas.getContext("2d");
+      const statusEl = document.getElementById("status");
+      let dataset = null;
+
+      function parseCSV(text) {
+        return text
+          .trim()
+          .split(/\r?\n/)
+          .map((line) => line.split(",").map((value) => value.trim()));
+      }
+
+      function render() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#05060a";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        if (!dataset) {
+          ctx.fillStyle = "rgba(255,255,255,0.4)";
+          ctx.font = "24px Inter";
+          ctx.fillText("Upload CSV to begin", 30, 60);
+          return;
+        }
+        const { labels, series } = dataset;
+        const margin = 60;
+        const width = canvas.width - margin * 2;
+        const height = canvas.height - margin * 2;
+        ctx.strokeStyle = "rgba(255,255,255,0.2)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.rect(margin, margin, width, height);
+        ctx.stroke();
+
+        const values = series.flat();
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        const color = colorInput.value;
+
+        function yScale(val) {
+          const ratio = (val - min) / (max - min || 1);
+          return margin + height - ratio * height;
+        }
+
+        if (chartType.value === "bar") {
+          const barWidth = width / labels.length;
+          series.forEach((row, index) => {
+            ctx.fillStyle = `${color}${Math.floor(255 - index * 40).toString(16).padStart(2, "0")}`;
+            row.forEach((value, i) => {
+              const x = margin + i * barWidth + (barWidth / series.length) * index;
+              const y = yScale(value);
+              const h = margin + height - y;
+              ctx.fillRect(x + 4, y, barWidth / series.length - 8, h);
+            });
+          });
+        }
+
+        if (chartType.value === "line") {
+          series.forEach((row, index) => {
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            row.forEach((value, i) => {
+              const x = margin + (i / (labels.length - 1)) * width;
+              const y = yScale(value);
+              if (i === 0) ctx.moveTo(x, y);
+              else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+          });
+        }
+
+        if (chartType.value === "scatter") {
+          ctx.fillStyle = color;
+          series.forEach((row) => {
+            row.forEach((value, i) => {
+              const x = margin + (i / (labels.length - 1)) * width;
+              const y = yScale(value);
+              ctx.beginPath();
+              ctx.arc(x, y, 6, 0, Math.PI * 2);
+              ctx.fill();
+            });
+          });
+        }
+
+        ctx.fillStyle = "rgba(255,255,255,0.6)";
+        ctx.font = "12px Inter";
+        labels.forEach((label, i) => {
+          const x = margin + (labels.length === 1 ? 0 : (i / (labels.length - 1)) * width);
+          ctx.fillText(label, x, canvas.height - 15);
+        });
+      }
+
+      fileInput.addEventListener("change", (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const matrix = parseCSV(reader.result);
+          if (matrix.length < 2) {
+            statusEl.textContent = "Need at least header and one row.";
+            return;
+          }
+          const labels = matrix.slice(1).map((row) => row[0]);
+          const series = [];
+          for (let col = 1; col < matrix[0].length; col++) {
+            series.push(matrix.slice(1).map((row) => Number(row[col])));
+          }
+          dataset = { labels, series };
+          statusEl.textContent = `Loaded ${matrix.length - 1} rows × ${matrix[0].length - 1} metrics.`;
+          render();
+        };
+        reader.readAsText(file);
+      });
+
+      chartType.addEventListener("change", render);
+      colorInput.addEventListener("input", render);
+      document.getElementById("save").addEventListener("click", () => {
+        const url = canvas.toDataURL("image/png");
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "chart.png";
+        link.click();
+      });
+
+      render();
+    </script>
+  </body>
+</html>
