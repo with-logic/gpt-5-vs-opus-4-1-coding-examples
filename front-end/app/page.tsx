@@ -2,6 +2,7 @@ export const dynamic = "force-static";
 import { loadApps } from "@/lib/code-examples";
 import { AppGridWithRouting } from "@/components/app-grid-with-routing";
 import { MODELS } from "@/lib/models";
+import Link from "next/link";
 
 export default async function Home() {
   const apps = await loadApps();
@@ -11,11 +12,11 @@ export default async function Home() {
       {/* Header */}
       <header className="border-b border-neutral-200">
         <div className="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
-          <a href="/" className="flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logic_brandmark.png" alt="Logic" className="w-8 h-8" />
-            <span className="font-semibold text-neutral-900">Agentic Coding Arena</span>
-          </a>
+            <span className="font-semibold text-neutral-900">Logic's Agentic Coding Arena</span>
+          </Link>
           <div className="flex items-center gap-4">
             <a
               href="https://logic.inc"

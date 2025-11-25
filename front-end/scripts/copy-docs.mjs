@@ -49,6 +49,7 @@ async function main() {
   const frontEndDir = path.resolve(__dirname, "..");
   const repoRoot = path.resolve(frontEndDir, "..");
   const gpt5Dir = path.join(repoRoot, "gpt-5-apps");
+  const gpt51Dir = path.join(repoRoot, "gpt-5.1-apps");
   const opus41Dir = path.join(repoRoot, "opus-4.1-apps");
   const opus45Dir = path.join(repoRoot, "opus-4.5-apps");
   const sonnet45Dir = path.join(repoRoot, "sonnet-4.5-apps");
@@ -74,6 +75,26 @@ async function main() {
     }
   } else {
     console.log(`[copy-apps] No gpt-5-apps directory found at ${gpt5Dir}, skipping.`);
+  }
+
+  // Copy GPT-5.1 apps to public/gpt-5.1/
+  if (await exists(gpt51Dir)) {
+    const gpt51PublicDir = path.join(publicDir, "gpt-5.1");
+    await rimrafDirIfExists(gpt51PublicDir);
+    await fs.mkdir(gpt51PublicDir, { recursive: true });
+
+    const gpt51Entries = await fs.readdir(gpt51Dir, { withFileTypes: true });
+    for (const entry of gpt51Entries) {
+      const s = path.join(gpt51Dir, entry.name);
+      const d = path.join(gpt51PublicDir, entry.name);
+
+      if (entry.isDirectory()) {
+        console.log(`[copy-apps] Copying GPT-5.1 ${s} -> ${d}`);
+        await copyDir(s, d);
+      }
+    }
+  } else {
+    console.log(`[copy-apps] No gpt-5.1-apps directory found at ${gpt51Dir}, skipping.`);
   }
 
   // Copy Opus 4.1 apps to public/opus-4.1/

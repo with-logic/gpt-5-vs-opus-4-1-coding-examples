@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { CodeExample } from "@/lib/code-examples";
 import { MODELS as BASE_MODELS } from "@/lib/models";
 
@@ -13,6 +13,7 @@ const MODELS = BASE_MODELS.map(m => ({
 
 interface AppComparisonViewProps {
   app: CodeExample;
+  apps?: CodeExample[];
   isOpen: boolean;
   onClose: () => void;
   initialModels?: string[];
@@ -22,6 +23,7 @@ interface AppComparisonViewProps {
 
 export function AppComparisonView({
   app,
+  apps = [],
   isOpen,
   onClose,
   initialModels = ["gpt-5", "opus-4.5"],
@@ -32,6 +34,9 @@ export function AppComparisonView({
   const [viewMode, setViewMode] = useState<"side-by-side" | "tabs">(initialView);
   const [activeTab, setActiveTab] = useState(initialTab);
   const [copied, setCopied] = useState(false);
+  const [hasPushedState, setHasPushedState] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Update state when initial props change (for URL navigation)
   useEffect(() => {
@@ -40,33 +45,64 @@ export function AppComparisonView({
     setActiveTab(initialTab);
   }, [initialModels, initialView, initialTab]);
 
-  // Update URL when state changes
-  const updateUrl = useCallback((models: string[], mode: "side-by-side" | "tabs", tab: string) => {
-    if (!isOpen) return;
+  // Build the comparison URL
+  const buildUrl = useCallback((appId: string, models: string[], mode: "side-by-side" | "tabs", tab: string) => {
     const params = new URLSearchParams();
     params.set("models", models.join(","));
     params.set("view", mode);
     if (mode === "tabs") params.set("tab", tab);
-    const newUrl = `/compare/${app.id}?${params.toString()}`;
-    window.history.replaceState({ app: app.id }, "", newUrl);
-  }, [isOpen, app.id]);
+    return `/compare/${appId}?${params.toString()}`;
+  }, []);
 
-  // Update URL when comparison opens or state changes
+  // Navigation between apps
+  const currentIndex = apps.findIndex(a => a.id === app.id);
+  const prevApp = currentIndex > 0 ? apps[currentIndex - 1] : null;
+  const nextApp = currentIndex < apps.length - 1 ? apps[currentIndex + 1] : null;
+
+  const navigateToApp = useCallback((targetApp: CodeExample) => {
+    const newUrl = buildUrl(targetApp.id, selectedModels, viewMode, activeTab);
+    window.history.pushState({ app: targetApp.id }, "", newUrl);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }, [buildUrl, selectedModels, viewMode, activeTab]);
+
+  // Push initial state when comparison opens (only once)
   useEffect(() => {
-    if (isOpen) {
-      updateUrl(selectedModels, viewMode, activeTab);
+    if (isOpen && !hasPushedState) {
+      const currentPath = window.location.pathname;
+      // Only push if we're not already on this comparison URL (i.e., we clicked to open it)
+      if (!currentPath.startsWith(`/compare/${app.id}`)) {
+        const newUrl = buildUrl(app.id, selectedModels, viewMode, activeTab);
+        window.history.pushState({ app: app.id }, "", newUrl);
+      }
+      setHasPushedState(true);
     }
-  }, [isOpen, selectedModels, viewMode, activeTab, updateUrl]);
+    if (!isOpen) {
+      setHasPushedState(false);
+    }
+  }, [isOpen, hasPushedState, app.id, selectedModels, viewMode, activeTab, buildUrl]);
 
-  // Handle escape key and closing
+  // Update URL when state changes (after initial push)
+  useEffect(() => {
+    if (isOpen && hasPushedState) {
+      const newUrl = buildUrl(app.id, selectedModels, viewMode, activeTab);
+      window.history.replaceState({ app: app.id }, "", newUrl);
+    }
+  }, [isOpen, hasPushedState, selectedModels, viewMode, activeTab, app.id, buildUrl]);
+
+  // Handle closing via escape key or X button
   const handleClose = useCallback(() => {
-    window.history.pushState({}, "", "/");
-    onClose();
-  }, [onClose]);
+    window.history.back();
+  }, []);
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === "Escape") handleClose();
+      if (e.key === "Escape") {
+        if (isDropdownOpen) {
+          setIsDropdownOpen(false);
+        } else {
+          handleClose();
+        }
+      }
     };
     if (isOpen) {
       document.addEventListener("keydown", handleEscape);
@@ -76,7 +112,22 @@ export function AppComparisonView({
       document.removeEventListener("keydown", handleEscape);
       document.body.style.overflow = "";
     };
-  }, [isOpen, handleClose]);
+  }, [isOpen, handleClose, isDropdownOpen]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    if (isDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isDropdownOpen]);
 
   if (!isOpen) return null;
 
@@ -106,14 +157,64 @@ export function AppComparisonView({
     <div className="fixed inset-0 z-50 bg-white flex flex-col">
       {/* Header */}
       <header className="border-b border-neutral-200 flex-shrink-0 px-4 py-2 flex items-center justify-between gap-4">
-        {/* Left - logo & app name */}
+        {/* Left - logo & app name with nav arrows */}
         <div className="flex items-center gap-3 min-w-0">
-          <a href="/" className="flex-shrink-0">
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+          <a href="/" className="flex-shrink-0" title="Back to home">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logic_brandmark.png" alt="Logic" className="w-7 h-7" />
           </a>
           <span className="text-neutral-300">/</span>
-          <h2 className="font-medium text-neutral-900 truncate">{app.title}</h2>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <button
+              onClick={() => prevApp && navigateToApp(prevApp)}
+              disabled={!prevApp}
+              className={`p-0.5 transition-colors ${prevApp ? 'text-neutral-400 hover:text-neutral-900 cursor-pointer' : 'text-neutral-200 cursor-not-allowed'}`}
+              title={prevApp ? `Previous: ${prevApp.title}` : 'No previous example'}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+            <button
+              onClick={() => nextApp && navigateToApp(nextApp)}
+              disabled={!nextApp}
+              className={`p-0.5 transition-colors ${nextApp ? 'text-neutral-400 hover:text-neutral-900 cursor-pointer' : 'text-neutral-200 cursor-not-allowed'}`}
+              title={nextApp ? `Next: ${nextApp.title}` : 'No next example'}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+            {/* Title with dropdown */}
+            <div className="relative" ref={dropdownRef}>
+              <button
+                onClick={() => apps.length > 0 && setIsDropdownOpen(!isDropdownOpen)}
+                className={`font-medium text-neutral-900 truncate max-w-[200px] px-1.5 py-0.5 -mx-1.5 -my-0.5 rounded transition-all ${apps.length === 0 ? 'cursor-default' : 'cursor-pointer hover:outline hover:outline-1 hover:outline-neutral-300'}`}
+              >
+                {app.title}
+              </button>
+              {isDropdownOpen && apps.length > 0 && (
+                <div className="absolute top-full left-0 mt-1 w-72 max-h-80 overflow-y-auto bg-white border border-neutral-200 shadow-lg z-50">
+                  {apps.map((a, index) => (
+                    <button
+                      key={a.id}
+                      onClick={() => {
+                        navigateToApp(a);
+                        setIsDropdownOpen(false);
+                      }}
+                      className={`w-full px-3 py-2 text-left text-sm hover:bg-neutral-50 transition-colors flex items-center gap-2 ${
+                        a.id === app.id ? 'bg-neutral-100 font-medium' : ''
+                      }`}
+                    >
+                      <span className="text-neutral-400 text-xs w-5">{index + 1}</span>
+                      <span className="truncate">{a.title}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Center - model selection */}
