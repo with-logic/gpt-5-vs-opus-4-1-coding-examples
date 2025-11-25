@@ -38,6 +38,14 @@ export function ComparisonCard({ app }: { app: CodeExample }) {
             Opus 4.1
           </a>
           <a
+            href={`/opus-4.5/${app.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="bg-orange-500 text-white py-2 px-3 rounded text-center hover:bg-orange-600 transition-colors text-sm font-medium shadow-sm"
+          >
+            Opus 4.5
+          </a>
+          <a
             href={`/sonnet-4.5/${app.id}`}
             target="_blank"
             rel="noopener noreferrer"

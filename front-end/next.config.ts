@@ -7,7 +7,7 @@ function detectAppPaths(): Array<{ source: string; destination: string }> {
 
   try {
     const publicDir = path.join(__dirname, "public");
-    const modelDirs = ["gpt-5", "opus-4.1", "sonnet-4.5", "gemini-3"];
+    const modelDirs = ["gpt-5", "opus-4.1", "opus-4.5", "sonnet-4.5", "gemini-3"];
 
     for (const modelDir of modelDirs) {
       const modelPath = path.join(publicDir, modelDir);
