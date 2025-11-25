@@ -50,6 +50,7 @@ async function main() {
   const repoRoot = path.resolve(frontEndDir, "..");
   const gpt5Dir = path.join(repoRoot, "gpt-5-apps");
   const opus41Dir = path.join(repoRoot, "opus-4.1-apps");
+  const opus45Dir = path.join(repoRoot, "opus-4.5-apps");
   const sonnet45Dir = path.join(repoRoot, "sonnet-4.5-apps");
   const publicDir = path.join(frontEndDir, "public");
 
@@ -93,6 +94,26 @@ async function main() {
     }
   } else {
     console.log(`[copy-apps] No opus-4.1-apps directory found at ${opus41Dir}, skipping.`);
+  }
+
+  // Copy Opus 4.5 apps to public/opus-4.5/
+  if (await exists(opus45Dir)) {
+    const opus45PublicDir = path.join(publicDir, "opus-4.5");
+    await rimrafDirIfExists(opus45PublicDir);
+    await fs.mkdir(opus45PublicDir, { recursive: true });
+
+    const opus45Entries = await fs.readdir(opus45Dir, { withFileTypes: true });
+    for (const entry of opus45Entries) {
+      const s = path.join(opus45Dir, entry.name);
+      const d = path.join(opus45PublicDir, entry.name);
+
+      if (entry.isDirectory()) {
+        console.log(`[copy-apps] Copying Opus 4.5 ${s} -> ${d}`);
+        await copyDir(s, d);
+      }
+    }
+  } else {
+    console.log(`[copy-apps] No opus-4.5-apps directory found at ${opus45Dir}, skipping.`);
   }
 
   // Copy Sonnet 4.5 apps to public/sonnet-4.5/

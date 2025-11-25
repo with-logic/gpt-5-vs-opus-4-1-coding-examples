@@ -19,13 +19,15 @@ async function main() {
   const outDir = path.join(frontEndDir, "out");
   const publicDir = path.join(frontEndDir, "public");
   
-  // Copy gpt-5, opus-4.1, and sonnet-4.5 directories to out if they exist
+  // Copy gpt-5, opus-4.1, opus-4.5, sonnet-4.5, and gemini-3 directories to out if they exist
   const gpt5Src = path.join(publicDir, "gpt-5");
   const opus41Src = path.join(publicDir, "opus-4.1");
+  const opus45Src = path.join(publicDir, "opus-4.5");
   const sonnet45Src = path.join(publicDir, "sonnet-4.5");
   const gemini3Src = path.join(publicDir, "gemini-3");
   const gpt5Dest = path.join(outDir, "gpt-5");
   const opus41Dest = path.join(outDir, "opus-4.1");
+  const opus45Dest = path.join(outDir, "opus-4.5");
   const sonnet45Dest = path.join(outDir, "sonnet-4.5");
   const gemini3Dest = path.join(outDir, "gemini-3");
 
@@ -37,6 +39,11 @@ async function main() {
   if (await exists(opus41Src)) {
     console.log(`[post-build] Copying ${opus41Src} -> ${opus41Dest}`);
     await fs.cp(opus41Src, opus41Dest, { recursive: true, force: true });
+  }
+
+  if (await exists(opus45Src)) {
+    console.log(`[post-build] Copying ${opus45Src} -> ${opus45Dest}`);
+    await fs.cp(opus45Src, opus45Dest, { recursive: true, force: true });
   }
 
   if (await exists(sonnet45Src)) {
