@@ -14,19 +14,21 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "GPT-5 vs Claude Opus 4.1 vs Opus 4.5 vs Sonnet 4.5 vs Gemini 3 Coding Examples",
-  description: "Five-way comparison of AI coding capabilities between OpenAI's GPT-5, Anthropic's Claude Opus 4.1, Anthropic's Claude Opus 4.5, Anthropic's Claude Sonnet 4.5, and Google's Gemini 3",
+  title: "Agentic Coding Arena - Compare OpenAI, Anthropic, and Gemini models",
+  description: "Side-by-side comparison of 5 frontier AI models (GPT-5, Opus 4.1, Opus 4.5, Sonnet 4.5, Gemini 3) on identical coding challenges. See how each model approaches the same prompts.",
   icons: {
     icon: "/gpt-5.png",
   },
   openGraph: {
+    title: "Agentic Coding Arena",
+    description: "Compare 5 frontier AI models on identical coding challenges",
     images: ["/gpt-5.png"],
   },
   twitter: {
     card: "summary_large_image",
     images: ["/gpt-5.png"],
-    title: "GPT-5 vs Claude Opus 4.1 vs Opus 4.5 vs Sonnet 4.5 vs Gemini 3 Coding Examples",
-    description: "Five-way comparison of AI coding capabilities",
+    title: "Agentic Coding Arena",
+    description: "Compare GPT-5, Claude Opus, Sonnet, and Gemini 3 side-by-side",
   },
 };
 
