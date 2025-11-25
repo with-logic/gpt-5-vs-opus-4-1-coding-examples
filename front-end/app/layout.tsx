@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   title: "Agentic Coding Arena - Compare OpenAI, Anthropic, and Gemini models",
   description: "Side-by-side comparison of 5 frontier AI models (GPT-5, Opus 4.1, Opus 4.5, Sonnet 4.5, Gemini 3) on identical coding challenges. See how each model approaches the same prompts.",
   icons: {
-    icon: "/gpt-5.png",
+    icon: "/favicon.ico",
   },
   openGraph: {
     title: "Agentic Coding Arena",
