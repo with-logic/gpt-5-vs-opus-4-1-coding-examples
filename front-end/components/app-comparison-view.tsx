@@ -103,105 +103,108 @@ export function AppComparisonView({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-gray-900">
+    <div className="fixed inset-0 z-50 bg-white flex flex-col">
       {/* Header */}
-      <div className="bg-gray-800 border-b border-gray-700 px-4 py-3">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={handleClose}
-              className="text-gray-400 hover:text-white transition-colors p-2 hover:bg-gray-700 rounded-lg"
-              title="Close (Esc)"
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-            <h2 className="text-white font-semibold text-lg">{app.title}</h2>
-            <button
-              onClick={copyLink}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
-              title="Copy shareable link"
-            >
-              {copied ? (
-                <>
-                  <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  <span className="text-green-400">Copied!</span>
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                  </svg>
-                  <span>Share</span>
-                </>
-              )}
-            </button>
-          </div>
+      <header className="border-b border-neutral-200 flex-shrink-0 px-4 py-2 flex items-center justify-between gap-4">
+        {/* Left - logo & app name */}
+        <div className="flex items-center gap-3 min-w-0">
+          <a href="/" className="flex-shrink-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logic_brandmark.png" alt="Logic" className="w-7 h-7" />
+          </a>
+          <span className="text-neutral-300">/</span>
+          <h2 className="font-medium text-neutral-900 truncate">{app.title}</h2>
+        </div>
 
-          {/* View mode toggle */}
-          <div className="flex items-center gap-2">
-            <span className="text-gray-400 text-sm mr-2">View:</span>
+        {/* Center - model selection */}
+        <div className="flex items-center gap-1.5">
+          {MODELS.map(model => (
             <button
-              onClick={() => setViewMode("side-by-side")}
-              className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                viewMode === "side-by-side"
-                  ? "bg-white text-gray-900"
-                  : "text-gray-300 hover:text-white hover:bg-gray-700"
+              key={model.id}
+              onClick={() => viewMode === "tabs" ? setActiveTab(model.id) : toggleModel(model.id)}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
+                viewMode === "tabs"
+                  ? activeTab === model.id
+                    ? `${model.color} text-white`
+                    : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
+                  : selectedModels.includes(model.id)
+                    ? `${model.color} text-white`
+                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
               }`}
             >
-              Side by Side
+              <span className={`w-1.5 h-1.5 rounded-full ${
+                (viewMode === "tabs" ? activeTab === model.id : selectedModels.includes(model.id))
+                  ? "bg-white/50"
+                  : model.color
+              }`} />
+              {model.name}
+            </button>
+          ))}
+          {viewMode === "side-by-side" && (
+            <button
+              onClick={selectAll}
+              className="px-1.5 py-1 text-xs text-neutral-400 hover:text-neutral-900 transition-colors"
+            >
+              All
+            </button>
+          )}
+        </div>
+
+        {/* Right - view toggle, share, close */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-px bg-neutral-100 p-0.5">
+            <button
+              onClick={() => setViewMode("side-by-side")}
+              className={`px-2 py-1 text-xs font-medium transition-colors ${
+                viewMode === "side-by-side"
+                  ? "bg-white text-neutral-900 shadow-sm"
+                  : "text-neutral-500 hover:text-neutral-900"
+              }`}
+            >
+              Split
             </button>
             <button
               onClick={() => setViewMode("tabs")}
-              className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
+              className={`px-2 py-1 text-xs font-medium transition-colors ${
                 viewMode === "tabs"
-                  ? "bg-white text-gray-900"
-                  : "text-gray-300 hover:text-white hover:bg-gray-700"
+                  ? "bg-white text-neutral-900 shadow-sm"
+                  : "text-neutral-500 hover:text-neutral-900"
               }`}
             >
               Tabs
             </button>
           </div>
 
-          {/* Model selection */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-gray-400 text-sm mr-1">Compare:</span>
-            {MODELS.map(model => (
-              <button
-                key={model.id}
-                onClick={() => viewMode === "tabs" ? setActiveTab(model.id) : toggleModel(model.id)}
-                className={`px-3 py-1.5 rounded text-sm font-medium transition-all ${
-                  viewMode === "tabs"
-                    ? activeTab === model.id
-                      ? `${model.color} text-white`
-                      : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-                    : selectedModels.includes(model.id)
-                      ? `${model.color} text-white`
-                      : "bg-gray-700 text-gray-400 hover:bg-gray-600"
-                }`}
-              >
-                {model.name}
-              </button>
-            ))}
-            {viewMode === "side-by-side" && (
-              <>
-                <button
-                  onClick={selectAll}
-                  className="px-2 py-1.5 text-xs text-gray-400 hover:text-white transition-colors"
-                >
-                  All
-                </button>
-              </>
+          <button
+            onClick={copyLink}
+            className="text-neutral-400 hover:text-neutral-900 transition-colors p-1"
+            title="Copy shareable link"
+          >
+            {copied ? (
+              <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+              </svg>
             )}
-          </div>
+          </button>
+
+          <button
+            onClick={handleClose}
+            className="text-neutral-400 hover:text-neutral-900 transition-colors p-1"
+            title="Close (Esc)"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
-      </div>
+      </header>
 
       {/* Content */}
-      <div className="h-[calc(100vh-64px)] overflow-hidden">
+      <div className="flex-1 overflow-hidden">
         {viewMode === "tabs" ? (
           // Tabs view - single iframe
           <div className="h-full">
@@ -214,7 +217,7 @@ export function AppComparisonView({
         ) : (
           // Side by side view
           <div
-            className="h-full grid gap-1 bg-gray-800 p-1"
+            className="h-full grid gap-px bg-neutral-200"
             style={{
               gridTemplateColumns: `repeat(${selectedModels.length}, 1fr)`
             }}
@@ -222,15 +225,15 @@ export function AppComparisonView({
             {selectedModels.map(modelId => {
               const model = MODELS.find(m => m.id === modelId)!;
               return (
-                <div key={modelId} className="flex flex-col bg-gray-900 rounded overflow-hidden">
+                <div key={modelId} className="flex flex-col bg-white overflow-hidden">
                   {/* Model label */}
-                  <div className={`${model.color} px-3 py-1.5 text-white text-sm font-medium text-center`}>
+                  <div className={`${model.color} px-3 py-2 text-white text-sm font-medium text-center flex-shrink-0`}>
                     {model.name}
                   </div>
                   {/* iframe */}
                   <iframe
                     src={`/${modelId}/${app.id}`}
-                    className="flex-1 w-full border-0 bg-white"
+                    className="flex-1 w-full border-0"
                     title={`${app.title} - ${model.name}`}
                   />
                 </div>

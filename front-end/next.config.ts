@@ -39,8 +39,15 @@ const nextConfig: NextConfig = {
   output: "export",
   trailingSlash: true,
   async rewrites() {
-    // Allow pretty URLs in dev by serving /model/app -> /model/app/index.html
-    return detectAppPaths();
+    const appRewrites = detectAppPaths();
+    return [
+      // Client-side routing for compare pages (dev server only)
+      {
+        source: "/compare/:path*",
+        destination: "/",
+      },
+      ...appRewrites,
+    ];
   },
   // Required for Next/Image with static export
   images: { unoptimized: true },
