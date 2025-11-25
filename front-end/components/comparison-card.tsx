@@ -2,15 +2,8 @@
 
 import { useState } from "react";
 import { CodeExample } from "@/lib/code-examples";
+import { MODELS } from "@/lib/models";
 import { AppComparisonView } from "./app-comparison-view";
-
-const MODEL_COLORS = [
-  "bg-emerald-500", // GPT-5
-  "bg-amber-500",   // Opus 4.1
-  "bg-orange-500",  // Opus 4.5
-  "bg-purple-500",  // Sonnet 4.5
-  "bg-blue-500",    // Gemini 3
-];
 
 export function ComparisonCard({ app }: { app: CodeExample }) {
   const [isCompareOpen, setIsCompareOpen] = useState(false);
@@ -48,14 +41,14 @@ export function ComparisonCard({ app }: { app: CodeExample }) {
 
           {/* Model indicator dots */}
           <div className="flex items-center gap-1.5 mb-3">
-            {MODEL_COLORS.map((color, i) => (
+            {MODELS.map((model) => (
               <div
-                key={i}
-                className={`w-3 h-3 rounded-full ${color}`}
-                title={["GPT-5", "Opus 4.1", "Opus 4.5", "Sonnet 4.5", "Gemini 3"][i]}
+                key={model.id}
+                className={`w-3 h-3 rounded-full ${model.color}`}
+                title={model.name}
               />
             ))}
-            <span className="text-xs text-gray-500 ml-1">5 models</span>
+            <span className="text-xs text-gray-500 ml-1">{MODELS.length} models</span>
           </div>
 
           {app.tags && app.tags.length > 0 && (
