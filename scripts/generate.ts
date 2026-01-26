@@ -1,5 +1,6 @@
-import { spawn } from "child_process";
+import { execSync, spawn } from "child_process";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import * as yaml from "yaml";
 import {
@@ -54,7 +55,7 @@ function ensureDir(filePath: string): void {
   }
 }
 
-function buildPrompt(spec: ExampleSpec, outputPath: string): string {
+function buildPrompt(spec: ExampleSpec): string {
   return `You are implementing a single self-contained HTML file.
 
 ## App: ${spec.title}
@@ -66,7 +67,7 @@ ${spec.prompt}
 - Create a single index.html file with ALL CSS and JavaScript inlined
 - The file must be fully self-contained
 - You may use CDN links for libraries (e.g., Tailwind CSS, React, Three.js) if needed
-- Place the file at: ${outputPath}
+- Place the file at: output/index.html
 - Do NOT create any other files
 
 ## Important:
@@ -130,29 +131,69 @@ function buildCliCommand(
   }
 }
 
-async function runCli(model: ModelConfig, prompt: string): Promise<void> {
+function createTempDir(): string {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "arena-gen-"));
+  // Initialize a git repo so CLI tools don't complain
+  execSync("git init", { cwd: tempDir, stdio: "ignore" });
+  return tempDir;
+}
+
+function cleanupTempDir(tempDir: string): void {
+  try {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  } catch {
+    // Ignore cleanup errors
+  }
+}
+
+async function runCliInSandbox(
+  model: ModelConfig,
+  prompt: string,
+  destPath: string
+): Promise<void> {
+  const tempDir = createTempDir();
+  const tempOutputDir = path.join(tempDir, "output");
+  const tempOutputFile = path.join(tempOutputDir, "index.html");
+
+  // Create the output directory structure in temp
+  fs.mkdirSync(tempOutputDir, { recursive: true });
+
   const { cmd, args } = buildCliCommand(model, prompt);
 
-  return new Promise((resolve, reject) => {
-    console.log(`    Running: ${cmd} ${args[0]} ...`);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      console.log(`    Running in sandbox: ${tempDir}`);
+      console.log(`    Command: ${cmd} ${args[0]} ...`);
 
-    const proc = spawn(cmd, args, {
-      stdio: "inherit",
-      cwd: REPO_ROOT,
+      const proc = spawn(cmd, args, {
+        stdio: "inherit",
+        cwd: tempDir,
+      });
+
+      proc.on("close", (code) => {
+        if (code === 0) {
+          resolve();
+        } else {
+          reject(new Error(`CLI exited with code ${code}`));
+        }
+      });
+
+      proc.on("error", (err) => {
+        reject(err);
+      });
     });
 
-    proc.on("close", (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`CLI exited with code ${code}`));
-      }
-    });
-
-    proc.on("error", (err) => {
-      reject(err);
-    });
-  });
+    // Copy the output file to the final destination
+    if (fs.existsSync(tempOutputFile)) {
+      ensureDir(destPath);
+      fs.copyFileSync(tempOutputFile, destPath);
+      console.log(`    Copied output to: ${destPath}`);
+    } else {
+      throw new Error(`CLI completed but output/index.html was not created in sandbox`);
+    }
+  } finally {
+    cleanupTempDir(tempDir);
+  }
 }
 
 // ============================================================================
@@ -173,14 +214,12 @@ async function generateApp(
     return "skipped";
   }
 
-  // Ensure output directory exists
-  ensureDir(absoluteOutputPath);
-
-  // Build and run the prompt
-  const prompt = buildPrompt(spec, outputPath);
+  // Build the prompt (agents write to output/index.html in their sandbox)
+  const prompt = buildPrompt(spec);
 
   try {
-    await runCli(model, prompt);
+    // Run CLI in isolated temp directory, then copy result to final location
+    await runCliInSandbox(model, prompt, absoluteOutputPath);
 
     // Verify the file was created
     if (fs.existsSync(absoluteOutputPath)) {
