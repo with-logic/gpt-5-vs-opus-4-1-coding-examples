@@ -1,0 +1,2093 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#070a12" />
+    <title>Tea Dunkability Simulator</title>
+    <script>
+      (() => {
+        try {
+          const key = "tea.sim.theme";
+          let theme = null;
+          const raw = localStorage.getItem(key);
+          if (raw != null) theme = JSON.parse(raw);
+          if (theme !== "light" && theme !== "dark") {
+            theme = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+          }
+          document.documentElement.setAttribute("data-theme", theme);
+          const meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute("content", theme === "light" ? "#eef1ff" : "#070a12");
+        } catch {}
+      })();
+    </script>
+    <style>
+      :root {
+        --bg0: #070a12;
+        --bg1: #0a1022;
+        --card: rgba(255, 255, 255, 0.08);
+        --card2: rgba(255, 255, 255, 0.06);
+        --stroke: rgba(255, 255, 255, 0.12);
+        --stroke2: rgba(255, 255, 255, 0.18);
+        --text: rgba(255, 255, 255, 0.92);
+        --muted: rgba(255, 255, 255, 0.65);
+        --muted2: rgba(255, 255, 255, 0.45);
+        --shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+        --shadow2: 0 12px 30px rgba(0, 0, 0, 0.35);
+        --accent: #7c5cff;
+        --accent2: #38d2ff;
+        --good: #2ce8a6;
+        --warn: #ffd166;
+        --bad: #ff4d6d;
+        --tea: #8d5a2b;
+        --tea2: #c27a3f;
+        --cup: rgba(255, 255, 255, 0.82);
+        --cupEdge: rgba(255, 255, 255, 0.6);
+        --glow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 0 40px rgba(124, 92, 255, 0.12);
+        --radius: 18px;
+        --radius2: 26px;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
+          "Segoe UI Emoji";
+      }
+
+      html[data-theme="light"] {
+        --bg0: #f7f8ff;
+        --bg1: #eef1ff;
+        --card: rgba(255, 255, 255, 0.7);
+        --card2: rgba(255, 255, 255, 0.58);
+        --stroke: rgba(17, 24, 39, 0.14);
+        --stroke2: rgba(17, 24, 39, 0.18);
+        --text: rgba(8, 10, 20, 0.9);
+        --muted: rgba(8, 10, 20, 0.64);
+        --muted2: rgba(8, 10, 20, 0.44);
+        --shadow: 0 20px 60px rgba(16, 24, 40, 0.18);
+        --shadow2: 0 12px 30px rgba(16, 24, 40, 0.12);
+        --accent: #6b4eff;
+        --accent2: #14b8ff;
+        --good: #0aa67b;
+        --warn: #c78100;
+        --bad: #d81e5b;
+        --cup: rgba(255, 255, 255, 0.92);
+        --cupEdge: rgba(17, 24, 39, 0.12);
+        --glow: 0 0 0 1px rgba(17, 24, 39, 0.09), 0 0 40px rgba(107, 78, 255, 0.14);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        font-family: var(--sans);
+        color: var(--text);
+        overflow-x: hidden;
+        background: radial-gradient(1200px 600px at 20% 10%, rgba(56, 210, 255, 0.12), transparent 55%),
+          radial-gradient(1000px 500px at 80% 10%, rgba(124, 92, 255, 0.18), transparent 55%),
+          radial-gradient(800px 600px at 50% 100%, rgba(255, 77, 109, 0.1), transparent 65%),
+          linear-gradient(180deg, var(--bg0), var(--bg1));
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .noise {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0.09;
+        mix-blend-mode: overlay;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+      }
+
+      .app {
+        min-height: 100%;
+        padding: 28px 20px 40px;
+      }
+
+      .container {
+        max-width: 1150px;
+        margin: 0 auto;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 18px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .logo {
+        width: 44px;
+        height: 44px;
+        border-radius: 14px;
+        background: radial-gradient(16px 16px at 30% 30%, rgba(255, 255, 255, 0.22), transparent 60%),
+          linear-gradient(135deg, rgba(124, 92, 255, 0.9), rgba(56, 210, 255, 0.85));
+        box-shadow: 0 14px 30px rgba(56, 210, 255, 0.12), 0 18px 40px rgba(124, 92, 255, 0.18);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .logo::after {
+        content: "";
+        position: absolute;
+        inset: -30%;
+        background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.18), transparent 55%);
+        transform: rotate(18deg);
+        animation: shimmer 7s linear infinite;
+      }
+
+      @keyframes shimmer {
+        0% {
+          transform: translateX(-10%) rotate(18deg);
+        }
+        50% {
+          transform: translateX(10%) rotate(18deg);
+        }
+        100% {
+          transform: translateX(-10%) rotate(18deg);
+        }
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 20px;
+        letter-spacing: 0.2px;
+      }
+
+      .subtitle {
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .chiprow {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .chip {
+        border: 1px solid var(--stroke);
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--muted);
+        border-radius: 999px;
+        font-size: 12px;
+        padding: 7px 10px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        user-select: none;
+      }
+
+      .chip kbd {
+        font-family: var(--mono);
+        font-size: 11px;
+        line-height: 1;
+        padding: 4px 6px;
+        border-radius: 7px;
+        border: 1px solid var(--stroke2);
+        background: rgba(0, 0, 0, 0.18);
+        color: var(--text);
+      }
+
+      html[data-theme="light"] .chip kbd {
+        background: rgba(255, 255, 255, 0.65);
+      }
+
+      .actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .btn {
+        appearance: none;
+        border: 1px solid var(--stroke);
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text);
+        padding: 10px 12px;
+        border-radius: 14px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        box-shadow: var(--shadow2);
+        transition: transform 0.12s ease, border-color 0.2s ease, background 0.2s ease;
+        user-select: none;
+      }
+
+      .btn:focus-visible,
+      input[type="range"]:focus-visible,
+      select:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 4px rgba(56, 210, 255, 0.14), 0 0 0 1px rgba(56, 210, 255, 0.55), var(--shadow2);
+        border-color: rgba(56, 210, 255, 0.55);
+      }
+
+      .btn:hover {
+        transform: translateY(-1px);
+        border-color: var(--stroke2);
+        background: rgba(255, 255, 255, 0.09);
+      }
+
+      .btn:active {
+        transform: translateY(0px) scale(0.99);
+      }
+
+      .btn.primary {
+        border-color: rgba(124, 92, 255, 0.35);
+        background: linear-gradient(135deg, rgba(124, 92, 255, 0.22), rgba(56, 210, 255, 0.12));
+      }
+
+      .btn .icon {
+        width: 18px;
+        height: 18px;
+        display: inline-block;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1.05fr 0.95fr;
+        gap: 16px;
+        align-items: start;
+      }
+
+      @media (max-width: 980px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .card {
+        position: relative;
+        background: linear-gradient(180deg, var(--card), var(--card2));
+        border: 1px solid var(--stroke);
+        border-radius: var(--radius2);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+      }
+
+      .card::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(600px 220px at 20% 0%, rgba(255, 255, 255, 0.12), transparent 55%),
+          radial-gradient(500px 200px at 95% 10%, rgba(56, 210, 255, 0.11), transparent 55%),
+          radial-gradient(500px 240px at 50% 120%, rgba(124, 92, 255, 0.12), transparent 60%);
+        pointer-events: none;
+      }
+
+      .card .inner {
+        position: relative;
+        padding: 18px;
+      }
+
+      .card h2 {
+        margin: 0 0 10px;
+        font-size: 14px;
+        letter-spacing: 0.2px;
+        color: var(--muted);
+        text-transform: uppercase;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        align-items: center;
+        margin: 12px 0;
+      }
+
+      .label {
+        font-size: 14px;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .label .name {
+        font-weight: 600;
+        letter-spacing: 0.1px;
+      }
+
+      .label .hint {
+        font-size: 12px;
+        color: var(--muted2);
+      }
+
+      .valuePill {
+        font-family: var(--mono);
+        font-size: 12px;
+        padding: 8px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--stroke);
+        background: rgba(0, 0, 0, 0.16);
+        color: var(--text);
+        min-width: 128px;
+        text-align: right;
+      }
+
+      html[data-theme="light"] .valuePill {
+        background: rgba(255, 255, 255, 0.66);
+      }
+
+      .range {
+        width: 100%;
+        accent-color: var(--accent2);
+      }
+
+      input[type="range"] {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 100%;
+        height: 10px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, rgba(56, 210, 255, 0.5), rgba(124, 92, 255, 0.55));
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+        outline: none;
+      }
+
+      html[data-theme="light"] input[type="range"] {
+        box-shadow: inset 0 0 0 1px rgba(17, 24, 39, 0.14);
+      }
+
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.6));
+        box-shadow: 0 10px 18px rgba(0, 0, 0, 0.3), 0 0 0 4px rgba(124, 92, 255, 0.16);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        cursor: pointer;
+      }
+
+      input[type="range"]::-moz-range-thumb {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.6));
+        box-shadow: 0 10px 18px rgba(0, 0, 0, 0.3), 0 0 0 4px rgba(124, 92, 255, 0.16);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        cursor: pointer;
+      }
+
+      .select {
+        width: 100%;
+        appearance: none;
+        border-radius: 14px;
+        padding: 10px 12px;
+        border: 1px solid var(--stroke);
+        background: rgba(0, 0, 0, 0.18);
+        color: var(--text);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+      }
+
+      html[data-theme="light"] .select {
+        background: rgba(255, 255, 255, 0.72);
+        box-shadow: inset 0 0 0 1px rgba(17, 24, 39, 0.09);
+      }
+
+      .statsGrid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      @media (max-width: 520px) {
+        .statsGrid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .stat {
+        border-radius: var(--radius);
+        border: 1px solid var(--stroke);
+        background: rgba(255, 255, 255, 0.05);
+        padding: 12px 12px 10px;
+        box-shadow: var(--glow);
+        min-height: 70px;
+      }
+
+      html[data-theme="light"] .stat {
+        background: rgba(255, 255, 255, 0.74);
+      }
+
+      .stat .k {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+
+      .stat .v {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .stat .big {
+        font-size: 20px;
+        font-weight: 750;
+        letter-spacing: 0.2px;
+      }
+
+      .stat .tag {
+        font-family: var(--mono);
+        font-size: 11px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--stroke);
+        color: var(--muted);
+      }
+
+      .meterWrap {
+        display: grid;
+        grid-template-columns: 1fr 220px;
+        gap: 14px;
+        align-items: center;
+      }
+
+      @media (max-width: 980px) {
+        .meterWrap {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .cupStage {
+        border-radius: var(--radius2);
+        border: 1px solid var(--stroke);
+        background: rgba(0, 0, 0, 0.16);
+        overflow: hidden;
+        padding: 16px 14px;
+        position: relative;
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+      }
+
+      html[data-theme="light"] .cupStage {
+        background: rgba(255, 255, 255, 0.55);
+      }
+
+      .cupStage .caption {
+        font-size: 12px;
+        color: var(--muted);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 10px;
+      }
+
+      .badge {
+        font-family: var(--mono);
+        font-size: 11px;
+        border: 1px solid var(--stroke);
+        padding: 4px 8px;
+        border-radius: 999px;
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .graph {
+        width: 100%;
+        height: 190px;
+        border-radius: var(--radius2);
+        border: 1px solid var(--stroke);
+        background: rgba(255, 255, 255, 0.04);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+      }
+
+      html[data-theme="light"] .graph {
+        background: rgba(255, 255, 255, 0.62);
+        box-shadow: inset 0 0 0 1px rgba(17, 24, 39, 0.08);
+      }
+
+      .legend {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-top: 10px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .legend .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 8px;
+      }
+
+      .legend .item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .pillDanger {
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-family: var(--mono);
+        border: 1px solid var(--stroke);
+      }
+
+      .toastHost {
+        position: fixed;
+        right: 18px;
+        bottom: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        z-index: 50;
+        pointer-events: none;
+      }
+
+      .toast {
+        pointer-events: none;
+        border: 1px solid var(--stroke);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.06));
+        border-radius: 16px;
+        padding: 10px 12px;
+        box-shadow: var(--shadow2);
+        min-width: 220px;
+        max-width: 320px;
+        animation: toastIn 0.22s ease both;
+      }
+
+      html[data-theme="light"] .toast {
+        background: rgba(255, 255, 255, 0.78);
+      }
+
+      @keyframes toastIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .toast .t {
+        font-size: 13px;
+        font-weight: 650;
+        margin: 0 0 4px;
+      }
+
+      .toast .d {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .modalOverlay {
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+        display: grid;
+        place-items: center;
+        padding: 18px;
+        background: rgba(0, 0, 0, 0.55);
+      }
+
+      .modal {
+        width: min(860px, 100%);
+        border-radius: 22px;
+        border: 1px solid var(--stroke);
+        background: linear-gradient(180deg, rgba(15, 18, 35, 0.78), rgba(10, 12, 22, 0.75));
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        overflow: hidden;
+      }
+
+      html[data-theme="light"] .modal {
+        background: rgba(255, 255, 255, 0.88);
+      }
+
+      .modal header {
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--stroke);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .modal header h3 {
+        margin: 0;
+        font-size: 14px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.25px;
+      }
+
+      .modal main {
+        padding: 16px;
+      }
+
+      .keyGrid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      @media (max-width: 720px) {
+        .keyGrid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .keyItem {
+        border-radius: 18px;
+        border: 1px solid var(--stroke);
+        background: rgba(255, 255, 255, 0.06);
+        padding: 12px 12px;
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+      }
+
+      html[data-theme="light"] .keyItem {
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .keyItem .desc {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .kbdGroup {
+        display: inline-flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .kbdGroup kbd {
+        font-family: var(--mono);
+        font-size: 11px;
+        padding: 6px 8px;
+        border-radius: 10px;
+        border: 1px solid var(--stroke2);
+        background: rgba(0, 0, 0, 0.2);
+      }
+
+      html[data-theme="light"] .kbdGroup kbd {
+        background: rgba(255, 255, 255, 0.75);
+      }
+
+      /* Cup + steam */
+      .cupWrap {
+        --dunkDepth: 0.42;
+        --heat: 0.55;
+        --danger: 0.25;
+        height: 270px;
+        display: grid;
+        place-items: center;
+        position: relative;
+      }
+
+      .cupBackGlow {
+        position: absolute;
+        width: 320px;
+        height: 260px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 45% 45%, rgba(124, 92, 255, 0.25), transparent 60%),
+          radial-gradient(circle at 50% 55%, rgba(56, 210, 255, 0.18), transparent 60%),
+          radial-gradient(circle at 40% 70%, rgba(255, 77, 109, 0.14), transparent 65%);
+        filter: blur(10px);
+        opacity: 0.9;
+        transform: translateY(12px);
+      }
+
+      .cup {
+        width: 210px;
+        height: 150px;
+        position: relative;
+        border-radius: 0 0 32px 32px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.55));
+        box-shadow: 0 28px 50px rgba(0, 0, 0, 0.35);
+        border: 1px solid rgba(255, 255, 255, 0.28);
+        overflow: hidden;
+        transform-origin: 50% 80%;
+        animation: cupBob 4.2s ease-in-out infinite;
+      }
+
+      html[data-theme="light"] .cup {
+        border-color: rgba(17, 24, 39, 0.12);
+        box-shadow: 0 28px 50px rgba(16, 24, 40, 0.18);
+      }
+
+      @keyframes cupBob {
+        0%,
+        100% {
+          transform: translateY(2px) rotate(-0.6deg);
+        }
+        50% {
+          transform: translateY(-3px) rotate(0.6deg);
+        }
+      }
+
+      .cup::before {
+        content: "";
+        position: absolute;
+        top: -18px;
+        left: 0;
+        right: 0;
+        height: 40px;
+        border-radius: 30px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.3));
+        border: 1px solid rgba(255, 255, 255, 0.28);
+        box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.12);
+      }
+
+      html[data-theme="light"] .cup::before {
+        border-color: rgba(17, 24, 39, 0.12);
+        box-shadow: inset 0 -2px 0 rgba(17, 24, 39, 0.12);
+      }
+
+      .handle {
+        position: absolute;
+        right: -44px;
+        top: 38px;
+        width: 72px;
+        height: 72px;
+        border-radius: 50%;
+        border: 12px solid rgba(255, 255, 255, 0.62);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+      }
+
+      html[data-theme="light"] .handle {
+        border-color: rgba(255, 255, 255, 0.88);
+        box-shadow: inset 0 0 0 1px rgba(17, 24, 39, 0.12);
+      }
+
+      .saucer {
+        width: 260px;
+        height: 60px;
+        margin-top: 14px;
+        border-radius: 999px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.35));
+        box-shadow: 0 22px 38px rgba(0, 0, 0, 0.26);
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        transform: translateY(-12px);
+        position: relative;
+        overflow: hidden;
+      }
+
+      html[data-theme="light"] .saucer {
+        box-shadow: 0 22px 38px rgba(16, 24, 40, 0.14);
+        border-color: rgba(17, 24, 39, 0.12);
+      }
+
+      .saucer::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(120px 30px at 30% 30%, rgba(255, 255, 255, 0.22), transparent 60%);
+      }
+
+      .teaSurface {
+        position: absolute;
+        left: 10px;
+        right: 10px;
+        top: 8px;
+        height: 52px;
+        border-radius: 999px;
+        background: radial-gradient(60px 26px at 35% 40%, rgba(255, 255, 255, 0.08), transparent 70%),
+          linear-gradient(180deg, rgba(141, 90, 43, 0.92), rgba(194, 122, 63, 0.9));
+        box-shadow: inset 0 8px 18px rgba(0, 0, 0, 0.2);
+        overflow: hidden;
+      }
+
+      .teaSurface::after {
+        content: "";
+        position: absolute;
+        inset: -30%;
+        background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.12), transparent 60%);
+        animation: teaShine 5.5s ease-in-out infinite;
+      }
+
+      @keyframes teaShine {
+        0%,
+        100% {
+          transform: translateX(-12%) translateY(-4%);
+          opacity: 0.55;
+        }
+        50% {
+          transform: translateX(14%) translateY(6%);
+          opacity: 0.75;
+        }
+      }
+
+      .steam {
+        position: absolute;
+        top: -34px;
+        width: 240px;
+        height: 140px;
+        pointer-events: none;
+      }
+
+      .steam i {
+        position: absolute;
+        bottom: 0;
+        width: 56px;
+        height: 120px;
+        left: calc(var(--x) * 1px);
+        opacity: calc(0.22 + var(--heat) * 0.35);
+        filter: blur(0.5px);
+        animation: steamRise calc(2.6s - var(--heat) * 1s) ease-in-out infinite;
+        animation-delay: calc(var(--d) * 1s);
+        transform-origin: 50% 100%;
+      }
+
+      .steam i::before,
+      .steam i::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 999px;
+        background: radial-gradient(20px 60px at 50% 70%, rgba(255, 255, 255, 0.25), transparent 60%),
+          radial-gradient(18px 60px at 45% 40%, rgba(255, 255, 255, 0.18), transparent 65%),
+          radial-gradient(14px 50px at 55% 25%, rgba(255, 255, 255, 0.12), transparent 65%);
+      }
+
+      .steam i::after {
+        transform: rotate(18deg) scaleX(0.9);
+        opacity: 0.85;
+      }
+
+      @keyframes steamRise {
+        0% {
+          transform: translateY(8px) translateX(-6px) scale(0.92) rotate(-4deg);
+          opacity: calc(0.16 + var(--heat) * 0.26);
+        }
+        45% {
+          transform: translateY(-38px) translateX(4px) scale(1) rotate(6deg);
+          opacity: calc(0.26 + var(--heat) * 0.4);
+        }
+        100% {
+          transform: translateY(-70px) translateX(-2px) scale(1.04) rotate(-3deg);
+          opacity: 0;
+        }
+      }
+
+      .biscuit {
+        position: absolute;
+        left: 50%;
+        top: -24px;
+        width: 84px;
+        height: 28px;
+        transform: translateX(-50%);
+        border-radius: 16px;
+        background: linear-gradient(180deg, rgba(255, 229, 178, 0.95), rgba(227, 190, 131, 0.92));
+        box-shadow: 0 18px 30px rgba(0, 0, 0, 0.25);
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        overflow: hidden;
+        animation: dunkLoop 3.2s ease-in-out infinite;
+      }
+
+      .biscuit::before {
+        content: "";
+        position: absolute;
+        inset: 4px 6px;
+        border-radius: 14px;
+        background: radial-gradient(circle at 18% 35%, rgba(255, 255, 255, 0.18), transparent 55%),
+          radial-gradient(circle at 76% 55%, rgba(0, 0, 0, 0.1), transparent 60%),
+          linear-gradient(90deg, rgba(0, 0, 0, 0.06), transparent 40%, rgba(0, 0, 0, 0.05));
+      }
+
+      .biscuit::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at 22% 68%, rgba(255, 255, 255, 0.08), transparent 55%),
+          repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.06) 0, rgba(0, 0, 0, 0.06) 1px, transparent 1px, transparent 8px);
+        opacity: 0.5;
+        mix-blend-mode: multiply;
+      }
+
+      @keyframes dunkLoop {
+        0%,
+        100% {
+          transform: translateX(-50%) translateY(0px) rotate(-2deg);
+          filter: saturate(1);
+        }
+        45% {
+          transform: translateX(-50%) translateY(calc(var(--dunkDepth) * 56px)) rotate(1deg);
+          filter: saturate(calc(1 + var(--danger) * 0.4));
+        }
+        70% {
+          transform: translateX(-50%) translateY(calc(var(--dunkDepth) * 28px)) rotate(0deg);
+        }
+      }
+
+      .splash {
+        position: absolute;
+        left: 50%;
+        top: 20px;
+        width: 160px;
+        height: 80px;
+        transform: translateX(-50%);
+        pointer-events: none;
+        opacity: 0;
+      }
+
+      .splash.show {
+        animation: splashPop 0.65s ease both;
+      }
+
+      @keyframes splashPop {
+        0% {
+          opacity: 0;
+          transform: translateX(-50%) translateY(12px) scale(0.82);
+        }
+        20% {
+          opacity: 1;
+        }
+        60% {
+          opacity: 0.9;
+          transform: translateX(-50%) translateY(-6px) scale(1);
+        }
+        100% {
+          opacity: 0;
+          transform: translateX(-50%) translateY(-12px) scale(1.04);
+        }
+      }
+
+      .splash svg {
+        width: 100%;
+        height: 100%;
+      }
+
+      .canvasOverlay {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        pointer-events: none;
+      }
+
+      .fine {
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.35;
+      }
+
+      .fine b {
+        color: var(--text);
+        font-weight: 650;
+      }
+
+      .divider {
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--stroke), transparent);
+        margin: 14px 0;
+      }
+
+      .dangerNote {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        padding: 10px 12px;
+        border-radius: 18px;
+        border: 1px solid var(--stroke);
+        background: rgba(255, 77, 109, 0.06);
+      }
+
+      .dangerNote .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        margin-top: 3px;
+        background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.6), rgba(255, 77, 109, 0.9));
+        box-shadow: 0 0 0 4px rgba(255, 77, 109, 0.12);
+      }
+
+      .dangerNote .text {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .dangerNote .text b {
+        color: var(--text);
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * {
+          animation-duration: 0.001ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.001ms !important;
+          scroll-behavior: auto !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="noise"></div>
+    <canvas id="crumbsCanvas" class="canvasOverlay"></canvas>
+
+    <div id="root"></div>
+
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+      const { useEffect, useMemo, useRef, useState, useCallback } = React;
+
+      const clamp01 = (n) => Math.max(0, Math.min(1, n));
+      const lerp = (a, b, t) => a + (b - a) * t;
+      const smoothstep = (e0, e1, x) => {
+        const t = clamp01((x - e0) / (e1 - e0));
+        return t * t * (3 - 2 * t);
+      };
+      const fmt = (n, digits = 0) => Number(n).toFixed(digits);
+      const rand = (a, b) => a + Math.random() * (b - a);
+
+      const BISCUITS = [
+        {
+          id: "rich-tea",
+          name: "Rich Tea",
+          vibe: "polite… until it isn’t",
+          absorbency: 0.72,
+          sturdiness: 0.38,
+          crumbiness: 0.68,
+          thickness: 0.38,
+          note: "Fast wicking + low backbone. A classic snap-to-sadness arc.",
+        },
+        {
+          id: "digestive",
+          name: "Digestive",
+          vibe: "confident, dependable",
+          absorbency: 0.62,
+          sturdiness: 0.62,
+          crumbiness: 0.42,
+          thickness: 0.62,
+          note: "Reliable structure. Likes a medium dunk with commitment.",
+        },
+        {
+          id: "hobnob",
+          name: "Hobnob",
+          vibe: "the tank",
+          absorbency: 0.56,
+          sturdiness: 0.78,
+          crumbiness: 0.32,
+          thickness: 0.72,
+          note: "Sturdy oat architecture. Forgives bold timings.",
+        },
+        {
+          id: "shortbread",
+          name: "Shortbread",
+          vibe: "buttery diva",
+          absorbency: 0.48,
+          sturdiness: 0.52,
+          crumbiness: 0.74,
+          thickness: 0.66,
+          note: "Crumb-prone but glorious. Keep it brief, then savor.",
+        },
+        {
+          id: "ginger-nut",
+          name: "Ginger Nut",
+          vibe: "spicy resilience",
+          absorbency: 0.52,
+          sturdiness: 0.74,
+          crumbiness: 0.35,
+          thickness: 0.58,
+          note: "Heat-friendly. Holds up well, especially at higher temps.",
+        },
+        {
+          id: "bourbon",
+          name: "Bourbon Cream",
+          vibe: "double-decker drama",
+          absorbency: 0.66,
+          sturdiness: 0.56,
+          crumbiness: 0.52,
+          thickness: 0.7,
+          note: "Layers add heft; edges still dissolve with enthusiasm.",
+        },
+      ];
+
+      function useLocalStorageState(key, initialValue) {
+        const [value, setValue] = useState(() => {
+          try {
+            const raw = localStorage.getItem(key);
+            if (raw != null) return JSON.parse(raw);
+          } catch {}
+          return typeof initialValue === "function" ? initialValue() : initialValue;
+        });
+        useEffect(() => {
+          try {
+            localStorage.setItem(key, JSON.stringify(value));
+          } catch {}
+        }, [key, value]);
+        return [value, setValue];
+      }
+
+      function computeModel({ biscuit, teaTempC, dunkTimeS, integrityPct }) {
+        const temp01 = clamp01((teaTempC - 60) / 40);
+        const time01 = clamp01(dunkTimeS / 15);
+        const integ01 = clamp01(integrityPct / 100);
+
+        const absorb = biscuit.absorbency;
+        const sturdy = biscuit.sturdiness;
+        const crumb = biscuit.crumbiness;
+        const thick = biscuit.thickness;
+
+        const wicking = Math.pow(time01, 0.82) * absorb * (0.34 + 0.66 * temp01) * (0.9 + 0.25 * (1 - thick));
+        const softening = (0.18 + 0.92 * time01) * temp01 * (0.62 + 0.38 * crumb);
+
+        const structuralBase = (0.25 + 0.75 * integ01) * (0.35 + 0.65 * sturdy) * (0.75 + 0.25 * thick);
+        const structuralLoss = wicking * (0.52 + 0.36 * crumb) + softening * (0.66 + 0.28 * (1 - sturdy));
+        const remaining = clamp01(structuralBase - structuralLoss);
+
+        const stress = (wicking * 0.85 + softening * 0.95) * (0.65 + 0.55 * crumb) / (0.25 + structuralBase);
+        const crumbleProb = clamp01(smoothstep(0.38, 1.05, stress));
+
+        const flavorBoost = clamp01(0.35 + wicking * 0.9) * (0.86 + 0.14 * thick);
+        const dunkability01 = clamp01((flavorBoost * 0.58 + remaining * 0.62 + (1 - crumbleProb) * 0.52) / 1.62);
+        const dunkability = dunkability01 * 100;
+
+        const sogIndex = clamp01(wicking * 1.25 + softening * 0.5) * 100;
+
+        return { temp01, time01, integ01, wicking, softening, structuralBase, remaining, stress, crumbleProb, dunkability, sogIndex };
+      }
+
+      function computeIdealWindow(params) {
+        // Find the time span where crumble probability stays "acceptable".
+        const { biscuit, teaTempC, integrityPct } = params;
+        const points = [];
+        for (let t = 0; t <= 15.001; t += 0.25) {
+          const m = computeModel({ biscuit, teaTempC, integrityPct, dunkTimeS: t });
+          points.push({ t, p: m.crumbleProb, d: m.dunkability });
+        }
+        const target = 0.38;
+        let start = null;
+        let end = null;
+        for (const pt of points) {
+          if (pt.p <= target && start === null) start = pt.t;
+          if (start !== null && pt.p <= target) end = pt.t;
+        }
+        if (start === null) {
+          const best = points.reduce((a, b) => (a.p < b.p ? a : b));
+          return { start: 0, end: Math.max(0.5, best.t), points };
+        }
+        if (end === null) end = start;
+        return { start, end, points };
+      }
+
+      function scoreLabel(dunkability, crumbleProb) {
+        if (crumbleProb > 0.82) return { text: "CRUMBLE APOCALYPSE", tone: "bad" };
+        if (crumbleProb > 0.62) return { text: "risky dunk", tone: "warn" };
+        if (dunkability > 78) return { text: "elite dunk", tone: "good" };
+        if (dunkability > 58) return { text: "solid dunk", tone: "good" };
+        if (dunkability > 38) return { text: "meh dunk", tone: "warn" };
+        return { text: "dry regret", tone: "warn" };
+      }
+
+      function toneColor(tone) {
+        if (tone === "good") return "var(--good)";
+        if (tone === "bad") return "var(--bad)";
+        return "var(--warn)";
+      }
+
+      function Icon({ name }) {
+        const common = { className: "icon", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8 };
+        if (name === "moon")
+          return (
+            <svg {...common}>
+              <path d="M21 13.2A8.4 8.4 0 0 1 10.8 3a7 7 0 1 0 10.2 10.2Z" />
+            </svg>
+          );
+        if (name === "sun")
+          return (
+            <svg {...common}>
+              <path d="M12 18a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z" />
+              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+            </svg>
+          );
+        if (name === "help")
+          return (
+            <svg {...common}>
+              <path d="M12 18h.01" />
+              <path d="M9.09 9a3 3 0 1 1 5.82 1c0 2-3 2-3 4" />
+              <path d="M12 22a10 10 0 1 0-10-10 10 10 0 0 0 10 10Z" />
+            </svg>
+          );
+        if (name === "shuffle")
+          return (
+            <svg {...common}>
+              <path d="M16 3h5v5" />
+              <path d="M4 20l7.5-7.5" />
+              <path d="M16 21h5v-5" />
+              <path d="M4 4l7.5 7.5" />
+              <path d="M16 3c-2.5 0-4.5 1-6 2.5" />
+              <path d="M16 21c-2.5 0-4.5-1-6-2.5" />
+            </svg>
+          );
+        return null;
+      }
+
+      function ToastHost({ toasts }) {
+        return (
+          <div className="toastHost" aria-live="polite" aria-relevant="additions">
+            {toasts.map((t) => (
+              <div key={t.id} className="toast">
+                <div className="t">{t.title}</div>
+                <div className="d">{t.desc}</div>
+              </div>
+            ))}
+          </div>
+        );
+      }
+
+      function HelpModal({ onClose }) {
+        return (
+          <div className="modalOverlay" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+            <div className="modal">
+              <header>
+                <h3>Keyboard shortcuts</h3>
+                <button className="btn" onClick={onClose}>
+                  Close <span className="chip" style={{ padding: "4px 8px" }}>
+                    <kbd>Esc</kbd>
+                  </span>
+                </button>
+              </header>
+              <main>
+                <div className="keyGrid">
+                  <div className="keyItem">
+                    <div className="desc">Focus controls</div>
+                    <div className="kbdGroup">
+                      <kbd>C</kbd>
+                      <kbd>T</kbd>
+                      <kbd>K</kbd>
+                      <kbd>I</kbd>
+                    </div>
+                  </div>
+                  <div className="keyItem">
+                    <div className="desc">Toggle dark mode</div>
+                    <div className="kbdGroup">
+                      <kbd>D</kbd>
+                    </div>
+                  </div>
+                  <div className="keyItem">
+                    <div className="desc">Cycle biscuit</div>
+                    <div className="kbdGroup">
+                      <kbd>B</kbd>
+                    </div>
+                  </div>
+                  <div className="keyItem">
+                    <div className="desc">Nudge dunk time</div>
+                    <div className="kbdGroup">
+                      <kbd>[</kbd>
+                      <kbd>]</kbd>
+                      <kbd>←</kbd>
+                      <kbd>→</kbd>
+                    </div>
+                  </div>
+                  <div className="keyItem">
+                    <div className="desc">Quick dunk + splash</div>
+                    <div className="kbdGroup">
+                      <kbd>Space</kbd>
+                    </div>
+                  </div>
+                  <div className="keyItem">
+                    <div className="desc">Randomize (fair & fun)</div>
+                    <div className="kbdGroup">
+                      <kbd>R</kbd>
+                    </div>
+                  </div>
+                  <div className="keyItem">
+                    <div className="desc">Show / hide help</div>
+                    <div className="kbdGroup">
+                      <kbd>?</kbd>
+                    </div>
+                  </div>
+                </div>
+                <div className="divider"></div>
+                <div className="fine">
+                  Tip: use the <b>Ideal Dunk Window</b> as your safe zone. If you over-dunk, the simulator will sprinkle crumbs in
+                  sympathy.
+                </div>
+              </main>
+            </div>
+          </div>
+        );
+      }
+
+      function drawGraph(canvas, { points, dunkTimeS, theme, idealStart, idealEnd }) {
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+        const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        const rect = canvas.getBoundingClientRect();
+        const w = Math.max(10, Math.floor(rect.width));
+        const h = Math.max(10, Math.floor(rect.height));
+        canvas.width = Math.floor(w * dpr);
+        canvas.height = Math.floor(h * dpr);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+
+        const isLight = theme === "light";
+        const bg = isLight ? "rgba(255,255,255,0.45)" : "rgba(0,0,0,0.12)";
+        const stroke = isLight ? "rgba(17,24,39,0.14)" : "rgba(255,255,255,0.14)";
+        const grid = isLight ? "rgba(17,24,39,0.08)" : "rgba(255,255,255,0.08)";
+        const text = isLight ? "rgba(17,24,39,0.75)" : "rgba(255,255,255,0.75)";
+        const accent = isLight ? "rgba(107,78,255,0.9)" : "rgba(124,92,255,0.92)";
+        const accent2 = isLight ? "rgba(20,184,255,0.85)" : "rgba(56,210,255,0.9)";
+        const bad = isLight ? "rgba(216,30,91,0.9)" : "rgba(255,77,109,0.92)";
+
+        ctx.clearRect(0, 0, w, h);
+        const pad = 12;
+        const innerW = w - pad * 2;
+        const innerH = h - pad * 2;
+
+        // panel
+        ctx.fillStyle = bg;
+        roundRect(ctx, 0, 0, w, h, 18);
+        ctx.fill();
+        ctx.strokeStyle = stroke;
+        ctx.lineWidth = 1;
+        roundRect(ctx, 0.5, 0.5, w - 1, h - 1, 18);
+        ctx.stroke();
+
+        // grid
+        ctx.strokeStyle = grid;
+        ctx.lineWidth = 1;
+        for (let i = 1; i <= 4; i++) {
+          const y = pad + (innerH * i) / 5;
+          ctx.beginPath();
+          ctx.moveTo(pad, y);
+          ctx.lineTo(pad + innerW, y);
+          ctx.stroke();
+        }
+        for (let i = 1; i <= 5; i++) {
+          const x = pad + (innerW * i) / 6;
+          ctx.beginPath();
+          ctx.moveTo(x, pad);
+          ctx.lineTo(x, pad + innerH);
+          ctx.stroke();
+        }
+
+        const toX = (t) => pad + (t / 15) * innerW;
+        const toY = (p) => pad + (1 - p) * innerH;
+
+        // ideal window shading
+        const x0 = toX(idealStart);
+        const x1 = toX(idealEnd);
+        ctx.fillStyle = "rgba(44,232,166," + (isLight ? "0.12" : "0.10") + ")";
+        ctx.fillRect(x0, pad, Math.max(0, x1 - x0), innerH);
+
+        // danger zone hint
+        ctx.fillStyle = "rgba(255,209,102," + (isLight ? "0.12" : "0.08") + ")";
+        ctx.fillRect(toX(idealEnd), pad, pad + innerW - toX(idealEnd), innerH);
+
+        // line + fill
+        ctx.beginPath();
+        points.forEach((pt, i) => {
+          const x = toX(pt.t);
+          const y = toY(pt.p);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.strokeStyle = accent2;
+        ctx.lineWidth = 2.2;
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+        ctx.stroke();
+
+        // fill
+        ctx.lineTo(toX(15), toY(0));
+        ctx.lineTo(toX(0), toY(0));
+        ctx.closePath();
+        const grad = ctx.createLinearGradient(0, pad, 0, pad + innerH);
+        grad.addColorStop(0, "rgba(56,210,255," + (isLight ? "0.16" : "0.12") + ")");
+        grad.addColorStop(1, "rgba(124,92,255," + (isLight ? "0.12" : "0.08") + ")");
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        // current marker
+        const curr = points.reduce((a, b) => (Math.abs(b.t - dunkTimeS) < Math.abs(a.t - dunkTimeS) ? b : a), points[0]);
+        const mx = toX(curr.t);
+        const my = toY(curr.p);
+        ctx.beginPath();
+        ctx.arc(mx, my, 5.4, 0, Math.PI * 2);
+        ctx.fillStyle = curr.p > 0.62 ? bad : accent;
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,255,255," + (isLight ? "0.9" : "0.7") + ")";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // labels
+        ctx.fillStyle = text;
+        ctx.font = "600 11px " + getComputedStyle(document.documentElement).getPropertyValue("--mono");
+        ctx.fillText("0s", pad, h - 8);
+        ctx.fillText("15s", w - pad - 24, h - 8);
+        ctx.save();
+        ctx.translate(7, pad + innerH / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText("crumble probability", 0, 0);
+        ctx.restore();
+      }
+
+      function roundRect(ctx, x, y, w, h, r) {
+        const rr = Math.min(r, w / 2, h / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + rr, y);
+        ctx.arcTo(x + w, y, x + w, y + h, rr);
+        ctx.arcTo(x + w, y + h, x, y + h, rr);
+        ctx.arcTo(x, y + h, x, y, rr);
+        ctx.arcTo(x, y, x + w, y, rr);
+        ctx.closePath();
+      }
+
+      function useCrumbs() {
+        const particlesRef = useRef([]);
+        const rafRef = useRef(null);
+        const lastRef = useRef(performance.now());
+
+        const resize = useCallback((canvas) => {
+          if (!canvas) return;
+          const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+          canvas.width = Math.floor(window.innerWidth * dpr);
+          canvas.height = Math.floor(window.innerHeight * dpr);
+          const ctx = canvas.getContext("2d");
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }, []);
+
+        const tick = useCallback((canvas) => {
+          const ctx = canvas.getContext("2d");
+          const now = performance.now();
+          const dt = Math.min(0.033, (now - lastRef.current) / 1000);
+          lastRef.current = now;
+
+          const w = window.innerWidth;
+          const h = window.innerHeight;
+          ctx.clearRect(0, 0, w, h);
+
+          const next = [];
+          for (const p of particlesRef.current) {
+            const life = p.life - dt;
+            if (life <= 0) continue;
+            p.life = life;
+            p.vy += 820 * dt;
+            p.vx *= 0.985;
+            p.vy *= 0.995;
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            p.rot += p.vr * dt;
+            p.vr *= 0.99;
+
+            if (p.y > h + 80) continue;
+
+            const alpha = clamp01(life / p.life0);
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rot);
+            ctx.globalAlpha = alpha * p.alpha;
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.roundRect(-p.s * 0.6, -p.s * 0.35, p.s * 1.2, p.s * 0.7, Math.max(2, p.s * 0.2));
+            ctx.fill();
+            ctx.restore();
+            next.push(p);
+          }
+          particlesRef.current = next;
+
+          if (particlesRef.current.length > 0) rafRef.current = requestAnimationFrame(() => tick(canvas));
+          else rafRef.current = null;
+        }, []);
+
+        const spawn = useCallback(
+          ({ x, y, intensity = 1, theme = "dark" }) => {
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            const count = Math.floor(18 + 46 * intensity);
+            const isLight = theme === "light";
+            const colors = isLight ? ["#c49a63", "#b5895a", "#d1aa73"] : ["#d0a36c", "#b78652", "#e0b57b"];
+            const base = { x: clamp01(x / w) * w, y: clamp01(y / h) * h };
+
+            for (let i = 0; i < count; i++) {
+              const s = rand(3.5, 8.5) * (0.7 + intensity * 0.7);
+              particlesRef.current.push({
+                x: base.x + rand(-30, 30),
+                y: base.y + rand(-10, 12),
+                vx: rand(-180, 180) * (0.8 + intensity * 0.7),
+                vy: rand(-520, -120) * (0.75 + intensity * 0.7),
+                rot: rand(0, Math.PI * 2),
+                vr: rand(-4, 4),
+                s,
+                alpha: rand(0.45, 0.9),
+                color: colors[(Math.random() * colors.length) | 0],
+                life: rand(0.75, 1.4) * (0.8 + intensity * 0.6),
+                life0: 1,
+              });
+              particlesRef.current[particlesRef.current.length - 1].life0 = particlesRef.current[particlesRef.current.length - 1].life;
+            }
+          },
+          [particlesRef]
+        );
+
+        const start = useCallback(
+          (canvas) => {
+            if (!canvas) return;
+            resize(canvas);
+            if (!rafRef.current) rafRef.current = requestAnimationFrame(() => tick(canvas));
+          },
+          [resize, tick]
+        );
+
+        const stop = useCallback(() => {
+          if (rafRef.current) cancelAnimationFrame(rafRef.current);
+          rafRef.current = null;
+        }, []);
+
+        return { start, stop, spawn, resize };
+      }
+
+      function TeaCup({ dunkDepth01, heat01, danger01, biscuitName, splashKey }) {
+        const wrapStyle = useMemo(
+          () => ({
+            ["--dunkDepth"]: dunkDepth01.toFixed(3),
+            ["--heat"]: heat01.toFixed(3),
+            ["--danger"]: danger01.toFixed(3),
+          }),
+          [dunkDepth01, heat01, danger01]
+        );
+        const [splashOn, setSplashOn] = useState(false);
+        useEffect(() => {
+          if (!splashKey) return;
+          setSplashOn(true);
+          const t = setTimeout(() => setSplashOn(false), 680);
+          return () => clearTimeout(t);
+        }, [splashKey]);
+        return (
+          <div className="cupWrap" style={wrapStyle} aria-label="Animated teacup">
+            <div className="cupBackGlow" aria-hidden="true"></div>
+            <div className="steam" aria-hidden="true">
+              <i style={{ ["--x"]: 10, ["--d"]: 0.1 }}></i>
+              <i style={{ ["--x"]: 70, ["--d"]: 0.4 }}></i>
+              <i style={{ ["--x"]: 132, ["--d"]: 0.25 }}></i>
+              <i style={{ ["--x"]: 186, ["--d"]: 0.62 }}></i>
+            </div>
+            <div className={"splash " + (splashOn ? "show" : "")} aria-hidden="true">
+              <svg viewBox="0 0 240 120">
+                <path
+                  d="M40,78 C65,54 78,50 98,58 C112,64 116,78 132,82 C152,86 168,74 182,60 C198,44 208,46 214,56 C222,70 210,96 182,98 C162,100 154,88 136,92 C116,96 108,112 86,108 C64,104 30,98 40,78 Z"
+                  fill="rgba(194,122,63,0.35)"
+                />
+                <path
+                  d="M54,80 C76,62 90,60 104,66 C118,72 124,84 140,86 C160,88 176,78 190,66 C206,52 214,54 218,62 C224,74 214,92 190,94 C170,96 160,86 144,88 C120,92 116,104 96,102 C76,100 44,96 54,80 Z"
+                  fill="rgba(141,90,43,0.3)"
+                />
+              </svg>
+            </div>
+            <div className="cup" role="img" aria-label={"Teacup with " + biscuitName}>
+              <div className="teaSurface" aria-hidden="true"></div>
+              <div className="biscuit" aria-hidden="true" style={{ opacity: 0.92 - danger01 * 0.22 }}></div>
+              <div className="handle" aria-hidden="true"></div>
+            </div>
+            <div className="saucer" aria-hidden="true"></div>
+          </div>
+        );
+      }
+
+      function App() {
+        const prefersLight = useMemo(() => {
+          try {
+            return window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+          } catch {
+            return false;
+          }
+        }, []);
+        const [theme, setTheme] = useLocalStorageState("tea.sim.theme", prefersLight ? "light" : "dark");
+
+        const [biscuitId, setBiscuitId] = useState("digestive");
+        const [teaTempC, setTeaTempC] = useState(92);
+        const [dunkTimeS, setDunkTimeS] = useState(4.2);
+        const [integrityPct, setIntegrityPct] = useState(74);
+        const [showHelp, setShowHelp] = useState(false);
+        const [splashKey, setSplashKey] = useState(0);
+
+        const biscuitSelectRef = useRef(null);
+        const teaTempRef = useRef(null);
+        const dunkTimeRef = useRef(null);
+        const integrityRef = useRef(null);
+
+        const canvasRef = useRef(null);
+        const crumbs = useCrumbs();
+
+        const [toasts, setToasts] = useState([]);
+        const toast = useCallback((title, desc) => {
+          const id = Math.random().toString(16).slice(2);
+          setToasts((t) => [...t, { id, title, desc }].slice(-3));
+          setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 2500);
+        }, []);
+
+        useEffect(() => {
+          document.documentElement.setAttribute("data-theme", theme);
+          try {
+            const meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) meta.setAttribute("content", theme === "light" ? "#eef1ff" : "#070a12");
+          } catch {}
+        }, [theme]);
+
+        useEffect(() => {
+          const canvas = document.getElementById("crumbsCanvas");
+          canvasRef.current = canvas;
+          crumbs.start(canvas);
+          const onResize = () => crumbs.resize(canvas);
+          window.addEventListener("resize", onResize);
+          return () => {
+            window.removeEventListener("resize", onResize);
+            crumbs.stop();
+          };
+        }, [crumbs]);
+
+        const biscuit = useMemo(() => BISCUITS.find((b) => b.id === biscuitId) || BISCUITS[0], [biscuitId]);
+
+        const model = useMemo(() => computeModel({ biscuit, teaTempC, dunkTimeS, integrityPct }), [biscuit, teaTempC, dunkTimeS, integrityPct]);
+
+        const windowInfo = useMemo(
+          () => computeIdealWindow({ biscuit, teaTempC, integrityPct }),
+          [biscuit, teaTempC, integrityPct]
+        );
+
+        const label = useMemo(() => scoreLabel(model.dunkability, model.crumbleProb), [model.dunkability, model.crumbleProb]);
+        const danger01 = model.crumbleProb;
+
+        const graphRef = useRef(null);
+        useEffect(() => {
+          drawGraph(graphRef.current, {
+            points: windowInfo.points,
+            dunkTimeS,
+            theme,
+            idealStart: windowInfo.start,
+            idealEnd: windowInfo.end,
+          });
+        }, [windowInfo, dunkTimeS, theme]);
+
+        const sprinkleIfOverdunk = useCallback(
+          ({ force = false } = {}) => {
+            const p = model.crumbleProb;
+            const over = dunkTimeS > windowInfo.end + 0.85;
+            if (!force && !(p > 0.62 || over)) return false;
+
+            const stage = document.getElementById("cupStage");
+            const rect = stage ? stage.getBoundingClientRect() : { left: window.innerWidth / 2, top: 120, width: 1, height: 1 };
+            const x = rect.left + rect.width * rand(0.35, 0.65);
+            const y = rect.top + rect.height * rand(0.2, 0.32);
+            const intensity = clamp01((p - 0.55) * 1.3 + (over ? 0.35 : 0));
+            crumbs.spawn({ x, y, intensity: Math.max(0.2, intensity), theme });
+            return true;
+          },
+          [crumbs, dunkTimeS, model.crumbleProb, theme, windowInfo.end]
+        );
+
+        const doSplash = useCallback(() => {
+          setSplashKey((k) => k + 1);
+          const did = sprinkleIfOverdunk({ force: false });
+          toast(
+            "Dunk!",
+            did
+              ? "You pushed your luck. Crumbs have been deployed."
+              : "A tasteful dip. Biscuit morale remains stable."
+          );
+        }, [sprinkleIfOverdunk, toast]);
+
+        const randomize = useCallback(() => {
+          const b = BISCUITS[(Math.random() * BISCUITS.length) | 0];
+          const temp = Math.round(rand(72, 98));
+          const integrity = Math.round(rand(42, 92));
+          const w = computeIdealWindow({ biscuit: b, teaTempC: temp, integrityPct: integrity });
+          const lo = Math.max(0, Math.min(15, w.start + 0.25));
+          const hi = Math.max(lo + 0.2, Math.min(15, w.end + 1.6));
+          const t = rand(lo, hi);
+          setBiscuitId(b.id);
+          setTeaTempC(temp);
+          setIntegrityPct(integrity);
+          setDunkTimeS(Number(fmt(t, 1)));
+          toast("Randomized", "A new dunk scenario appears.");
+        }, [toast]);
+
+        useEffect(() => {
+          const onKeyDown = (e) => {
+            const target = e.target;
+            const isTyping =
+              target &&
+              (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable || target.tagName === "SELECT");
+            if (isTyping) return;
+
+            const key = e.key;
+            if (key.toLowerCase() === "c") {
+              e.preventDefault();
+              biscuitSelectRef.current && biscuitSelectRef.current.focus();
+              toast("Focus", "Biscuit selector focused.");
+              return;
+            }
+            if (key.toLowerCase() === "t") {
+              e.preventDefault();
+              teaTempRef.current && teaTempRef.current.focus();
+              toast("Focus", "Tea temperature focused.");
+              return;
+            }
+            if (key.toLowerCase() === "k") {
+              e.preventDefault();
+              dunkTimeRef.current && dunkTimeRef.current.focus();
+              toast("Focus", "Dunk time focused.");
+              return;
+            }
+            if (key.toLowerCase() === "i") {
+              e.preventDefault();
+              integrityRef.current && integrityRef.current.focus();
+              toast("Focus", "Structural integrity focused.");
+              return;
+            }
+            if (key === "?" || (key === "/" && e.shiftKey)) {
+              e.preventDefault();
+              setShowHelp((s) => !s);
+              return;
+            }
+            if (key === "Escape") {
+              setShowHelp(false);
+              return;
+            }
+            if (key.toLowerCase() === "d") {
+              e.preventDefault();
+              setTheme((t) => (t === "dark" ? "light" : "dark"));
+              toast("Theme", "Toggled " + (theme === "dark" ? "light" : "dark") + " mode.");
+              return;
+            }
+            if (key.toLowerCase() === "b") {
+              e.preventDefault();
+              const idx = BISCUITS.findIndex((b) => b.id === biscuitId);
+              const next = BISCUITS[(idx + 1) % BISCUITS.length];
+              setBiscuitId(next.id);
+              toast("Biscuit", "Now dunking: " + next.name + ".");
+              return;
+            }
+            if (key === " " || key === "Spacebar") {
+              e.preventDefault();
+              doSplash();
+              return;
+            }
+            if (key.toLowerCase() === "r") {
+              e.preventDefault();
+              randomize();
+              return;
+            }
+            if (key === "[" || key === "ArrowLeft") {
+              e.preventDefault();
+              setDunkTimeS((t) => Math.max(0, Number(fmt(t - 0.2, 1))));
+              return;
+            }
+            if (key === "]" || key === "ArrowRight") {
+              e.preventDefault();
+              setDunkTimeS((t) => Math.min(15, Number(fmt(t + 0.2, 1))));
+              return;
+            }
+          };
+          window.addEventListener("keydown", onKeyDown);
+          return () => window.removeEventListener("keydown", onKeyDown);
+        }, [biscuitId, doSplash, randomize, setTheme, theme, toast]);
+
+        useEffect(() => {
+          // When the user drags into the danger zone, sprinkle occasionally.
+          const p = model.crumbleProb;
+          const over = dunkTimeS > windowInfo.end + 0.95;
+          if (p > 0.72 || over) {
+            const chance = clamp01((p - 0.68) * 1.25 + (over ? 0.2 : 0));
+            if (Math.random() < chance * 0.15) sprinkleIfOverdunk({ force: true });
+          }
+        }, [model.crumbleProb, dunkTimeS, windowInfo.end, sprinkleIfOverdunk]);
+
+        const dunkDepth01 = clamp01(0.18 + model.time01 * 0.88);
+        const heat01 = model.temp01;
+        const statusColor = toneColor(label.tone);
+
+        const idealText = windowInfo.start === null ? "—" : `${fmt(windowInfo.start, 1)}s → ${fmt(windowInfo.end, 1)}s`;
+        const overdunk = dunkTimeS > windowInfo.end + 0.85 || model.crumbleProb > 0.62;
+
+        return (
+          <div className="app">
+            <div className="container">
+              <div className="topbar">
+                <div className="brand">
+                  <div className="logo" aria-hidden="true"></div>
+                  <div>
+                    <h1>Tea Dunkability Simulator</h1>
+                    <div className="subtitle">Tune the variables. Watch the cup. Outsmart the crumble.</div>
+                  </div>
+                </div>
+                <div className="actions">
+                  <div className="chiprow" aria-hidden="true">
+                    <div className="chip">
+                      Help <kbd>?</kbd>
+                    </div>
+                    <div className="chip">
+                      Dunk <kbd>Space</kbd>
+                    </div>
+                    <div className="chip">
+                      Theme <kbd>D</kbd>
+                    </div>
+                  </div>
+                  <button className="btn" onClick={() => setShowHelp(true)} title="Show keyboard shortcuts (?)">
+                    <Icon name="help" /> Shortcuts
+                  </button>
+                  <button className="btn" onClick={randomize} title="Randomize (R)">
+                    <Icon name="shuffle" /> Randomize
+                  </button>
+                  <button
+                    className="btn"
+                    onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+                    title="Toggle theme (D)"
+                  >
+                    <Icon name={theme === "dark" ? "sun" : "moon"} /> {theme === "dark" ? "Light" : "Dark"}
+                  </button>
+                  <button className="btn primary" onClick={doSplash} title="Quick dunk (Space)">
+                    <span style={{ fontWeight: 750 }}>Dunk!</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid">
+                <div className="card">
+                  <div className="inner">
+                    <h2>Controls</h2>
+
+                    <div className="row">
+                      <div>
+                        <div className="label">
+                          <div className="name">Biscuit type</div>
+                          <div className="hint">{biscuit.vibe}</div>
+                        </div>
+                        <select
+                          className="select"
+                          value={biscuitId}
+                          onChange={(e) => setBiscuitId(e.target.value)}
+                          aria-label="Biscuit type"
+                          ref={biscuitSelectRef}
+                        >
+                          {BISCUITS.map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="valuePill" title="Biscuit profile note">
+                        {biscuit.note}
+                      </div>
+                    </div>
+
+                    <div className="row">
+                      <div>
+                        <div className="label">
+                          <div className="name">Tea temperature</div>
+                          <div className="hint">hotter tea softens + wicks faster</div>
+                        </div>
+                        <input
+                          className="range"
+                          type="range"
+                          min="60"
+                          max="100"
+                          step="1"
+                          value={teaTempC}
+                          onChange={(e) => setTeaTempC(parseInt(e.target.value, 10))}
+                          aria-label="Tea temperature in Celsius"
+                          ref={teaTempRef}
+                        />
+                      </div>
+                      <div className="valuePill">{teaTempC}°C</div>
+                    </div>
+
+                    <div className="row">
+                      <div>
+                        <div className="label">
+                          <div className="name">Dunk time</div>
+                          <div className="hint">the cliff edge is real</div>
+                        </div>
+                        <input
+                          className="range"
+                          type="range"
+                          min="0"
+                          max="15"
+                          step="0.1"
+                          value={dunkTimeS}
+                          onChange={(e) => setDunkTimeS(parseFloat(e.target.value))}
+                          aria-label="Dunk time in seconds"
+                          ref={dunkTimeRef}
+                        />
+                      </div>
+                      <div className="valuePill">{fmt(dunkTimeS, 1)}s</div>
+                    </div>
+
+                    <div className="row">
+                      <div>
+                        <div className="label">
+                          <div className="name">Structural integrity</div>
+                          <div className="hint">freshness, morale, biscuit confidence</div>
+                        </div>
+                        <input
+                          className="range"
+                          type="range"
+                          min="0"
+                          max="100"
+                          step="1"
+                          value={integrityPct}
+                          onChange={(e) => setIntegrityPct(parseInt(e.target.value, 10))}
+                          aria-label="Structural integrity percent"
+                          ref={integrityRef}
+                        />
+                      </div>
+                      <div className="valuePill">{integrityPct}%</div>
+                    </div>
+
+                    <div className="statsGrid" role="group" aria-label="Dunkability stats">
+                      <div className="stat">
+                        <div className="k">Dunkability score</div>
+                        <div className="v">
+                          <div className="big">{fmt(model.dunkability, 0)}</div>
+                          <div className="tag" style={{ color: statusColor }}>
+                            {label.text}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="stat">
+                        <div className="k">Crumble probability</div>
+                        <div className="v">
+                          <div className="big" style={{ color: model.crumbleProb > 0.62 ? "var(--bad)" : "var(--text)" }}>
+                            {fmt(model.crumbleProb * 100, 0)}%
+                          </div>
+                          <div className="tag">{model.crumbleProb > 0.62 ? "danger" : "stable"}</div>
+                        </div>
+                      </div>
+                      <div className="stat">
+                        <div className="k">Ideal dunk window</div>
+                        <div className="v">
+                          <div className="big">{idealText}</div>
+                          <div className="tag">{overdunk ? "over" : "safe-ish"}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="divider"></div>
+                    <div className="fine">
+                      The model blends <b>wicking</b> (tea absorption) + <b>softening</b> (heat damage) against your biscuit’s natural
+                      <b> sturdiness</b>. It’s not physics—it's dunk folklore with a graph.
+                    </div>
+
+                    {overdunk ? (
+                      <div className="dangerNote" style={{ marginTop: 12 }}>
+                        <div className="dot" aria-hidden="true"></div>
+                        <div className="text">
+                          You’re in the <b>over-dunk zone</b>. Expect crumbs, heartbreak, and an awkward spoon rescue.
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="card">
+                  <div className="inner">
+                    <h2>Simulation</h2>
+                    <div className="meterWrap">
+                      <div className="cupStage" id="cupStage">
+                        <div className="caption">
+                          <span>
+                            Looping teacup · steam level: <b style={{ color: "var(--text)" }}>{fmt(lerp(20, 100, heat01), 0)}%</b>
+                          </span>
+                          <span className="badge">sog: {fmt(model.sogIndex, 0)}</span>
+                        </div>
+                        <TeaCup
+                          dunkDepth01={dunkDepth01}
+                          heat01={heat01}
+                          danger01={danger01}
+                          biscuitName={biscuit.name}
+                          splashKey={splashKey}
+                        />
+                        <div className="legend">
+                          <div className="item">
+                            <span className="dot" style={{ background: "var(--good)" }}></span>Ideal window
+                          </div>
+                          <div className="item">
+                            <span className="dot" style={{ background: "var(--warn)" }}></span>Risk area
+                          </div>
+                          <div className="pillDanger" style={{ borderColor: overdunk ? "rgba(255,77,109,0.4)" : "var(--stroke)" }}>
+                            current: <span style={{ color: overdunk ? "var(--bad)" : "var(--text)" }}>{fmt(dunkTimeS, 1)}s</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <canvas className="graph" ref={graphRef} aria-label="Crumble-o-meter graph"></canvas>
+                        <div className="legend">
+                          <div className="item">
+                            <span className="dot" style={{ background: "var(--accent2)" }}></span>Crumble-o-meter
+                          </div>
+                          <div className="item" style={{ justifyContent: "flex-end" }}>
+                            <span className="dot" style={{ background: "var(--accent)" }}></span>Current point
+                          </div>
+                        </div>
+                        <div className="fine" style={{ marginTop: 10 }}>
+                          If the line is high, your biscuit is basically tea-sponge cosplay. Keep it low, keep it whole.
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="divider"></div>
+                    <div className="fine">
+                      <b>Pro move:</b> Use <span style={{ fontFamily: "var(--mono)" }}>[</span> and{" "}
+                      <span style={{ fontFamily: "var(--mono)" }}>]</span> to nudge dunk time while watching the marker slide. If crumbs
+                      appear, that’s the simulator gently judging you.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <ToastHost toasts={toasts} />
+            {showHelp ? <HelpModal onClose={() => setShowHelp(false)} /> : null}
+          </div>
+        );
+      }
+
+      // Patch: add roundRect for older canvas contexts.
+      (function ensureCanvasRoundRect() {
+        const proto = typeof CanvasRenderingContext2D !== "undefined" ? CanvasRenderingContext2D.prototype : null;
+        if (proto && !proto.roundRect) {
+          proto.roundRect = function (x, y, w, h, r) {
+            const rr = Array.isArray(r) ? r[0] : r;
+            roundRect(this, x, y, w, h, rr || 0);
+            return this;
+          };
+        }
+      })();
+
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
+  </body>
+</html>
