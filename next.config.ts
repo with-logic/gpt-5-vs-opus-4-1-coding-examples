@@ -6,11 +6,11 @@ function detectAppPaths(): Array<{ source: string; destination: string }> {
   const rewrites: Array<{ source: string; destination: string }> = [];
 
   try {
-    const publicDir = path.join(__dirname, "public");
+    const appsDir = path.join(__dirname, "public", "apps");
     const modelDirs = ["gpt-5", "gpt-5.1", "opus-4.1", "opus-4.5", "sonnet-4.5", "gemini-3"];
 
     for (const modelDir of modelDirs) {
-      const modelPath = path.join(publicDir, modelDir);
+      const modelPath = path.join(appsDir, modelDir);
 
       if (fs.existsSync(modelPath)) {
         const entries = fs.readdirSync(modelPath, { withFileTypes: true });
@@ -20,8 +20,8 @@ function detectAppPaths(): Array<{ source: string; destination: string }> {
             const indexPath = path.join(modelPath, entry.name, "index.html");
             if (fs.existsSync(indexPath)) {
               rewrites.push({
-                source: `/${modelDir}/${entry.name}`,
-                destination: `/${modelDir}/${entry.name}/index.html`,
+                source: `/apps/${modelDir}/${entry.name}`,
+                destination: `/apps/${modelDir}/${entry.name}/index.html`,
               });
             }
           }

@@ -311,7 +311,7 @@ export function AppComparisonView({
           // Tabs view - single iframe
           <div className="h-full">
             <iframe
-              src={`/${activeTab}/${app.id}`}
+              src={`/apps/${activeTab}/${app.id}`}
               className="w-full h-full border-0"
               title={`${app.title} - ${MODELS.find(m => m.id === activeTab)?.name}`}
             />
@@ -334,7 +334,7 @@ export function AppComparisonView({
                   </div>
                   {/* iframe */}
                   <iframe
-                    src={`/${modelId}/${app.id}`}
+                    src={`/apps/${modelId}/${app.id}`}
                     className="flex-1 w-full border-0"
                     title={`${app.title} - ${model.name}`}
                   />

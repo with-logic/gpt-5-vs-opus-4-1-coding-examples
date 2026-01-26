@@ -60,8 +60,8 @@ function toCodeExample(
 }
 
 export async function loadApps(): Promise<CodeExample[]> {
-  // Runs on the server; YAML files are one level up from the frontend package
-  const repoRoot = path.resolve(process.cwd(), "..");
+  // Runs on the server; YAML files are in the examples/ directory at repo root
+  const repoRoot = process.cwd();
   const files = await loadYamlFiles(repoRoot);
   const apps: CodeExample[] = [];
 

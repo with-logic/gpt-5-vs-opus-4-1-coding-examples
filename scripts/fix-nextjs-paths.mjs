@@ -93,25 +93,14 @@ async function main() {
   const frontEndDir = path.resolve(__dirname, "..");
   const publicDir = path.join(frontEndDir, "public");
   
-  // Fix GPT-5 apps
-  const gpt5Dir = path.join(publicDir, "gpt-5");
-  console.log("Fixing Next.js paths in GPT-5 apps...");
-  await fixNextJsPaths(gpt5Dir, "gpt-5");
+  const appsDir = path.join(publicDir, "apps");
+  const modelDirs = ["gpt-5", "gpt-5.1", "opus-4.1", "opus-4.5", "sonnet-4.5", "gemini-3"];
 
-  // Fix Opus 4.1 apps
-  const opus41Dir = path.join(publicDir, "opus-4.1");
-  console.log("Fixing Next.js paths in Opus 4.1 apps...");
-  await fixNextJsPaths(opus41Dir, "opus-4.1");
-
-  // Fix Sonnet 4.5 apps
-  const sonnet45Dir = path.join(publicDir, "sonnet-4.5");
-  console.log("Fixing Next.js paths in Sonnet 4.5 apps...");
-  await fixNextJsPaths(sonnet45Dir, "sonnet-4.5");
-
-  // Fix Gemini 3 apps
-  const gemini3Dir = path.join(publicDir, "gemini-3");
-  console.log("Fixing Next.js paths in Gemini 3 apps...");
-  await fixNextJsPaths(gemini3Dir, "gemini-3");
+  for (const modelDir of modelDirs) {
+    const dir = path.join(appsDir, modelDir);
+    console.log(`Fixing Next.js paths in ${modelDir} apps...`);
+    await fixNextJsPaths(dir, modelDir);
+  }
 
   console.log("Done fixing Next.js paths.");
 }

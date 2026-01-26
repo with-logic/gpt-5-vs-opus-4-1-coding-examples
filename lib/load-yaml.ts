@@ -19,6 +19,7 @@ export async function loadYamlFiles(rootDir: string): Promise<string[]> {
             "out",
             ".vercel",
             "misc",
+            "public",
           ].includes(entry.name)
         )
           continue;

@@ -70,17 +70,17 @@ async function fixNextJsApp(appDir, appName) {
 }
 
 async function main() {
-  const frontEndDir = path.resolve(__dirname, "..");
-  const outDir = path.join(frontEndDir, "out");
-  
+  const repoDir = path.resolve(__dirname, "..");
+  const outDir = path.join(repoDir, "out", "apps");
+
   // Fix asteroid-game
   const asteroidDir = path.join(outDir, "gpt-5", "asteroid-game");
   await fixNextJsApp(asteroidDir, "asteroid-game");
-  
+
   // Fix espresso
   const espressoDir = path.join(outDir, "gpt-5", "espresso");
   await fixNextJsApp(espressoDir, "espresso");
-  
+
   console.log("Done fixing Next.js apps.");
 }
 

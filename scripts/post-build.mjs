@@ -23,8 +23,8 @@ async function main() {
   const modelDirs = ["gpt-5", "gpt-5.1", "opus-4.1", "opus-4.5", "sonnet-4.5", "gemini-3"];
 
   for (const modelDir of modelDirs) {
-    const src = path.join(publicDir, modelDir);
-    const dest = path.join(outDir, modelDir);
+    const src = path.join(publicDir, "apps", modelDir);
+    const dest = path.join(outDir, "apps", modelDir);
 
     if (await exists(src)) {
       console.log(`[post-build] Copying ${src} -> ${dest}`);

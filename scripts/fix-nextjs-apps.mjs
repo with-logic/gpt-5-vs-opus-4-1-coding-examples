@@ -63,18 +63,18 @@ async function fixAllFiles(dir, appName, modelPrefix, useRelativePaths = false) 
 }
 
 async function main() {
-  const frontEndDir = path.resolve(__dirname, "..");
-  const publicDir = path.join(frontEndDir, "public");
+  const repoDir = path.resolve(__dirname, "..");
+  const appsDir = path.join(repoDir, "public", "apps");
 
   // Fix asteroid-game in GPT-5 directory (use full paths with app name)
   console.log("Fixing asteroid-game paths...");
-  const asteroidDir = path.join(publicDir, "gpt-5", "asteroid-game");
-  await fixAllFiles(asteroidDir, "asteroid-game", "gpt-5", false); // false = use full paths
+  const asteroidDir = path.join(appsDir, "gpt-5", "asteroid-game");
+  await fixAllFiles(asteroidDir, "asteroid-game", "apps/gpt-5", false); // false = use full paths
 
   // Fix espresso in GPT-5 directory (use full paths with app name)
   console.log("Fixing espresso paths...");
-  const espressoDir = path.join(publicDir, "gpt-5", "espresso");
-  await fixAllFiles(espressoDir, "espresso", "gpt-5", false); // false = use full paths
+  const espressoDir = path.join(appsDir, "gpt-5", "espresso");
+  await fixAllFiles(espressoDir, "espresso", "apps/gpt-5", false); // false = use full paths
 
   console.log("Done fixing Next.js app paths.");
 }
