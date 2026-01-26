@@ -7,23 +7,28 @@ function detectAppPaths(): Array<{ source: string; destination: string }> {
 
   try {
     const appsDir = path.join(__dirname, "public", "apps");
-    const modelDirs = ["gpt-5", "gpt-5.1", "opus-4.1", "opus-4.5", "sonnet-4.5", "gemini-3"];
+
+    if (!fs.existsSync(appsDir)) {
+      return rewrites;
+    }
+
+    // Dynamically read all model directories from public/apps/
+    const modelDirs = fs.readdirSync(appsDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
 
     for (const modelDir of modelDirs) {
       const modelPath = path.join(appsDir, modelDir);
+      const entries = fs.readdirSync(modelPath, { withFileTypes: true });
 
-      if (fs.existsSync(modelPath)) {
-        const entries = fs.readdirSync(modelPath, { withFileTypes: true });
-
-        for (const entry of entries) {
-          if (entry.isDirectory()) {
-            const indexPath = path.join(modelPath, entry.name, "index.html");
-            if (fs.existsSync(indexPath)) {
-              rewrites.push({
-                source: `/apps/${modelDir}/${entry.name}`,
-                destination: `/apps/${modelDir}/${entry.name}/index.html`,
-              });
-            }
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const indexPath = path.join(modelPath, entry.name, "index.html");
+          if (fs.existsSync(indexPath)) {
+            rewrites.push({
+              source: `/apps/${modelDir}/${entry.name}`,
+              destination: `/apps/${modelDir}/${entry.name}/index.html`,
+            });
           }
         }
       }

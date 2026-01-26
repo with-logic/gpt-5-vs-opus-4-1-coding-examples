@@ -15,18 +15,20 @@ async function exists(p) {
 }
 
 async function main() {
-  const frontEndDir = path.resolve(__dirname, "..");
-  const outDir = path.join(frontEndDir, "out");
-  const publicDir = path.join(frontEndDir, "public");
-  
-  // Copy model directories to out if they exist
-  const modelDirs = ["gpt-5", "gpt-5.1", "opus-4.1", "opus-4.5", "sonnet-4.5", "gemini-3"];
+  const repoRoot = path.resolve(__dirname, "..");
+  const outDir = path.join(repoRoot, "out");
+  const publicDir = path.join(repoRoot, "public");
+  const appsDir = path.join(publicDir, "apps");
 
-  for (const modelDir of modelDirs) {
-    const src = path.join(publicDir, "apps", modelDir);
-    const dest = path.join(outDir, "apps", modelDir);
+  // Dynamically copy all model directories from public/apps/ to out/apps/
+  if (await exists(appsDir)) {
+    const entries = await fs.readdir(appsDir, { withFileTypes: true });
+    const modelDirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
 
-    if (await exists(src)) {
+    for (const modelDir of modelDirs) {
+      const src = path.join(appsDir, modelDir);
+      const dest = path.join(outDir, "apps", modelDir);
+
       console.log(`[post-build] Copying ${src} -> ${dest}`);
       await fs.cp(src, dest, { recursive: true, force: true });
     }

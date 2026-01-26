@@ -90,11 +90,18 @@ async function fixJsFiles(dir, appName) {
 }
 
 async function main() {
-  const frontEndDir = path.resolve(__dirname, "..");
-  const publicDir = path.join(frontEndDir, "public");
-  
-  const appsDir = path.join(publicDir, "apps");
-  const modelDirs = ["gpt-5", "gpt-5.1", "opus-4.1", "opus-4.5", "sonnet-4.5", "gemini-3"];
+  const repoRoot = path.resolve(__dirname, "..");
+  const appsDir = path.join(repoRoot, "public", "apps");
+
+  // Dynamically read all model directories
+  let modelDirs = [];
+  try {
+    const entries = await fs.readdir(appsDir, { withFileTypes: true });
+    modelDirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
+  } catch (err) {
+    console.log("No apps directory found, skipping.");
+    return;
+  }
 
   for (const modelDir of modelDirs) {
     const dir = path.join(appsDir, modelDir);
