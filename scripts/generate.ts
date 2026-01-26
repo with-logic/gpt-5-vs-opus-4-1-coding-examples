@@ -94,6 +94,8 @@ function buildCliCommand(
           "--model",
           model.model,
           "--dangerously-skip-permissions",
+          "--permission-mode",
+          "bypassPermissions",
           prompt,
         ],
       };
@@ -101,13 +103,26 @@ function buildCliCommand(
     case "codex":
       return {
         cmd: "codex",
-        args: ["exec", "--model", model.model, prompt],
+        args: [
+          "exec",
+          "--model",
+          model.model,
+          "--full-auto",
+          prompt,
+        ],
       };
 
     case "gemini":
       return {
         cmd: "gemini",
-        args: ["--model", model.model, "--approval-mode", "yolo", prompt],
+        args: [
+          "--model",
+          model.model,
+          "--approval-mode",
+          "yolo",
+          "-y",
+          prompt,
+        ],
       };
 
     default:
