@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { CodeExample } from "@/lib/code-examples";
 import { AppComparisonView } from "./app-comparison-view";
-import { MODELS } from "@/lib/models";
+import { MODELS, MODEL_IDS } from "@/lib/models";
 
 interface AppGridWithRoutingProps {
   apps: CodeExample[];
@@ -33,9 +33,7 @@ export function AppGridWithRouting({ apps }: AppGridWithRoutingProps) {
           const tab = params.get("tab");
 
           if (models) {
-            const validModels = models.split(",").filter(m =>
-              ["gpt-5", "gpt-5.1", "opus-4.1", "opus-4.5", "sonnet-4.5", "gemini-3"].includes(m)
-            );
+            const validModels = models.split(",").filter(m => MODEL_IDS.has(m));
             if (validModels.length > 0) {
               setInitialModels(validModels);
             }
@@ -43,7 +41,7 @@ export function AppGridWithRouting({ apps }: AppGridWithRoutingProps) {
           if (view === "side-by-side" || view === "tabs") {
             setInitialView(view);
           }
-          if (tab && ["gpt-5", "gpt-5.1", "opus-4.1", "opus-4.5", "sonnet-4.5", "gemini-3"].includes(tab)) {
+          if (tab && MODEL_IDS.has(tab)) {
             setInitialTab(tab);
           }
 

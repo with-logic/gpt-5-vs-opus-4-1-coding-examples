@@ -22,6 +22,9 @@ interface ExampleSpec {
 
 interface GenerateOptions {
   force: string[]; // App IDs to force regenerate
+  forceAll: boolean; // Force regenerate all apps
+  modelFilter: string[]; // Model IDs to generate for (empty = all)
+  concurrency: number; // Number of parallel generations
 }
 
 // ============================================================================
@@ -121,7 +124,6 @@ function buildCliCommand(
           model.model,
           "--approval-mode",
           "yolo",
-          "-y",
           prompt,
         ],
       };
@@ -209,7 +211,7 @@ async function generateApp(
   const absoluteOutputPath = path.join(REPO_ROOT, outputPath);
 
   // Check if app exists and should be skipped
-  const forceRegenerate = options.force.includes(spec.id);
+  const forceRegenerate = options.forceAll || options.force.includes(spec.id);
   if (appExists(model.id, spec.id) && !forceRegenerate) {
     return "skipped";
   }
@@ -241,7 +243,22 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const options: GenerateOptions = {
     force: [],
+    forceAll: false,
+    modelFilter: [],
+    concurrency: 1,
   };
+
+  // Parse --force-all flag
+  if (args.includes("--force-all")) {
+    options.forceAll = true;
+  }
+
+  // Parse --concurrency flag
+  const concurrencyIndex = args.indexOf("--concurrency");
+  if (concurrencyIndex !== -1 && args[concurrencyIndex + 1]) {
+    const n = parseInt(args[concurrencyIndex + 1], 10);
+    if (n > 0) options.concurrency = n;
+  }
 
   // Parse --force flag
   const forceIndex = args.indexOf("--force");
@@ -253,14 +270,39 @@ async function main(): Promise<void> {
     }
   }
 
+  // Parse positional args as model IDs (before any flags)
+  for (const arg of args) {
+    if (arg.startsWith("--")) break;
+    const model = models.find(m => m.id === arg);
+    if (model) {
+      options.modelFilter.push(arg);
+    }
+  }
+
+  // Determine which models to generate for
+  const targetModels = options.modelFilter.length > 0
+    ? models.filter(m => options.modelFilter.includes(m.id))
+    : models;
+
   // Load all examples
   const examples = loadExamples();
   console.log(`Found ${examples.length} examples`);
   console.log(`Found ${models.length} models`);
-  console.log(`Total combinations: ${examples.length * models.length}`);
+
+  if (options.modelFilter.length > 0) {
+    console.log(`Generating for: ${options.modelFilter.join(", ")}`);
+  } else {
+    console.log(`Generating for: all models`);
+  }
+
+  console.log(`Total combinations: ${examples.length * targetModels.length}`);
+  console.log(`Concurrency: ${options.concurrency}`);
   console.log();
 
-  if (options.force.length > 0) {
+  if (options.forceAll) {
+    console.log(`Force regenerating: ALL apps`);
+    console.log();
+  } else if (options.force.length > 0) {
     console.log(`Force regenerating: ${options.force.join(", ")}`);
     console.log();
   }
@@ -272,31 +314,48 @@ async function main(): Promise<void> {
     failed: 0,
   };
 
-  // Generate apps sequentially
-  for (const model of models) {
-    console.log(`\n${"=".repeat(60)}`);
-    console.log(`Model: ${model.name} (${model.id})`);
-    console.log(`${"=".repeat(60)}`);
-
+  // Build list of all tasks
+  const tasks: Array<{ model: ModelConfig; spec: ExampleSpec }> = [];
+  for (const model of targetModels) {
     for (const spec of examples) {
-      console.log(`\n  [${spec.id}] ${spec.title}`);
-
-      const result = await generateApp(model, spec, options);
-      stats[result]++;
-
-      switch (result) {
-        case "skipped":
-          console.log(`    Skipped (already exists)`);
-          break;
-        case "generated":
-          console.log(`    Generated successfully`);
-          break;
-        case "failed":
-          console.log(`    FAILED`);
-          break;
-      }
+      tasks.push({ model, spec });
     }
   }
+
+  // Process tasks with concurrency limit
+  const runTask = async (task: { model: ModelConfig; spec: ExampleSpec }) => {
+    const { model, spec } = task;
+    console.log(`\n  [${model.id}/${spec.id}] ${spec.title}`);
+
+    const result = await generateApp(model, spec, options);
+    stats[result]++;
+
+    switch (result) {
+      case "skipped":
+        console.log(`    Skipped (already exists)`);
+        break;
+      case "generated":
+        console.log(`    Generated successfully`);
+        break;
+      case "failed":
+        console.log(`    FAILED`);
+        break;
+    }
+  };
+
+  // Simple concurrency pool
+  const pool: Promise<void>[] = [];
+  for (const task of tasks) {
+    const promise = runTask(task).then(() => {
+      pool.splice(pool.indexOf(promise), 1);
+    });
+    pool.push(promise);
+
+    if (pool.length >= options.concurrency) {
+      await Promise.race(pool);
+    }
+  }
+  await Promise.all(pool);
 
   // Print summary
   console.log(`\n${"=".repeat(60)}`);

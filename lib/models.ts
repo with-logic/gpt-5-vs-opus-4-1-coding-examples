@@ -6,3 +6,6 @@ export const MODELS = modelConfigs.map(({ id, name, color }) => ({
   name,
   color,
 }));
+
+/** Set of valid model IDs for validation */
+export const MODEL_IDS = new Set(modelConfigs.map(m => m.id));
