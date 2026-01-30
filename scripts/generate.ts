@@ -9,6 +9,54 @@ import {
   type ModelConfig,
 } from "../lib/models.config";
 
+// Set Claude max output tokens globally to avoid truncation errors
+process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS = "128000";
+
+// Max output token settings per CLI
+const MAX_OUTPUT_TOKENS = {
+  claude: 128000,
+  codex: 100000,
+  gemini: 65536, // Gemini's max - requires ~/.gemini/settings.json config
+};
+
+// Check token limit configurations on startup
+function checkTokenLimits(): void {
+  const warnings: string[] = [];
+
+  // Check Claude
+  const claudeTokens = process.env.CLAUDE_CODE_MAX_OUTPUT_TOKENS;
+  if (!claudeTokens || parseInt(claudeTokens, 10) < 64000) {
+    warnings.push(
+      `  - Claude: CLAUDE_CODE_MAX_OUTPUT_TOKENS=${claudeTokens || "unset"} (recommend 128000)`
+    );
+  }
+
+  // Check Gemini settings file
+  const geminiSettingsPath = path.join(os.homedir(), ".gemini", "settings.json");
+  try {
+    if (fs.existsSync(geminiSettingsPath)) {
+      const settings = JSON.parse(fs.readFileSync(geminiSettingsPath, "utf-8"));
+      if (!settings.maxOutputTokens || settings.maxOutputTokens < 32000) {
+        warnings.push(
+          `  - Gemini: maxOutputTokens=${settings.maxOutputTokens || "unset"} in ~/.gemini/settings.json (recommend 65536)`
+        );
+      }
+    } else {
+      warnings.push(
+        `  - Gemini: ~/.gemini/settings.json not found (consider setting maxOutputTokens: 65536)`
+      );
+    }
+  } catch {
+    warnings.push(`  - Gemini: Could not read ~/.gemini/settings.json`);
+  }
+
+  if (warnings.length > 0) {
+    console.log("\n\x1b[33m⚠️  Token limit warnings:\x1b[0m");
+    warnings.forEach((w) => console.log(w));
+    console.log();
+  }
+}
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -46,9 +94,26 @@ function loadExamples(): ExampleSpec[] {
   });
 }
 
-function appExists(modelId: string, appId: string): boolean {
+function appFileExists(modelId: string, appId: string): boolean {
   const outputPath = path.join(REPO_ROOT, getAppOutputPath(modelId, appId));
   return fs.existsSync(outputPath);
+}
+
+async function appExistsAndValid(modelId: string, appId: string): Promise<boolean> {
+  const outputPath = path.join(REPO_ROOT, getAppOutputPath(modelId, appId));
+
+  if (!fs.existsSync(outputPath)) {
+    return false;
+  }
+
+  // Validate the HTML doesn't have errors
+  const validation = await validateHtml(outputPath);
+  if (!validation.success) {
+    console.log(`    ⚠️  Existing file has ${validation.errors.length} error(s), will regenerate`);
+    validation.errors.slice(0, 3).forEach((e) => console.log(`      - ${e}`));
+  }
+
+  return validation.success;
 }
 
 function ensureDir(filePath: string): void {
@@ -78,7 +143,7 @@ This is a non-interactive session, so you will not be able to ask clarifying que
 
 This implementation will be displayed in a competition alongside other AI models' implementations of the same specification. Your implementation should be the highest quality, most polished, and most impressive version possible. Put your best foot forward.
 
-Begin implementation now.`;
+Begin implementation now. DO NOT FORGET TO STORE YOUR OUTPUT IN output/index.html, otherwise it will not count!`;
 }
 
 // ============================================================================
@@ -88,7 +153,7 @@ Begin implementation now.`;
 function buildCliCommand(
   model: ModelConfig,
   prompt: string
-): { cmd: string; args: string[] } {
+): { cmd: string; args: string[]; env?: Record<string, string> } {
   switch (model.cli) {
     case "claude":
       return {
@@ -102,6 +167,9 @@ function buildCliCommand(
           "bypassPermissions",
           prompt,
         ],
+        env: {
+          CLAUDE_CODE_MAX_OUTPUT_TOKENS: "128000",
+        },
       };
 
     case "codex":
@@ -112,11 +180,15 @@ function buildCliCommand(
           "--model",
           model.model,
           "--full-auto",
+          "-c",
+          `model_max_output_tokens=${MAX_OUTPUT_TOKENS.codex}`,
           prompt,
         ],
       };
 
     case "gemini":
+      // Note: Gemini CLI doesn't have a CLI flag for max output tokens
+      // It uses ~/.gemini/settings.json - user should configure manually if needed
       return {
         cmd: "gemini",
         args: [
@@ -148,10 +220,125 @@ function cleanupTempDir(tempDir: string): void {
   }
 }
 
+// ============================================================================
+// HTML Validation with Puppeteer
+// ============================================================================
+
+interface ValidationResult {
+  success: boolean;
+  errors: string[];
+}
+
+let puppeteer: typeof import("puppeteer") | null = null;
+
+async function loadPuppeteer(): Promise<typeof import("puppeteer") | null> {
+  if (puppeteer !== null) return puppeteer;
+  try {
+    puppeteer = await import("puppeteer");
+    return puppeteer;
+  } catch {
+    return null;
+  }
+}
+
+async function validateHtml(htmlPath: string): Promise<ValidationResult> {
+  const pptr = await loadPuppeteer();
+  if (!pptr) {
+    // Puppeteer not available, skip validation
+    return { success: true, errors: [] };
+  }
+
+  const errors: string[] = [];
+  let browser;
+
+  try {
+    browser = await pptr.launch({ headless: true });
+    const page = await browser.newPage();
+
+    // Collect console errors
+    page.on("console", (msg) => {
+      if (msg.type() === "error") {
+        errors.push(`Console error: ${msg.text()}`);
+      }
+    });
+
+    // Collect page errors (uncaught exceptions)
+    page.on("pageerror", (err) => {
+      errors.push(`Page error: ${err.message}`);
+    });
+
+    // Load the HTML file
+    const fileUrl = `file://${htmlPath}`;
+    await page.goto(fileUrl, { waitUntil: "networkidle0", timeout: 30000 });
+
+    // Wait a bit for any async JS to run
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    await browser.close();
+  } catch (err) {
+    errors.push(`Validation error: ${err}`);
+    if (browser) await browser.close();
+  }
+
+  return {
+    success: errors.length === 0,
+    errors,
+  };
+}
+
+function buildFixPrompt(spec: ExampleSpec, errors: string[]): string {
+  return `The HTML file you created has JavaScript errors. Please fix them.
+
+## Original App: ${spec.title}
+
+## Errors found:
+${errors.map((e) => `- ${e}`).join("\n")}
+
+## Instructions:
+1. Read the current output/index.html file
+2. Fix the JavaScript errors listed above
+3. Save the fixed version to output/index.html
+
+Do not rewrite the entire file from scratch - just fix the errors.`;
+}
+
+async function runCliOnce(
+  model: ModelConfig,
+  prompt: string,
+  tempDir: string
+): Promise<void> {
+  const { cmd, args, env } = buildCliCommand(model, prompt);
+
+  await new Promise<void>((resolve, reject) => {
+    console.log(`    Running in sandbox: ${tempDir}`);
+    console.log(`    Command: ${cmd} ${args[0]} ...`);
+
+    const proc = spawn(cmd, args, {
+      stdio: "inherit",
+      cwd: tempDir,
+      env: { ...process.env, ...env },
+    });
+
+    proc.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`CLI exited with code ${code}`));
+      }
+    });
+
+    proc.on("error", (err) => {
+      reject(err);
+    });
+  });
+}
+
 async function runCliInSandbox(
   model: ModelConfig,
   prompt: string,
-  destPath: string
+  destPath: string,
+  spec: ExampleSpec,
+  maxRetries: number = 2
 ): Promise<void> {
   const tempDir = createTempDir();
   const tempOutputDir = path.join(tempDir, "output");
@@ -160,39 +347,40 @@ async function runCliInSandbox(
   // Create the output directory structure in temp
   fs.mkdirSync(tempOutputDir, { recursive: true });
 
-  const { cmd, args } = buildCliCommand(model, prompt);
-
   try {
-    await new Promise<void>((resolve, reject) => {
-      console.log(`    Running in sandbox: ${tempDir}`);
-      console.log(`    Command: ${cmd} ${args[0]} ...`);
+    // Initial generation
+    await runCliOnce(model, prompt, tempDir);
 
-      const proc = spawn(cmd, args, {
-        stdio: "inherit",
-        cwd: tempDir,
-      });
-
-      proc.on("close", (code) => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(`CLI exited with code ${code}`));
-        }
-      });
-
-      proc.on("error", (err) => {
-        reject(err);
-      });
-    });
-
-    // Copy the output file to the final destination
-    if (fs.existsSync(tempOutputFile)) {
-      ensureDir(destPath);
-      fs.copyFileSync(tempOutputFile, destPath);
-      console.log(`    Copied output to: ${destPath}`);
-    } else {
+    if (!fs.existsSync(tempOutputFile)) {
       throw new Error(`CLI completed but output/index.html was not created in sandbox`);
     }
+
+    // Validate and retry if needed
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const validation = await validateHtml(tempOutputFile);
+
+      if (validation.success) {
+        break;
+      }
+
+      console.log(`    ⚠️  Validation found ${validation.errors.length} error(s), attempting fix (${attempt + 1}/${maxRetries})...`);
+      validation.errors.slice(0, 5).forEach((e) => console.log(`      - ${e}`));
+
+      // Run CLI again with fix prompt
+      const fixPrompt = buildFixPrompt(spec, validation.errors);
+      await runCliOnce(model, fixPrompt, tempDir);
+    }
+
+    // Final validation (just for logging)
+    const finalValidation = await validateHtml(tempOutputFile);
+    if (!finalValidation.success) {
+      console.log(`    ⚠️  Still has ${finalValidation.errors.length} error(s) after ${maxRetries} fix attempts`);
+    }
+
+    // Copy the output file to the final destination
+    ensureDir(destPath);
+    fs.copyFileSync(tempOutputFile, destPath);
+    console.log(`    Copied output to: ${destPath}`);
   } finally {
     cleanupTempDir(tempDir);
   }
@@ -212,7 +400,7 @@ async function generateApp(
 
   // Check if app exists and should be skipped
   const forceRegenerate = options.forceAll || options.force.includes(spec.id);
-  if (appExists(model.id, spec.id) && !forceRegenerate) {
+  if (!forceRegenerate && await appExistsAndValid(model.id, spec.id)) {
     return "skipped";
   }
 
@@ -221,7 +409,7 @@ async function generateApp(
 
   try {
     // Run CLI in isolated temp directory, then copy result to final location
-    await runCliInSandbox(model, prompt, absoluteOutputPath);
+    await runCliInSandbox(model, prompt, absoluteOutputPath, spec);
 
     // Verify the file was created
     if (fs.existsSync(absoluteOutputPath)) {
@@ -239,6 +427,9 @@ async function generateApp(
 }
 
 async function main(): Promise<void> {
+  // Check token limits on startup
+  checkTokenLimits();
+
   // Parse CLI arguments
   const args = process.argv.slice(2);
   const options: GenerateOptions = {

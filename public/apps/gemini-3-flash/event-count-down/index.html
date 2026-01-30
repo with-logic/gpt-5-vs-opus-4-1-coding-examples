@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Premium Event Countdown</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
+    <script src="https://unpkg.com/lucide@0.292.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0f172a;
+            color: white;
+            overflow-x: hidden;
+        }
+        .font-display {
+            font-family: 'Playfair Display', serif;
+        }
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .glass-dark {
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .parallax-bg {
+            transition: transform 0.2s cubic-bezier(0.2, 0, 0.2, 1);
+            will-change: transform;
+        }
+        input[type="file"]::file-selector-button {
+            margin-right: 20px;
+            border: none;
+            background: #3b82f6;
+            padding: 8px 16px;
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+            transition: background .2s;
+        }
+        input[type="file"]::file-selector-button:hover {
+            background: #2563eb;
+        }
+        .text-glow {
+            text-shadow: 0 0 20px rgba(255,255,255,0.3);
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+        const { motion, AnimatePresence } = Motion;
+
+        const Icon = ({ name, className = "w-5 h-5" }) => {
+            const iconRef = useRef(null);
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            }, [name]);
+            return <i data-lucide={name} className={className}></i>;
+        };
+
+        const App = () => {
+            const [step, setStep] = useState('setup'); // setup | countdown
+            const [eventData, setEventData] = useState({
+                name: '',
+                date: '',
+                location: '',
+                bgImage: null
+            });
+            const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+            const [timeLeft, setTimeLeft] = useState({});
+            const [isExpired, setIsExpired] = useState(false);
+
+            useEffect(() => {
+                const handleMouseMove = (e) => {
+                    setMousePos({
+                        x: (e.clientX / window.innerWidth - 0.5) * 20,
+                        y: (e.clientY / window.innerHeight - 0.5) * 20
+                    });
+                };
+                window.addEventListener('mousemove', handleMouseMove);
+                return () => window.removeEventListener('mousemove', handleMouseMove);
+            }, []);
+
+            useEffect(() => {
+                if (step === 'countdown') {
+                    const timer = setInterval(() => {
+                        const target = new Date(eventData.date).getTime();
+                        const now = new Date().getTime();
+                        const difference = target - now;
+
+                        if (difference <= 0) {
+                            setIsExpired(true);
+                            setTimeLeft({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+                            clearInterval(timer);
+                            confetti({
+                                particleCount: 150,
+                                spread: 70,
+                                origin: { y: 0.6 },
+                                colors: ['#3b82f6', '#ffffff', '#60a5fa']
+                            });
+                        } else {
+                            setTimeLeft({
+                                days: Math.floor(difference / (1000 * 60 * 60 * 24)),
+                                hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
+                                minutes: Math.floor((difference / 1000 / 60) % 60),
+                                seconds: Math.floor((difference / 1000) % 60)
+                            });
+                        }
+                    }, 1000);
+                    return () => clearInterval(timer);
+                }
+            }, [step, eventData.date]);
+
+            const handleImageUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        setEventData(prev => ({ ...prev, bgImage: reader.result }));
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const startCountdown = (e) => {
+                e.preventDefault();
+                if (eventData.name && eventData.date) {
+                    setStep('countdown');
+                }
+            };
+
+            const saveToCalendar = () => {
+                const date = new Date(eventData.date);
+                const endDate = new Date(date.getTime() + 3600000); // +1 hour
+                const format = (d) => d.toISOString().replace(/-|:|"\.\d+/g, '');
+                
+                const icsContent = [
+                    'BEGIN:VCALENDAR',
+                    'VERSION:2.0',
+                    'BEGIN:VEVENT',
+                    `DTSTART:${format(date)}`,
+                    `DTEND:${format(endDate)}`,
+                    `SUMMARY:${eventData.name}`,
+                    `LOCATION:${eventData.location}`,
+                    'END:VEVENT',
+                    'END:VCALENDAR'
+                ].join('\n');
+
+                const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+                const link = document.createElement('a');
+                link.href = window.URL.createObjectURL(blob);
+                link.setAttribute('download', `${eventData.name}.ics`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
+            return (
+                <div className="relative min-h-screen w-full flex items-center justify-center overflow-hidden">
+                    {/* Background Parallax Layer */}
+                    <div 
+                        className="fixed inset-0 z-0 scale-110 parallax-bg"
+                        style={{
+                            backgroundImage: eventData.bgImage ? `url(${eventData.bgImage})` : 'linear-gradient(to bottom right, #1e293b, #0f172a)',
+                            backgroundSize: 'cover',
+                            backgroundPosition: 'center',
+                            transform: `translate(${mousePos.x}px, ${mousePos.y}px)`
+                        }}
+                    >
+                        <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"></div>
+                    </div>
+
+                    {/* Main Content */}
+                    <main className="relative z-10 w-full max-w-4xl px-6 py-12">
+                        <AnimatePresence mode="wait">
+                            {step === 'setup' ? (
+                                <motion.div
+                                    key="setup"
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.95 }}
+                                    className="glass rounded-3xl p-8 md:p-12 shadow-2xl max-w-lg mx-auto"
+                                >
+                                    <h1 className="text-3xl font-bold mb-8 flex items-center gap-3">
+                                        <Icon name="calendar-days" className="text-blue-400 w-8 h-8" />
+                                        Create Event
+                                    </h1>
+                                    <form onSubmit={startCountdown} className="space-y-6">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-400 mb-2 uppercase tracking-wider">Event Name</label>
+                                            <input 
+                                                required
+                                                type="text" 
+                                                placeholder="e.g., Summer Gala 2026"
+                                                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                                                value={eventData.name}
+                                                onChange={e => setEventData({...eventData, name: e.target.value})}
+                                            />
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-400 mb-2 uppercase tracking-wider">Date & Time</label>
+                                                <input 
+                                                    required
+                                                    type="datetime-local" 
+                                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                                                    value={eventData.date}
+                                                    onChange={e => setEventData({...eventData, date: e.target.value})}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-medium text-gray-400 mb-2 uppercase tracking-wider">Location</label>
+                                                <input 
+                                                    type="text" 
+                                                    placeholder="e.g., New York, NY"
+                                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                                                    value={eventData.location}
+                                                    onChange={e => setEventData({...eventData, location: e.target.value})}
+                                                />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-400 mb-2 uppercase tracking-wider">Background Image</label>
+                                            <input 
+                                                type="file" 
+                                                accept="image/*"
+                                                onChange={handleImageUpload}
+                                                className="w-full text-sm text-gray-400"
+                                            />
+                                        </div>
+                                        <button 
+                                            type="submit"
+                                            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-blue-500/20 transform hover:-translate-y-0.5 transition-all mt-4"
+                                        >
+                                            Launch Countdown
+                                        </button>
+                                    </form>
+                                </motion.div>
+                            ) : (
+                                <motion.div
+                                    key="countdown"
+                                    initial={{ opacity: 0, scale: 0.9 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    className="text-center space-y-12"
+                                >
+                                    <div className="space-y-4">
+                                        <motion.h2 
+                                            initial={{ y: -20, opacity: 0 }}
+                                            animate={{ y: 0, opacity: 1 }}
+                                            transition={{ delay: 0.2 }}
+                                            className="text-xl md:text-2xl font-light tracking-[0.3em] uppercase text-blue-400 drop-shadow-lg"
+                                        >
+                                            Counting down to
+                                        </motion.h2>
+                                        <motion.h1 
+                                            initial={{ y: -20, opacity: 0 }}
+                                            animate={{ y: 0, opacity: 1 }}
+                                            transition={{ delay: 0.3 }}
+                                            className="text-5xl md:text-8xl font-display font-bold text-glow"
+                                        >
+                                            {eventData.name}
+                                        </motion.h1>
+                                        {eventData.location && (
+                                            <motion.div 
+                                                initial={{ opacity: 0 }}
+                                                animate={{ opacity: 1 }}
+                                                transition={{ delay: 0.4 }}
+                                                className="flex items-center justify-center gap-2 text-gray-300 font-light text-lg"
+                                            >
+                                                <Icon name="map-pin" className="w-5 h-5 text-blue-400" />
+                                                {eventData.location}
+                                            </motion.div>
+                                        )}
+                                    </div>
+
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8 max-w-5xl mx-auto">
+                                        {[ 
+                                            { label: 'Days', value: timeLeft.days },
+                                            { label: 'Hours', value: timeLeft.hours },
+                                            { label: 'Minutes', value: timeLeft.minutes },
+                                            { label: 'Seconds', value: timeLeft.seconds }
+                                        ].map((unit, i) => (
+                                            <motion.div
+                                                key={unit.label}
+                                                initial={{ opacity: 0, y: 30 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                transition={{ delay: 0.5 + (i * 0.1) }}
+                                                className="glass-dark p-6 md:p-10 rounded-[2rem] flex flex-col items-center justify-center relative group"
+                                            >
+                                                <div className="text-4xl md:text-7xl font-bold tabular-nums mb-2">
+                                                    <AnimatePresence mode="popLayout">
+                                                        <motion.span
+                                                            key={unit.value}
+                                                            initial={{ opacity: 0, y: 10 }}
+                                                            animate={{ opacity: 1, y: 0 }}
+                                                            exit={{ opacity: 0, y: -10 }}
+                                                            className="inline-block"
+                                                        >
+                                                            {String(unit.value || 0).padStart(2, '0')}
+                                                        </motion.span>
+                                                    </AnimatePresence>
+                                                </div>
+                                                <span className="text-xs md:text-sm uppercase tracking-widest text-blue-400 font-semibold">{unit.label}</span>
+                                            </motion.div>
+                                        ))}
+                                    </div>
+
+                                    <motion.div 
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        transition={{ delay: 1 }}
+                                        className="flex flex-col md:flex-row items-center justify-center gap-4"
+                                    >
+                                        <button 
+                                            onClick={saveToCalendar}
+                                            className="group flex items-center gap-3 bg-white text-black px-8 py-4 rounded-full font-bold hover:bg-blue-50 transition-all active:scale-95"
+                                        >
+                                            <Icon name="calendar" className="w-5 h-5" />
+                                            Save to Calendar
+                                        </button>
+                                        <button 
+                                            onClick={() => setStep('setup')}
+                                            className="group flex items-center gap-3 bg-white/10 text-white px-8 py-4 rounded-full font-bold hover:bg-white/20 backdrop-blur-md transition-all active:scale-95"
+                                        >
+                                            <Icon name="settings" className="w-5 h-5" />
+                                            Edit Event
+                                        </button>
+                                    </motion.div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </main>
+
+                    {/* Decorative Elements */}
+                    <div className="fixed bottom-0 left-0 w-full h-32 bg-gradient-to-t from-black/50 to-transparent pointer-events-none"></div>
+                    <div className="fixed top-0 left-0 w-full h-32 bg-gradient-to-b from-black/50 to-transparent pointer-events-none"></div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</body>
+</html>

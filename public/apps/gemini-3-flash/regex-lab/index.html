@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Regex Lab - Playground</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script>window.react = window.React;</script>
+    <script src="https://unpkg.com/lucide-react@0.263.0/dist/umd/lucide-react.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500;600&family=Inter:wght@300;400;500;600;700&display=swap');
+
+        :root {
+            --accent: #38bdf8;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            transition: background-color 0.3s ease;
+        }
+
+        .mono {
+            font-family: 'Fira Code', monospace;
+        }
+
+        .terminal-window {
+            border-radius: 0.75rem;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 12rem);
+            min-height: 400px;
+        }
+
+        .dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .dot-red { background: #ff5f56; }
+        .dot-yellow { background: #ffbd2e; }
+        .dot-green { background: #27c93f; }
+
+        .editor-container {
+            position: relative;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .editor-input, .editor-backdrop {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            padding: 1.5rem;
+            font-family: 'Fira Code', monospace;
+            font-size: 1rem;
+            line-height: 1.6;
+            border: none;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            overflow-y: auto;
+        }
+
+        .editor-input {
+            background: transparent;
+            color: transparent;
+            z-index: 2;
+            resize: none;
+            outline: none;
+        }
+
+        .dark .editor-input { caret-color: white; }
+        .light .editor-input { caret-color: black; }
+
+        .editor-backdrop {
+            z-index: 1;
+            pointer-events: none;
+        }
+
+        .match-highlight {
+            border-radius: 3px;
+            background-color: rgba(56, 189, 248, 0.3);
+            border-bottom: 2px solid #38bdf8;
+        }
+
+        .group-1 { background-color: #a855f7; }
+        .group-2 { background-color: #ec4899; }
+        .group-3 { background-color: #f59e0b; }
+        .group-4 { background-color: #22c55e; }
+        .group-5 { background-color: #3b82f6; }
+
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        .dark ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        .light ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .animate-fade-in {
+            animation: fadeIn 0.4s cubic-bezier(0, 0, 0.2, 1) forwards;
+        }
+        
+        .shake {
+            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both;
+        }
+
+        @keyframes shake {
+            10%, 90% { transform: translate3d(-1px, 0, 0); }
+            20%, 80% { transform: translate3d(2px, 0, 0); }
+            30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+            40%, 60% { transform: translate3d(4px, 0, 0); }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 min-h-screen p-4 md:p-8">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+        const icons = window.lucide || window.LucideReact || window.lucideReact || {};
+        const { 
+            Search = () => null, 
+            Trash2 = () => null, 
+            Share2 = () => null, 
+            Info = () => null, 
+            Check = () => null, 
+            Code = () => null, 
+            Moon = () => null, 
+            Sun = () => null, 
+            AlertCircle = () => null, 
+            X = () => null, 
+            Zap = () => null 
+        } = icons;
+
+        const FLAGS = [
+            { id: 'g', label: 'global', desc: 'Global search' },
+            { id: 'i', label: 'insensitive', desc: 'Case-insensitive' },
+            { id: 'm', label: 'multiline', desc: 'Multi-line' },
+            { id: 's', label: 'dotAll', desc: 'Dot matches newline' },
+            { id: 'u', label: 'unicode', desc: 'Unicode support' },
+            { id: 'y', label: 'sticky', desc: 'Sticky search' }
+        ];
+
+        const QUICK_TOKENS = [
+            { label: '\d', value: '\d', title: 'Digit' },
+            { label: '\w', value: '\w', title: 'Word character' },
+            { label: '\s', value: '\s', title: 'Whitespace' },
+            { label: '[A-Z]', value: '[A-Z]', title: 'Uppercase range' },
+            { label: '.*', value: '.*', title: 'Any characters' },
+            { label: '+', value: '+', title: 'One or more' },
+            { label: '?', value: '?', title: 'Zero or one' },
+            { label: '(...)', value: '()', title: 'Capture group' },
+            { label: '(?=)', value: '(?=)', title: 'Positive lookahead' },
+            { label: '^', value: '^', title: 'Start of line' },
+            { label: '$', value: '$', title: 'End of line' },
+            { label: '\b', value: '\b', title: 'Word boundary' }
+        ];
+
+        function App() {
+            const [pattern, setPattern] = useState('[A-Z][a-z]+');
+            const [flags, setFlags] = useState('g');
+            const [testText, setTestText] = useState('Hello World! Welcome to the Regex Lab Playground. Try editing the pattern or this text.');
+            const [theme, setTheme] = useState('dark');
+            const [copied, setCopied] = useState(false);
+            const editorRef = useRef(null);
+            const backdropRef = useRef(null);
+
+            useEffect(() => {
+                if (theme === 'dark') document.documentElement.classList.add('dark');
+                else document.documentElement.classList.remove('dark');
+            }, [theme]);
+
+            useEffect(() => {
+                const hash = window.location.hash.slice(1);
+                if (hash) {
+                    try {
+                        const decoded = JSON.parse(atob(hash));
+                        if (decoded.p) setPattern(decoded.p);
+                        if (decoded.f) setFlags(decoded.f);
+                        if (decoded.t) setTestText(decoded.t);
+                    } catch (e) {}
+                }
+            }, []);
+
+            const regexData = useMemo(() => {
+                if (!pattern) return { matches: [], error: null };
+                try {
+                    const re = new RegExp(pattern, flags);
+                    const matches = [];
+                    let match;
+                    if (flags.includes('g')) {
+                        while ((match = re.exec(testText)) !== null) {
+                            matches.push(match);
+                            if (match.index === re.lastIndex) re.lastIndex++;
+                        }
+                    } else {
+                        match = re.exec(testText);
+                        if (match) matches.push(match);
+                    }
+                    return { matches, error: null };
+                } catch (e) {
+                    return { matches: [], error: e.message };
+                }
+            }, [pattern, flags, testText]);
+
+            const handleShare = () => {
+                const data = { p: pattern, f: flags, t: testText };
+                window.location.hash = btoa(JSON.stringify(data));
+                navigator.clipboard.writeText(window.location.href);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+            };
+
+            const toggleFlag = (flag) => {
+                setFlags(prev => prev.includes(flag) ? prev.replace(flag, '') : prev + flag);
+            };
+
+            const insertToken = (token) => {
+                const input = document.getElementById('pattern-input');
+                const start = input.selectionStart;
+                const end = input.selectionEnd;
+                const newPattern = pattern.substring(0, start) + token + pattern.substring(end);
+                setPattern(newPattern);
+                setTimeout(() => {
+                    input.focus();
+                    const newPos = start + (token === '()' ? 1 : token.length);
+                    input.setSelectionRange(newPos, newPos);
+                }, 0);
+            };
+
+            const syncScroll = () => {
+                if (backdropRef.current && editorRef.current) {
+                    backdropRef.current.scrollTop = editorRef.current.scrollTop;
+                    backdropRef.current.scrollLeft = editorRef.current.scrollLeft;
+                }
+            };
+
+            const renderHighlightedText = () => {
+                if (!pattern || !regexData.matches.length || regexData.error) return testText;
+                const segments = [];
+                let lastIndex = 0;
+                [...regexData.matches].sort((a, b) => a.index - b.index).forEach((match, i) => {
+                    if (match.index > lastIndex) segments.push(testText.substring(lastIndex, match.index));
+                    segments.push(<span key={i} className="match-highlight">{match[0]}</span>);
+                    lastIndex = match.index + match[0].length;
+                });
+                if (lastIndex < testText.length) segments.push(testText.substring(lastIndex));
+                return segments;
+            };
+
+            const explainPattern = (p) => {
+                if (!p) return [{ t: 'Empty', d: 'Enter a pattern to see explanation.' }];
+                const explanations = [];
+                const tokens = [
+                    { re: /\\d/, t: '\\d', d: 'Digits (0-9)' },
+                    { re: /\\w/, t: '\\w', d: 'Word characters (a-z, A-Z, 0-9, _)' },
+                    { re: /\\s/, t: '\\s', d: 'Whitespace' },
+                    { re: /\[.*\]/, t: '[...]', d: 'Character set' },
+                    { re: /\*/, t: '*', d: '0 or more' },
+                    { re: /\+/, t: '+', d: '1 or more' },
+                    { re: /\?/, t: '?', d: 'Optional' },
+                    { re: /\./, t: '.', d: 'Any character' },
+                    { re: /\^/, t: '^', d: 'Start of line' },
+                    { re: /\$/, t: '$', d: 'End of line' },
+                    { re: /\(.*\)/, t: '(...)', d: 'Capture group' }
+                ];
+                tokens.forEach(tok => { if (tok.re.test(p)) explanations.push(tok); });
+                return explanations.length ? explanations : [{ t: 'Literal', d: 'Exact character matching.' }];
+            };
+
+            return (
+                <div className="max-w-6xl mx-auto space-y-8 animate-fade-in">
+                    <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="flex items-center gap-4">
+                            <div className="bg-sky-500 shadow-lg shadow-sky-500/30 p-2.5 rounded-2xl">
+                                <Search className="text-white" size={28} />
+                            </div>
+                            <div>
+                                <h1 className="text-3xl font-extrabold tracking-tight">Regex Lab</h1>
+                                <p className="text-slate-500 dark:text-slate-400 font-medium">Professional Playground</p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm hover:scale-105 transition-all">
+                                {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+                            </button>
+                            <button onClick={handleShare} className="flex items-center gap-2 px-5 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-sm hover:scale-105 transition-all font-semibold">
+                                {copied ? <Check size={18} className="text-green-500" /> : <Share2 size={18} />}
+                                {copied ? 'Copied' : 'Share'}
+                            </button>
+                            <button onClick={() => { setPattern(''); setTestText(''); }} className="p-3 bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20 rounded-xl hover:bg-red-500/20 transition-all">
+                                <Trash2 size={20} />
+                            </button>
+                        </div>
+                    </header>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                        <div className="lg:col-span-8 space-y-8">
+                            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xl shadow-slate-200/50 dark:shadow-none space-y-6">
+                                <div className="flex flex-col md:flex-row gap-4">
+                                    <div className="flex-1 relative group">
+                                        <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-lg">/</div>
+                                        <input id="pattern-input" value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder="Pattern..." className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl py-4 pl-10 pr-12 mono text-sky-600 dark:text-sky-400 focus:ring-4 focus:ring-sky-500/10 outline-none transition-all text-lg shadow-inner" spellCheck="false" />
+                                        <div className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-lg">/</div>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl px-2 shadow-inner">
+                                        {FLAGS.map(f => (
+                                            <button key={f.id} onClick={() => toggleFlag(f.id)} title={f.desc} className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black transition-all ${flags.includes(f.id) ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/30 scale-110' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}>
+                                                {f.id}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                {regexData.error && (
+                                    <div className="flex items-center gap-3 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 p-4 rounded-2xl text-sm font-medium shake">
+                                        <AlertCircle size={20} />
+                                        <div className="mono">{regexData.error}</div>
+                                    </div>
+                                )}
+                                <div className="flex flex-wrap gap-2.5">
+                                    {QUICK_TOKENS.map(t => (
+                                        <button key={t.label} onClick={() => insertToken(t.value)} className="px-3.5 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-sky-500 hover:text-white dark:hover:bg-sky-500 rounded-xl text-xs mono font-bold text-slate-600 dark:text-slate-300 transition-all border border-slate-200 dark:border-slate-700 shadow-sm" title={t.title}>
+                                            {t.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="terminal-window bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl">
+                                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
+                                    <div className="flex gap-2">
+                                        <div className="dot dot-red"></div>
+                                        <div className="dot dot-yellow"></div>
+                                        <div className="dot dot-green"></div>
+                                    </div>
+                                    <span className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">test_buffer.txt</span>
+                                </div>
+                                <div className="editor-container dark:bg-slate-950">
+                                    <div className="editor-backdrop text-slate-300 dark:text-slate-700" ref={backdropRef}>{renderHighlightedText()}</div>
+                                    <textarea ref={editorRef} value={testText} onChange={(e) => setTestText(e.target.value)} onScroll={syncScroll} className="editor-input text-transparent dark:text-transparent" placeholder="Paste test text here..." spellCheck="false" />
+                                </div>
+                                <div className="px-6 py-3 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center text-[10px] font-bold text-slate-400 mono uppercase tracking-widest">
+                                    <div className="text-sky-500 dark:text-sky-400">{regexData.matches.length} matches found</div>
+                                    <div>Ln {testText.split('\n').length}, Col {testText.length}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="lg:col-span-4 space-y-8">
+                            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-xl">
+                                <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                                    <h2 className="font-bold flex items-center gap-2"><Zap size={18} className="text-amber-500" /> Matches</h2>
+                                    <span className="text-xs font-black bg-sky-500 text-white px-2.5 py-1 rounded-lg shadow-md">{regexData.matches.length}</span>
+                                </div>
+                                <div className="max-h-[300px] overflow-y-auto">
+                                    {regexData.matches.length > 0 ? (
+                                        <table className="w-full text-sm text-left">
+                                            <thead className="bg-slate-50 dark:bg-slate-950 text-slate-400 text-[10px] font-black uppercase tracking-widest">
+                                                <tr>
+                                                    <th className="px-5 py-3">Content</th>
+                                                    <th className="px-5 py-3">Pos</th>
+                                                    <th className="px-5 py-3">Groups</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                                {regexData.matches.slice(0, 50).map((m, i) => (
+                                                    <tr key={i} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                                                        <td className="px-5 py-3 font-semibold text-sky-600 dark:text-sky-400 mono truncate max-w-[120px]">{m[0]}</td>
+                                                        <td className="px-5 py-3 text-slate-400 mono text-xs">{m.index}</td>
+                                                        <td className="px-5 py-3">
+                                                            <div className="flex gap-1.5">
+                                                                {m.slice(1).map((g, gi) => (
+                                                                    <div key={gi} className={`w-2.5 h-2.5 rounded-full group-${(gi%5)+1}`} title={`Group ${gi+1}: ${g}`}></div>
+                                                                ))}
+                                                                {m.length <= 1 && <span className="text-slate-300 dark:text-slate-700">—</span>}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    ) : (
+                                        <div className="p-12 text-center text-slate-400 font-medium">No results</div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-xl">
+                                <h2 className="font-bold flex items-center gap-2 mb-6"><Info size={18} className="text-sky-500" /> Explanation</h2>
+                                <div className="space-y-5">
+                                    {explainPattern(pattern).map((item, i) => (
+                                        <div key={i} className="flex gap-4">
+                                            <div className="mono text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-400/10 px-2 py-1 rounded-lg h-fit shrink-0 text-xs font-black border border-sky-100 dark:border-sky-400/20">{item.t}</div>
+                                            <div className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed font-medium">{item.d}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

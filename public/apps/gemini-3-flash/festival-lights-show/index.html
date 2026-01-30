@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Festival Lights Show</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tween.js/18.6.4/tween.umd.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Inter', sans-serif; color: white; }
+        canvas { display: block; }
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+        }
+        .neon-text {
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5), 0 0 20px currentColor;
+        }
+        .control-panel {
+            position: absolute;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 800px;
+            z-index: 10;
+            transition: transform 0.3s ease-in-out;
+        }
+        .control-panel.hidden-ui {
+            transform: translate(-50%, 150%);
+        }
+        .header {
+            position: absolute;
+            top: 24px;
+            left: 24px;
+            z-index: 10;
+        }
+        .status {
+            position: absolute;
+            top: 24px;
+            right: 24px;
+            z-index: 10;
+        }
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 2px;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #fff;
+            margin-top: -6px;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+        .btn-toggle {
+            transition: all 0.2s;
+        }
+        .btn-toggle:active {
+            transform: scale(0.95);
+        }
+        #audio-visualizer {
+            position: absolute;
+            bottom: 140px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: flex-end;
+            gap: 2px;
+            height: 40px;
+            pointer-events: none;
+        }
+        .vis-bar {
+            width: 4px;
+            background: white;
+            border-radius: 2px 2px 0 0;
+            opacity: 0.6;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1 class="text-3xl font-black italic tracking-tighter neon-text uppercase">Festival Lights</h1>
+        <p class="text-xs opacity-50 tracking-widest uppercase">Immersive Light Controller v1.0</p>
+    </div>
+
+    <div class="status">
+        <button id="hide-ui-btn" class="glass px-4 py-2 text-xs uppercase tracking-widest hover:bg-white/10">Toggle UI [H]</button>
+    </div>
+
+    <div id="audio-visualizer"></div>
+
+    <div class="control-panel glass p-6 flex flex-col gap-6" id="main-ui">
+        <!-- Top Row: Controls -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <!-- Pattern Selection -->
+            <div>
+                <label class="text-[10px] uppercase tracking-widest opacity-60 mb-3 block">Light Pattern</label>
+                <div class="flex flex-wrap gap-2">
+                    <button class="pattern-btn glass px-3 py-1.5 text-xs active" data-pattern="orbit">Orbit</button>
+                    <button class="pattern-btn glass px-3 py-1.5 text-xs" data-pattern="wave">Wave</button>
+                    <button class="pattern-btn glass px-3 py-1.5 text-xs" data-pattern="chaos">Chaos</button>
+                    <button class="pattern-btn glass px-3 py-1.5 text-xs" data-pattern="pulse">Pulse</button>
+                </div>
+            </div>
+
+            <!-- Color Themes -->
+            <div>
+                <label class="text-[10px] uppercase tracking-widest opacity-60 mb-3 block">Color Theme</label>
+                <div class="flex gap-2">
+                    <button class="color-btn w-8 h-8 rounded-full border border-white/20" data-theme="neon" style="background: linear-gradient(45deg, #ff00ff, #00ffff);"></button>
+                    <button class="color-btn w-8 h-8 rounded-full border border-white/20" data-theme="sunset" style="background: linear-gradient(45deg, #ff5f6d, #ffc371);"></button>
+                    <button class="color-btn w-8 h-8 rounded-full border border-white/20" data-theme="forest" style="background: linear-gradient(45deg, #11998e, #38ef7d);"></button>
+                    <button class="color-btn w-8 h-8 rounded-full border border-white/20" data-theme="royal" style="background: linear-gradient(45deg, #8e2de2, #4a00e0);"></button>
+                    <button class="color-btn w-8 h-8 rounded-full border border-white/20" data-theme="monochrome" style="background: linear-gradient(45deg, #ffffff, #333333);"></button>
+                </div>
+            </div>
+
+            <!-- Parameters -->
+            <div class="flex flex-col gap-4">
+                <div>
+                    <div class="flex justify-between text-[10px] uppercase tracking-widest opacity-60 mb-1">
+                        <span>Intensity</span>
+                        <span id="intensity-val">0.8</span>
+                    </div>
+                    <input type="range" id="intensity-slider" min="0" max="2" step="0.1" value="0.8" class="w-full">
+                </div>
+                <div>
+                    <div class="flex justify-between text-[10px] uppercase tracking-widest opacity-60 mb-1">
+                        <span>Speed</span>
+                        <span id="speed-val">1.0</span>
+                    </div>
+                    <input type="range" id="speed-slider" min="0.1" max="5" step="0.1" value="1.0" class="w-full">
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Row: Audio -->
+        <div class="flex items-center justify-between border-t border-white/10 pt-4">
+            <div class="flex items-center gap-4">
+                <button id="mic-btn" class="btn-toggle glass px-6 py-2 flex items-center gap-2 hover:bg-white/10">
+                    <div class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+                    <span class="text-xs uppercase tracking-widest">Sync Mic</span>
+                </button>
+                <p class="text-[10px] opacity-40 max-w-[200px]">Lights will react to your microphone or ambient sound when enabled.</p>
+            </div>
+            
+            <div class="flex gap-2">
+                <button id="auto-cycle" class="glass px-4 py-2 text-[10px] uppercase tracking-widest hover:bg-white/10">Auto Cycle: OFF</button>
+                <button id="fullscreen-btn" class="glass px-4 py-2 text-[10px] uppercase tracking-widest hover:bg-white/10">Fullscreen</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Constants & State ---
+        const THEMES = {
+            neon: [0xff00ff, 0x00ffff, 0xffff00, 0x00ff00],
+            sunset: [0xff5f6d, 0xffc371, 0xff1e56, 0xffac41],
+            forest: [0x11998e, 0x38ef7d, 0x1d2671, 0xc33764],
+            royal: [0x8e2de2, 0x4a00e0, 0xff0080, 0x42275a],
+            monochrome: [0xffffff, 0x888888, 0x444444, 0xaaaaaa]
+        };
+
+        let state = {
+            pattern: 'orbit',
+            theme: 'neon',
+            intensity: 0.8,
+            speed: 1.0,
+            micActive: false,
+            autoCycle: false,
+            uiVisible: true,
+            audioData: new Uint8Array(0)
+        };
+
+        // --- Three.js Setup ---
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x050505, 0.08);
+        
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
+
+        // Lights
+        const lights = [];
+        const lightCount = 12;
+        const lightGroup = new THREE.Group();
+        scene.add(lightGroup);
+
+        const createLight = (colorValue) => {
+            const group = new THREE.Group();
+            const color = new THREE.Color(colorValue);
+            
+            // Core light
+            const light = new THREE.PointLight(color, 1, 25);
+            group.add(light);
+
+            // Visual representation
+            const geo = new THREE.SphereGeometry(0.15, 16, 16);
+            const mat = new THREE.MeshBasicMaterial({ color: color });
+            const mesh = new THREE.Mesh(geo, mat);
+            group.add(mesh);
+
+            // Add a "glow" sprite
+            const spriteMat = new THREE.SpriteMaterial({
+                map: createGlowTexture(colorValue),
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                opacity: 0.8
+            });
+            const sprite = new THREE.Sprite(spriteMat);
+            sprite.scale.set(3, 3, 1);
+            group.add(sprite);
+
+            return { group, light, mesh, sprite, baseColor: colorValue };
+        };
+
+        function createGlowTexture(color) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+            const c = new THREE.Color(color);
+            gradient.addColorStop(0, 'rgba(255,255,255,1)');
+            gradient.addColorStop(0.2, `rgba(${Math.floor(c.r*255)},${Math.floor(c.g*255)},${Math.floor(c.b*255)},0.5)`);
+            gradient.addColorStop(0.6, 'rgba(0,0,0,0)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 64, 64);
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        for (let i = 0; i < lightCount; i++) {
+            const l = createLight(THEMES.neon[i % THEMES.neon.length]);
+            lights.push(l);
+            lightGroup.add(l.group);
+        }
+
+        // Environment: Floor
+        const floorGeo = new THREE.PlaneGeometry(200, 200);
+        const floorMat = new THREE.MeshStandardMaterial({ 
+            color: 0x111111, 
+            roughness: 0.1, 
+            metalness: 0.5 
+        });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.position.y = -6;
+        scene.add(floor);
+
+        // Ambient light for floor visibility
+        const ambient = new THREE.AmbientLight(0xffffff, 0.05);
+        scene.add(ambient);
+
+        // Particles
+        const particleCount = 2000;
+        const particlesGeo = new THREE.BufferGeometry();
+        const posArray = new Float32Array(particleCount * 3);
+        for (let i = 0; i < particleCount * 3; i++) {
+            posArray[i] = (Math.random() - 0.5) * 100;
+        }
+        particlesGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+        const particlesMat = new THREE.PointsMaterial({
+            size: 0.04,
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.3
+        });
+        const particlesMesh = new THREE.Points(particlesGeo, particlesMat);
+        scene.add(particlesMesh);
+
+        camera.position.z = 18;
+        camera.position.y = 2;
+
+        // --- Audio Logic ---
+        let audioContext, analyser, dataArray, source;
+        const visContainer = document.getElementById('audio-visualizer');
+        const visBars = [];
+        for (let i = 0; i < 32; i++) {
+            const bar = document.createElement('div');
+            bar.className = 'vis-bar';
+            visContainer.appendChild(bar);
+            visBars.push(bar);
+        }
+
+        async function initAudio() {
+            if (audioContext) return;
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                source = audioContext.createMediaStreamSource(stream);
+                source.connect(analyser);
+                analyser.fftSize = 256;
+                const bufferLength = analyser.frequencyBinCount;
+                dataArray = new Uint8Array(bufferLength);
+                state.micActive = true;
+                document.getElementById('mic-btn').querySelector('div').classList.replace('bg-red-500', 'bg-green-500');
+            } catch (err) {
+                console.error("Mic access denied", err);
+                alert("Microphone access is required for music sync.");
+            }
+        }
+
+        // --- Animation Loop ---
+        let time = 0;
+        function animate() {
+            requestAnimationFrame(animate);
+            if (typeof TWEEN !== 'undefined') TWEEN.update();
+            
+            const delta = 0.01 * state.speed;
+            time += delta;
+
+            // Audio Analysis
+            let bass = 0, mid = 0, high = 0;
+            if (state.micActive && analyser) {
+                analyser.getByteFrequencyData(dataArray);
+                state.audioData = dataArray;
+                
+                for (let i = 0; i < 32; i++) {
+                    const val = dataArray[i * 2] / 255;
+                    visBars[i].style.height = `${val * 100}%`;
+                }
+
+                for (let i = 0; i < 10; i++) bass += dataArray[i];
+                for (let i = 10; i < 40; i++) mid += dataArray[i];
+                for (let i = 40; i < 80; i++) high += dataArray[i];
+                bass /= 10 * 255;
+                mid /= 30 * 255;
+                high /= 40 * 255;
+            }
+
+            const masterIntensity = state.intensity * (state.micActive ? (1 + bass * 2) : 1);
+
+            // Patterns
+            lights.forEach((l, i) => {
+                const angle = (i / lightCount) * Math.PI * 2;
+                let x, y, z;
+
+                switch (state.pattern) {
+                    case 'orbit':
+                        x = Math.cos(time + angle) * 10;
+                        z = Math.sin(time + angle) * 10;
+                        y = Math.sin(time * 0.5 + angle) * 4;
+                        break;
+                    case 'wave':
+                        x = -18 + (i * 3.2);
+                        z = Math.sin(time + i * 0.6) * 6;
+                        y = Math.cos(time + i * 0.6) * 4;
+                        break;
+                    case 'chaos':
+                        x = Math.sin(time * 1.5 + i * 1.2) * 12;
+                        z = Math.cos(time * 0.9 + i * 2.1) * 12;
+                        y = Math.sin(time * 2.2 + i * 0.8) * 6;
+                        break;
+                    case 'pulse':
+                        const radius = 8 + Math.sin(time * 3) * 3;
+                        x = Math.cos(angle) * radius;
+                        z = Math.sin(angle) * radius;
+                        y = Math.sin(time * 2 + angle) * 2;
+                        break;
+                }
+
+                l.group.position.set(x, y, z);
+                
+                const pulse = state.micActive ? (1 + (i % 2 === 0 ? high : mid) * 3) : 1;
+                l.light.intensity = masterIntensity * pulse;
+                l.sprite.scale.set(3 * pulse, 3 * pulse, 1);
+            });
+
+            lightGroup.rotation.y += 0.002 * state.speed;
+            particlesMesh.rotation.y += 0.001;
+            if (state.micActive) {
+                particlesMesh.scale.setScalar(1 + bass * 0.1);
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // --- Controls & UI Interaction ---
+        function updateTheme(themeName) {
+            state.theme = themeName;
+            const colors = THEMES[themeName];
+            lights.forEach((l, i) => {
+                const newCol = new THREE.Color(colors[i % colors.length]);
+                
+                new TWEEN.Tween(l.light.color)
+                    .to({ r: newCol.r, g: newCol.g, b: newCol.b }, 1000)
+                    .easing(TWEEN.Easing.Quadratic.Out)
+                    .start();
+                    
+                new TWEEN.Tween(l.mesh.material.color)
+                    .to({ r: newCol.r, g: newCol.g, b: newCol.b }, 1000)
+                    .easing(TWEEN.Easing.Quadratic.Out)
+                    .onUpdate(() => {
+                        l.sprite.material.map = createGlowTexture(l.light.color.getHex());
+                    })
+                    .start();
+            });
+            
+            document.querySelectorAll('.color-btn').forEach(btn => {
+                btn.style.borderColor = btn.dataset.theme === themeName ? 'white' : 'transparent';
+                btn.style.transform = btn.dataset.theme === themeName ? 'scale(1.2)' : 'scale(1)';
+            });
+        }
+
+        function updatePattern(patternName) {
+            state.pattern = patternName;
+            document.querySelectorAll('.pattern-btn').forEach(btn => {
+                btn.classList.toggle('bg-white/20', btn.dataset.pattern === patternName);
+            });
+        }
+
+        // Event Listeners
+        document.querySelectorAll('.pattern-btn').forEach(btn => {
+            btn.onclick = () => updatePattern(btn.dataset.pattern);
+        });
+
+        document.querySelectorAll('.color-btn').forEach(btn => {
+            btn.onclick = () => updateTheme(btn.dataset.theme);
+        });
+
+        document.getElementById('intensity-slider').oninput = (e) => {
+            state.intensity = parseFloat(e.target.value);
+            document.getElementById('intensity-val').innerText = state.intensity.toFixed(1);
+        };
+
+        document.getElementById('speed-slider').oninput = (e) => {
+            state.speed = parseFloat(e.target.value);
+            document.getElementById('speed-val').innerText = state.speed.toFixed(1);
+        };
+
+        document.getElementById('mic-btn').onclick = () => initAudio();
+
+        document.getElementById('hide-ui-btn').onclick = () => {
+            state.uiVisible = !state.uiVisible;
+            document.getElementById('main-ui').classList.toggle('hidden-ui', !state.uiVisible);
+        };
+
+        document.getElementById('auto-cycle').onclick = (e) => {
+            state.autoCycle = !state.autoCycle;
+            e.target.innerText = `Auto Cycle: ${state.autoCycle ? 'ON' : 'OFF'}`;
+            e.target.classList.toggle('bg-white/20', state.autoCycle);
+        };
+
+        document.getElementById('fullscreen-btn').onclick = () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        };
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key.toLowerCase() === 'h') document.getElementById('hide-ui-btn').click();
+        });
+
+        // Auto-cycling logic
+        setInterval(() => {
+            if (state.autoCycle) {
+                const patterns = Object.keys(state.pattern === 'orbit' ? {wave:1, chaos:1, pulse:1} : {orbit:1});
+                const themes = Object.keys(THEMES);
+                if (Math.random() > 0.7) updatePattern(patterns[Math.floor(Math.random() * patterns.length)]);
+                if (Math.random() > 0.7) updateTheme(themes[Math.floor(Math.random() * themes.length)]);
+            }
+        }, 5000);
+
+        // Initial call
+        updatePattern('orbit');
+        updateTheme('neon');
+        animate();
+    </script>
+</body>
+</html>
