@@ -263,7 +263,7 @@ async function validateHtml(htmlPath: string): Promise<ValidationResult> {
     });
 
     // Collect page errors (uncaught exceptions)
-    page.on("pageerror", (err) => {
+    page.on("pageerror", (err: Error) => {
       errors.push(`Page error: ${err.message}`);
     });
 
