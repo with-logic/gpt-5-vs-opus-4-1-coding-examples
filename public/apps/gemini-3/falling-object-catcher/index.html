@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Falling Fruit Catcher</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Fredoka One', cursive;
+            overflow: hidden;
+            touch-action: none; /* Prevent pull-to-refresh on mobile */
+            background-color: #87CEEB; /* Fallback sky color */
+        }
+        .text-shadow {
+            text-shadow: 2px 2px 0px rgba(0,0,0,0.2);
+        }
+        .text-shadow-lg {
+            text-shadow: 4px 4px 0px rgba(0,0,0,0.2);
+        }
+        /* Custom button press effect */
+        .btn-press:active {
+            transform: translateY(2px);
+            box-shadow: 0 0 0 rgba(0,0,0,0);
+        }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body class="h-screen w-screen relative select-none">
+
+    <!-- Game Canvas -->
+    <canvas id="gameCanvas" class="block absolute top-0 left-0 w-full h-full z-0"></canvas>
+
+    <!-- HUD (Heads Up Display) -->
+    <div id="hud" class="absolute top-0 left-0 w-full p-4 md:p-6 flex justify-between items-start z-10 pointer-events-none transition-opacity duration-300 opacity-0">
+        <div class="bg-white/30 backdrop-blur-md rounded-2xl px-6 py-2 text-white border-2 border-white/50 shadow-lg">
+            <span class="text-2xl md:text-4xl text-shadow">Score: <span id="scoreVal">0</span></span>
+        </div>
+        <div class="flex space-x-2" id="livesContainer">
+            <!-- Hearts injected via JS -->
+        </div>
+    </div>
+
+    <!-- Start Screen -->
+    <div id="startScreen" class="absolute inset-0 flex flex-col items-center justify-center bg-black/30 backdrop-blur-sm z-20 transition-all duration-500">
+        <div class="bg-white p-8 md:p-12 rounded-3xl shadow-2xl text-center border-b-8 border-r-8 border-blue-500 max-w-md mx-4 transform hover:scale-105 transition-transform duration-300">
+            <h1 class="text-5xl md:text-6xl text-orange-500 mb-2 text-shadow-lg tracking-wide">Fruit Catcher</h1>
+            <p class="text-gray-500 text-lg md:text-xl mb-8">Catch the falling yumminess!</p>
+            
+            <div class="space-y-4 mb-8 text-left bg-blue-50 p-4 rounded-xl border-2 border-blue-100">
+                <div class="flex items-center text-gray-700">
+                    <span class="text-2xl mr-3">🧺</span>
+                    <span>Move basket with <strong>Arrow Keys</strong> or <strong>Mouse/Touch</strong></span>
+                </div>
+                <div class="flex items-center text-gray-700">
+                    <span class="text-2xl mr-3">🍎</span>
+                    <span>Catch fruits to score points</span>
+                </div>
+                <div class="flex items-center text-gray-700">
+                    <span class="text-2xl mr-3">❌</span>
+                    <span>Don't miss more than 3!</span>
+                </div>
+            </div>
+
+            <button id="startBtn" class="bg-green-500 hover:bg-green-400 text-white text-3xl py-4 px-12 rounded-full shadow-lg border-b-4 border-green-700 btn-press transition-colors w-full">
+                PLAY
+            </button>
+        </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="gameOverScreen" class="absolute inset-0 flex flex-col items-center justify-center bg-black/60 backdrop-blur-md z-30 hidden opacity-0 transition-opacity duration-500">
+        <div class="bg-white p-8 md:p-12 rounded-3xl shadow-2xl text-center border-b-8 border-r-8 border-red-500 max-w-md mx-4 animate-bounce-in">
+            <h2 class="text-5xl md:text-6xl text-red-500 mb-2 text-shadow-lg">Game Over!</h2>
+            <div class="text-2xl text-gray-600 mb-6">You scored</div>
+            <div class="text-7xl text-orange-500 mb-8 text-shadow-lg font-bold" id="finalScore">0</div>
+            
+            <button id="restartBtn" class="bg-blue-500 hover:bg-blue-400 text-white text-2xl py-3 px-10 rounded-full shadow-lg border-b-4 border-blue-700 btn-press transition-colors w-full mb-4">
+                Play Again
+            </button>
+            <button id="menuBtn" class="text-gray-400 hover:text-gray-600 font-bold underline">
+                Back to Menu
+            </button>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * Game Constants & Setup
+         */
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d', { alpha: false }); // Optimize for no transparency on base canvas
+        
+        // UI Elements
+        const hud = document.getElementById('hud');
+        const scoreValEl = document.getElementById('scoreVal');
+        const livesContainer = document.getElementById('livesContainer');
+        const startScreen = document.getElementById('startScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const finalScoreEl = document.getElementById('finalScore');
+        const startBtn = document.getElementById('startBtn');
+        const restartBtn = document.getElementById('restartBtn');
+        const menuBtn = document.getElementById('menuBtn');
+
+        // Game State
+        let gameState = 'MENU'; // MENU, PLAYING, GAMEOVER
+        let score = 0;
+        let lives = 3;
+        let animationId;
+        let lastTime = 0;
+        let difficultyMultiplier = 1;
+
+        // Entities
+        const FRUIT_TYPES = ['🍎', '🍐', '🍊', '🍋', '🍌', '🍉', '🍇', '🍓', '🍒', '🍑', '🍍', '🥝'];
+        let fruits = [];
+        let particles = []; // Confetti/Juice effects
+        
+        const basket = {
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 60,
+            targetX: 0, // For smooth mouse following
+            color: '#8D6E63',
+            rimColor: '#6D4C41'
+        };
+
+        // Inputs
+        const keys = { ArrowLeft: false, ArrowRight: false };
+        let inputMode = 'KEYBOARD'; // KEYBOARD or MOUSE
+
+        /**
+         * Initialization & resizing
+         */
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            // Reset basket position to bottom center
+            basket.y = canvas.height - 100;
+            basket.width = Math.min(120, canvas.width * 0.25); // Responsive basket size
+            basket.height = basket.width * 0.6;
+            
+            if (gameState === 'MENU') {
+                basket.x = canvas.width / 2 - basket.width / 2;
+                basket.targetX = basket.x;
+                draw(); // Redraw static frame
+            }
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        /**
+         * Input Handling
+         */
+        window.addEventListener('keydown', (e) => {
+            if (keys.hasOwnProperty(e.code)) {
+                keys[e.code] = true;
+                inputMode = 'KEYBOARD';
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (keys.hasOwnProperty(e.code)) {
+                keys[e.code] = false;
+            }
+        });
+
+        function handlePointerMove(e) {
+            if (gameState !== 'PLAYING') return;
+            inputMode = 'MOUSE';
+            let clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            // Center basket on pointer
+            basket.targetX = clientX - basket.width / 2;
+        }
+        
+        window.addEventListener('mousemove', handlePointerMove);
+        window.addEventListener('touchmove', handlePointerMove, { passive: false });
+
+        /**
+         * Game Logic
+         */
+        function startGame() {
+            gameState = 'PLAYING';
+            score = 0;
+            lives = 3;
+            difficultyMultiplier = 1;
+            fruits = [];
+            particles = [];
+            
+            updateScoreUI();
+            updateLivesUI();
+            
+            // UI Transitions
+            startScreen.classList.add('hidden');
+            gameOverScreen.classList.add('hidden');
+            gameOverScreen.classList.remove('opacity-100');
+            hud.classList.remove('opacity-0');
+            
+            lastTime = performance.now();
+            basket.x = canvas.width / 2 - basket.width / 2;
+            basket.targetX = basket.x;
+            
+            animate(lastTime);
+        }
+
+        function gameOver() {
+            gameState = 'GAMEOVER';
+            hud.classList.add('opacity-0');
+            gameOverScreen.classList.remove('hidden');
+            // Small delay for fade in
+            requestAnimationFrame(() => {
+                gameOverScreen.classList.add('opacity-100');
+            });
+            finalScoreEl.textContent = score;
+        }
+
+        function spawnFruit() {
+            // Spawn rate logic: starts at 1s, decreases as difficulty increases
+            // Limit checks managed in update loop
+            const size = 50 + Math.random() * 20; // Large fruits for kids
+            const fruit = {
+                x: Math.random() * (canvas.width - size),
+                y: -size - 10,
+                size: size,
+                emoji: FRUIT_TYPES[Math.floor(Math.random() * FRUIT_TYPES.length)],
+                speed: (2 + Math.random() * 2) * difficultyMultiplier,
+                rotation: Math.random() * Math.PI * 2,
+                rotationSpeed: (Math.random() - 0.5) * 0.1
+            };
+            fruits.push(fruit);
+        }
+
+        function createParticles(x, y, color) {
+            for (let i = 0; i < 10; i++) {
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: (Math.random() - 0.5) * 10,
+                    vy: (Math.random() - 0.5) * 10,
+                    life: 1.0,
+                    color: color,
+                    size: Math.random() * 5 + 2
+                });
+            }
+        }
+
+        function update(dt) {
+            // Difficulty scaling
+            difficultyMultiplier = 1 + (score * 0.05);
+
+            // 1. Move Basket
+            if (inputMode === 'KEYBOARD') {
+                const speed = 10 * (canvas.width / 1000) + 5;
+                if (keys.ArrowLeft) basket.targetX -= speed;
+                if (keys.ArrowRight) basket.targetX += speed;
+            }
+            
+            // Clamp target
+            if (basket.targetX < 0) basket.targetX = 0;
+            if (basket.targetX > canvas.width - basket.width) basket.targetX = canvas.width - basket.width;
+
+            // Lerp for smooth movement
+            basket.x += (basket.targetX - basket.x) * 0.2;
+
+            // 2. Manage Fruits
+            // Spawn logic
+            if (Math.random() < 0.02 * difficultyMultiplier) {
+                spawnFruit();
+            }
+
+            for (let i = fruits.length - 1; i >= 0; i--) {
+                let f = fruits[i];
+                f.y += f.speed;
+                f.rotation += f.rotationSpeed;
+
+                // Collision Detection (Box vs Circle approx)
+                // Center of fruit
+                let cx = f.x + f.size / 2;
+                let cy = f.y + f.size / 2;
+                let radius = f.size * 0.4; // slightly smaller hit box
+
+                // Basket Box
+                // We define the "catch zone" as the top opening of the basket
+                let bx = basket.x;
+                let by = basket.y;
+                let bw = basket.width;
+                let bh = basket.height;
+
+                // Check collision
+                if (cy + radius > by + 10 && // Top of basket
+                    cy - radius < by + bh && // Bottom of basket
+                    cx + radius > bx &&     // Left
+                    cx - radius < bx + bw   // Right
+                ) {
+                    // Caught!
+                    score++;
+                    updateScoreUI();
+                    createParticles(cx, cy, '#FFD700'); // Gold sparks
+                    fruits.splice(i, 1);
+                    continue;
+                }
+
+                // Missed
+                if (f.y > canvas.height) {
+                    lives--;
+                    updateLivesUI();
+                    createParticles(cx, canvas.height - 10, '#FF5555'); // Red splash
+                    fruits.splice(i, 1);
+                    if (lives <= 0) gameOver();
+                }
+            }
+
+            // 3. Update Particles
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.5; // Gravity
+                p.life -= 0.03;
+                if (p.life <= 0) particles.splice(i, 1);
+            }
+        }
+
+        function draw() {
+            // Clear
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Background
+            // Create a nice sunny sky gradient
+            const grd = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            grd.addColorStop(0, "#4FC3F7"); // Sky Blue
+            grd.addColorStop(1, "#81C784"); // Greenish Grass hint at bottom
+            ctx.fillStyle = grd;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Clouds (Simple procedural clouds)
+            ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+            const time = Date.now() * 0.0005;
+            for(let i=0; i<5; i++) {
+                let cx = ((i * 300) + time * 50) % (canvas.width + 400) - 200;
+                let cy = 100 + Math.sin(time + i) * 30;
+                drawCloud(cx, cy, 60 + i*10);
+            }
+
+            // Draw Basket (Back layer - creates depth if we draw fruits inside later, but simple for now)
+            ctx.fillStyle = basket.color;
+            // Trapezoid shape for basket
+            ctx.beginPath();
+            ctx.moveTo(basket.x, basket.y);
+            ctx.lineTo(basket.x + basket.width, basket.y);
+            ctx.lineTo(basket.x + basket.width - 10, basket.y + basket.height);
+            ctx.lineTo(basket.x + 10, basket.y + basket.height);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Rim
+            ctx.strokeStyle = basket.rimColor;
+            ctx.lineWidth = 5;
+            ctx.stroke();
+
+            // Weave pattern detail
+            ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+            ctx.lineWidth = 2;
+            for(let i=10; i<basket.width; i+=15) {
+                ctx.beginPath();
+                ctx.moveTo(basket.x + i, basket.y);
+                ctx.lineTo(basket.x + i - 5, basket.y + basket.height);
+                ctx.stroke();
+            }
+            
+            // Draw Fruits
+            ctx.font = "40px Arial"; // Fallback
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            
+            for (let f of fruits) {
+                ctx.save();
+                ctx.translate(f.x + f.size/2, f.y + f.size/2);
+                ctx.rotate(f.rotation);
+                ctx.font = `${f.size}px Arial`; // Scale emoji
+                ctx.fillText(f.emoji, 0, 0);
+                ctx.restore();
+            }
+
+            // Draw Basket Front (Rim mostly) to make fruits look like they fall "in" 
+            // Simplified: Just redraw the top line slightly thicker to cover fruit bottoms if they overlap slightly
+            ctx.beginPath();
+            ctx.moveTo(basket.x, basket.y);
+            ctx.lineTo(basket.x + basket.width, basket.y);
+            ctx.strokeStyle = basket.rimColor;
+            ctx.lineWidth = 8;
+            ctx.stroke();
+
+
+            // Particles
+            for (let p of particles) {
+                ctx.globalAlpha = p.life;
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1.0;
+            }
+        }
+
+        function drawCloud(x, y, size) {
+            ctx.beginPath();
+            ctx.arc(x, y, size, 0, Math.PI * 2, true);
+            ctx.arc(x - size*0.8, y + size*0.3, size*0.7, 0, Math.PI * 2, true);
+            ctx.arc(x + size*0.8, y + size*0.3, size*0.7, 0, Math.PI * 2, true);
+            ctx.fill();
+        }
+
+        function animate(timestamp) {
+            if (gameState !== 'PLAYING') return;
+
+            const dt = timestamp - lastTime;
+            lastTime = timestamp;
+
+            update(dt);
+            draw();
+
+            animationId = requestAnimationFrame(animate);
+        }
+
+        /**
+         * UI Helpers
+         */
+        function updateScoreUI() {
+            scoreValEl.innerText = score;
+            // Pulse effect
+            scoreValEl.parentElement.classList.add('scale-110');
+            setTimeout(() => scoreValEl.parentElement.classList.remove('scale-110'), 100);
+        }
+
+        function updateLivesUI() {
+            livesContainer.innerHTML = '';
+            for (let i = 0; i < 3; i++) {
+                const heart = document.createElement('span');
+                heart.className = 'text-3xl md:text-4xl filter drop-shadow-md transition-all duration-300';
+                heart.innerText = '❤️';
+                if (i >= lives) {
+                    heart.classList.add('grayscale', 'opacity-50', 'scale-75');
+                    heart.innerText = '💔';
+                }
+                livesContainer.appendChild(heart);
+            }
+        }
+
+        /**
+         * Button Listeners
+         */
+        startBtn.addEventListener('click', startGame);
+        restartBtn.addEventListener('click', startGame);
+        menuBtn.addEventListener('click', () => {
+            gameOverScreen.classList.add('hidden');
+            startScreen.classList.remove('hidden');
+            gameState = 'MENU';
+            resize(); // Reset positions
+        });
+
+        // Initial Draw
+        resize();
+
+    </script>
+</body>
+</html>

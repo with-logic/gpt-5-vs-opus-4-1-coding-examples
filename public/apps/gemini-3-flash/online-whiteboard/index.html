@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Online Whiteboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            background-color: #f8fafc;
+            touch-action: none;
+        }
+
+        #canvas-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            cursor: crosshair;
+        }
+
+        .toolbar-shadow {
+            box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.1), 0 2px 8px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        .tool-btn {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .tool-btn:hover {
+            transform: translateY(-1px);
+        }
+
+        .tool-btn.active {
+            background-color: #e2e8f0;
+            color: #2563eb;
+        }
+
+        .color-swatch {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: transform 0.1s;
+        }
+
+        .color-swatch:hover {
+            transform: scale(1.1);
+        }
+
+        .color-swatch.active {
+            border-color: #64748b;
+            transform: scale(1.2);
+        }
+
+        #cursor {
+            pointer-events: none;
+            position: fixed;
+            border: 1px solid #94a3b8;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            display: none;
+        }
+
+        /* Custom scrollbar for color palette if needed */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container">
+        <canvas id="whiteboard"></canvas>
+    </div>
+
+    <div id="cursor"></div>
+
+    <!-- Main Toolbar -->
+    <div class="fixed bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-white px-6 py-3 rounded-2xl toolbar-shadow border border-slate-200">
+        <!-- Tools -->
+        <div class="flex items-center gap-1 pr-4 border-r border-slate-200">
+            <button id="tool-pen" class="tool-btn p-2 rounded-lg active" title="Pen (P)">
+                <i data-lucide="pencil" class="w-5 h-5"></i>
+            </button>
+            <button id="tool-eraser" class="tool-btn p-2 rounded-lg text-slate-600" title="Eraser (E)">
+                <i data-lucide="eraser" class="w-5 h-5"></i>
+            </button>
+            <button id="undo-btn" class="tool-btn p-2 rounded-lg text-slate-600 disabled:opacity-30" title="Undo (Ctrl+Z)">
+                <i data-lucide="undo-2" class="w-5 h-5"></i>
+            </button>
+            <button id="redo-btn" class="tool-btn p-2 rounded-lg text-slate-600 disabled:opacity-30" title="Redo (Ctrl+Y)">
+                <i data-lucide="redo-2" class="w-5 h-5"></i>
+            </button>
+        </div>
+
+        <!-- Colors -->
+        <div class="flex items-center gap-2 pr-4 border-r border-slate-200" id="color-palette">
+            <!-- Colors injected by JS -->
+            <input type="color" id="custom-color" class="w-6 h-6 rounded-full cursor-pointer overflow-hidden border-none bg-transparent" title="Custom Color">
+        </div>
+
+        <!-- Size Slider -->
+        <div class="flex items-center gap-3 pr-4 border-r border-slate-200">
+            <input type="range" id="size-slider" min="2" max="50" value="5" class="w-24 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600">
+            <span id="size-preview" class="text-xs font-medium text-slate-500 w-4">5</span>
+        </div>
+
+        <!-- Actions -->
+        <div class="flex items-center gap-1">
+            <button id="clear-btn" class="tool-btn p-2 rounded-lg text-red-500 hover:bg-red-50" title="Clear Canvas">
+                <i data-lucide="trash-2" class="w-5 h-5"></i>
+            </button>
+            <button id="download-btn" class="tool-btn p-2 rounded-lg text-blue-600 hover:bg-blue-50" title="Save as Image">
+                <i data-lucide="download" class="w-5 h-5"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-4 py-2 rounded-full text-sm font-medium opacity-0 transition-opacity pointer-events-none">
+        Canvas Cleared
+    </div>
+
+    <script>
+        // Configuration & State
+        const canvas = document.getElementById('whiteboard');
+        const ctx = canvas.getContext('2d', { alpha: false });
+        const container = document.getElementById('canvas-container');
+        const sizeSlider = document.getElementById('size-slider');
+        const sizePreview = document.getElementById('size-preview');
+        const colorPalette = document.getElementById('color-palette');
+        const customColorInput = document.getElementById('custom-color');
+        const cursor = document.getElementById('cursor');
+        const toast = document.getElementById('toast');
+
+        const state = {
+            isDrawing: false,
+            tool: 'pen', // 'pen', 'eraser'
+            color: '#000000',
+            lastColor: '#000000',
+            size: 5,
+            undoStack: [],
+            redoStack: [],
+            currentPath: []
+        };
+
+        const colors = [
+            '#000000', '#475569', '#dc2626', '#ea580c', '#ca8a04', '#16a34a', '#2563eb', '#7c3aed', '#db2777'
+        ];
+
+        // Initialize
+        function init() {
+            lucide.createIcons();
+            setupCanvas();
+            setupPalette();
+            setupEventListeners();
+            saveState(); // Initial blank state
+        }
+
+        function setupCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            clearCanvas(false);
+        }
+
+        function setupPalette() {
+            colors.forEach(color => {
+                const swatch = document.createElement('div');
+                swatch.className = `color-swatch ${color === state.color ? 'active' : ''}`;
+                swatch.style.backgroundColor = color;
+                swatch.addEventListener('click', () => {
+                    setColor(color);
+                    setTool('pen');
+                });
+                colorPalette.insertBefore(swatch, customColorInput);
+            });
+        }
+
+        function clearCanvas(record = true) {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            if (record) {
+                saveState();
+                showToast('Canvas Cleared');
+            }
+        }
+
+        function setTool(tool) {
+            state.tool = tool;
+            document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`tool-${tool}`).classList.add('active');
+            
+            if (tool === 'eraser') {
+                state.lastColor = state.color;
+            }
+        }
+
+        function setColor(color) {
+            state.color = color;
+            document.querySelectorAll('.color-swatch').forEach(s => {
+                s.classList.toggle('active', s.style.backgroundColor === hexToRgb(color));
+            });
+            customColorInput.value = color;
+        }
+
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? `rgb(${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)})` : null;
+        }
+
+        // Drawing Logic
+        function startDrawing(e) {
+            state.isDrawing = true;
+            state.redoStack = []; // Clear redo on new action
+            updateRedoButton();
+            
+            const pos = getPointerPos(e);
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+            state.currentPath = [pos];
+            
+            draw(e);
+        }
+
+        function draw(e) {
+            if (!state.isDrawing) return;
+
+            const pos = getPointerPos(e);
+            
+            ctx.strokeStyle = state.tool === 'eraser' ? '#ffffff' : state.color;
+            ctx.lineWidth = state.size;
+
+            // Use quadratic curves for smooth lines
+            if (state.currentPath.length > 1) {
+                const prevPos = state.currentPath[state.currentPath.length - 1];
+                const xc = (prevPos.x + pos.x) / 2;
+                const yc = (prevPos.y + pos.y) / 2;
+                ctx.quadraticCurveTo(prevPos.x, prevPos.y, xc, yc);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(xc, yc);
+            } else {
+                ctx.lineTo(pos.x, pos.y);
+                ctx.stroke();
+            }
+
+            state.currentPath.push(pos);
+            updateCursor(e);
+        }
+
+        function stopDrawing() {
+            if (!state.isDrawing) return;
+            state.isDrawing = false;
+            saveState();
+        }
+
+        function getPointerPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return {
+                x: clientX - rect.left,
+                y: clientY - rect.top
+            };
+        }
+
+        // State Management (Undo/Redo)
+        function saveState() {
+            state.undoStack.push(canvas.toDataURL());
+            if (state.undoStack.length > 50) state.undoStack.shift(); // Limit memory
+            updateUndoButton();
+        }
+
+        function undo() {
+            if (state.undoStack.length <= 1) return;
+            
+            state.redoStack.push(state.undoStack.pop());
+            const prevState = state.undoStack[state.undoStack.length - 1];
+            loadState(prevState);
+            updateUndoButton();
+            updateRedoButton();
+        }
+
+        function redo() {
+            if (state.redoStack.length === 0) return;
+            
+            const nextState = state.redoStack.pop();
+            state.undoStack.push(nextState);
+            loadState(nextState);
+            updateUndoButton();
+            updateRedoButton();
+        }
+
+        function loadState(dataUrl) {
+            const img = new Image();
+            img.src = dataUrl;
+            img.onload = () => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0);
+            };
+        }
+
+        function updateUndoButton() {
+            document.getElementById('undo-btn').disabled = state.undoStack.length <= 1;
+        }
+
+        function updateRedoButton() {
+            document.getElementById('redo-btn').disabled = state.redoStack.length === 0;
+        }
+
+        // UI Helpers
+        function updateCursor(e) {
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            
+            cursor.style.display = 'block';
+            cursor.style.left = clientX + 'px';
+            cursor.style.top = clientY + 'px';
+            cursor.style.width = state.size + 'px';
+            cursor.style.height = state.size + 'px';
+            cursor.style.backgroundColor = state.tool === 'eraser' ? '#ffffff' : state.color;
+        }
+
+        function showToast(message) {
+            toast.textContent = message;
+            toast.style.opacity = '1';
+            setTimeout(() => {
+                toast.style.opacity = '0';
+            }, 2000);
+        }
+
+        // Event Listeners
+        function setupEventListeners() {
+            // Mouse
+            canvas.addEventListener('mousedown', startDrawing);
+            window.addEventListener('mousemove', draw);
+            window.addEventListener('mouseup', stopDrawing);
+
+            // Touch
+            canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                startDrawing(e);
+            }, { passive: false });
+            window.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                draw(e);
+            }, { passive: false });
+            window.addEventListener('touchend', stopDrawing);
+
+            // Cursor visibility
+            canvas.addEventListener('mouseenter', () => cursor.style.display = 'block');
+            canvas.addEventListener('mouseleave', () => cursor.style.display = 'none');
+            window.addEventListener('mousemove', (e) => {
+                if (!state.isDrawing) updateCursor(e);
+            });
+
+            // Tools
+            document.getElementById('tool-pen').addEventListener('click', () => setTool('pen'));
+            document.getElementById('tool-eraser').addEventListener('click', () => setTool('eraser'));
+            document.getElementById('undo-btn').addEventListener('click', undo);
+            document.getElementById('redo-btn').addEventListener('click', redo);
+            document.getElementById('clear-btn').addEventListener('click', () => clearCanvas(true));
+            
+            document.getElementById('download-btn').addEventListener('click', () => {
+                const link = document.createElement('a');
+                link.download = `whiteboard-${Date.now()}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                showToast('Image Saved');
+            });
+
+            sizeSlider.addEventListener('input', (e) => {
+                state.size = parseInt(e.target.value);
+                sizePreview.textContent = state.size;
+            });
+
+            customColorInput.addEventListener('input', (e) => {
+                setColor(e.target.value);
+                setTool('pen');
+            });
+
+            // Keyboard Shortcuts
+            window.addEventListener('keydown', (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+                    e.preventDefault();
+                    undo();
+                }
+                if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) {
+                    e.preventDefault();
+                    redo();
+                }
+                if (e.key === 'p') setTool('pen');
+                if (e.key === 'e') setTool('eraser');
+                if (e.key === 'c') clearCanvas(true);
+            });
+
+            // Resize
+            let resizeTimer;
+            window.addEventListener('resize', () => {
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(() => {
+                    const temp = canvas.toDataURL();
+                    canvas.width = window.innerWidth;
+                    canvas.height = window.innerHeight;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    loadState(temp);
+                }, 250);
+            });
+        }
+
+        // Start
+        init();
+    </script>
+</body>
+</html>

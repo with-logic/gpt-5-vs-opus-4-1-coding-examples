@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ocean Wave Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 1.2rem;
+            letter-spacing: 2px;
+            pointer-events: none;
+            transition: opacity 1s ease;
+        }
+        .ui-overlay {
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            z-index: 10;
+            pointer-events: none; /* Let clicks pass through to canvas/controls */
+        }
+        .btn {
+            pointer-events: auto;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 30px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.3s ease;
+            outline: none;
+        }
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.25);
+            transform: translateY(-2px);
+        }
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        /* Custom GUI styling */
+        .lil-gui { 
+            --background-color: rgba(20, 20, 20, 0.6);
+            --text-color: #eee;
+            --title-background-color: rgba(30, 30, 30, 0.8);
+            --widget-color: #444;
+            --hover-color: #555;
+            --focus-color: #666;
+            --number-color: #2cc9ff;
+            --string-color: #a2ff00;
+            backdrop-filter: blur(8px);
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .lil-gui.root {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">GENERATING OCEAN...</div>
+    <div id="canvas-container"></div>
+    
+    <div class="ui-overlay">
+        <button id="audio-btn" class="btn">Enable Sound 🔈</button>
+    </div>
+
+    <!-- Import Map for reliable dependency resolution -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://esm.sh/three@0.160.0",
+                "three/addons/": "https://esm.sh/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { Water } from 'three/addons/objects/Water.js';
+        import { Sky } from 'three/addons/objects/Sky.js';
+        import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+        // --- Configuration & State ---
+        const CONFIG = {
+            textureSize: 512,
+            waterColor: 0x001e0f,
+            sunColor: 0xffffff,
+            scale: 4,
+            flowSpeed: 0.02,
+            elevation: 2, // Sun elevation
+            azimuth: 180,  // Sun azimuth
+            exposure: 0.5,
+            turbidity: 10,
+            rayleigh: 2,
+            mieCoefficient: 0.005,
+            mieDirectionalG: 0.8,
+            distortionScale: 3.7
+        };
+
+        let camera, scene, renderer, controls;
+        let water, sun, sky;
+        let pmremGenerator;
+        let audioCtx, gainNode;
+        let isAudioPlaying = false;
+        
+        // --- Initialization ---
+        init();
+        animate();
+
+        function init() {
+            const container = document.getElementById('canvas-container');
+
+            // 1. Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 0.5;
+            container.appendChild(renderer.domElement);
+
+            // 2. Scene
+            scene = new THREE.Scene();
+
+            // 3. Camera
+            camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 20000);
+            camera.position.set(30, 30, 100);
+
+            // 4. Sun Light
+            sun = new THREE.Vector3();
+
+            // 5. Water
+            // Generate Normal Map Procedurally
+            const waterGeometry = new THREE.PlaneGeometry(10000, 10000);
+            const normalMapTexture = generateWaterNormalMap(CONFIG.textureSize);
+            
+            water = new Water(
+                waterGeometry,
+                {
+                    textureWidth: 512,
+                    textureHeight: 512,
+                    waterNormals: normalMapTexture,
+                    sunDirection: new THREE.Vector3(),
+                    sunColor: 0xffffff,
+                    waterColor: 0x001e0f,
+                    distortionScale: CONFIG.distortionScale,
+                    fog: scene.fog !== undefined
+                }
+            );
+            water.rotation.x = -Math.PI / 2;
+            scene.add(water);
+
+            // 6. Skybox
+            sky = new Sky();
+            sky.scale.setScalar(10000);
+            scene.add(sky);
+
+            // 7. Environment & Lighting
+            pmremGenerator = new THREE.PMREMGenerator(renderer);
+            updateSun();
+
+            // 8. Controls
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.target.set(0, 10, 0);
+            controls.maxPolarAngle = Math.PI * 0.495; // Don't go below water
+            controls.minDistance = 40.0;
+            controls.maxDistance = 200.0;
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+
+            // 9. GUI
+            setupGUI();
+
+            // 10. Event Listeners
+            window.addEventListener('resize', onWindowResize);
+            document.getElementById('audio-btn').addEventListener('click', toggleAudio);
+            
+            // Remove loading screen
+            const loader = document.getElementById('loading');
+            loader.style.opacity = '0';
+            setTimeout(() => loader.remove(), 1000);
+        }
+
+        // --- Procedural Normal Map Generation ---
+        function generateWaterNormalMap(size) {
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            
+            // Fill with blueish base
+            ctx.fillStyle = '#8080ff'; 
+            ctx.fillRect(0, 0, size, size);
+
+            // Add Noise
+            // We want a tiling noise pattern. 
+            // Simple approximation: Draw many random gradients/circles
+            for (let i = 0; i < 2000; i++) {
+                const x = Math.random() * size;
+                const y = Math.random() * size;
+                const r = Math.random() * 30 + 10;
+                
+                const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+                // Perturb normal slightly
+                const alpha = Math.random() * 0.1;
+                g.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+                g.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                
+                ctx.fillStyle = g;
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Wrap around for seamless tiling (simple approach)
+                // Draw 8 neighbors if close to edge
+                 // (Skipping full tiling logic for code brevity, standard clamp works visually okay for water scale)
+            }
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            return texture;
+        }
+
+        function updateSun() {
+            const phi = THREE.MathUtils.degToRad(90 - CONFIG.elevation);
+            const theta = THREE.MathUtils.degToRad(CONFIG.azimuth);
+
+            sun.setFromSphericalCoords(1, phi, theta);
+
+            sky.material.uniforms['sunPosition'].value.copy(sun);
+            water.material.uniforms['sunDirection'].value.copy(sun).normalize();
+
+            // Improve environment lighting
+            if (scene.environment) scene.environment.dispose();
+            scene.environment = pmremGenerator.fromScene(sky).texture;
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            render();
+            controls.update();
+        }
+
+        function render() {
+            // Update Water time
+            water.material.uniforms['time'].value += CONFIG.flowSpeed / 10.0;
+            renderer.render(scene, camera);
+        }
+
+        // --- GUI Setup ---
+        function setupGUI() {
+            const gui = new GUI({ title: 'Ocean Controls' });
+            
+            const folderWater = gui.addFolder('🌊 Waves');
+            folderWater.add(CONFIG, 'distortionScale', 0, 8, 0.1).name('Wave Height').onChange(v => {
+                water.material.uniforms['distortionScale'].value = v;
+            });
+            folderWater.add(CONFIG, 'flowSpeed', 0, 0.2, 0.001).name('Wind Speed');
+            folderWater.addColor(CONFIG, 'waterColor').name('Color').onChange(v => {
+                water.material.uniforms['waterColor'].value.setHex(v);
+            });
+            folderWater.open();
+
+            const folderSky = gui.addFolder('☀️ Environment');
+            folderSky.add(CONFIG, 'elevation', 0, 90, 0.1).name('Sun Height').onChange(updateSun);
+            folderSky.add(CONFIG, 'azimuth', -180, 180, 0.1).name('Sun Position').onChange(updateSun);
+            folderSky.open();
+        }
+
+        // --- Audio System (Pink Noise for Ocean Sound) ---
+        function toggleAudio() {
+            const btn = document.getElementById('audio-btn');
+            
+            if (!isAudioPlaying) {
+                initAudio();
+                fadeAudio(1.0);
+                btn.textContent = 'Disable Sound 🔇';
+                btn.style.background = 'rgba(255, 255, 255, 0.3)';
+                isAudioPlaying = true;
+            } else {
+                fadeAudio(0.001); // Fade out then suspend
+                setTimeout(() => {
+                    if(audioCtx) audioCtx.suspend();
+                }, 1000);
+                btn.textContent = 'Enable Sound 🔈';
+                btn.style.background = 'rgba(255, 255, 255, 0.1)';
+                isAudioPlaying = false;
+            }
+        }
+
+        function initAudio() {
+            if (audioCtx) {
+                audioCtx.resume();
+                return;
+            }
+
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AudioContext();
+            
+            // Create Pink Noise
+            const bufferSize = 2 * audioCtx.sampleRate;
+            const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const output = noiseBuffer.getChannelData(0);
+            let b0, b1, b2, b3, b4, b5, b6;
+            b0 = b1 = b2 = b3 = b4 = b5 = b6 = 0.0;
+            for (let i = 0; i < bufferSize; i++) {
+                const white = Math.random() * 2 - 1;
+                b0 = 0.99886 * b0 + white * 0.0555179;
+                b1 = 0.99332 * b1 + white * 0.0750759;
+                b2 = 0.96900 * b2 + white * 0.1538520;
+                b3 = 0.86650 * b3 + white * 0.3104856;
+                b4 = 0.55000 * b4 + white * 0.5329522;
+                b5 = -0.7616 * b5 - white * 0.0168980;
+                output[i] = b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362;
+                output[i] *= 0.11; // (roughly) compensate for gain
+                b6 = white * 0.115926;
+            }
+
+            const noiseNode = audioCtx.createBufferSource();
+            noiseNode.buffer = noiseBuffer;
+            noiseNode.loop = true;
+
+            // Lowpass Filter to make it sound like distant ocean
+            const filter = audioCtx.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 400; // Deep rumble
+            
+            // Gain for volume control
+            gainNode = audioCtx.createGain();
+            gainNode.gain.value = 0.001; // Start silent
+
+            // Modulation for wave crashing effect
+            const lfo = audioCtx.createOscillator();
+            lfo.type = 'sine';
+            lfo.frequency.value = 0.1; // Slow waves
+
+            const lfoGain = audioCtx.createGain();
+            lfoGain.gain.value = 300; // Filter modulation depth
+
+            lfo.connect(lfoGain);
+            lfoGain.connect(filter.frequency);
+            
+            noiseNode.connect(filter);
+            filter.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            
+            noiseNode.start();
+            lfo.start();
+        }
+
+        function fadeAudio(targetVolume) {
+            if (!gainNode) return;
+            const now = audioCtx.currentTime;
+            gainNode.gain.cancelScheduledValues(now);
+            gainNode.gain.setValueAtTime(gainNode.gain.value, now);
+            gainNode.gain.exponentialRampToValueAtTime(targetVolume, now + 1.5);
+        }
+    </script>
+</body>
+</html>

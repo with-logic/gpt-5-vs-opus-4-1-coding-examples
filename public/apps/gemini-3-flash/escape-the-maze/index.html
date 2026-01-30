@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Escape the Maze</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            overflow: hidden;
+            touch-action: none;
+        }
+        canvas {
+            image-rendering: pixelated;
+            max-width: 100%;
+            max-height: 70vh;
+        }
+        .glow {
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+        }
+        .perfect-badge {
+            animation: bounce 1s infinite;
+        }
+        @keyframes bounce {
+            0%, 100% { transform: translateY(-5%); }
+            50% { transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-4">
+
+    <!-- Header & HUD -->
+    <div class="w-full max-w-2xl mb-6 text-center">
+        <h1 class="text-4xl font-extrabold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400">
+            ESCAPE THE MAZE
+        </h1>
+        
+        <div class="grid grid-cols-3 gap-4 bg-slate-800/50 p-4 rounded-2xl border border-slate-700 backdrop-blur-sm">
+            <div class="flex flex-col">
+                <span class="text-xs uppercase text-slate-400 font-semibold tracking-wider">Time</span>
+                <span id="timer" class="text-2xl font-mono font-bold text-blue-400">00:00</span>
+            </div>
+            <div class="flex flex-col border-x border-slate-700">
+                <span class="text-xs uppercase text-slate-400 font-semibold tracking-wider">Steps</span>
+                <span id="steps" class="text-2xl font-mono font-bold text-emerald-400">0</span>
+            </div>
+            <div class="flex flex-col">
+                <span class="text-xs uppercase text-slate-400 font-semibold tracking-wider">Shortest</span>
+                <span id="min-steps" class="text-2xl font-mono font-bold text-amber-400">--</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Maze Container -->
+    <div id="game-container" class="relative group">
+        <canvas id="mazeCanvas" class="rounded-lg border-4 border-slate-700 bg-slate-900 glow"></canvas>
+        
+        <!-- Success Overlay -->
+        <div id="overlay" class="hidden absolute inset-0 bg-slate-900/90 backdrop-blur-md rounded-lg flex flex-col items-center justify-center text-center p-8 z-10 transition-opacity duration-500">
+            <h2 id="result-title" class="text-4xl font-black mb-2 text-emerald-400">MAZE ESCAPED!</h2>
+            <p id="result-msg" class="text-slate-300 mb-6">You found the exit in <span id="final-time" class="text-white font-bold">0s</span>.</p>
+            
+            <div id="bonus-card" class="hidden bg-amber-500/20 border border-amber-500/50 p-4 rounded-xl mb-6 perfect-badge">
+                <p class="text-amber-400 font-bold">✨ PERFECT PATH BONUS ✨</p>
+                <p class="text-amber-200 text-sm">You took the absolute shortest route!</p>
+            </div>
+
+            <button id="replay-btn" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-8 rounded-full transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-blue-500/20">
+                PLAY AGAIN
+            </button>
+        </div>
+    </div>
+
+    <!-- Instructions -->
+    <div class="mt-8 text-slate-400 text-sm flex gap-6 items-center">
+        <div class="flex items-center gap-2">
+            <kbd class="px-2 py-1 bg-slate-800 rounded border border-slate-600 text-xs">Arrows</kbd> to Move
+        </div>
+        <div class="flex items-center gap-2">
+            <kbd class="px-2 py-1 bg-slate-800 rounded border border-slate-600 text-xs">R</kbd> to Reset
+        </div>
+    </div>
+
+    <!-- Mobile Controls -->
+    <div class="grid grid-cols-3 gap-2 mt-8 md:hidden">
+        <div></div>
+        <button onpointerdown="move('up')" class="w-12 h-12 bg-slate-800 rounded-lg flex items-center justify-center border border-slate-700">▲</button>
+        <div></div>
+        <button onpointerdown="move('left')" class="w-12 h-12 bg-slate-800 rounded-lg flex items-center justify-center border border-slate-700">◀</button>
+        <button onpointerdown="move('down')" class="w-12 h-12 bg-slate-800 rounded-lg flex items-center justify-center border border-slate-700">▼</button>
+        <button onpointerdown="move('right')" class="w-12 h-12 bg-slate-800 rounded-lg flex items-center justify-center border border-slate-700">▶</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('mazeCanvas');
+        const ctx = canvas.getContext('2d');
+        const timerEl = document.getElementById('timer');
+        const stepsEl = document.getElementById('steps');
+        const minStepsEl = document.getElementById('min-steps');
+        const overlay = document.getElementById('overlay');
+        const replayBtn = document.getElementById('replay-btn');
+        const bonusCard = document.getElementById('bonus-card');
+
+        // Game State
+        let maze = [];
+        let rows = 15;
+        let cols = 15;
+        let cellSize = 30;
+        let player = { x: 0, y: 0 };
+        let end = { x: cols - 1, y: rows - 1 };
+        let steps = 0;
+        let startTime = null;
+        let timerInterval = null;
+        let isGameActive = false;
+        let shortestPathLen = 0;
+
+        class Cell {
+            constructor(r, c) {
+                this.r = r;
+                this.c = c;
+                this.walls = { up: true, right: true, down: true, left: true };
+                this.visited = false;
+            }
+        }
+
+        function initMaze() {
+            // Adaptive size based on screen
+            const width = window.innerWidth;
+            if (width < 500) {
+                rows = cols = 11;
+                cellSize = Math.floor((width - 60) / cols);
+            } else {
+                rows = cols = 19;
+                cellSize = 25;
+            }
+            
+            canvas.width = cols * cellSize;
+            canvas.height = rows * cellSize;
+            
+            maze = [];
+            for (let r = 0; r < rows; r++) {
+                let row = [];
+                for (let c = 0; c < cols; c++) {
+                    row.push(new Cell(r, c));
+                }
+                maze.push(row);
+            }
+
+            // Generate
+            const stack = [];
+            let current = maze[0][0];
+            current.visited = true;
+            stack.push(current);
+
+            while (stack.length > 0) {
+                const next = getNeighbor(current);
+                if (next) {
+                    next.visited = true;
+                    stack.push(current);
+                    removeWalls(current, next);
+                    current = next;
+                } else {
+                    current = stack.pop();
+                }
+            }
+
+            // Calculate shortest path using BFS
+            shortestPathLen = solveBFS();
+            minStepsEl.innerText = shortestPathLen;
+            
+            resetGame();
+        }
+
+        function getNeighbor(cell) {
+            const { r, c } = cell;
+            const neighbors = [];
+            
+            if (r > 0 && !maze[r - 1][c].visited) neighbors.push(maze[r - 1][c]);
+            if (r < rows - 1 && !maze[r + 1][c].visited) neighbors.push(maze[r + 1][c]);
+            if (c > 0 && !maze[r][c - 1].visited) neighbors.push(maze[r][c - 1]);
+            if (c < cols - 1 && !maze[r][c + 1].visited) neighbors.push(maze[r][c + 1]);
+
+            if (neighbors.length > 0) {
+                return neighbors[Math.floor(Math.random() * neighbors.length)];
+            }
+            return null;
+        }
+
+        function removeWalls(a, b) {
+            const dx = a.c - b.c;
+            const dy = a.r - b.r;
+            if (dx === 1) { a.walls.left = false; b.walls.right = false; }
+            if (dx === -1) { a.walls.right = false; b.walls.left = false; }
+            if (dy === 1) { a.walls.up = false; b.walls.down = false; }
+            if (dy === -1) { a.walls.down = false; b.walls.up = false; }
+        }
+
+        function solveBFS() {
+            const queue = [{ r: 0, c: 0, dist: 0 }];
+            const visited = new Set(['0,0']);
+            
+            while (queue.length > 0) {
+                const { r, c, dist } = queue.shift();
+                if (r === rows - 1 && c === cols - 1) return dist;
+
+                const cell = maze[r][c];
+                const dirs = [
+                    { r: r - 1, c: c, wall: 'up' },
+                    { r: r + 1, c: c, wall: 'down' },
+                    { r: r, c: c - 1, wall: 'left' },
+                    { r: r, c: c + 1, wall: 'right' }
+                ];
+
+                for (const d of dirs) {
+                    if (d.r >= 0 && d.r < rows && d.c >= 0 && d.c < cols) {
+                        if (!cell.walls[d.wall] && !visited.has(`${d.r},${d.c}`)) {
+                            visited.add(`${d.r},${d.c}`);
+                            queue.push({ r: d.r, c: d.c, dist: dist + 1 });
+                        }
+                    }
+                }
+            }
+            return 0;
+        }
+
+        function resetGame() {
+            player = { x: 0, y: 0 };
+            steps = 0;
+            startTime = null;
+            clearInterval(timerInterval);
+            timerEl.innerText = "00:00";
+            stepsEl.innerText = "0";
+            overlay.classList.add('hidden');
+            isGameActive = true;
+            bonusCard.classList.add('hidden');
+            draw();
+        }
+
+        function startTimer() {
+            startTime = Date.now();
+            timerInterval = setInterval(() => {
+                const diff = Math.floor((Date.now() - startTime) / 1000);
+                const m = Math.floor(diff / 60).toString().padStart(2, '0');
+                const s = (diff % 60).toString().padStart(2, '0');
+                timerEl.innerText = `${m}:${s}`;
+            }, 1000);
+        }
+
+        function move(dir) {
+            if (!isGameActive) return;
+            
+            const cell = maze[player.y][player.x];
+            let moved = false;
+
+            if (dir === 'up' && !cell.walls.up) { player.y--; moved = true; }
+            if (dir === 'down' && !cell.walls.down) { player.y++; moved = true; }
+            if (dir === 'left' && !cell.walls.left) { player.x--; moved = true; }
+            if (dir === 'right' && !cell.walls.right) { player.x++; moved = true; }
+
+            if (moved) {
+                if (steps === 0) startTimer();
+                steps++;
+                stepsEl.innerText = steps;
+                draw();
+                checkWin();
+            }
+        }
+
+        function checkWin() {
+            if (player.x === cols - 1 && player.y === rows - 1) {
+                isGameActive = false;
+                clearInterval(timerInterval);
+                
+                document.getElementById('final-time').innerText = timerEl.innerText;
+                overlay.classList.remove('hidden');
+                
+                if (steps <= shortestPathLen) {
+                    bonusCard.classList.remove('hidden');
+                }
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw Maze
+            ctx.strokeStyle = '#475569';
+            ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+
+            for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                    const cell = maze[r][c];
+                    const x = c * cellSize;
+                    const y = r * cellSize;
+                    
+                    ctx.beginPath();
+                    if (cell.walls.up) { ctx.moveTo(x, y); ctx.lineTo(x + cellSize, y); }
+                    if (cell.walls.right) { ctx.moveTo(x + cellSize, y); ctx.lineTo(x + cellSize, y + cellSize); }
+                    if (cell.walls.down) { ctx.moveTo(x, y + cellSize); ctx.lineTo(x + cellSize, y + cellSize); }
+                    if (cell.walls.left) { ctx.moveTo(x, y); ctx.lineTo(x, y + cellSize); }
+                    ctx.stroke();
+                }
+            }
+
+            // Draw Exit
+            ctx.font = `${cellSize * 0.7}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('🏁', (cols - 0.5) * cellSize, (rows - 0.5) * cellSize);
+
+            // Draw Player
+            const px = (player.x + 0.5) * cellSize;
+            const py = (player.y + 0.5) * cellSize;
+            
+            // Player Glow
+            const grad = ctx.createRadialGradient(px, py, 2, px, py, cellSize/2);
+            grad.addColorStop(0, '#60a5fa');
+            grad.addColorStop(1, 'transparent');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(px, py, cellSize/2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Player Body
+            ctx.fillStyle = '#3b82f6';
+            ctx.beginPath();
+            ctx.arc(px, py, cellSize/3, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#eff6ff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // Input Handling
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowUp' || e.key === 'w') move('up');
+            if (e.key === 'ArrowDown' || e.key === 's') move('down');
+            if (e.key === 'ArrowLeft' || e.key === 'a') move('left');
+            if (e.key === 'ArrowRight' || e.key === 'd') move('right');
+            if (e.key.toLowerCase() === 'r') initMaze();
+        });
+
+        replayBtn.addEventListener('click', initMaze);
+        
+        // Initial Start
+        initMaze();
+
+        // Prevent scrolling on mobile
+        window.addEventListener('keydown', function(e) {
+            if(["Space","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].indexOf(e.code) > -1) {
+                e.preventDefault();
+            }
+        }, false);
+    </script>
+</body>
+</html>

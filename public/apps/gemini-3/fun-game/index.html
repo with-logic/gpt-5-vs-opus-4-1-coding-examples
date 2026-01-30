@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Fun Run: Blob's Adventure</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #333;
+            font-family: 'Fredoka One', cursive;
+            touch-action: none; /* Prevent zoom/scroll on mobile */
+        }
+
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #87CEEB;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            text-shadow: 2px 2px 0 #000;
+            color: white;
+        }
+
+        .hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            text-align: left;
+            font-size: 24px;
+        }
+
+        .hud-right {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            text-align: right;
+            font-size: 24px;
+        }
+
+        #start-screen, #game-over-screen {
+            background: rgba(0, 0, 0, 0.5);
+            padding: 40px;
+            border-radius: 20px;
+            border: 4px solid white;
+            pointer-events: auto;
+            transition: opacity 0.3s;
+        }
+
+        h1 {
+            font-size: 60px;
+            margin: 0 0 20px 0;
+            color: #FFD700;
+            -webkit-text-stroke: 2px #000;
+        }
+
+        p {
+            font-size: 24px;
+            margin-bottom: 30px;
+        }
+
+        button {
+            background: #FF4757;
+            border: none;
+            padding: 15px 40px;
+            color: white;
+            font-family: 'Fredoka One', cursive;
+            font-size: 28px;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 6px 0 #b32d39;
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+
+        button:active {
+            transform: translateY(6px);
+            box-shadow: 0 0 0 #b32d39;
+        }
+
+        button:hover {
+            background: #ff6b81;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Mobile adjustments */
+        @media (max-width: 600px) {
+            h1 { font-size: 40px; }
+            p { font-size: 18px; }
+            button { font-size: 22px; padding: 12px 30px; }
+            .hud, .hud-right { font-size: 18px; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- HUD -->
+    <div id="ui-hud" class="ui-layer hidden">
+        <div class="hud">
+            Score: <span id="score">0</span>
+        </div>
+        <div class="hud-right">
+            High Score: <span id="high-score">0</span>
+        </div>
+    </div>
+
+    <!-- Start Screen -->
+    <div id="start-screen" class="ui-layer">
+        <h1>FUN RUN!</h1>
+        <p>Jump over obstacles. Go fast. Don't crash.</p>
+        <button id="start-btn">PLAY NOW</button>
+        <p style="font-size: 16px; margin-top: 20px; opacity: 0.8;">[Space], [Click] or [Tap] to Jump</p>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="game-over-screen" class="ui-layer hidden">
+        <h1 style="color: #FF4757;">GAME OVER</h1>
+        <p>You scored: <span id="final-score">0</span></p>
+        <button id="retry-btn">TRY AGAIN</button>
+    </div>
+</div>
+
+<script>
+/**
+ * AUDIO SYSTEM
+ * Simple synthesized sounds using Web Audio API to avoid external assets.
+ */
+class SoundManager {
+    constructor() {
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        this.masterGain = this.ctx.createGain();
+        this.masterGain.gain.value = 0.3; // Volume
+        this.masterGain.connect(this.ctx.destination);
+    }
+
+    playJump() {
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(300, this.ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(600, this.ctx.currentTime + 0.1);
+        
+        gain.gain.setValueAtTime(0.5, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.15);
+    }
+
+    playLand() {
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(100, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(50, this.ctx.currentTime + 0.1);
+        
+        gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.1);
+    }
+
+    playCrash() {
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(200, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(50, this.ctx.currentTime + 0.3);
+        
+        gain.gain.setValueAtTime(0.5, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.35);
+    }
+
+    playScore() {
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1000, this.ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(1500, this.ctx.currentTime + 0.1);
+        
+        gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+        
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.15);
+    }
+}
+
+/**
+ * GAME ENGINE
+ */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const sound = new SoundManager();
+
+// UI Elements
+const startScreen = document.getElementById('start-screen');
+const gameOverScreen = document.getElementById('game-over-screen');
+const hud = document.getElementById('ui-hud');
+const scoreEl = document.getElementById('score');
+const highScoreEl = document.getElementById('high-score');
+const finalScoreEl = document.getElementById('final-score');
+const startBtn = document.getElementById('start-btn');
+const retryBtn = document.getElementById('retry-btn');
+
+// Game State
+let gameState = 'MENU'; // MENU, PLAYING, GAMEOVER
+let frames = 0;
+let score = 0;
+let highScore = localStorage.getItem('funRunHighScore') || 0;
+let gameSpeed = 6;
+let difficultyMultiplier = 1;
+
+// Dimensions
+let width, height;
+
+// Input
+let jumpPressed = false;
+
+function resize() {
+    width = canvas.width = window.innerWidth;
+    height = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Input Listeners
+const handleJump = (e) => {
+    if ((e.type === 'keydown' && e.code === 'Space') || e.type === 'touchstart' || e.type === 'mousedown') {
+        if (gameState === 'PLAYING') {
+            player.jump();
+            // Prevent default for spacebar scrolling
+            if (e.type === 'keydown') e.preventDefault();
+        }
+    }
+};
+
+window.addEventListener('keydown', handleJump);
+window.addEventListener('touchstart', handleJump);
+window.addEventListener('mousedown', handleJump);
+
+startBtn.addEventListener('click', startGame);
+retryBtn.addEventListener('click', startGame);
+
+// Utility
+function randomRange(min, max) {
+    return Math.random() * (max - min) + min;
+}
+
+function drawRoundedRect(ctx, x, y, w, h, r, color) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+}
+
+/**
+ * GAME OBJECTS
+ */
+
+// Background Layers
+const layers = [
+    { speed: 0.2, color: '#4FC3F7', type: 'clouds', elements: [] }, // Sky/Clouds
+    { speed: 0.5, color: '#a8d578', type: 'hills', elements: [] },  // Far hills
+    { speed: 1.0, color: '#7CB342', type: 'ground', elements: [] }  // Ground
+];
+
+// Initialize background elements
+function initBackground() {
+    layers.forEach(layer => {
+        layer.elements = [];
+        // Pre-populate
+        for(let i=0; i<width+200; i+= randomRange(100, 300)) {
+            if (layer.type === 'clouds') {
+                layer.elements.push({
+                    x: Math.random() * width,
+                    y: randomRange(50, 200),
+                    size: randomRange(40, 80)
+                });
+            } else if (layer.type === 'hills') {
+                layer.elements.push({
+                    x: Math.random() * width,
+                    y: height - 100, // Fixed baseline
+                    size: randomRange(100, 300), // Width
+                    height: randomRange(50, 150)
+                });
+            }
+        }
+    });
+}
+
+// Particle System
+let particles = [];
+class Particle {
+    constructor(x, y, color) {
+        this.x = x;
+        this.y = y;
+        this.color = color;
+        this.size = randomRange(3, 8);
+        this.vx = randomRange(-3, 3);
+        this.vy = randomRange(-5, -1);
+        this.life = 1.0;
+        this.decay = randomRange(0.02, 0.05);
+    }
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.vy += 0.2; // Gravity
+        this.life -= this.decay;
+    }
+    draw() {
+        ctx.globalAlpha = this.life;
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+    }
+}
+
+function spawnParticles(x, y, count, color) {
+    for(let i=0; i<count; i++) {
+        particles.push(new Particle(x, y, color));
+    }
+}
+
+// Player
+const player = {
+    x: 100,
+    y: 0,
+    width: 50,
+    height: 50,
+    vy: 0,
+    gravity: 0.8,
+    jumpForce: -15,
+    grounded: false,
+    color: '#9C27B0',
+    squash: 1,
+    rotation: 0,
+
+    reset() {
+        this.y = height - 150;
+        this.vy = 0;
+        this.squash = 1;
+        this.rotation = 0;
+        this.grounded = true;
+    },
+
+    jump() {
+        if (this.grounded) {
+            this.vy = this.jumpForce;
+            this.grounded = false;
+            this.squash = 0.8; // Stretch vertically (narrow width)
+            sound.playJump();
+            spawnParticles(this.x + this.width/2, this.y + this.height, 5, '#fff');
+        }
+    },
+
+    update() {
+        // Physics
+        this.vy += this.gravity;
+        this.y += this.vy;
+
+        // Ground collision
+        const groundLevel = height - 100;
+        if (this.y + this.height >= groundLevel) {
+            if (!this.grounded) {
+                // Just landed
+                this.squash = 1.3; // Squash horizontally
+                sound.playLand();
+                spawnParticles(this.x + this.width/2, this.y + this.height, 5, '#7CB342');
+            }
+            this.y = groundLevel - this.height;
+            this.vy = 0;
+            this.grounded = true;
+            this.rotation = 0;
+        } else {
+            // In air rotation effect
+            this.rotation += 0.05;
+        }
+
+        // Squash & Stretch animation recovery
+        this.squash += (1 - this.squash) * 0.1;
+    },
+
+    draw() {
+        ctx.save();
+        ctx.translate(this.x + this.width/2, this.y + this.height); // Pivot at bottom center
+        ctx.scale(1/this.squash, this.squash); // Squash effect
+        
+        // Draw Body
+        ctx.translate(-this.width/2, -this.height);
+        
+        // Gradient Body
+        const grad = ctx.createLinearGradient(0, 0, 0, this.height);
+        grad.addColorStop(0, '#BA68C8');
+        grad.addColorStop(1, '#9C27B0');
+        
+        drawRoundedRect(ctx, 0, 0, this.width, this.height, 10, grad);
+
+        // Eyes
+        ctx.fillStyle = 'white';
+        // Eye logic to look slightly ahead
+        const eyeOffset = 4;
+        
+        // Left Eye
+        ctx.beginPath();
+        ctx.arc(this.width*0.3 + eyeOffset, this.height*0.4, 8, 0, Math.PI*2);
+        ctx.fill();
+        
+        // Right Eye
+        ctx.beginPath();
+        ctx.arc(this.width*0.7 + eyeOffset, this.height*0.4, 8, 0, Math.PI*2);
+        ctx.fill();
+
+        // Pupils
+        ctx.fillStyle = 'black';
+        ctx.beginPath();
+        ctx.arc(this.width*0.3 + eyeOffset + 2, this.height*0.4, 3, 0, Math.PI*2);
+        ctx.arc(this.width*0.7 + eyeOffset + 2, this.height*0.4, 3, 0, Math.PI*2);
+        ctx.fill();
+
+        ctx.restore();
+    }
+};
+
+// Obstacles
+let obstacles = [];
+const obstacleTypes = [
+    { w: 40, h: 60, color: '#FF5722', type: 'spike' },
+    { w: 50, h: 50, color: '#795548', type: 'block' },
+    { w: 40, h: 80, color: '#607D8B', type: 'tall' }
+];
+
+function spawnObstacle() {
+    const type = obstacleTypes[Math.floor(Math.random() * obstacleTypes.length)];
+    obstacles.push({
+        x: width,
+        y: height - 100 - type.h,
+        w: type.w,
+        h: type.h,
+        color: type.color,
+        type: type.type,
+        passed: false
+    });
+}
+
+function updateObstacles() {
+    // Spawn logic
+    // Minimum distance between obstacles based on speed
+    const lastObstacle = obstacles[obstacles.length - 1];
+    let minGap = 400 + (gameSpeed * 10);
+    
+    if (!lastObstacle || (width - lastObstacle.x > minGap && Math.random() < 0.02)) {
+        spawnObstacle();
+    }
+
+    // Update & Collision
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+        let obs = obstacles[i];
+        obs.x -= gameSpeed;
+
+        // Collision Box
+        // Shrink player box slightly for forgiveness
+        const pBuffer = 5;
+        const oBuffer = 2;
+        
+        if (
+            player.x + pBuffer < obs.x + obs.w - oBuffer &&
+            player.x + player.width - pBuffer > obs.x + oBuffer &&
+            player.y + pBuffer < obs.y + obs.h - oBuffer &&
+            player.y + player.height - pBuffer > obs.y + oBuffer
+        ) {
+            endGame();
+        }
+
+        // Score counting
+        if (!obs.passed && obs.x + obs.w < player.x) {
+            score += 10;
+            obs.passed = true;
+            sound.playScore();
+            // Speed up slightly
+            if (score % 50 === 0) {
+                gameSpeed += 0.5;
+                showFloatingText("SPEED UP!", width/2, height/2, '#FFD700');
+            }
+        }
+
+        // Cleanup
+        if (obs.x + obs.w < 0) {
+            obstacles.splice(i, 1);
+        }
+    }
+}
+
+function drawObstacles() {
+    obstacles.forEach(obs => {
+        ctx.fillStyle = obs.color;
+        
+        if (obs.type === 'spike') {
+            // Draw triangle
+            ctx.beginPath();
+            ctx.moveTo(obs.x, obs.y + obs.h);
+            ctx.lineTo(obs.x + obs.w/2, obs.y);
+            ctx.lineTo(obs.x + obs.w, obs.y + obs.h);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Texture
+            ctx.fillStyle = 'rgba(0,0,0,0.1)';
+            ctx.beginPath();
+            ctx.moveTo(obs.x + obs.w/2, obs.y);
+            ctx.lineTo(obs.x + obs.w/2, obs.y + obs.h);
+            ctx.lineTo(obs.x + obs.w, obs.y + obs.h);
+            ctx.fill();
+
+        } else if (obs.type === 'block') {
+            drawRoundedRect(ctx, obs.x, obs.y, obs.w, obs.h, 5, obs.color);
+            // Face
+            ctx.fillStyle = 'rgba(0,0,0,0.3)';
+            ctx.beginPath();
+            ctx.arc(obs.x + 15, obs.y + 15, 3, 0, Math.PI*2);
+            ctx.arc(obs.x + 35, obs.y + 15, 3, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(obs.x + 15, obs.y + 30);
+            ctx.lineTo(obs.x + 35, obs.y + 30);
+            ctx.stroke();
+
+        } else {
+            drawRoundedRect(ctx, obs.x, obs.y, obs.w, obs.h, 4, obs.color);
+        }
+    });
+}
+
+// Floating Text System
+let floatingTexts = [];
+function showFloatingText(text, x, y, color) {
+    floatingTexts.push({ text, x, y, color, life: 60, offset: 0 });
+}
+
+function updateDrawFloatingText() {
+    for (let i = floatingTexts.length - 1; i >= 0; i--) {
+        let ft = floatingTexts[i];
+        ft.life--;
+        ft.offset += 1;
+        
+        ctx.globalAlpha = Math.min(1, ft.life / 20);
+        ctx.font = '30px "Fredoka One"';
+        ctx.fillStyle = ft.color;
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = 2;
+        ctx.strokeText(ft.text, ft.x - 50, ft.y - ft.offset);
+        ctx.fillText(ft.text, ft.x - 50, ft.y - ft.offset);
+        ctx.globalAlpha = 1.0;
+
+        if (ft.life <= 0) floatingTexts.splice(i, 1);
+    }
+}
+
+/**
+ * GAME LOOP
+ */
+
+function startGame() {
+    startScreen.classList.add('hidden');
+    gameOverScreen.classList.add('hidden');
+    hud.classList.remove('hidden');
+    
+    gameState = 'PLAYING';
+    score = 0;
+    gameSpeed = 6;
+    obstacles = [];
+    particles = [];
+    floatingTexts = [];
+    player.reset();
+    
+    scoreEl.innerText = score;
+    highScoreEl.innerText = highScore;
+
+    // Ensure audio context is ready
+    if (sound.ctx.state === 'suspended') sound.ctx.resume();
+}
+
+function endGame() {
+    gameState = 'GAMEOVER';
+    sound.playCrash();
+    spawnParticles(player.x, player.y, 20, '#FF4757');
+    
+    if (score > highScore) {
+        highScore = score;
+        localStorage.setItem('funRunHighScore', highScore);
+        showFloatingText("NEW HIGH SCORE!", width/2, height/2 - 50, '#FFD700');
+    }
+
+    finalScoreEl.innerText = score;
+    hud.classList.add('hidden');
+    
+    setTimeout(() => {
+        gameOverScreen.classList.remove('hidden');
+    }, 500);
+}
+
+function drawBackground() {
+    // Clear
+    ctx.fillStyle = '#87CEEB';
+    ctx.fillRect(0, 0, width, height);
+
+    // Sun
+    ctx.fillStyle = '#FFEB3B';
+    ctx.beginPath();
+    ctx.arc(width - 100, 100, 60, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255, 235, 59, 0.3)';
+    ctx.beginPath();
+    ctx.arc(width - 100, 100, 80, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Layers
+    layers.forEach(layer => {
+        // Move elements if playing
+        if (gameState === 'PLAYING') {
+            layer.elements.forEach(el => {
+                el.x -= layer.speed + (layer.type === 'ground' ? gameSpeed - 6 : 0); // Ground moves with game speed
+                if (el.x + el.size < -200) {
+                    el.x = width + randomRange(0, 200);
+                }
+            });
+        }
+
+        ctx.fillStyle = layer.color;
+        layer.elements.forEach(el => {
+            if (layer.type === 'clouds') {
+                ctx.beginPath();
+                ctx.ellipse(el.x, el.y, el.size, el.size * 0.6, 0, 0, Math.PI * 2);
+                ctx.fill();
+            } else if (layer.type === 'hills') {
+                ctx.beginPath();
+                ctx.moveTo(el.x, height - 100);
+                ctx.lineTo(el.x + el.size/2, height - 100 - el.height);
+                ctx.lineTo(el.x + el.size, height - 100);
+                ctx.fill();
+            }
+        });
+        
+        // Ground Fill
+        if (layer.type === 'ground') {
+            ctx.fillRect(0, height - 100, width, 100);
+            // Stripes on ground to show movement
+            const stripeW = 40;
+            const offset = (Date.now() * gameSpeed / 10) % stripeW;
+            ctx.fillStyle = 'rgba(0,0,0,0.05)';
+            for(let i = -1; i < width/stripeW + 1; i++) {
+                ctx.fillRect(i * stripeW - offset, height - 100, 20, 100);
+            }
+            // Grass top line
+            ctx.fillStyle = '#689F38';
+            ctx.fillRect(0, height - 100, width, 10);
+        }
+    });
+}
+
+function loop() {
+    // Logic
+    if (gameState === 'PLAYING') {
+        player.update();
+        updateObstacles();
+        scoreEl.innerText = score;
+    }
+
+    // Drawing
+    drawBackground();
+    
+    if (gameState !== 'MENU') {
+        drawObstacles();
+        
+        // Draw Player (even in game over, maybe frozen or fallen)
+        if (gameState === 'GAMEOVER') {
+             // Simple fall effect
+             player.y += 5;
+             player.rotation += 0.1;
+             if (player.y > height) player.y = height;
+        }
+        player.draw();
+        
+        // Particles
+        particles.forEach((p, i) => {
+            p.update();
+            p.draw();
+            if (p.life <= 0) particles.splice(i, 1);
+        });
+
+        updateDrawFloatingText();
+    }
+
+    requestAnimationFrame(loop);
+}
+
+// Initial Setup
+initBackground();
+highScoreEl.innerText = highScore;
+requestAnimationFrame(loop);
+
+</script>
+</body>
+</html>

@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pro Studio Virtual Drum Kit</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Syncopate:wght@700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: #0a0a0b;
+            color: #e4e4e7;
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+            touch-action: manipulation;
+        }
+        .studio-font {
+            font-family: 'Syncopate', sans-serif;
+        }
+        .drum-pad {
+            transition: transform 0.05s ease-out, box-shadow 0.05s ease-out;
+            user-select: none;
+        }
+        .drum-pad:active, .drum-pad.active {
+            transform: scale(0.95);
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.5);
+        }
+        .mesh-background {
+            background-image: radial-gradient(circle at 2px 2px, #1a1a1e 1px, transparent 0);
+            background-size: 24px 24px;
+        }
+        @keyframes ripple {
+            0% { transform: scale(1); opacity: 0.4; }
+            100% { transform: scale(1.5); opacity: 0; }
+        }
+        .ripple {
+            animation: ripple 0.3s ease-out forwards;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback, useRef } = React;
+
+        // --- Audio Engine ---
+        class AudioEngine {
+            constructor() {
+                this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                this.masterGain = this.ctx.createGain();
+                this.masterGain.gain.value = 0.7;
+                this.masterGain.connect(this.ctx.destination);
+            }
+
+            resume() {
+                if (this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            kick() {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
+                gain.gain.setValueAtTime(1, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
+                osc.connect(gain);
+                gain.connect(this.masterGain);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.5);
+            }
+
+            snare() {
+                const noise = this.ctx.createBufferSource();
+                const bufferSize = this.ctx.sampleRate * 0.2;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+                noise.buffer = buffer;
+
+                const noiseFilter = this.ctx.createBiquadFilter();
+                noiseFilter.type = 'highpass';
+                noiseFilter.frequency.value = 1000;
+                noise.connect(noiseFilter);
+
+                const noiseGain = this.ctx.createGain();
+                noiseGain.gain.setValueAtTime(1, this.ctx.currentTime);
+                noiseGain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.2);
+                noiseFilter.connect(noiseGain);
+                noiseGain.connect(this.masterGain);
+
+                const osc = this.ctx.createOscillator();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(180, this.ctx.currentTime);
+                const oscGain = this.ctx.createGain();
+                oscGain.gain.setValueAtTime(0.7, this.ctx.currentTime);
+                oscGain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+                osc.connect(oscGain);
+                oscGain.connect(this.masterGain);
+
+                noise.start();
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.2);
+            }
+
+            hihat(duration = 0.05) {
+                const noise = this.ctx.createBufferSource();
+                const bufferSize = this.ctx.sampleRate * duration;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+                noise.buffer = buffer;
+
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'highpass';
+                filter.frequency.value = 7000;
+                noise.connect(filter);
+
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+                filter.connect(gain);
+                gain.connect(this.masterGain);
+
+                noise.start();
+            }
+
+            tom(freq) {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.4);
+                gain.gain.setValueAtTime(1, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.4);
+                osc.connect(gain);
+                gain.connect(this.masterGain);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.4);
+            }
+
+            crash() {
+                const noise = this.ctx.createBufferSource();
+                const bufferSize = this.ctx.sampleRate * 1.5;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+                noise.buffer = buffer;
+
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'highpass';
+                filter.frequency.value = 3000;
+                noise.connect(filter);
+
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 1.5);
+                filter.connect(gain);
+                gain.connect(this.masterGain);
+
+                noise.start();
+            }
+        }
+
+        const DRUMS = [
+            { id: 'kick', label: 'KICK', key: ' ', code: 'Space', color: 'bg-red-600', sound: 'kick', size: 'col-span-2' },
+            { id: 'snare', label: 'SNARE', key: 'S', code: 'KeyS', color: 'bg-blue-500', sound: 'snare' },
+            { id: 'hihat_cl', label: 'H-HAT CL', key: 'H', code: 'KeyH', color: 'bg-yellow-400', sound: 'hihat_cl' },
+            { id: 'hihat_op', label: 'H-HAT OP', key: 'J', code: 'KeyJ', color: 'bg-yellow-500', sound: 'hihat_op' },
+            { id: 'tom_low', label: 'TOM L', key: 'Z', code: 'KeyZ', color: 'bg-purple-600', sound: 'tom_low' },
+            { id: 'tom_mid', label: 'TOM M', key: 'X', code: 'KeyX', color: 'bg-purple-500', sound: 'tom_mid' },
+            { id: 'tom_high', label: 'TOM H', key: 'C', code: 'KeyC', color: 'bg-purple-400', sound: 'tom_high' },
+            { id: 'crash', label: 'CRASH', key: 'K', code: 'KeyK', color: 'bg-orange-500', sound: 'crash' },
+        ];
+
+        function App() {
+            const [activeDrums, setActiveDrums] = useState({});
+            const [recording, setRecording] = useState(false);
+            const [recordedEvents, setRecordedEvents] = useState([]);
+            const [startTime, setStartTime] = useState(null);
+            const [playingBack, setPlayingBack] = useState(false);
+            const audioRef = useRef(null);
+
+            useEffect(() => {
+                audioRef.current = new AudioEngine();
+            }, []);
+
+            const playSound = useCallback((drumId) => {
+                if (!audioRef.current) return;
+                audioRef.current.resume();
+
+                switch (drumId) {
+                    case 'kick': audioRef.current.kick(); break;
+                    case 'snare': audioRef.current.snare(); break;
+                    case 'hihat_cl': audioRef.current.hihat(0.05); break;
+                    case 'hihat_op': audioRef.current.hihat(0.3); break;
+                    case 'tom_low': audioRef.current.tom(100); break;
+                    case 'tom_mid': audioRef.current.tom(150); break;
+                    case 'tom_high': audioRef.current.tom(200); break;
+                    case 'crash': audioRef.current.crash(); break;
+                }
+
+                if (recording) {
+                    setRecordedEvents(prev => [...prev, { id: drumId, time: Date.now() - startTime }]);
+                }
+
+                setActiveDrums(prev => ({ ...prev, [drumId]: true }));
+                setTimeout(() => {
+                    setActiveDrums(prev => ({ ...prev, [drumId]: false }));
+                }, 100);
+            }, [recording, startTime]);
+
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if (e.repeat) return;
+                    const drum = DRUMS.find(d => d.code === e.code);
+                    if (drum) playSound(drum.id);
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [playSound]);
+
+            const toggleRecording = () => {
+                if (recording) {
+                    setRecording(false);
+                } else {
+                    setRecordedEvents([]);
+                    setStartTime(Date.now());
+                    setRecording(true);
+                    if (playingBack) setPlayingBack(false);
+                }
+            };
+
+            const playBack = () => {
+                if (recordedEvents.length === 0 || playingBack) return;
+                setPlayingBack(true);
+                const playbackStart = Date.now();
+                
+                recordedEvents.forEach(event => {
+                    setTimeout(() => {
+                        playSound(event.id);
+                    }, event.time);
+                });
+
+                const totalTime = Math.max(...recordedEvents.map(e => e.time), 0);
+                setTimeout(() => setPlayingBack(false), totalTime + 200);
+            };
+
+            return (
+                <div className="min-h-screen mesh-background flex flex-col items-center justify-center p-4 md:p-8">
+                    {/* Header */}
+                    <header className="mb-12 text-center">
+                        <h1 className="studio-font text-4xl md:text-6xl font-extrabold tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-600">
+                            VIRTUAL DRUM KIT
+                        </h1>
+                        <p className="mt-2 text-zinc-500 font-medium tracking-widest uppercase text-xs">Professional Grade Synthesis v1.0</p>
+                    </header>
+
+                    {/* Studio Console */}
+                    <div className="w-full max-w-4xl bg-zinc-900 border border-zinc-800 rounded-3xl p-6 md:p-10 shadow-2xl ring-1 ring-white/10">
+                        {/* Control Panel */}
+                        <div className="flex flex-wrap items-center justify-between gap-4 mb-10 pb-6 border-b border-zinc-800">
+                            <div className="flex gap-4">
+                                <button 
+                                    onClick={toggleRecording}
+                                    className={`px-6 py-2 rounded-full font-bold flex items-center gap-2 transition-all ${recording ? 'bg-red-600 animate-pulse text-white' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
+                                >
+                                    <div className={`w-3 h-3 rounded-full ${recording ? 'bg-white' : 'bg-red-600'}`}></div>
+                                    {recording ? 'STOP' : 'REC'}
+                                </button>
+                                <button 
+                                    onClick={playBack}
+                                    disabled={recordedEvents.length === 0 || playingBack || recording}
+                                    className={`px-6 py-2 rounded-full font-bold flex items-center gap-2 transition-all ${playingBack ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed'}`}
+                                >
+                                    <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current"><path d="M8 5v14l11-7z"/></svg>
+                                    PLAYBACK
+                                </button>
+                            </div>
+
+                            <div className="flex items-center gap-6">
+                                <div className="text-right">
+                                    <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Buffer State</div>
+                                    <div className="text-sm font-mono text-emerald-500">READY</div>
+                                </div>
+                                <div className="h-10 w-px bg-zinc-800"></div>
+                                <div className="text-right">
+                                    <div className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Events</div>
+                                    <div className="text-sm font-mono text-blue-400">{recordedEvents.length}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Drum Pads Grid */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
+                            {DRUMS.map(drum => (
+                                <div 
+                                    key={drum.id}
+                                    onMouseDown={() => playSound(drum.id)}
+                                    onTouchStart={(e) => { e.preventDefault(); playSound(drum.id); }}
+                                    className={`
+                                        ${drum.size || ''}
+                                        drum-pad relative h-28 md:h-40 rounded-2xl cursor-pointer overflow-hidden
+                                        flex flex-col items-center justify-center gap-2
+                                        bg-zinc-800/50 border-b-4 border-zinc-950
+                                        hover:bg-zinc-800 transition-all group
+                                        ${activeDrums[drum.id] ? 'active brightness-125' : ''}
+                                    `}
+                                >
+                                    <div className={`absolute top-0 left-0 w-full h-1 opacity-20 ${drum.color}`}></div>
+                                    <div className={`text-2xl md:text-3xl font-black studio-font ${activeDrums[drum.id] ? 'text-white' : 'text-zinc-600 group-hover:text-zinc-400'}`}>
+                                        {drum.label}
+                                    </div>
+                                    <div className="absolute bottom-3 right-3 text-[10px] font-bold text-zinc-700 bg-black/40 px-2 py-1 rounded">
+                                        {drum.key === ' ' ? 'SPACE' : drum.key}
+                                    </div>
+                                    
+                                    {/* Visual Hit Effect */}
+                                    {activeDrums[drum.id] && (
+                                        <div className={`absolute inset-0 ripple rounded-2xl border-2 ${drum.color.replace('bg-', 'border-')}`}></div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                        
+                        {/* Footer / Instructions */}
+                        <div className="mt-10 pt-6 border-t border-zinc-800/50 flex flex-col md:flex-row justify-between items-center text-zinc-600 text-[10px] font-bold tracking-widest">
+                            <div className="mb-4 md:mb-0">DESIGNED FOR LOW LATENCY AUDIO CONTEXT</div>
+                            <div className="flex gap-4">
+                                <span>TAP PAD OR PRESS KEYS</span>
+                                <span className="text-zinc-800">|</span>
+                                <span>RECORD YOUR BEAT</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Background Glows */}
+                    <div className="fixed -top-24 -left-24 w-96 h-96 bg-blue-600/10 blur-[120px] pointer-events-none"></div>
+                    <div className="fixed -bottom-24 -right-24 w-96 h-96 bg-purple-600/10 blur-[120px] pointer-events-none"></div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

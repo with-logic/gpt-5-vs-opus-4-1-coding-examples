@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Reflex: Target Clicker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            touch-action: none; /* Prevent zoom/scroll on mobile */
+            overflow: hidden;
+            cursor: crosshair;
+        }
+
+        /* Custom Animations & Effects */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+        }
+
+        .target {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+            cursor: pointer;
+            will-change: transform, opacity;
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+
+        .target-ring {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+        }
+
+        /* Particle styles */
+        .particle {
+            position: absolute;
+            pointer-events: none;
+            border-radius: 50%;
+        }
+
+        /* Utility for floating animation background */
+        .bg-shape {
+            position: absolute;
+            filter: blur(60px);
+            opacity: 0.4;
+            z-index: -1;
+            animation: float 20s infinite ease-in-out;
+        }
+
+        @keyframes float {
+            0% { transform: translate(0, 0) rotate(0deg); }
+            33% { transform: translate(30px, -50px) rotate(10deg); }
+            66% { transform: translate(-20px, 20px) rotate(-5deg); }
+            100% { transform: translate(0, 0) rotate(0deg); }
+        }
+
+        .click-feedback {
+            position: absolute;
+            pointer-events: none;
+            font-weight: 800;
+            font-size: 1.2rem;
+            transform: translate(-50%, -50%);
+            z-index: 20;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body class="bg-slate-50 w-screen h-screen relative text-slate-800">
+
+    <!-- Ambient Background -->
+    <div class="fixed inset-0 overflow-hidden pointer-events-none">
+        <div class="bg-shape bg-blue-300 w-96 h-96 rounded-full top-[-10%] left-[-10%]"></div>
+        <div class="bg-shape bg-purple-300 w-80 h-80 rounded-full bottom-[-10%] right-[-10%] animation-delay-2000"></div>
+        <div class="bg-shape bg-pink-300 w-64 h-64 rounded-full top-[40%] left-[60%] animation-delay-4000"></div>
+    </div>
+
+    <!-- Game Layer -->
+    <div id="game-area" class="absolute inset-0 z-10 w-full h-full"></div>
+
+    <!-- HUD (Heads Up Display) -->
+    <div id="hud" class="fixed top-0 left-0 w-full p-6 flex justify-between items-start z-30 pointer-events-none opacity-0 transition-opacity duration-500">
+        <div class="glass-panel px-6 py-3 rounded-2xl flex flex-col items-center">
+            <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold">Score</span>
+            <span id="score-display" class="text-3xl font-bold text-indigo-600">0</span>
+        </div>
+        
+        <div class="glass-panel px-6 py-3 rounded-2xl flex flex-col items-center">
+            <span class="text-xs uppercase tracking-wider text-slate-500 font-semibold">Time</span>
+            <span id="time-display" class="text-3xl font-bold text-slate-700">20.0</span>
+        </div>
+    </div>
+
+    <!-- Start Screen Overlay -->
+    <div id="start-screen" class="absolute inset-0 z-40 flex items-center justify-center bg-white/30 backdrop-blur-sm transition-all duration-500">
+        <div class="glass-panel p-10 rounded-3xl max-w-md w-full text-center shadow-2xl transform transition-all hover:scale-[1.01]">
+            <div class="mb-6 inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 text-white shadow-lg">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+            </div>
+            <h1 class="text-4xl font-extrabold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600">Reflex</h1>
+            <p class="text-slate-500 mb-8">Test your speed and accuracy.</p>
+            
+            <div class="space-y-4 mb-8 text-sm text-slate-600">
+                <div class="flex items-center justify-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+                    <span>Click targets before they disappear</span>
+                </div>
+                <div class="flex items-center justify-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-purple-500"></span>
+                    <span>Don't miss to keep accuracy high</span>
+                </div>
+                <div class="flex items-center justify-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-pink-500"></span>
+                    <span>20 second time limit</span>
+                </div>
+            </div>
+
+            <button id="start-btn" class="w-full py-4 bg-slate-900 text-white rounded-xl font-bold text-lg hover:bg-slate-800 transition-colors shadow-lg active:transform active:scale-95 group relative overflow-hidden">
+                <span class="relative z-10">Start Challenge</span>
+                <div class="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            </button>
+        </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="game-over-screen" class="absolute inset-0 z-50 flex items-center justify-center bg-white/60 backdrop-blur-md hidden opacity-0 transition-opacity duration-500">
+        <div class="glass-panel p-10 rounded-3xl max-w-sm w-full text-center shadow-2xl">
+            <h2 class="text-3xl font-bold text-slate-800 mb-6">Time's Up!</h2>
+            
+            <div class="grid grid-cols-2 gap-4 mb-8">
+                <div class="bg-indigo-50 p-4 rounded-xl">
+                    <div class="text-indigo-900 text-sm font-semibold mb-1">Score</div>
+                    <div id="final-score" class="text-3xl font-bold text-indigo-600">0</div>
+                </div>
+                <div class="bg-purple-50 p-4 rounded-xl">
+                    <div class="text-purple-900 text-sm font-semibold mb-1">Accuracy</div>
+                    <div id="final-accuracy" class="text-3xl font-bold text-purple-600">0%</div>
+                </div>
+            </div>
+
+            <div class="mb-8">
+                <div class="text-xs text-slate-400 uppercase tracking-widest mb-2">Performance</div>
+                <div id="performance-text" class="text-lg font-medium text-slate-700">Needs work...</div>
+            </div>
+
+            <button id="restart-btn" class="w-full py-4 bg-slate-900 text-white rounded-xl font-bold text-lg hover:bg-slate-800 transition-colors shadow-lg active:transform active:scale-95">
+                Try Again
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // --- Audio System (Web Audio API) ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        const Sound = {
+            playTone: (freq, type, duration, vol = 0.1) => {
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                
+                gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+                
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + duration);
+            },
+            hit: () => {
+                // Happy chord
+                Sound.playTone(523.25, 'sine', 0.1, 0.1); // C5
+                setTimeout(() => Sound.playTone(659.25, 'sine', 0.1, 0.1), 50); // E5
+            },
+            miss: () => {
+                // Low thud
+                Sound.playTone(150, 'triangle', 0.2, 0.1);
+            },
+            spawn: () => {
+                // Very quiet pop
+                Sound.playTone(800, 'sine', 0.05, 0.02);
+            },
+            gameOver: () => {
+                // Game over melody
+                [523.25, 493.88, 440.00, 392.00].forEach((freq, i) => {
+                    setTimeout(() => Sound.playTone(freq, 'sine', 0.4, 0.1), i * 150);
+                });
+            }
+        };
+
+        // --- Game State ---
+        const state = {
+            isPlaying: false,
+            score: 0,
+            clicks: 0,
+            hits: 0,
+            timeLeft: 20,
+            lastSpawnTime: 0,
+            spawnInterval: 600, // starting interval ms
+            difficultyMultiplier: 0.98, // speed increases slightly each spawn
+            targets: [] // Track active targets
+        };
+
+        // --- DOM Elements ---
+        const els = {
+            gameArea: document.getElementById('game-area'),
+            scoreDisplay: document.getElementById('score-display'),
+            timeDisplay: document.getElementById('time-display'),
+            startScreen: document.getElementById('start-screen'),
+            gameOverScreen: document.getElementById('game-over-screen'),
+            startBtn: document.getElementById('start-btn'),
+            restartBtn: document.getElementById('restart-btn'),
+            finalScore: document.getElementById('final-score'),
+            finalAccuracy: document.getElementById('final-accuracy'),
+            performanceText: document.getElementById('performance-text'),
+            hud: document.getElementById('hud')
+        };
+
+        // --- Game Logic ---
+
+        function init() {
+            els.startBtn.addEventListener('click', startGame);
+            els.restartBtn.addEventListener('click', () => {
+                hideGameOver();
+                startGame();
+            });
+            els.gameArea.addEventListener('mousedown', handleAreaClick); // Using mousedown for faster response
+        }
+
+        function startGame() {
+            // Reset State
+            state.isPlaying = true;
+            state.score = 0;
+            state.clicks = 0;
+            state.hits = 0;
+            state.timeLeft = 20.0;
+            state.spawnInterval = 800;
+            state.targets = [];
+
+            // UI Reset
+            updateHUD();
+            els.gameArea.innerHTML = ''; // Clear leftover targets
+            
+            // Transitions
+            gsap.to(els.startScreen, { opacity: 0, duration: 0.3, onComplete: () => {
+                els.startScreen.style.display = 'none';
+            }});
+            els.hud.style.opacity = 1;
+            
+            // Start Loops
+            requestAnimationFrame(gameLoop);
+            spawnLoop();
+        }
+
+        let lastTime = 0;
+        function gameLoop(timestamp) {
+            if (!state.isPlaying) return;
+            if (!lastTime) lastTime = timestamp;
+            const deltaTime = timestamp - lastTime;
+            lastTime = timestamp;
+
+            // Update Time
+            state.timeLeft -= deltaTime / 1000;
+            if (state.timeLeft <= 0) {
+                state.timeLeft = 0;
+                endGame();
+            }
+            updateHUD();
+
+            if (state.isPlaying) {
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        let spawnTimeout;
+        function spawnLoop() {
+            if (!state.isPlaying) return;
+
+            spawnTarget();
+
+            // Increase difficulty (speed up spawning)
+            if (state.spawnInterval > 300) {
+                state.spawnInterval *= state.difficultyMultiplier;
+            }
+
+            // Random variance to spawn time for natural feel
+            const nextSpawn = state.spawnInterval * (0.8 + Math.random() * 0.4); 
+            spawnTimeout = setTimeout(spawnLoop, nextSpawn);
+        }
+
+        function spawnTarget() {
+            const size = Math.random() < 0.2 ? 90 : (Math.random() < 0.5 ? 70 : 50); // Small targets worth more? Maybe simple for now.
+            const colorPalette = [
+                { main: '#6366f1', ring: '#a5b4fc' }, // Indigo
+                { main: '#ec4899', ring: '#fbcfe8' }, // Pink
+                { main: '#8b5cf6', ring: '#ddd6fe' }, // Purple
+                { main: '#f97316', ring: '#fed7aa' }  // Orange
+            ];
+            const colors = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+            
+            // Calculate safe position (padding from edges)
+            const padding = 60;
+            const maxX = els.gameArea.clientWidth - padding * 2;
+            const maxY = els.gameArea.clientHeight - padding * 2;
+            const x = padding + Math.random() * maxX;
+            const y = padding + Math.random() * maxY;
+
+            const target = document.createElement('div');
+            target.className = 'target shadow-lg';
+            target.style.width = `${size}px`;
+            target.style.height = `${size}px`;
+            target.style.left = `${x}px`;
+            target.style.top = `${y}px`;
+            target.style.backgroundColor = 'white'; // Middle bullseye
+            target.dataset.id = Date.now() + Math.random();
+            target.dataset.points = Math.floor(1000 / size); // Smaller = more points
+
+            // Decorative rings
+            const outerRing = document.createElement('div');
+            outerRing.className = 'target-ring';
+            outerRing.style.width = '100%';
+            outerRing.style.height = '100%';
+            outerRing.style.backgroundColor = colors.main;
+            
+            const innerRing = document.createElement('div');
+            innerRing.className = 'target-ring';
+            innerRing.style.width = '60%';
+            innerRing.style.height = '60%';
+            innerRing.style.backgroundColor = 'white';
+            
+            const bullseye = document.createElement('div');
+            bullseye.className = 'target-ring';
+            bullseye.style.width = '30%';
+            bullseye.style.height = '30%';
+            bullseye.style.backgroundColor = colors.main;
+
+            target.appendChild(outerRing);
+            target.appendChild(innerRing);
+            target.appendChild(bullseye);
+            els.gameArea.appendChild(target);
+
+            // Lifecycle Animation
+            const tl = gsap.timeline({
+                onComplete: () => {
+                    if (target.parentNode) {
+                        target.remove();
+                        // Penalty for missed target? Optional. Let's keep it casual.
+                    }
+                }
+            });
+
+            // Pop in
+            tl.fromTo(target, 
+                { scale: 0, opacity: 0 },
+                { scale: 1, opacity: 1, duration: 0.4, ease: "back.out(1.7)" }
+            );
+            
+            // Wait (shorter wait as game progresses could be cool, but fixed is predictable)
+            const lifeTime = 0.8 + Math.random() * 0.5;
+            tl.to(target, { scale: 1.1, duration: lifeTime, ease: "none" }); // Slight grow while waiting
+            
+            // Pop out
+            tl.to(target, { scale: 0, opacity: 0, duration: 0.2, ease: "back.in(1.7)" });
+
+            // Sound.spawn(); // Can get annoying if too frequent
+            state.targets.push(target);
+        }
+
+        function handleAreaClick(e) {
+            if (!state.isPlaying) return;
+            
+            state.clicks++;
+            
+            const target = e.target.closest('.target');
+            
+            if (target) {
+                // HIT
+                const rect = target.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+                const points = parseInt(target.dataset.points) || 10;
+                
+                state.hits++;
+                state.score += points;
+                
+                // Visual feedback
+                createParticles(centerX, centerY, getComputedStyle(target.firstChild).backgroundColor);
+                showFloatingText(`+${points}`, centerX, centerY);
+                
+                // Audio
+                Sound.hit();
+                
+                // Remove target immediately
+                gsap.killTweensOf(target);
+                target.remove();
+            } else {
+                // MISS
+                Sound.miss();
+                // Optional: Penalty?
+                // state.score = Math.max(0, state.score - 5);
+            }
+            
+            updateHUD();
+        }
+
+        function endGame() {
+            state.isPlaying = false;
+            clearTimeout(spawnTimeout);
+            
+            // Calculate Stats
+            const accuracy = state.clicks > 0 ? Math.round((state.hits / state.clicks) * 100) : 0;
+            
+            els.finalScore.innerText = state.score;
+            els.finalAccuracy.innerText = `${accuracy}%`;
+            
+            // Determine performance text
+            let text = "Good effort!";
+            if (state.score > 200 && accuracy > 80) text = "Sharpshooter!";
+            if (state.score > 400 && accuracy > 90) text = "Godlike Reflexes!";
+            if (state.score < 100) text = "Need more coffee?";
+            els.performanceText.innerText = text;
+
+            Sound.gameOver();
+
+            // Show Game Over Screen
+            els.gameOverScreen.style.display = 'flex'; // Make visible for transition
+            els.gameOverScreen.classList.remove('hidden');
+            
+            gsap.fromTo(els.gameOverScreen, 
+                { opacity: 0, backdropFilter: 'blur(0px)' }, 
+                { opacity: 1, backdropFilter: 'blur(12px)', duration: 0.5 }
+            );
+
+            gsap.fromTo('.glass-panel', 
+                { y: 20, opacity: 0 },
+                { y: 0, opacity: 1, duration: 0.5, delay: 0.2, ease: "power2.out" }
+            );
+        }
+
+        function hideGameOver() {
+            gsap.to(els.gameOverScreen, {
+                opacity: 0,
+                duration: 0.3,
+                onComplete: () => {
+                    els.gameOverScreen.style.display = 'none';
+                    els.gameOverScreen.classList.add('hidden');
+                }
+            });
+        }
+
+        function updateHUD() {
+            els.scoreDisplay.innerText = state.score;
+            els.timeDisplay.innerText = state.timeLeft.toFixed(1);
+        }
+
+        // --- Visual Effects ---
+        function createParticles(x, y, color) {
+            const particleCount = 8;
+            for (let i = 0; i < particleCount; i++) {
+                const p = document.createElement('div');
+                p.className = 'particle';
+                const size = Math.random() * 6 + 4;
+                p.style.width = `${size}px`;
+                p.style.height = `${size}px`;
+                p.style.backgroundColor = color;
+                p.style.left = `${x}px`;
+                p.style.top = `${y}px`;
+                els.gameArea.appendChild(p);
+                
+                const angle = (Math.PI * 2 * i) / particleCount;
+                const velocity = Math.random() * 60 + 40;
+                const tx = Math.cos(angle) * velocity;
+                const ty = Math.sin(angle) * velocity;
+                
+                gsap.to(p, {
+                    x: tx,
+                    y: ty,
+                    opacity: 0,
+                    scale: 0,
+                    duration: 0.6,
+                    ease: "power2.out",
+                    onComplete: () => p.remove()
+                });
+            }
+        }
+
+        function showFloatingText(text, x, y) {
+            const el = document.createElement('div');
+            el.className = 'click-feedback text-indigo-600';
+            el.innerText = text;
+            el.style.left = `${x}px`;
+            el.style.top = `${y}px`;
+            els.gameArea.appendChild(el);
+
+            gsap.to(el, {
+                y: -50,
+                opacity: 0,
+                duration: 0.8,
+                ease: "power1.out",
+                onComplete: () => el.remove()
+            });
+        }
+
+        // Initialize
+        init();
+
+    </script>
+</body>
+</html>

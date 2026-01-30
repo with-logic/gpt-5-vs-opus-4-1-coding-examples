@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloud Painter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Quicksand:wght@400;600;700&display=swap');
+        
+        body {
+            font-family: 'Quicksand', sans-serif;
+            margin: 0;
+            overflow: hidden;
+            background: #87CEEB;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .sky-bg {
+            background: linear-gradient(to bottom, #4facfe 0%, #00f2fe 100%);
+        }
+
+        .whimsical-shadow {
+            box-shadow: 0 10px 40px rgba(31, 38, 135, 0.2);
+        }
+
+        .canvas-container {
+            cursor: crosshair;
+            touch-action: none;
+        }
+
+        .btn-hover:hover {
+            transform: translateY(-4px) scale(1.05);
+        }
+
+        .btn-active:active {
+            transform: scale(0.95);
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 24px;
+            width: 24px;
+            border-radius: 50%;
+            background: #ffffff;
+            border: 3px solid #38bdf8;
+            cursor: pointer;
+            margin-top: -8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 8px;
+            cursor: pointer;
+            background: #e0f2fe;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="sky-bg">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const BRUSH_SHAPES = {
+            PUFFY: 'puffy',
+            WISPY: 'wispy',
+            BLOCKY: 'blocky',
+            STARRY: 'starry'
+        };
+
+        const COLORS = [
+            { name: 'Cloud White', value: '#ffffff' },
+            { name: 'Peach', value: '#ffd1dc' },
+            { name: 'Dreamy Lavender', value: '#e6e6fa' },
+            { name: 'Soft Gold', value: '#fff4bd' },
+            { name: 'Sunset Pink', value: '#ffb3ba' }
+        ];
+
+        const CloudPainter = () => {
+            const canvasRef = useRef(null);
+            const [brushShape, setBrushShape] = useState(BRUSH_SHAPES.PUFFY);
+            const [brushColor, setBrushColor] = useState(COLORS[0].value);
+            const [brushSize, setBrushSize] = useState(50);
+            const [isDrawing, setIsDrawing] = useState(false);
+            
+            const stateRef = useRef({
+                clouds: [],
+                currentStroke: null,
+                airplanes: [],
+                lastTime: 0,
+                width: window.innerWidth,
+                height: window.innerHeight
+            });
+
+            useEffect(() => {
+                const state = stateRef.current;
+                
+                // Add initial clouds
+                for(let i = 0; i < 6; i++) {
+                    state.clouds.push(createRandomCloud(Math.random() * state.width, Math.random() * state.height));
+                }
+
+                // Add airplanes
+                state.airplanes.push(createRandomAirplane());
+                state.airplanes.push(createRandomAirplane());
+
+                const handleResize = () => {
+                    state.width = window.innerWidth;
+                    state.height = window.innerHeight;
+                    if (canvasRef.current) {
+                        canvasRef.current.width = state.width;
+                        canvasRef.current.height = state.height;
+                    }
+                };
+
+                window.addEventListener('resize', handleResize);
+                handleResize();
+
+                const loop = (time) => {
+                    const dt = time - state.lastTime;
+                    state.lastTime = time;
+                    update(dt);
+                    draw();
+                    requestAnimationFrame(loop);
+                };
+                requestAnimationFrame(loop);
+
+                return () => window.removeEventListener('resize', handleResize);
+            }, []);
+
+            const createRandomCloud = (x, y) => {
+                const points = [];
+                const numCircles = 6 + Math.random() * 8;
+                for(let i = 0; i < numCircles; i++) {
+                    points.push({
+                        ox: (Math.random() - 0.5) * 80,
+                        oy: (Math.random() - 0.5) * 50,
+                        r: 25 + Math.random() * 35
+                    });
+                }
+                return {
+                    x, y,
+                    points,
+                    color: COLORS[Math.floor(Math.random() * COLORS.length)].value,
+                    opacity: 0.5 + Math.random() * 0.4,
+                    speed: 0.01 + Math.random() * 0.03,
+                    scale: 0.7 + Math.random() * 0.6,
+                    type: BRUSH_SHAPES.PUFFY
+                };
+            };
+
+            const createRandomAirplane = () => {
+                const state = stateRef.current;
+                const direction = Math.random() > 0.5 ? 1 : -1;
+                return {
+                    x: direction === 1 ? -200 : state.width + 200,
+                    y: 100 + Math.random() * (state.height - 350),
+                    speed: (0.8 + Math.random() * 1.5) * direction,
+                    type: Math.floor(Math.random() * 2),
+                    scale: 0.4 + Math.random() * 0.4,
+                    flip: direction === -1,
+                    altitude: Math.random() * Math.PI // for bobbing
+                };
+            };
+
+            const update = (dt) => {
+                const state = stateRef.current;
+                const safeDt = dt || 16;
+                
+                state.clouds.forEach(cloud => {
+                    cloud.x += cloud.speed * safeDt;
+                    if (cloud.x > state.width + 300) cloud.x = -300;
+                });
+
+                state.airplanes.forEach((plane) => {
+                    plane.x += plane.speed * 0.1 * safeDt;
+                    plane.altitude += 0.02;
+                    if ((plane.speed > 0 && plane.x > state.width + 300) || 
+                        (plane.speed < 0 && plane.x < -300)) {
+                        Object.assign(plane, createRandomAirplane());
+                    }
+                });
+            };
+
+            const drawCloud = (ctx, cloud) => {
+                ctx.save();
+                ctx.translate(cloud.x, cloud.y + Math.sin(stateRef.current.lastTime * 0.001 * cloud.speed * 10) * 10);
+                ctx.scale(cloud.scale, cloud.scale);
+                ctx.globalAlpha = cloud.opacity;
+                ctx.fillStyle = cloud.color;
+                ctx.shadowColor = 'rgba(0,0,0,0.05)';
+                ctx.shadowBlur = 15;
+
+                if (cloud.points) {
+                    cloud.points.forEach(p => {
+                        ctx.beginPath();
+                        ctx.arc(p.ox, p.oy, p.r, 0, Math.PI * 2);
+                        ctx.fill();
+                    });
+                } else if (cloud.strokePoints) {
+                    ctx.lineJoin = 'round';
+                    ctx.lineCap = 'round';
+                    ctx.strokeStyle = cloud.color;
+                    ctx.lineWidth = cloud.brushSize;
+
+                    if (cloud.type === BRUSH_SHAPES.WISPY) {
+                        ctx.globalAlpha *= 0.5;
+                        ctx.setLineDash([15, 15]);
+                    }
+
+                    ctx.beginPath();
+                    cloud.strokePoints.forEach((p, i) => {
+                        if (i === 0) ctx.moveTo(p.x, p.y);
+                        else ctx.lineTo(p.x, p.y);
+                    });
+                    ctx.stroke();
+
+                    if (cloud.type === BRUSH_SHAPES.STARRY) {
+                        ctx.globalAlpha *= 0.8;
+                        cloud.strokePoints.forEach((p, i) => {
+                            if (i % 10 === 0) {
+                                drawStar(ctx, p.x, p.y, 5, cloud.brushSize, cloud.brushSize/2);
+                            }
+                        });
+                    }
+                    ctx.setLineDash([]);
+                }
+                ctx.restore();
+            };
+
+            const drawStar = (ctx, cx, cy, spikes, outerRadius, innerRadius) => {
+                let rot = Math.PI / 2 * 3;
+                let x = cx;
+                let y = cy;
+                let step = Math.PI / spikes;
+
+                ctx.beginPath();
+                ctx.moveTo(cx, cy - outerRadius);
+                for (let i = 0; i < spikes; i++) {
+                    x = cx + Math.cos(rot) * outerRadius;
+                    y = cy + Math.sin(rot) * outerRadius;
+                    ctx.lineTo(x, y);
+                    rot += step;
+
+                    x = cx + Math.cos(rot) * innerRadius;
+                    y = cy + Math.sin(rot) * innerRadius;
+                    ctx.lineTo(x, y);
+                    rot += step;
+                }
+                ctx.lineTo(cx, cy - outerRadius);
+                ctx.closePath();
+                ctx.fill();
+            };
+
+            const drawAirplane = (ctx, plane) => {
+                ctx.save();
+                ctx.translate(plane.x, plane.y + Math.sin(plane.altitude) * 20);
+                if (plane.flip) ctx.scale(-1, 1);
+                ctx.scale(plane.scale, plane.scale);
+                
+                if (plane.type === 0) {
+                    // Propeller Plane
+                    ctx.fillStyle = '#f87171';
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, 50, 20, 0, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Tail
+                    ctx.beginPath();
+                    ctx.moveTo(-45, 0);
+                    ctx.lineTo(-65, -25);
+                    ctx.lineTo(-65, 25);
+                    ctx.fill();
+                    // Wings
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(-15, -50, 30, 100);
+                    // Windows
+                    ctx.fillStyle = '#bae6fd';
+                    ctx.beginPath();
+                    ctx.arc(25, -5, 8, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Propeller
+                    ctx.strokeStyle = '#334155';
+                    ctx.lineWidth = 3;
+                    const angle = Date.now() * 0.03;
+                    ctx.beginPath();
+                    ctx.moveTo(50, 0);
+                    ctx.lineTo(50 + Math.cos(angle)*25, Math.sin(angle)*25);
+                    ctx.moveTo(50, 0);
+                    ctx.lineTo(50 - Math.cos(angle)*25, -Math.sin(angle)*25);
+                    ctx.stroke();
+                } else {
+                    // Paper Plane
+                    ctx.fillStyle = 'white';
+                    ctx.beginPath();
+                    ctx.moveTo(40, 0);
+                    ctx.lineTo(-30, -25);
+                    ctx.lineTo(-15, 0);
+                    ctx.lineTo(-30, 25);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.strokeStyle = '#e2e8f0';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                    // Fold line
+                    ctx.beginPath();
+                    ctx.moveTo(40, 0);
+                    ctx.lineTo(-15, 0);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            };
+
+            const draw = () => {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+                const state = stateRef.current;
+
+                const grd = ctx.createLinearGradient(0, 0, 0, state.height);
+                grd.addColorStop(0, "#7dd3fc");
+                grd.addColorStop(1, "#bae6fd");
+                ctx.fillStyle = grd;
+                ctx.fillRect(0, 0, state.width, state.height);
+
+                // Sun
+                ctx.fillStyle = 'rgba(254, 240, 138, 0.4)';
+                ctx.beginPath();
+                ctx.arc(state.width - 150, 150, 80, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(state.width - 150, 150, 60, 0, Math.PI * 2);
+                ctx.fill();
+
+                state.airplanes.forEach(plane => drawAirplane(ctx, plane));
+                state.clouds.forEach(cloud => drawCloud(ctx, cloud));
+
+                if (state.currentStroke) {
+                    ctx.save();
+                    ctx.lineJoin = 'round';
+                    ctx.lineCap = 'round';
+                    ctx.strokeStyle = state.currentStroke.color;
+                    ctx.lineWidth = state.currentStroke.brushSize;
+                    ctx.globalAlpha = 0.7;
+
+                    if (state.currentStroke.type === BRUSH_SHAPES.WISPY) {
+                        ctx.globalAlpha = 0.4;
+                        ctx.setLineDash([15, 15]);
+                    }
+
+                    ctx.beginPath();
+                    state.currentStroke.points.forEach((p, i) => {
+                        if (i === 0) ctx.moveTo(p.x, p.y);
+                        else ctx.lineTo(p.x, p.y);
+                    });
+                    ctx.stroke();
+
+                    if (state.currentStroke.type === BRUSH_SHAPES.STARRY) {
+                        const p = state.currentStroke.points[state.currentStroke.points.length - 1];
+                        ctx.fillStyle = state.currentStroke.color;
+                        drawStar(ctx, p.x, p.y, 5, state.currentStroke.brushSize, state.currentStroke.brushSize/2);
+                    }
+                    ctx.restore();
+                }
+            };
+
+            const getEventPos = (e) => {
+                const rect = canvasRef.current.getBoundingClientRect();
+                const clientX = e.clientX || (e.touches && e.touches[0] && e.touches[0].clientX);
+                const clientY = e.clientY || (e.touches && e.touches[0] && e.touches[0].clientY);
+                if (clientX === undefined) return null;
+                return {
+                    x: clientX - rect.left,
+                    y: clientY - rect.top
+                };
+            };
+
+            const startDrawing = (e) => {
+                const pos = getEventPos(e);
+                if (!pos) return;
+                stateRef.current.currentStroke = {
+                    points: [pos],
+                    color: brushColor,
+                    type: brushShape,
+                    brushSize: brushSize
+                };
+                setIsDrawing(true);
+            };
+
+            const drawMove = (e) => {
+                if (!isDrawing) return;
+                const pos = getEventPos(e);
+                if (!pos) return;
+                stateRef.current.currentStroke.points.push(pos);
+            };
+
+            const stopDrawing = () => {
+                if (!isDrawing) return;
+                const state = stateRef.current;
+                const stroke = state.currentStroke;
+                
+                if (stroke && stroke.points.length > 1) {
+                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                    stroke.points.forEach(p => {
+                        if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+                        if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+                    });
+                    const centerX = (minX + maxX) / 2;
+                    const centerY = (minY + maxY) / 2;
+                    const relativePoints = stroke.points.map(p => ({ x: p.x - centerX, y: p.y - centerY }));
+
+                    state.clouds.push({
+                        x: centerX, y: centerY,
+                        strokePoints: relativePoints,
+                        color: stroke.color,
+                        type: stroke.type,
+                        brushSize: stroke.brushSize,
+                        opacity: 0.8,
+                        speed: 0.01 + Math.random() * 0.04,
+                        scale: 1
+                    });
+                }
+                state.currentStroke = null;
+                setIsDrawing(false);
+            };
+
+            const clearSky = () => {
+                stateRef.current.clouds = [];
+            };
+
+            const saveImage = () => {
+                const canvas = canvasRef.current;
+                const link = document.createElement('a');
+                link.download = 'my-sky-painting.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            };
+
+            return (
+                <div className="relative w-screen h-screen flex flex-col items-center select-none overflow-hidden">
+                    <canvas
+                        ref={canvasRef}
+                        onMouseDown={startDrawing}
+                        onMouseMove={drawMove}
+                        onMouseUp={stopDrawing}
+                        onMouseOut={stopDrawing}
+                        onTouchStart={startDrawing}
+                        onTouchMove={drawMove}
+                        onTouchEnd={stopDrawing}
+                        className="absolute inset-0 canvas-container"
+                    />
+
+                    {/* Logo/Title */}
+                    <div className="absolute top-8 pointer-events-none text-center">
+                        <h1 className="text-5xl font-black text-white drop-shadow-2xl tracking-tight">
+                            CLOUD PAINTER
+                        </h1>
+                        <p className="text-white font-bold opacity-80 uppercase tracking-widest text-sm mt-1">Make your own sky</p>
+                    </div>
+
+                    {/* Shape Toolbar */}
+                    <div className="absolute left-6 top-1/2 -translate-y-1/2 flex flex-col gap-5 bg-white/40 p-5 rounded-[40px] whimsical-shadow backdrop-blur-lg border border-white/50">
+                        {Object.entries(BRUSH_SHAPES).map(([key, value]) => (
+                            <button
+                                key={key}
+                                onClick={() => setBrushShape(value)}
+                                className={`w-16 h-16 rounded-3xl flex items-center justify-center text-3xl transition-all btn-hover btn-active ${brushShape === value ? 'bg-sky-500 text-white shadow-lg ring-4 ring-white' : 'bg-white/80 text-sky-400 hover:bg-white'}`}
+                            >
+                                {value === 'puffy' && '☁️'}
+                                {value === 'wispy' && '💨'}
+                                {value === 'blocky' && '📦'}
+                                {value === 'starry' && '✨'}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Color Palette */}
+                    <div className="absolute right-6 top-1/2 -translate-y-1/2 flex flex-col gap-4 bg-white/40 p-5 rounded-[40px] whimsical-shadow backdrop-blur-lg border border-white/50">
+                        {COLORS.map((c) => (
+                            <button
+                                key={c.name}
+                                onClick={() => setBrushColor(c.value)}
+                                className={`w-14 h-14 rounded-full border-4 transition-all btn-hover btn-active ${brushColor === c.value ? 'border-sky-500 scale-110 shadow-lg' : 'border-white'}`}
+                                style={{ backgroundColor: c.value }}
+                            />
+                        ))}
+                    </div>
+
+                    {/* Bottom Controls */}
+                    <div className="absolute bottom-10 flex flex-col items-center gap-6 w-full max-w-3xl px-6">
+                        <div className="bg-white/90 w-full px-10 py-6 rounded-[50px] flex items-center gap-10 whimsical-shadow backdrop-blur-xl border border-white">
+                            <div className="flex flex-col gap-2 flex-1">
+                                <div className="flex justify-between text-sky-600 font-bold text-xs uppercase tracking-wider">
+                                    <span>Brush Size</span>
+                                    <span>{brushSize}px</span>
+                                </div>
+                                <input 
+                                    type="range" min="10" max="150" value={brushSize} 
+                                    onChange={(e) => setBrushSize(parseInt(e.target.value))}
+                                    className="w-full appearance-none bg-transparent"
+                                />
+                            </div>
+
+                            <div className="flex gap-4">
+                                <button 
+                                    onClick={clearSky}
+                                    className="h-14 px-8 bg-sky-100 text-sky-600 rounded-full font-bold hover:bg-sky-200 transition-colors btn-active"
+                                >
+                                    Clear 🧹
+                                </button>
+                                <button 
+                                    onClick={saveImage}
+                                    className="h-14 px-8 bg-sky-500 text-white rounded-full font-bold shadow-lg hover:bg-sky-600 transition-all btn-active"
+                                >
+                                    Save 📸
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<CloudPainter />);
+    </script>
+</body>
+</html>

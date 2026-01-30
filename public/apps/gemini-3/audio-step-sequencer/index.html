@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeonPulse | Audio Step Sequencer</title>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        orbitron: ['Orbitron', 'sans-serif'],
+                        rajdhani: ['Rajdhani', 'sans-serif'],
+                    },
+                    colors: {
+                        neon: {
+                            blue: '#00f3ff',
+                            pink: '#ff00ff',
+                            purple: '#bc13fe',
+                            green: '#0aff0a',
+                            dark: '#050510',
+                            panel: '#0a0a1f'
+                        }
+                    },
+                    boxShadow: {
+                        'neon-blue': '0 0 5px #00f3ff, 0 0 10px #00f3ff',
+                        'neon-pink': '0 0 5px #ff00ff, 0 0 10px #ff00ff',
+                        'neon-green': '0 0 5px #0aff0a, 0 0 10px #0aff0a',
+                    },
+                    animation: {
+                        'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'scanline': 'scanline 8s linear infinite',
+                    },
+                    keyframes: {
+                        scanline: {
+                            '0%': { transform: 'translateY(-100%)' },
+                            '100%': { transform: 'translateY(100%)' }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #020205;
+            color: #e0e0e0;
+            overflow-x: hidden;
+        }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #050510; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #333; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #00f3ff; 
+        }
+
+        /* CRT Effect Overlay */
+        .crt::before {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 2;
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+        }
+
+        .glow-text {
+            text-shadow: 0 0 5px currentColor;
+        }
+
+        .range-slider {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 6px;
+            background: #1a1a3a;
+            border-radius: 5px;
+            outline: none;
+        }
+        .range-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #00f3ff;
+            cursor: pointer;
+            box-shadow: 0 0 10px #00f3ff;
+            transition: transform 0.1s;
+        }
+        .range-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        .btn-neon {
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        .btn-neon:hover {
+            box-shadow: 0 0 15px currentColor;
+            transform: translateY(-1px);
+        }
+        .btn-neon:active {
+            transform: translateY(1px);
+        }
+
+        /* Grid Step Styling */
+        .step-btn {
+            transition: all 0.1s ease;
+        }
+        .step-btn.active {
+            box-shadow: inset 0 0 10px currentColor;
+        }
+        .step-btn.playing {
+            border-color: white !important;
+            filter: brightness(1.5);
+        }
+    </style>
+</head>
+<body>
+    <div id="root" class="h-screen w-screen crt flex flex-col"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        // --- AUDIO ENGINE ---
+
+        class AudioEngine {
+            constructor() {
+                this.ctx = null;
+                this.masterGain = null;
+                this.compressor = null;
+                this.buffers = {};
+                this.isSetup = false;
+            }
+
+            setup() {
+                if (this.isSetup) return;
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                this.ctx = new AudioContext();
+                
+                this.masterGain = this.ctx.createGain();
+                this.masterGain.gain.value = 0.8;
+
+                // Add a compressor to glue things together
+                this.compressor = this.ctx.createDynamicsCompressor();
+                this.compressor.threshold.value = -24;
+                this.compressor.knee.value = 30;
+                this.compressor.ratio.value = 12;
+                this.compressor.attack.value = 0.003;
+                this.compressor.release.value = 0.25;
+
+                this.masterGain.connect(this.compressor);
+                this.compressor.connect(this.ctx.destination);
+                
+                this.isSetup = true;
+            }
+
+            resume() {
+                if (this.ctx && this.ctx.state === 'suspended') {
+                    this.ctx.resume();
+                }
+            }
+
+            // Synthesize drums on the fly
+            trigger(type, time, velocity = 1.0) {
+                if (!this.ctx) return;
+                const t = time || this.ctx.currentTime;
+                
+                switch(type) {
+                    case 'KICK': this.playKick(t, velocity); break;
+                    case 'SNARE': this.playSnare(t, velocity); break;
+                    case 'HIHAT': this.playHiHat(t, velocity); break;
+                    case 'CLAP': this.playClap(t, velocity); break;
+                    case 'TOM': this.playTom(t, velocity); break;
+                    case 'FX': this.playFx(t, velocity); break;
+                }
+            }
+
+            playKick(time, vel) {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                
+                osc.frequency.setValueAtTime(150, time);
+                osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.5);
+                
+                gain.gain.setValueAtTime(vel, time);
+                gain.gain.exponentialRampToValueAtTime(0.001, time + 0.5);
+                
+                osc.connect(gain);
+                gain.connect(this.masterGain);
+                
+                osc.start(time);
+                osc.stop(time + 0.5);
+            }
+
+            playSnare(time, vel) {
+                // Tone
+                const osc = this.ctx.createOscillator();
+                const oscGain = this.ctx.createGain();
+                osc.frequency.setValueAtTime(250, time);
+                oscGain.gain.setValueAtTime(vel * 0.5, time);
+                oscGain.gain.exponentialRampToValueAtTime(0.001, time + 0.2);
+                osc.connect(oscGain);
+                oscGain.connect(this.masterGain);
+                osc.start(time);
+                osc.stop(time + 0.2);
+
+                // Noise
+                const noiseSize = this.ctx.sampleRate * 2; // 2 seconds
+                const buffer = this.ctx.createBuffer(1, noiseSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < noiseSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+                const noiseFilter = this.ctx.createBiquadFilter();
+                noiseFilter.type = 'highpass';
+                noiseFilter.frequency.value = 800;
+                const noiseGain = this.ctx.createGain();
+                noiseGain.gain.setValueAtTime(vel * 0.8, time);
+                noiseGain.gain.exponentialRampToValueAtTime(0.001, time + 0.25);
+                
+                noise.connect(noiseFilter);
+                noiseFilter.connect(noiseGain);
+                noiseGain.connect(this.masterGain);
+                noise.start(time);
+                noise.stop(time + 0.25);
+            }
+
+            playHiHat(time, vel) {
+                const bufferSize = this.ctx.sampleRate * 2;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+                
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'highpass';
+                filter.frequency.value = 5000;
+
+                const gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(vel * 0.6, time);
+                gain.gain.exponentialRampToValueAtTime(0.001, time + 0.08);
+
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.masterGain);
+                
+                noise.start(time);
+                noise.stop(time + 0.08);
+            }
+
+            playClap(time, vel) {
+                const bufferSize = this.ctx.sampleRate * 1;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    data[i] = Math.random() * 2 - 1;
+                }
+
+                const noise = this.ctx.createBufferSource();
+                noise.buffer = buffer;
+                
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'bandpass';
+                filter.frequency.value = 1200;
+
+                const gain = this.ctx.createGain();
+                // Simulation of the "clap" burst envelope
+                gain.gain.setValueAtTime(0, time);
+                gain.gain.linearRampToValueAtTime(vel, time + 0.005);
+                gain.gain.exponentialRampToValueAtTime(0.001, time + 0.3);
+
+                noise.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.masterGain);
+                
+                noise.start(time);
+                noise.stop(time + 0.3);
+            }
+
+             playTom(time, vel) {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                
+                osc.frequency.setValueAtTime(120, time);
+                osc.frequency.exponentialRampToValueAtTime(50, time + 0.3);
+                
+                gain.gain.setValueAtTime(vel * 0.8, time);
+                gain.gain.exponentialRampToValueAtTime(0.001, time + 0.3);
+                
+                osc.connect(gain);
+                gain.connect(this.masterGain);
+                
+                osc.start(time);
+                osc.stop(time + 0.3);
+            }
+
+            playFx(time, vel) {
+                const osc = this.ctx.createOscillator();
+                osc.type = 'sawtooth';
+                const gain = this.ctx.createGain();
+                const filter = this.ctx.createBiquadFilter();
+
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(200, time);
+                filter.frequency.linearRampToValueAtTime(3000, time + 0.4);
+
+                osc.frequency.setValueAtTime(100, time);
+                
+                gain.gain.setValueAtTime(vel * 0.4, time);
+                gain.gain.linearRampToValueAtTime(0, time + 0.4);
+
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.masterGain);
+                
+                osc.start(time);
+                osc.stop(time + 0.4);
+            }
+
+            // Export to WAV
+            async renderToWav(grid, bpm, swing) {
+                // Calculate length for 1 loop (16 steps)
+                // 60 / bpm = beats per second. 
+                // 16th note = beat / 4. 
+                // Total time = 16 * (60/bpm) / 4 * 2 (render 2 loops for tail)
+                const secondsPerBeat = 60.0 / bpm;
+                const sixteenthNoteTime = secondsPerBeat / 4;
+                const totalDuration = sixteenthNoteTime * 16 * 2; // Render 2 loops
+
+                const offlineCtx = new OfflineAudioContext(2, 44100 * totalDuration, 44100);
+                
+                // --- Re-implement synthesis for Offline Context (Needs to be bound to offlineCtx) ---
+                // Helper to bridge synthesis methods to the offline context
+                const playSound = (type, time, vel) => {
+                     // We need a temporary mini-engine attached to offlineCtx
+                     // This is duplicate code but necessary as the main engine is bound to real-time AudioContext
+                     // A cleaner way in production is separating Synths into pure functions taking context.
+                     // For this file size constraint, we'll do a quick inline adaption.
+                     
+                     const ctx = offlineCtx;
+                     const dest = ctx.destination;
+                     
+                     if (type === 'KICK') {
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.frequency.setValueAtTime(150, time);
+                        osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.5);
+                        gain.gain.setValueAtTime(vel, time);
+                        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.5);
+                        osc.connect(gain); gain.connect(dest);
+                        osc.start(time); osc.stop(time + 0.5);
+                     } else if (type === 'SNARE') {
+                        const osc = ctx.createOscillator();
+                        const oscGain = ctx.createGain();
+                        osc.frequency.setValueAtTime(250, time);
+                        oscGain.gain.setValueAtTime(vel * 0.5, time);
+                        oscGain.gain.exponentialRampToValueAtTime(0.001, time + 0.2);
+                        osc.connect(oscGain); oscGain.connect(dest);
+                        osc.start(time); osc.stop(time + 0.2);
+
+                        const noiseSize = ctx.sampleRate * 2; 
+                        const buffer = ctx.createBuffer(1, noiseSize, ctx.sampleRate);
+                        const data = buffer.getChannelData(0);
+                        for (let i = 0; i < noiseSize; i++) data[i] = Math.random() * 2 - 1;
+                        const noise = ctx.createBufferSource();
+                        noise.buffer = buffer;
+                        const noiseFilter = ctx.createBiquadFilter();
+                        noiseFilter.type = 'highpass'; noiseFilter.frequency.value = 800;
+                        const noiseGain = ctx.createGain();
+                        noiseGain.gain.setValueAtTime(vel * 0.8, time);
+                        noiseGain.gain.exponentialRampToValueAtTime(0.001, time + 0.25);
+                        noise.connect(noiseFilter); noiseFilter.connect(noiseGain); noiseGain.connect(dest);
+                        noise.start(time); noise.stop(time + 0.25);
+                     } else if (type === 'HIHAT') {
+                        const bufferSize = ctx.sampleRate * 1;
+                        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+                        const data = buffer.getChannelData(0);
+                        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+                        const noise = ctx.createBufferSource();
+                        noise.buffer = buffer;
+                        const filter = ctx.createBiquadFilter();
+                        filter.type = 'highpass'; filter.frequency.value = 5000;
+                        const gain = ctx.createGain();
+                        gain.gain.setValueAtTime(vel * 0.6, time);
+                        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.08);
+                        noise.connect(filter); filter.connect(gain); gain.connect(dest);
+                        noise.start(time); noise.stop(time + 0.08);
+                     } else if (type === 'CLAP') {
+                        const bufferSize = ctx.sampleRate * 1;
+                        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+                        const data = buffer.getChannelData(0);
+                        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+                        const noise = ctx.createBufferSource();
+                        noise.buffer = buffer;
+                        const filter = ctx.createBiquadFilter();
+                        filter.type = 'bandpass'; filter.frequency.value = 1200;
+                        const gain = ctx.createGain();
+                        gain.gain.setValueAtTime(0, time);
+                        gain.gain.linearRampToValueAtTime(vel, time + 0.005);
+                        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.3);
+                        noise.connect(filter); filter.connect(gain); gain.connect(dest);
+                        noise.start(time); noise.stop(time + 0.3);
+                     } else if (type === 'TOM') {
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.frequency.setValueAtTime(120, time);
+                        osc.frequency.exponentialRampToValueAtTime(50, time + 0.3);
+                        gain.gain.setValueAtTime(vel * 0.8, time);
+                        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.3);
+                        osc.connect(gain); gain.connect(dest);
+                        osc.start(time); osc.stop(time + 0.3);
+                     } else if (type === 'FX') {
+                        const osc = ctx.createOscillator();
+                        osc.type = 'sawtooth';
+                        const gain = ctx.createGain();
+                        const filter = ctx.createBiquadFilter();
+                        filter.type = 'lowpass';
+                        filter.frequency.setValueAtTime(200, time);
+                        filter.frequency.linearRampToValueAtTime(3000, time + 0.4);
+                        osc.frequency.setValueAtTime(100, time);
+                        gain.gain.setValueAtTime(vel * 0.4, time);
+                        gain.gain.linearRampToValueAtTime(0, time + 0.4);
+                        osc.connect(filter); filter.connect(gain); gain.connect(dest);
+                        osc.start(time); osc.stop(time + 0.4);
+                     }
+                };
+
+                // Schedule 2 loops
+                for (let loop = 0; loop < 2; loop++) {
+                    const loopOffset = loop * (sixteenthNoteTime * 16);
+                    for (let step = 0; step < 16; step++) {
+                        let time = loopOffset + (step * sixteenthNoteTime);
+                        if (step % 2 !== 0) {
+                            time += swing * sixteenthNoteTime; // Apply swing
+                        }
+                        
+                        grid.forEach(track => {
+                            if (track.steps[step]) {
+                                playSound(track.sound, time, 1.0);
+                            }
+                        });
+                    }
+                }
+
+                const renderedBuffer = await offlineCtx.startRendering();
+                return this.bufferToWave(renderedBuffer, renderedBuffer.length);
+            }
+
+            bufferToWave(abuffer, len) {
+                let numOfChan = abuffer.numberOfChannels,
+                    length = len * numOfChan * 2 + 44,
+                    buffer = new ArrayBuffer(length),
+                    view = new DataView(buffer),
+                    channels = [], i, sample,
+                    offset = 0,
+                    pos = 0;
+
+                // write WAVE header
+                setUint32(0x46464952);                         // "RIFF"
+                setUint32(length - 8);                         // file length - 8
+                setUint32(0x45564157);                         // "WAVE"
+
+                setUint32(0x20746d66);                         // "fmt " chunk
+                setUint32(16);                                 // length = 16
+                setUint16(1);                                  // PCM (uncompressed)
+                setUint16(numOfChan);
+                setUint32(abuffer.sampleRate);
+                setUint32(abuffer.sampleRate * 2 * numOfChan); // avg. bytes/sec
+                setUint16(numOfChan * 2);                      // block-align
+                setUint16(16);                                 // 16-bit (hardcoded in this example)
+
+                setUint32(0x61746164);                         // "data" - chunk
+                setUint32(length - pos - 4);                   // chunk length
+
+                // write interleaved data
+                for(i = 0; i < abuffer.numberOfChannels; i++)
+                    channels.push(abuffer.getChannelData(i));
+
+                while(pos < len) {
+                    for(i = 0; i < numOfChan; i++) {             // interleave channels
+                        sample = Math.max(-1, Math.min(1, channels[i][pos])); // clamp
+                        sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767)|0; // scale to 16-bit signed int
+                        view.setInt16(44 + offset, sample, true);          // write 16-bit sample
+                        offset += 2;
+                    }
+                    pos++;
+                }
+
+                return new Blob([buffer], {type: "audio/wav"});
+
+                function setUint16(data) { view.setUint16(pos, data, true); pos += 2; }
+                function setUint32(data) { view.setUint32(pos, data, true); pos += 4; }
+            }
+        }
+
+        const audio = new AudioEngine();
+
+        // --- COMPONENTS ---
+
+        const INITIAL_TRACKS = [
+            { id: 1, name: 'KICK',  sound: 'KICK',  color: 'neon-blue', steps: Array(16).fill(false) },
+            { id: 2, name: 'SNARE', sound: 'SNARE', color: 'neon-pink', steps: Array(16).fill(false) },
+            { id: 3, name: 'CLAP',  sound: 'CLAP',  color: 'neon-purple', steps: Array(16).fill(false) },
+            { id: 4, name: 'HIHAT', sound: 'HIHAT', color: 'neon-green', steps: Array(16).fill(false) },
+            { id: 5, name: 'TOM',   sound: 'TOM',   color: 'neon-blue', steps: Array(16).fill(false) },
+            { id: 6, name: 'FX',    sound: 'FX',    color: 'neon-pink', steps: Array(16).fill(false) },
+        ];
+        
+        // Default pattern
+        INITIAL_TRACKS[0].steps[0] = true; INITIAL_TRACKS[0].steps[4] = true; INITIAL_TRACKS[0].steps[8] = true; INITIAL_TRACKS[0].steps[12] = true;
+        INITIAL_TRACKS[3].steps[2] = true; INITIAL_TRACKS[3].steps[6] = true; INITIAL_TRACKS[3].steps[10] = true; INITIAL_TRACKS[3].steps[14] = true;
+
+
+        const App = () => {
+            const [tracks, setTracks] = useState(INITIAL_TRACKS);
+            const [isPlaying, setIsPlaying] = useState(false);
+            const [bpm, setBpm] = useState(120);
+            const [swing, setSwing] = useState(0); // 0 to 0.5
+            const [currentStep, setCurrentStep] = useState(-1);
+            
+            // Scheduler refs
+            const nextNoteTime = useRef(0.0);
+            const currentStepRef = useRef(0);
+            const timerID = useRef(null);
+            const lookahead = 25.0; // ms
+            const scheduleAheadTime = 0.1; // s
+
+            // Load from local storage on mount
+            useEffect(() => {
+                const saved = localStorage.getItem('neon_sequencer_tracks');
+                if (saved) {
+                    try {
+                        setTracks(JSON.parse(saved));
+                    } catch(e) { console.error("Failed to load", e)}
+                }
+            }, []);
+
+            // Scheduler Loop
+            const nextNote = useCallback(() => {
+                const secondsPerBeat = 60.0 / bpm;
+                const sixteenth = secondsPerBeat / 4; 
+                
+                // Swing calculation
+                let time = nextNoteTime.current;
+                
+                // Advance time
+                // If current step is even (0, 2, 4...), next step is odd (1, 3, 5...).
+                // The duration OF the even step is standard.
+                // The duration OF the odd step might be impacted if we think of swing as delaying the off-beat?
+                // Actually easier: Always schedule grid aligned, just nudge the PLAYBACK time of even-numbered 16ths?
+                // Standard swing: delay the offbeats (steps 1, 3, 5, 7...).
+                
+                // Wait. 
+                // Step 0: time T. 
+                // Step 1: time T + 16th + swing.
+                // Step 2: time T + 2*16th.
+                // Step 3: time T + 3*16th + swing.
+                
+                // Let's keep `nextNoteTime` as the rigid grid time, but `schedTime` includes swing.
+                nextNoteTime.current += sixteenth;
+                currentStepRef.current = (currentStepRef.current + 1) % 16;
+            }, [bpm]);
+
+            const scheduleNote = useCallback((stepNumber, time) => {
+                // UI Update (using requestAnimationFrame usually better, but setState works for this scale)
+                // We use a draw callback or simple timeout to sync UI roughly
+                const visualDelay = (time - audio.ctx.currentTime) * 1000;
+                setTimeout(() => {
+                    setCurrentStep(stepNumber);
+                }, Math.max(0, visualDelay));
+
+                // Audio Triggering
+                // Apply swing to off-beats (odd steps)
+                let actualTime = time;
+                if (stepNumber % 2 !== 0) {
+                    const sixteenth = (60.0 / bpm) / 4;
+                    actualTime += (swing * sixteenth);
+                }
+
+                tracks.forEach(track => {
+                    if (track.steps[stepNumber]) {
+                        audio.trigger(track.sound, actualTime);
+                    }
+                });
+            }, [tracks, bpm, swing]);
+
+            const scheduler = useCallback(() => {
+                if (!audio.ctx) return;
+                while (nextNoteTime.current < audio.ctx.currentTime + scheduleAheadTime) {
+                    scheduleNote(currentStepRef.current, nextNoteTime.current);
+                    nextNote();
+                }
+                timerID.current = window.setTimeout(scheduler, lookahead);
+            }, [nextNote, scheduleNote]);
+
+            useEffect(() => {
+                if (isPlaying) {
+                    if (!audio.isSetup) audio.setup();
+                    audio.resume();
+                    
+                    // Start logic
+                    if (audio.ctx.state === 'running') {
+                        currentStepRef.current = 0;
+                        nextNoteTime.current = audio.ctx.currentTime + 0.05;
+                        scheduler();
+                    }
+                } else {
+                    window.clearTimeout(timerID.current);
+                    setCurrentStep(-1);
+                }
+                return () => window.clearTimeout(timerID.current);
+            }, [isPlaying, scheduler]);
+
+            // Handlers
+            const toggleStep = (trackId, stepIndex) => {
+                const newTracks = tracks.map(t => {
+                    if (t.id === trackId) {
+                        const newSteps = [...t.steps];
+                        newSteps[stepIndex] = !newSteps[stepIndex];
+                        return { ...t, steps: newSteps };
+                    }
+                    return t;
+                });
+                setTracks(newTracks);
+            };
+
+            const clearPattern = () => {
+                setTracks(tracks.map(t => ({ ...t, steps: Array(16).fill(false) })));
+            };
+
+            const randomize = () => {
+                setTracks(tracks.map(t => ({ 
+                    ...t, 
+                    steps: t.steps.map(() => Math.random() > 0.8) 
+                })));
+            };
+
+            const saveLocal = () => {
+                localStorage.setItem('neon_sequencer_tracks', JSON.stringify(tracks));
+                alert("Pattern Saved to Browser!");
+            };
+
+            const loadLocal = () => {
+                 const saved = localStorage.getItem('neon_sequencer_tracks');
+                if (saved) {
+                    setTracks(JSON.parse(saved));
+                }
+            };
+
+            const exportWav = async () => {
+                if(!audio.isSetup) audio.setup();
+                const blob = await audio.renderToWav(tracks, bpm, swing);
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = 'neon-beat.wav';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+            };
+
+            // JSX
+            return (
+                <div className="flex flex-col h-full p-4 md:p-8 max-w-7xl mx-auto w-full font-rajdhani relative z-10">
+                    
+                    {/* Header */}
+                    <header className="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
+                        <div className="flex items-center gap-3">
+                            <i className="fa-solid fa-wave-square text-neon-blue text-2xl animate-pulse"></i>
+                            <h1 className="text-4xl font-orbitron font-bold text-white tracking-widest glow-text">
+                                NEON<span className="text-neon-pink">PULSE</span>
+                            </h1>
+                        </div>
+                        <div className="flex gap-4 text-xs md:text-sm">
+                            <button onClick={saveLocal} className="text-gray-400 hover:text-neon-blue transition"><i className="fa-solid fa-floppy-disk mr-1"></i> SAVE</button>
+                            <button onClick={loadLocal} className="text-gray-400 hover:text-neon-blue transition"><i className="fa-solid fa-folder-open mr-1"></i> LOAD</button>
+                            <button onClick={exportWav} className="text-gray-400 hover:text-neon-green transition"><i className="fa-solid fa-file-export mr-1"></i> EXPORT WAV</button>
+                        </div>
+                    </header>
+
+                    {/* Controls */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 bg-neon-panel/50 p-6 rounded-xl border border-white/5 backdrop-blur-sm">
+                        
+                        {/* Playback */}
+                        <div className="flex items-center justify-center gap-6">
+                            <button 
+                                onClick={() => setIsPlaying(!isPlaying)}
+                                className={`w-16 h-16 rounded-full flex items-center justify-center text-2xl transition-all duration-300 ${isPlaying ? 'bg-neon-pink shadow-neon-pink text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white'}`}
+                            >
+                                <i className={`fa-solid ${isPlaying ? 'fa-stop' : 'fa-play pl-1'}`}></i>
+                            </button>
+                            <div className="flex flex-col gap-2">
+                                <button onClick={clearPattern} className="px-4 py-1 border border-red-500/50 text-red-400 rounded text-xs hover:bg-red-500/20 transition">CLEAR</button>
+                                <button onClick={randomize} className="px-4 py-1 border border-neon-blue/50 text-neon-blue rounded text-xs hover:bg-neon-blue/20 transition">RANDOM</button>
+                            </div>
+                        </div>
+
+                        {/* Tempo */}
+                        <div className="flex flex-col justify-center px-4">
+                            <div className="flex justify-between mb-2">
+                                <span className="text-neon-blue font-bold tracking-wider">TEMPO</span>
+                                <span className="font-orbitron text-xl">{bpm} BPM</span>
+                            </div>
+                            <input 
+                                type="range" 
+                                min="60" max="200" 
+                                value={bpm} 
+                                onChange={(e) => setBpm(Number(e.target.value))}
+                                className="range-slider"
+                            />
+                        </div>
+
+                        {/* Swing */}
+                        <div className="flex flex-col justify-center px-4">
+                            <div className="flex justify-between mb-2">
+                                <span className="text-neon-purple font-bold tracking-wider">SWING</span>
+                                <span className="font-orbitron text-xl">{Math.round(swing * 100)}%</span>
+                            </div>
+                            <input 
+                                type="range" 
+                                min="0" max="0.5" step="0.01"
+                                value={swing} 
+                                onChange={(e) => setSwing(Number(e.target.value))}
+                                className="range-slider"
+                                style={{background: '#2a1a3a'}}
+                            />
+                            <style jsx>{`
+                                input[type=range]::-webkit-slider-thumb {
+                                    background: ${swing > 0 ? '#bc13fe' : '#555'};
+                                    box-shadow: 0 0 10px ${swing > 0 ? '#bc13fe' : 'transparent'};
+                                }
+                            `}</style>
+                        </div>
+                    </div>
+
+                    {/* Sequencer Grid */}
+                    <div className="flex-1 overflow-y-auto pr-2 pb-2">
+                        <div className="flex flex-col gap-3">
+                            {/* Step Indicators */}
+                            <div className="flex mb-1">
+                                <div className="w-24 md:w-32 shrink-0"></div>
+                                <div className="flex-1 grid grid-cols-16 gap-1">
+                                    {[...Array(16)].map((_, i) => (
+                                        <div key={i} className={`h-1 rounded-full transition-colors duration-100 ${currentStep === i ? 'bg-white shadow-[0_0_10px_white]' : i % 4 === 0 ? 'bg-gray-600' : 'bg-gray-800'}`}></div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {tracks.map((track) => (
+                                <div key={track.id} className="flex items-center group">
+                                    {/* Track Header */}
+                                    <div className="w-24 md:w-32 shrink-0 flex items-center justify-between pr-4">
+                                        <span className={`font-orbitron text-sm md:text-base font-bold text-${track.color} opacity-80 group-hover:opacity-100 transition`}>{track.name}</span>
+                                        <button 
+                                            onClick={() => audio.trigger(track.sound)}
+                                            className="w-6 h-6 rounded bg-white/5 hover:bg-white/20 text-xs flex items-center justify-center text-gray-400 hover:text-white transition"
+                                        >
+                                            <i className="fa-solid fa-volume-high"></i>
+                                        </button>
+                                    </div>
+                                    
+                                    {/* Steps */}
+                                    <div className="flex-1 grid grid-cols-16 gap-1 h-10 md:h-12">
+                                        {track.steps.map((isActive, stepIndex) => {
+                                            const isCurrent = currentStep === stepIndex;
+                                            const isBeat = stepIndex % 4 === 0;
+                                            
+                                            // Dynamic classes based on state
+                                            let bgClass = "bg-[#1a1a2e]";
+                                            let borderClass = "border border-white/5";
+                                            let shadowClass = "";
+
+                                            if (isActive) {
+                                                if (track.color === 'neon-blue') {
+                                                    bgClass = "bg-neon-blue";
+                                                    shadowClass = "shadow-neon-blue";
+                                                } else if (track.color === 'neon-pink') {
+                                                    bgClass = "bg-neon-pink";
+                                                    shadowClass = "shadow-neon-pink";
+                                                } else if (track.color === 'neon-green') {
+                                                    bgClass = "bg-neon-green";
+                                                    shadowClass = "shadow-neon-green";
+                                                } else {
+                                                    bgClass = "bg-neon-purple";
+                                                    shadowClass = "shadow-[0_0_10px_#bc13fe]";
+                                                }
+                                            } else if (isBeat) {
+                                                bgClass = "bg-[#252540]";
+                                            }
+
+                                            if (isCurrent) {
+                                                borderClass = "border-white border-2"; // Highlight playhead
+                                                if(isActive) {
+                                                    bgClass = "bg-white"; // Flash white on trigger
+                                                }
+                                            }
+
+                                            return (
+                                                <button
+                                                    key={stepIndex}
+                                                    onClick={() => toggleStep(track.id, stepIndex)}
+                                                    className={`
+                                                        step-btn w-full h-full rounded-sm md:rounded
+                                                        ${bgClass} ${borderClass} ${isActive ? shadowClass : ''}
+                                                        hover:brightness-125
+                                                    `}
+                                                />
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Footer / Visualizer Placeholder */}
+                    <div className="mt-6 h-12 flex items-center justify-between text-gray-600 text-xs font-mono border-t border-white/5 pt-4">
+                        <div className="flex gap-4">
+                            <span>MODE: PATTERN</span>
+                            <span>QUANTIZE: 1/16</span>
+                        </div>
+                        <div className="animate-pulse">SYSTEM READY</div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

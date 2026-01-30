@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Equation Solver Tool | Academic Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.js"></script>
+    <script>
+        window.MathJax = {
+            tex: {
+                inlineMath: [['$', '$'], ['\(', '\)']],
+                displayMath: [['$$', '$$'], ['\[', '\]']],
+                processEscapes: true
+            },
+            options: {
+                enableMenu: false
+            }
+        };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --paper-bg: #fdfdfc;
+            --ink-color: #1a1a1a;
+            --accent-color: #3b82f6;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f4f5;
+            color: var(--ink-color);
+        }
+        .serif {
+            font-family: 'Crimson Pro', serif;
+        }
+        .paper {
+            background-color: var(--paper-bg);
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            border: 1px solid #e5e7eb;
+        }
+        .step-entry {
+            border-left: 2px solid #e5e7eb;
+            transition: all 0.2s ease;
+        }
+        .step-entry:hover {
+            border-left-color: var(--accent-color);
+        }
+        input:focus {
+            outline: none;
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+        }
+        .math-display {
+            font-size: 1.25rem;
+        }
+        @media print {
+            .no-print { display: none; }
+            body { background: white; }
+            .paper { box-shadow: none; border: none; width: 100%; max-width: none; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const EquationSolver = () => {
+            const [input, setInput] = useState('2x^2 - 8x + 6 = 0');
+            const [solution, setSolution] = useState(null);
+            const [error, setError] = useState(null);
+            const resultRef = useRef(null);
+
+            useEffect(() => {
+                if (window.MathJax && window.MathJax.typesetPromise) {
+                    window.MathJax.typesetPromise();
+                }
+            }, [solution, error]);
+
+            const solve = () => {
+                setError(null);
+                try {
+                    const steps = [];
+                    let eq = input.trim();
+                    
+                    if (!eq.includes('=')) {
+                        eq += ' = 0';
+                    }
+
+                    const sides = eq.split('=');
+                    if (sides.length !== 2) throw new Error("Invalid equation format.");
+
+                    const lhsStr = sides[0].trim() || '0';
+                    const rhsStr = sides[1].trim() || '0';
+
+                    steps.push({
+                        desc: "Original Equation",
+                        latex: `${math.parse(lhsStr).toTex()} = ${math.parse(rhsStr).toTex()}`
+                    });
+
+                    // Move everything to LHS
+                    const fullEqStr = `(${lhsStr}) - (${rhsStr})`;
+                    const simplifiedLHS = math.simplify(fullEqStr);
+                    
+                    steps.push({
+                        desc: "Move all terms to one side and simplify",
+                        latex: `${simplifiedLHS.toTex()} = 0`
+                    });
+
+                    // Determine variable (usually x)
+                    const variables = [];
+                    simplifiedLHS.traverse((node) => {
+                        if (node.isSymbolNode && !math[node.name]) {
+                            if (!variables.includes(node.name)) variables.push(node.name);
+                        }
+                    });
+
+                    const variable = variables[0] || 'x';
+
+                    // Check degree
+                    let isQuadratic = false;
+                    let isLinear = false;
+                    
+                    // Attempt to extract coefficients for ax^2 + bx + c
+                    // We'll evaluate the expression at 3 points to solve for a, b, c
+                    const f = (val) => simplifiedLHS.evaluate({ [variable]: val });
+                    
+                    const y0 = f(0);   // c
+                    const y1 = f(1);   // a + b + c
+                    const yn1 = f(-1); // a - b + c
+                    
+                    const c = y0;
+                    const a = (y1 + yn1 - 2 * c) / 2;
+                    const b = (y1 - yn1) / 2;
+
+                    // Verify if it's actually quadratic or linear
+                    const testVal = 2;
+                    const expected = a * testVal * testVal + b * testVal + c;
+                    const actual = f(testVal);
+
+                    if (Math.abs(expected - actual) > 1e-10) {
+                        throw new Error("This tool currently supports linear and quadratic equations only.");
+                    }
+
+                    if (Math.abs(a) > 1e-10) {
+                        // Quadratic Case
+                        const disc = b * b - 4 * a * c;
+                        steps.push({
+                            desc: `Identify coefficients for quadratic form $ax^2 + bx + c = 0$`,
+                            latex: `a = ${math.format(a)}, \quad b = ${math.format(b)}, \quad c = ${math.format(c)}`
+                        });
+
+                        steps.push({
+                            desc: "Calculate the discriminant $\Delta = b^2 - 4ac$",
+                            latex: `\Delta = (${math.format(b)})^2 - 4(${math.format(a)})(${math.format(c)}) = ${math.format(disc)}`
+                        });
+
+                        if (disc > 0) {
+                            const x1 = (-b + Math.sqrt(disc)) / (2 * a);
+                            const x2 = (-b - Math.sqrt(disc)) / (2 * a);
+                            steps.push({
+                                desc: "Apply the quadratic formula: $x = \frac{-b \pm \sqrt{\Delta}}{2a}$",
+                                latex: `${variable} = \frac{-(${math.format(b)}) \pm \sqrt{${math.format(disc)}}}{2(${math.format(a)})}`
+                            });
+                            steps.push({
+                                desc: "Final solutions",
+                                latex: `${variable}_1 = ${math.format(x1)}, \quad ${variable}_2 = ${math.format(x2)}`
+                            });
+                        } else if (disc === 0) {
+                            const x = -b / (2 * a);
+                            steps.push({
+                                desc: "Since $\Delta = 0$, there is one repeated real root",
+                                latex: `${variable} = \frac{-(${math.format(b)})}{2(${math.format(a)})} = ${math.format(x)}`
+                            });
+                        } else {
+                            const realPart = -b / (2 * a);
+                            const imagPart = Math.sqrt(-disc) / (2 * a);
+                            steps.push({
+                                desc: "Since $\Delta < 0$, the roots are complex",
+                                latex: `${variable} = ${math.format(realPart)} \pm ${math.format(Math.abs(imagPart))}i`
+                            });
+                        }
+                    } else if (Math.abs(b) > 1e-10) {
+                        // Linear Case
+                        steps.push({
+                            desc: "Isolate the variable term",
+                            latex: `${math.format(b)}${variable} = ${math.format(-c)}`
+                        });
+                        const sol = -c / b;
+                        steps.push({
+                            desc: "Solve for the variable",
+                            latex: `${variable} = \frac{${math.format(-c)}}{${math.format(b)}} = ${math.format(sol)}`
+                        });
+                    } else {
+                        // Constant case
+                        if (Math.abs(c) < 1e-10) {
+                            steps.push({ desc: "Result", latex: "\\text{The equation is an identity (always true).}" });
+                        } else {
+                            steps.push({ desc: "Result", latex: "\\text{The equation is a contradiction (never true).}" });
+                        }
+                    }
+
+                    setSolution({ steps, variable });
+                } catch (err) {
+                    setError(err.message);
+                }
+            };
+
+            const exportPDF = () => {
+                window.print();
+            };
+
+            const exportText = () => {
+                if (!solution) return;
+                let text = `Equation Solver Result\n======================\n\nInput: ${input}\n\nSteps:\n`;
+                solution.steps.forEach((s, i) => {
+                    text += `${i + 1}. ${s.desc}\n   [Math]: ${s.latex}\n\n`;
+                });
+                const blob = new Blob([text], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'equation_solution.txt';
+                a.click();
+            };
+
+            return (
+                <div className="min-h-screen py-12 px-4 sm:px-6 lg:px-8">
+                    <div className="max-w-3xl mx-auto">
+                        <header className="mb-12 text-center">
+                            <h1 className="serif text-4xl font-bold text-gray-900 mb-2">Equation Solver Tool</h1>
+                            <p className="text-gray-500 font-light tracking-wide uppercase text-xs">Mathematical Computation & Analysis</p>
+                        </header>
+
+                        <div className="paper p-8 rounded-sm mb-8 no-print">
+                            <div className="flex flex-col gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2 uppercase tracking-tight text-xs">Enter Equation</label>
+                                    <input 
+                                        type="text" 
+                                        value={input}
+                                        onChange={(e) => setInput(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && solve()}
+                                        className="w-full px-4 py-3 border border-gray-200 text-lg serif italic"
+                                        placeholder="e.g. x^2 - 5x + 6 = 0"
+                                    />
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-xs text-gray-400 italic">Supports linear and quadratic equations. Use '^' for exponents.</span>
+                                    <button 
+                                        onClick={solve}
+                                        className="bg-zinc-900 text-white px-8 py-2 hover:bg-zinc-800 transition-colors font-medium text-sm tracking-wide"
+                                    >
+                                        SOLVE
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {error && (
+                            <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-8">
+                                <div className="flex">
+                                    <div className="ml-3">
+                                        <p className="text-sm text-red-700">{error}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {solution && (
+                            <div ref={resultRef} className="paper p-10 rounded-sm animate-in fade-in duration-500">
+                                <div className="flex justify-between items-baseline mb-8 border-b border-gray-100 pb-4">
+                                    <h2 className="serif text-2xl font-semibold">Step-by-Step Solution</h2>
+                                    <div className="flex gap-4 no-print">
+                                        <button onClick={exportText} className="text-xs text-blue-600 hover:text-blue-800 font-medium">EXPORT TEXT</button>
+                                        <button onClick={exportPDF} className="text-xs text-blue-600 hover:text-blue-800 font-medium">PRINT / PDF</button>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-8">
+                                    {solution.steps.map((step, idx) => (
+                                        <div key={idx} className="step-entry pl-6 py-2">
+                                            <div className="text-sm font-medium text-gray-500 mb-3 flex items-center gap-2">
+                                                <span className="bg-gray-100 w-5 h-5 rounded-full flex items-center justify-center text-[10px]">{idx + 1}</span>
+                                                {step.desc}
+                                            </div>
+                                            <div className="math-display overflow-x-auto py-2">
+                                                {`\[ ${step.latex} \]`}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="mt-12 pt-8 border-t border-double border-gray-200 text-center">
+                                    <p className="text-xs text-gray-400 uppercase tracking-[0.2em]">End of Derivation</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {!solution && !error && (
+                            <div className="text-center py-20 opacity-20">
+                                <svg className="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                                </svg>
+                                <p className="serif italic text-xl">Enter an equation to begin the analysis</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<EquationSolver />);
+    </script>
+</body>
+</html>

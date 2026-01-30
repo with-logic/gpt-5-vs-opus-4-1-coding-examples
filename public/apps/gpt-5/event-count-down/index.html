@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Event Countdown</title>
+  <!-- Tailwind via CDN (inline use, single file allowed per spec) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --glass-bg: rgba(255, 255, 255, 0.08);
+      --glass-border: rgba(255, 255, 255, 0.18);
+      --shadow-strong: 0 10px 30px rgba(0,0,0,0.35);
+      --shadow-soft: 0 6px 18px rgba(0,0,0,0.25);
+      --tile-bg: rgba(0,0,0,0.35);
+      --accent-1: #7c3aed; /* violet-600 */
+      --accent-2: #06b6d4; /* cyan-500 */
+      --accent-3: #22c55e; /* green-500 */
+    }
+
+    html, body { height: 100%; }
+    body { background: #0b1020; color: #e6e9f2; }
+
+    /* Background image + parallax layers */
+    .bg-shell { position: fixed; inset: 0; overflow: hidden; z-index: -1; }
+    .bg-img {
+      position: absolute; inset: -5%;
+      background-size: cover; background-position: center; background-repeat: no-repeat;
+      transform: translate3d(0,0,0) scale(1.05);
+      transition: transform 500ms cubic-bezier(.2,.7,.2,1);
+      filter: saturate(1.05) contrast(1.05);
+    }
+    .bg-gradient { position:absolute; inset:0; background:
+      radial-gradient(1200px 600px at 15% 10%, rgba(124,58,237,0.35), transparent 50%),
+      radial-gradient(1000px 600px at 90% 80%, rgba(6,182,212,0.25), transparent 55%),
+      linear-gradient(180deg, rgba(2,6,23,0.0), rgba(2,6,23,0.65) 55%, rgba(2,6,23,0.9));
+      pointer-events:none;
+    }
+    .bg-noise { position:absolute; inset:0; opacity:0.06; mix-blend:soft-light; background-image:
+      url('data:image/svg+xml;utf8,<svg xmlns='"'"'http://www.w3.org/2000/svg'"'"' width='"'"'120'"'"' height='"'"'120'"'"'><filter id='"'"'n'"'"'><feTurbulence type='"'"'fractalNoise'"'"' baseFrequency='"'"'0.75'"'"' numOctaves='"'"'3'"'"'/><feColorMatrix type='"'"'saturate'"'"' values='"'"'0'"'"'/></filter><rect width='"'"'100%"'"' height='"'"'100%"'"' filter='"'"'url(%23n)'"'"' opacity='"'"'0.75'"'"'/></svg>');
+      background-size: 240px 240px; pointer-events:none; }
+
+    /* Glass card */
+    .glass {
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(12px) saturate(1.1);
+      box-shadow: var(--shadow-soft);
+    }
+
+    /* Countdown tiles */
+    .tile { 
+      background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 16px; 
+      position: relative; 
+      box-shadow: var(--shadow-strong);
+      overflow: hidden;
+      transform-style: preserve-3d;
+    }
+    .tile::after { /* subtle gloss */
+      content:""; position:absolute; inset:0; pointer-events:none;
+      background: radial-gradient(120% 80% at 50% -20%, rgba(255,255,255,0.18), transparent 45%);
+      mix-blend-mode: screen; opacity:0.4;
+    }
+    .tile .value {
+      font-variant-numeric: tabular-nums lining-nums; 
+      letter-spacing: -0.02em;
+      text-shadow: 0 10px 30px rgba(0,0,0,0.55);
+      transform-origin: 50% 100%;
+      will-change: transform, filter;
+    }
+    .tile.changed .value { animation: flip 650ms cubic-bezier(.2,.75,.25,1); }
+
+    @keyframes flip {
+      0% { transform: rotateX(0deg) scale(0.98); filter: brightness(1); }
+      45% { transform: rotateX(-92deg) scale(0.98); filter: brightness(0.8); }
+      55% { transform: rotateX(88deg) scale(0.98); filter: brightness(0.85); }
+      100%{ transform: rotateX(0deg) scale(1); filter: brightness(1); }
+    }
+
+    /* Accent underline for heading */
+    .accent-underline { position: relative; display: inline-block; }
+    .accent-underline::after { content:""; position:absolute; left:8px; right:8px; bottom:-6px; height:6px;
+      background: linear-gradient(90deg, var(--accent-1), var(--accent-2), var(--accent-3));
+      border-radius: 999px; filter: blur(6px); opacity:0.85; }
+
+    /* Buttons */
+    .btn {
+      background: linear-gradient(135deg, rgba(124,58,237,0.95), rgba(6,182,212,0.95));
+      color: white; border: none; border-radius: 12px; padding: 0.75rem 1rem; font-weight: 700;
+      box-shadow: 0 10px 20px rgba(16,185,129,0.15), 0 6px 10px rgba(124,58,237,0.22);
+      transition: transform 120ms ease, filter 120ms ease;
+    }
+    .btn:hover { transform: translateY(-1px); filter: brightness(1.05); }
+    .btn:active { transform: translateY(0); filter: brightness(0.98); }
+
+    /* Form */
+    .field { display: grid; gap: 0.35rem; }
+    .input, .file-input {
+      background: rgba(255,255,255,0.07);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 12px; padding: 0.7rem 0.85rem;
+      outline: none; color: #f3f4f6;
+    }
+    .input:focus, .file-input:focus { border-color: rgba(6,182,212,0.75); box-shadow: 0 0 0 3px rgba(6,182,212,0.25); }
+
+    /* Reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      .tile.changed .value { animation: none; }
+      .bg-img { transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Background / Parallax -->
+  <div class="bg-shell" aria-hidden="true">
+    <div id="bgImg" class="bg-img" style="background-image: linear-gradient(120deg, #111827, #0b1020);"></div>
+    <div class="bg-gradient"></div>
+    <div class="bg-noise"></div>
+  </div>
+
+  <!-- App Shell -->
+  <main class="relative min-h-screen flex flex-col">
+    <!-- Top Bar -->
+    <header class="px-6 sm:px-8 pt-6 flex items-center justify-between">
+      <div class="text-sm text-slate-300/80">Local time: <span id="tzLabel"></span></div>
+      <button id="shareBtn" class="text-slate-300/80 hover:text-white transition" title="Copy a shareable link">Share</button>
+    </header>
+
+    <!-- Content -->
+    <section class="flex-1 grid gap-8 md:grid-cols-2 items-center px-6 sm:px-10 py-6 sm:py-10">
+      <!-- Left: Countdown + Heading -->
+      <div class="flex flex-col gap-6">
+        <h1 class="text-4xl sm:text-5xl md:text-6xl font-extrabold tracking-tight">
+          <span class="accent-underline">Event Countdown</span>
+        </h1>
+        <div id="eventTitle" class="text-2xl sm:text-3xl md:text-4xl font-bold text-white/90"></div>
+        <p id="eventMeta" class="text-slate-300"></p>
+
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 select-none" role="group" aria-label="Time remaining">
+          <div class="tile p-4 sm:p-5 text-center">
+            <div class="value text-5xl sm:text-6xl md:text-7xl font-black" id="days">000</div>
+            <div class="mt-1 text-slate-300 text-xs sm:text-sm uppercase tracking-widest">Days</div>
+          </div>
+          <div class="tile p-4 sm:p-5 text-center">
+            <div class="value text-5xl sm:text-6xl md:text-7xl font-black" id="hours">00</div>
+            <div class="mt-1 text-slate-300 text-xs sm:text-sm uppercase tracking-widest">Hours</div>
+          </div>
+          <div class="tile p-4 sm:p-5 text-center">
+            <div class="value text-5xl sm:text-6xl md:text-7xl font-black" id="minutes">00</div>
+            <div class="mt-1 text-slate-300 text-xs sm:text-sm uppercase tracking-widest">Minutes</div>
+          </div>
+          <div class="tile p-4 sm:p-5 text-center">
+            <div class="value text-5xl sm:text-6xl md:text-7xl font-black" id="seconds">00</div>
+            <div class="mt-1 text-slate-300 text-xs sm:text-sm uppercase tracking-widest">Seconds</div>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3 pt-2">
+          <button id="saveCalBtn" class="btn">Save to Calendar</button>
+          <span id="statusMsg" class="text-slate-300/80 text-sm"></span>
+        </div>
+      </div>
+
+      <!-- Right: Form -->
+      <form id="eventForm" class="glass rounded-2xl p-5 sm:p-6 md:p-7 grid gap-4 md:gap-5">
+        <div class="field">
+          <label for="name" class="text-sm text-slate-300">Event name</label>
+          <input id="name" class="input" type="text" placeholder="e.g., Product Launch" maxlength="120" required />
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="field">
+            <label for="datetime" class="text-sm text-slate-300">Date & time</label>
+            <input id="datetime" class="input" type="datetime-local" required />
+          </div>
+          <div class="field">
+            <label for="location" class="text-sm text-slate-300">Location</label>
+            <input id="location" class="input" type="text" placeholder="City, Venue, or Online" />
+          </div>
+        </div>
+        <div class="field">
+          <label for="bg" class="text-sm text-slate-300">Background image</label>
+          <input id="bg" class="file-input" type="file" accept="image/*" />
+          <div class="flex gap-2 justify-between">
+            <small class="text-slate-400">Tip: Drag image to subtly parallax with your cursor.</small>
+            <button id="clearBg" type="button" class="text-slate-300 hover:text-white text-sm">Clear</button>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3 pt-1">
+          <button id="applyPreset" type="button" class="input hover:bg-white/10">Use Demo Data</button>
+          <button id="resetBtn" type="button" class="input hover:bg-white/10">Reset</button>
+        </div>
+        <p class="text-xs text-slate-400">Your inputs save to this browser only. Sharing link excludes the background image.</p>
+      </form>
+    </section>
+  </main>
+
+  <!-- Live region for screen readers -->
+  <div aria-live="polite" class="sr-only" id="srLive"></div>
+
+  <script>
+    // ---------- Utilities ----------
+    const $ = (sel, el=document) => el.querySelector(sel);
+    const fmtPad = (n, w=2) => String(n).padStart(w, '0');
+    const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+    const toLocalDatetimeValue = (date) => {
+      const pad2 = (n) => String(n).padStart(2,'0');
+      const y = date.getFullYear();
+      const m = pad2(date.getMonth()+1);
+      const d = pad2(date.getDate());
+      const hh = pad2(date.getHours());
+      const mm = pad2(date.getMinutes());
+      return `${y}-${m}-${d}T${hh}:${mm}`;
+    };
+    const parseLocalDatetime = (val) => {
+      // Interprets input value in local time and returns a Date
+      // Format: YYYY-MM-DDTHH:MM
+      const [d, t] = val.split('T');
+      if(!d || !t) return null;
+      const [Y,M,D] = d.split('-').map(Number);
+      const [h,m] = t.split(':').map(Number);
+      return new Date(Y, (M||1)-1, D||1, h||0, m||0, 0, 0);
+    }
+
+    // ---------- State ----------
+    const state = {
+      name: '',
+      datetime: null, // Date
+      location: '',
+      bgDataUrl: '',
+    };
+
+    // ---------- Elements ----------
+    const el = {
+      days: $('#days'), hours: $('#hours'), minutes: $('#minutes'), seconds: $('#seconds'),
+      title: $('#eventTitle'), meta: $('#eventMeta'), live: $('#srLive'), status: $('#statusMsg'),
+      name: $('#name'), datetime: $('#datetime'), location: $('#location'),
+      bg: $('#bg'), clearBg: $('#clearBg'), bgImg: $('#bgImg'), tzLabel: $('#tzLabel'),
+      saveBtn: $('#saveCalBtn'), shareBtn: $('#shareBtn'), form: $('#eventForm'),
+      preset: $('#applyPreset'), reset: $('#resetBtn')
+    };
+
+    // ---------- Persistence ----------
+    const STORAGE_KEY = 'event-countdown:v1';
+    const saveLocal = () => {
+      try {
+        const payload = { name: state.name, datetime: state.datetime?.toISOString() || '', location: state.location, bg: state.bgDataUrl };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      } catch {}
+    };
+    const loadLocal = () => {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if(!raw) return null;
+        const obj = JSON.parse(raw);
+        return {
+          name: obj.name||'',
+          datetime: obj.datetime ? new Date(obj.datetime) : null,
+          location: obj.location||'',
+          bg: obj.bg||''
+        };
+      } catch { return null; }
+    };
+
+    // ---------- URL Share (without image) ----------
+    const encodeShareUrl = () => {
+      const url = new URL(location.href);
+      url.searchParams.set('n', state.name||'');
+      url.searchParams.set('t', state.datetime ? state.datetime.toISOString() : '');
+      url.searchParams.set('l', state.location||'');
+      // Background intentionally excluded for privacy/size
+      return url.toString();
+    };
+    const loadFromUrl = () => {
+      const url = new URL(location.href);
+      const n = url.searchParams.get('n')||'';
+      const t = url.searchParams.get('t')||'';
+      const l = url.searchParams.get('l')||'';
+      const maybeDate = t ? new Date(t) : null;
+      return { name: n, datetime: (maybeDate && !isNaN(maybeDate)) ? maybeDate : null, location: l };
+    };
+
+    // ---------- Countdown Engine ----------
+    let timerId = null;
+    let lastVals = { d: null, h: null, m: null, s: null };
+    const setTile = (tileEl, nextText) => {
+      if(tileEl.textContent === nextText) return; // No change
+      const parent = tileEl.parentElement; // .tile
+      parent.classList.add('changed');
+      tileEl.textContent = nextText;
+      // Clear the class after animation
+      setTimeout(()=>parent.classList.remove('changed'), 700);
+    };
+    const updateTitleTag = (d,h,m,s) => {
+      document.title = `${d}d ${fmtPad(h)}:${fmtPad(m)}:${fmtPad(s)} — Event Countdown`;
+    }
+    const updateMeta = () => {
+      if(!state.datetime) { el.meta.textContent = ''; return; }
+      try {
+        const dtLocale = new Intl.DateTimeFormat(undefined, {
+          dateStyle: 'full', timeStyle: 'short'
+        }).format(state.datetime);
+        const loc = state.location ? ` • ${state.location}` : '';
+        el.meta.textContent = `${dtLocale}${loc}`;
+      } catch {}
+    };
+    const tick = () => {
+      if(!state.datetime) return;
+      const now = new Date();
+      let diff = state.datetime - now; // ms
+      if(diff <= 0) {
+        // Event reached
+        setTile(el.days, '000');
+        setTile(el.hours, '00');
+        setTile(el.minutes, '00');
+        setTile(el.seconds, '00');
+        el.status.textContent = 'It\'s time! 🎉';
+        document.title = `Live now — ${state.name || 'Event'}`;
+        return;
+      }
+      const sTotal = Math.floor(diff/1000);
+      const days = Math.floor(sTotal / 86400);
+      const hours = Math.floor((sTotal % 86400) / 3600);
+      const minutes = Math.floor((sTotal % 3600) / 60);
+      const seconds = sTotal % 60;
+
+      const dStr = fmtPad(days, 3);
+      const hStr = fmtPad(hours);
+      const mStr = fmtPad(minutes);
+      const sStr = fmtPad(seconds);
+
+      if(lastVals.d !== dStr) { setTile(el.days, dStr); lastVals.d = dStr; announce(`${days} days remaining`); }
+      if(lastVals.h !== hStr) { setTile(el.hours, hStr); lastVals.h = hStr; }
+      if(lastVals.m !== mStr) { setTile(el.minutes, mStr); lastVals.m = mStr; }
+      if(lastVals.s !== sStr) { setTile(el.seconds, sStr); lastVals.s = sStr; }
+
+      updateTitleTag(days, hours, minutes, seconds);
+    };
+
+    const startTimer = () => {
+      if(timerId) clearInterval(timerId);
+      timerId = setInterval(tick, 250);
+      tick();
+    };
+
+    // ---------- Calendar (.ics) ----------
+    const downloadICS = () => {
+      if(!state.datetime) return;
+      const title = (state.name || 'Event').replace(/\n/g, ' ');
+      const start = new Date(state.datetime);
+      // default 1 hour duration
+      const end = new Date(start.getTime() + 60*60*1000);
+      const toICSDate = (d) => {
+        const z = new Date(d.getTime());
+        const yyyy = z.getUTCFullYear();
+        const mm = fmtPad(z.getUTCMonth()+1);
+        const dd = fmtPad(z.getUTCDate());
+        const HH = fmtPad(z.getUTCHours());
+        const MM = fmtPad(z.getUTCMinutes());
+        const SS = fmtPad(z.getUTCSeconds());
+        return `${yyyy}${mm}${dd}T${HH}${MM}${SS}Z`;
+      };
+      const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}@event-countdown`;
+      const ics = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'PRODID:-//Event Countdown//EN',
+        'CALSCALE:GREGORIAN',
+        'METHOD:PUBLISH',
+        'BEGIN:VEVENT',
+        `UID:${uid}`,
+        `DTSTAMP:${toICSDate(new Date())}`,
+        `DTSTART:${toICSDate(start)}`,
+        `DTEND:${toICSDate(end)}`,
+        `SUMMARY:${title.replace(/[,;\\]/g, ' ')}`,
+        state.location ? `LOCATION:${state.location.replace(/[,;\\]/g, ' ')}` : '',
+        'END:VEVENT',
+        'END:VCALENDAR'
+      ].filter(Boolean).join('\r\n');
+      const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${title.replace(/\s+/g,'_')}.ics`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 1000);
+      flashStatus('Calendar file downloaded.');
+    };
+
+    // ---------- Background upload + parallax ----------
+    const applyBg = (dataUrl) => {
+      state.bgDataUrl = dataUrl || '';
+      el.bgImg.style.backgroundImage = dataUrl ? `url(${dataUrl})` : 'linear-gradient(120deg, #111827, #0b1020)';
+      saveLocal();
+    };
+    const handleBgFile = (file) => {
+      if(!file || !file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = (e) => applyBg(e.target.result);
+      reader.readAsDataURL(file);
+    };
+
+    // Parallax with pointer movement
+    const parallax = (e) => {
+      const { innerWidth:w, innerHeight:h } = window;
+      const x = (e.clientX ?? w/2) / w - 0.5;
+      const y = (e.clientY ?? h/2) / h - 0.5;
+      const tx = clamp(-x * 12, -14, 14);
+      const ty = clamp(-y * 8, -10, 10);
+      const s = 1.06; // keep slightly zoomed to avoid edges
+      el.bgImg.style.transform = `translate3d(${tx}px, ${ty}px, 0) scale(${s})`;
+    };
+
+    // ---------- UI Helpers ----------
+    const announce = (msg) => { el.live.textContent = msg; };
+    const flashStatus = (msg) => { el.status.textContent = msg; setTimeout(()=>{ if(el.status.textContent===msg) el.status.textContent=''; }, 3000); };
+
+    // ---------- Event Handlers ----------
+    const onFormChange = () => {
+      state.name = el.name.value.trim();
+      const dt = parseLocalDatetime(el.datetime.value);
+      state.datetime = dt && !isNaN(dt) ? dt : null;
+      state.location = el.location.value.trim();
+      el.title.textContent = state.name || 'Untitled event';
+      updateMeta();
+      saveLocal();
+      startTimer();
+    };
+
+    // Share link
+    el.shareBtn.addEventListener('click', async () => {
+      const link = encodeShareUrl();
+      try {
+        await navigator.clipboard.writeText(link);
+        flashStatus('Shareable link copied to clipboard.');
+      } catch {
+        // Fallback: prompt
+        prompt('Copy this link:', link);
+      }
+    });
+
+    // Calendar
+    el.saveBtn.addEventListener('click', downloadICS);
+
+    // Background
+    el.bg.addEventListener('change', (e)=> handleBgFile(e.target.files[0]));
+    el.clearBg.addEventListener('click', ()=> applyBg(''));
+
+    // Drag-and-drop for background
+    document.addEventListener('dragover', (e)=>{ e.preventDefault(); });
+    document.addEventListener('drop', (e)=>{
+      e.preventDefault();
+      if(e.dataTransfer?.files?.[0]) handleBgFile(e.dataTransfer.files[0]);
+    });
+
+    // Parallax
+    window.addEventListener('mousemove', parallax);
+    window.addEventListener('resize', (e)=>parallax({ clientX: innerWidth/2, clientY: innerHeight/2 }));
+
+    // Preset / Reset
+    el.preset.addEventListener('click', ()=>{
+      const inFiveDays = new Date(Date.now() + 5*24*60*60*1000);
+      inFiveDays.setHours(18, 0, 0, 0);
+      el.name.value = 'Aurora Tech Summit';
+      el.location.value = 'Seattle Convention Center';
+      el.datetime.value = toLocalDatetimeValue(inFiveDays);
+      onFormChange();
+      flashStatus('Demo data applied.');
+    });
+    el.reset.addEventListener('click', ()=>{
+      el.name.value = '';
+      el.location.value = '';
+      el.datetime.value = '';
+      applyBg('');
+      onFormChange();
+      flashStatus('Reset complete.');
+    });
+
+    // ---------- Init ----------
+    const init = () => {
+      // Timezone label
+      try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        const now = new Date();
+        const short = new Intl.DateTimeFormat([], { timeZoneName: 'short' }).format(now).split(' ').pop();
+        el.tzLabel.textContent = `${tz} (${short})`;
+      } catch { el.tzLabel.textContent = 'Local time'; }
+
+      // Load order: URL > Local storage > Defaults
+      const urlData = loadFromUrl();
+      const saved = loadLocal();
+
+      if(urlData.name) state.name = urlData.name;
+      else if(saved?.name) state.name = saved.name;
+      else state.name = 'My Awesome Event';
+
+      if(urlData.datetime) state.datetime = urlData.datetime;
+      else if(saved?.datetime) state.datetime = saved.datetime;
+      else { const def = new Date(Date.now() + 7*24*60*60*1000); def.setMinutes(0,0,0); state.datetime = def; }
+
+      if(urlData.location) state.location = urlData.location;
+      else if(saved?.location) state.location = saved.location;
+
+      if(saved?.bg) applyBg(saved.bg);
+
+      // Populate form
+      el.name.value = state.name;
+      el.location.value = state.location || '';
+      el.datetime.value = state.datetime ? toLocalDatetimeValue(state.datetime) : '';
+      el.title.textContent = state.name || 'Untitled event';
+      updateMeta();
+
+      el.form.addEventListener('input', onFormChange);
+      startTimer();
+
+      // Center parallax baseline
+      parallax({ clientX: innerWidth/2, clientY: innerHeight/2 });
+    };
+
+    document.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>

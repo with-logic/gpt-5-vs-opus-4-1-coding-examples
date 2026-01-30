@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1220" />
+  <title>Typing Rain</title>
+  <style>
+    :root{
+      --bg:#0b1220;
+      --bg2:#0e172a;
+      --sky:#0b1220;
+      --glass:rgba(255,255,255,.08);
+      --glass-strong:rgba(255,255,255,.14);
+      --text:#e2e8f0;
+      --muted:#94a3b8;
+      --cyan:#22d3ee;
+      --blue:#60a5fa;
+      --pink:#f472b6;
+      --lime:#a3e635;
+      --amber:#f59e0b;
+      --red:#ef4444;
+      --teal:#2dd4bf;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;}
+    html{background:var(--bg);}
+    body{
+      margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      color:var(--text); height:100%; overflow:hidden; background: radial-gradient(1200px 800px at 70% -10%, #1f2a44 0%, transparent 60%), linear-gradient(#0b1220, #0a1326 60%, #091222 100%);
+    }
+    /* Rain streak layers */
+    .rain, .rain::before, .rain::after{
+      position:absolute; inset:0; pointer-events:none;
+    }
+    .rain{z-index:1;}
+    .rain::before{content:""; background-image: repeating-linear-gradient( 120deg, rgba(255,255,255,.13) 0px, rgba(255,255,255,.13) 1px, transparent 2px, transparent 18px ); background-size: 24px 24px; animation: rainMove 900ms linear infinite; opacity:.35;}
+    .rain::after{content:""; background-image: repeating-linear-gradient( 120deg, rgba(255,255,255,.10) 0px, rgba(255,255,255,.10) 1px, transparent 2px, transparent 14px ); background-size: 18px 18px; animation: rainMove 600ms linear infinite; opacity:.25;}
+    @keyframes rainMove{ to { background-position: -200px 400px; } }
+
+    /* Lightning flashes */
+    .flash{ animation: flash 1200ms ease-in-out; }
+    @keyframes flash{ 0%{filter:none} 5%{filter:brightness(1.8)} 12%{filter:none} 18%{filter:brightness(1.4)} 100%{filter:none} }
+
+    /* Game container */
+    #game{ position:relative; width:100vw; height:100vh; overflow:hidden; }
+
+    /* Street */
+    .street{ position:absolute; left:0; right:0; bottom:0; height:70px; background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02) 30%, rgba(0,0,0,.3)); border-top:1px solid rgba(255,255,255,.08); z-index:3;}
+    .street::before{ content:""; position:absolute; left:0; right:0; top:12px; height:2px; background: repeating-linear-gradient(90deg, rgba(255,255,255,.18) 0 40px, transparent 40px 80px); opacity:.6 }
+
+    /* Skyline layers (SVGs) */
+    .skyline{ position:absolute; left:0; right:0; bottom:70px; height:38vh; min-height:240px; opacity:.9; z-index:2; }
+    .skyline svg{ position:absolute; bottom:0; width:130%; height:100%; transform: translate3d(0,0,0); }
+    .skyline--back svg{ fill:#0c1933; animation: pan 52s linear infinite; }
+    .skyline--mid svg{ fill:#0e1e3f; animation: pan 38s linear infinite reverse; }
+    .skyline--front svg{ fill:#112650; animation: pan 26s linear infinite; }
+    @keyframes pan{ to{ transform: translateX(-15%);} }
+
+    /* HUD */
+    .hud{ position:absolute; z-index:5; top:12px; left:12px; right:12px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .hud .panel{ display:flex; gap:10px; align-items:center; backdrop-filter: blur(6px); background: linear-gradient( to bottom right, rgba(20,28,47,.45), rgba(20,28,47,.2) ); border:1px solid rgba(255,255,255,.1); border-radius:12px; padding:8px 12px; box-shadow: 0 4px 20px rgba(0,0,0,.25); }
+    .stat{ display:flex; gap:8px; align-items:baseline; padding:4px 8px; border-radius:8px; }
+    .stat .label{ color:var(--muted); font-size:.75rem; text-transform:uppercase; letter-spacing:.08em; }
+    .stat .value{ font-weight:700; font-variant-numeric: tabular-nums; }
+
+    .hearts{ display:flex; gap:4px; padding:4px 6px; border-radius:8px; }
+    .heart{ width:18px; height:18px; filter: drop-shadow(0 2px 4px rgba(0,0,0,.4)); opacity:.95 }
+    .heart.dead{ opacity:.2; }
+
+    .btn{ appearance:none; background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.06)); border:1px solid rgba(255,255,255,.14); color:var(--text); border-radius:10px; padding:8px 12px; cursor:pointer; font-weight:600; transition:.15s transform ease, .15s filter ease; }
+    .btn:hover{ transform: translateY(-1px); filter:brightness(1.05); }
+    .btn.small{ font-size:.8rem; padding:6px 10px; }
+    .btn.primary{ background: linear-gradient(180deg, rgba(45,212,191,.45), rgba(45,212,191,.18)); border-color: rgba(45,212,191,.5); color:#062a2a; text-shadow: 0 1px 0 rgba(255,255,255,.3); }
+
+    /* Type buffer bar */
+    .typebar{ position:absolute; left:0; right:0; bottom:80px; z-index:6; display:flex; justify-content:center; pointer-events:none; }
+    .buffer{ min-width:320px; max-width:70vw; text-align:center; padding:10px 16px; font-family: ui-monospace, Menlo, Monaco, "Cascadia Mono", "Segoe UI Mono", Consolas, "Liberation Mono", monospace; font-weight:700; letter-spacing:.02em; font-size: clamp(18px, 3.2vw, 28px); color:#061a1a; background: linear-gradient(180deg, rgba(34,211,238,.85), rgba(34,211,238,.55)); border:1px solid rgba(34,211,238,.8); border-radius:999px; box-shadow: 0 10px 30px rgba(34,211,238,.25), inset 0 1px 0 rgba(255,255,255,.5); backdrop-filter: blur(10px); }
+    .buffer .ghost{ color: rgba(0,0,0,.35); }
+    .buffer .ok{ color:#061a1a; }
+    .buffer .miss{ color: #2b0a0a; text-decoration: line-through; }
+    #hiddenInput{ position:absolute; opacity:0; pointer-events:auto; width:1px; height:1px; left:50%; bottom:0; }
+
+    /* Drops (falling words) */
+    .drops{ position:absolute; inset:0; z-index:4; overflow:hidden; }
+    .drop{ position:absolute; top:0; left:0; transform: translate3d(0,0,0); will-change: transform; padding:.22em .6em; border-radius:16px; font-family: ui-monospace, Menlo, Monaco, "Cascadia Mono", "Segoe UI Mono", Consolas, "Liberation Mono", monospace; font-weight:700; color: #e6fbff; letter-spacing:.02em; background: linear-gradient(180deg, rgba(96,165,250,.25), rgba(96,165,250,.08)); border: 1px solid rgba(96,165,250,.35); text-shadow: 0 2px 6px rgba(0,0,0,.6), 0 0 10px rgba(96,165,250,.6); box-shadow: 0 12px 32px rgba(0,0,0,.35); }
+    .drop .typed{ color:#061a1a; text-shadow:none; background: linear-gradient(180deg, rgba(163,230,53,.95), rgba(163,230,53,.7)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+    .drop .rest{ opacity:.9; }
+    .drop.target{ border-color: rgba(34,211,238,.9); box-shadow: 0 12px 36px rgba(34,211,238,.35); }
+    .drop.shake{ animation: shake .2s linear 1; }
+    @keyframes shake{ 25%{ transform: translate3d(var(--x,0px), var(--y,0px),0) translateX(-4px) } 50%{ transform: translate3d(var(--x,0px), var(--y,0px),0) translateX(4px)} 75%{ transform: translate3d(var(--x,0px), var(--y,0px),0) translateX(-3px)} }
+
+    .splash{ position:absolute; width:6px; height:6px; background: radial-gradient(circle at 40% 40%, rgba(96,165,250,1) 0 40%, rgba(96,165,250,0) 70%); border-radius:50%; pointer-events:none; z-index:5; animation: splash 650ms ease-out forwards; }
+    @keyframes splash{ 0%{ transform: scale(0.8); opacity:1 } 70%{ transform: scale(8); opacity:.7 } 100%{ transform: scale(11); opacity:0 } }
+
+    /* Overlays */
+    .overlay{ position:absolute; inset:0; z-index:7; display:flex; align-items:center; justify-content:center; padding:24px; background: linear-gradient( to bottom, rgba(9,18,34,.75), rgba(9,18,34,.55)); backdrop-filter: blur(6px); }
+    .overlay.hidden{ display:none; }
+    .card{ width:min(680px, 92vw); border-radius:18px; border:1px solid rgba(255,255,255,.12); background: linear-gradient(180deg, rgba(15,25,44,.9), rgba(15,25,44,.7)); box-shadow: 0 30px 80px rgba(0,0,0,.45); padding:28px; text-align:center; }
+    .card h1{ margin:0 0 8px; font-size: clamp(28px, 5vw, 48px); letter-spacing:.02em; }
+    .subtitle{ color:var(--muted); margin:0 0 18px; }
+    .help{ list-style:none; padding:0; margin:18px 0 22px; display:flex; gap:14px; flex-wrap:wrap; justify-content:center; }
+    .help li{ padding:8px 12px; border-radius:999px; border:1px solid rgba(255,255,255,.14); background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.06)); font-weight:600; color:var(--text) }
+    .highscore{ color:var(--muted); margin-top:10px; font-variant-numeric: tabular-nums; }
+
+    .gameover .big{ font-size: clamp(24px, 5vw, 40px); margin: 0 0 20px; }
+    .summary{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center; margin: 10px 0 20px; }
+    .summary .pill{ padding:10px 14px; border-radius:999px; border:1px solid rgba(255,255,255,.12); background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.06)); font-weight:700; }
+
+    /* Credits */
+    .credits{ position:absolute; right:10px; bottom:10px; font-size:12px; color:var(--muted); z-index:6 }
+
+    /* Utility */
+    .sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  </style>
+</head>
+<body>
+  <div id="game" aria-label="Typing Rain game">
+    <div class="rain" aria-hidden="true"></div>
+
+    <!-- Falling words layer -->
+    <div id="drops" class="drops" aria-hidden="false"></div>
+
+    <!-- Skyline layers -->
+    <div class="skyline skyline--back" aria-hidden="true">
+      <svg viewBox="0 0 1200 300" preserveAspectRatio="xMidYMax slice" role="img" aria-label="Distant city buildings">
+        <path d="M0 300h1200V170h-40v-26h-20v26h-35v-60h-25v60h-50v-40h-28v40h-70v-90h-32v90h-60v-50h-25v50h-50v-120h-30v120h-70v-70h-28v70h-80v-95h-20v95H0z"/>
+      </svg>
+    </div>
+    <div class="skyline skyline--mid" aria-hidden="true">
+      <svg viewBox="0 0 1200 300" preserveAspectRatio="xMidYMax slice" role="img" aria-label="Mid city buildings">
+        <path d="M0 300h1200v-90h-48v-40h-22v40h-40v-110h-28v110h-62v-70h-30v70h-80v-140h-36v140h-70v-85h-30v85h-100v-120h-24v120H0z"/>
+      </svg>
+    </div>
+    <div class="skyline skyline--front" aria-hidden="true">
+      <svg viewBox="0 0 1200 320" preserveAspectRatio="xMidYMax slice" role="img" aria-label="Front city buildings">
+        <path d="M0 320h1200v-70h-60v-60h-28v60h-72v-130h-36v130h-84v-95h-30v95h-110v-150h-32v150h-90v-110h-28v110h-120v-140h-26v140H0z"/>
+      </svg>
+    </div>
+
+    <!-- Street -->
+    <div class="street" aria-hidden="true"></div>
+
+    <!-- HUD -->
+    <div class="hud" role="region" aria-label="HUD and controls">
+      <div class="panel">
+        <div class="stat"><span class="label">Score</span><span id="score" class="value">0</span></div>
+        <div class="stat"><span class="label">Level</span><span id="level" class="value">1</span></div>
+        <div class="stat"><span class="label">Accuracy</span><span id="acc" class="value">100%</span></div>
+        <div class="stat"><span class="label">WPM</span><span id="wpm" class="value">0</span></div>
+      </div>
+      <div class="panel">
+        <div id="lives" class="hearts" aria-label="Lives"></div>
+        <button id="pauseBtn" class="btn small" title="Pause (Esc/P)">Pause</button>
+        <button id="muteBtn" class="btn small" title="Mute (M)">Sound On</button>
+      </div>
+    </div>
+
+    <!-- Type Buffer -->
+    <div class="typebar" aria-hidden="false">
+      <div id="buffer" class="buffer" aria-live="polite"></div>
+      <input id="hiddenInput" type="text" inputmode="text" autocomplete="off" autocapitalize="none" spellcheck="false" aria-label="Hidden typing target for mobile" />
+    </div>
+
+    <!-- Start Overlay -->
+    <div id="startOverlay" class="overlay">
+      <div class="card">
+        <h1>Typing Rain</h1>
+        <p class="subtitle">Type the falling words before they touch the street.</p>
+        <ul class="help">
+          <li><strong>Start</strong>: Space / Click</li>
+          <li><strong>Pause</strong>: Esc or P</li>
+          <li><strong>Mute</strong>: M</li>
+          <li><strong>Backspace</strong>: Fix current word</li>
+        </ul>
+        <button id="startBtn" class="btn primary">Start Game</button>
+        <div class="highscore">High Score: <span id="hs">0</span></div>
+      </div>
+    </div>
+
+    <!-- Game Over Overlay -->
+    <div id="gameOver" class="overlay hidden">
+      <div class="card gameover">
+        <div class="big">Game Over</div>
+        <div class="summary">
+          <div class="pill">Score: <span id="sumScore">0</span></div>
+          <div class="pill">Level: <span id="sumLevel">1</span></div>
+          <div class="pill">Accuracy: <span id="sumAcc">0%</span></div>
+          <div class="pill">Words: <span id="sumWords">0</span></div>
+          <div class="pill">Max Combo: <span id="sumCombo">x1</span></div>
+        </div>
+        <button id="restartBtn" class="btn primary">Play Again</button>
+        <div class="highscore">High Score: <span id="hs2">0</span></div>
+      </div>
+    </div>
+
+    <div class="credits">Tip: click/tap the cyan bubble to focus.</div>
+  </div>
+
+  <svg class="sr-only">
+    <defs>
+      <symbol id="heart" viewBox="0 0 24 24">
+        <path fill="#f43f5e" d="M12 21s-6.716-4.236-9.428-7.53C-0.233 11.84.178 7.62 3.192 6.212c2.032-.964 4.428-.09 5.47 1.565C9.704 6.122 12.1 5.248 14.13 6.212c3.015 1.408 3.425 5.628.62 7.258C18.716 16.764 12 21 12 21z"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <script>
+  (()=>{
+    const $ = sel => document.querySelector(sel);
+    const dropsEl = $('#drops');
+    const bufferEl = $('#buffer');
+    const hiddenInput = $('#hiddenInput');
+    const startOverlay = $('#startOverlay');
+    const gameOverOverlay = $('#gameOver');
+    const scoreEl = $('#score');
+    const levelEl = $('#level');
+    const accEl = $('#acc');
+    const wpmEl = $('#wpm');
+    const livesEl = $('#lives');
+    const sumScore = $('#sumScore');
+    const sumLevel = $('#sumLevel');
+    const sumAcc = $('#sumAcc');
+    const sumWords = $('#sumWords');
+    const sumCombo = $('#sumCombo');
+    const hs1 = $('#hs');
+    const hs2 = $('#hs2');
+    const pauseBtn = $('#pauseBtn');
+    const muteBtn = $('#muteBtn');
+
+    const HS_KEY = 'typingrain_highscore_v1';
+    const clamp = (v,min,max)=>Math.max(min,Math.min(max,v));
+    const rand = (a,b)=>Math.random()*(b-a)+a;
+    const pick = arr => arr[(Math.random()*arr.length)|0];
+
+    const DICT = (
+      `rain city neon echo drift pulse storm ember quantum ripple vector pixel cyan azure cobalt jet stream glow blaze spark cloud dusk dawn night day code logic array input output buffer render canvas frame scope module future async await vector lambda signal nexus orbit nova comet meteor lunar solar cosmic zenith nadir summit valley river ocean delta magma lava stone brick steel ember cedar maple pine oak comet gust gale squall mist vapor droplet shower thunder bolt flash crackle rumble engine turbo rocket motor circuit kernel packet socket router server client portal gateway bridge tunnel street avenue alley plaza tower spire block grid lane subway taxi metro drone hover rover pilot driver rider sprint rush hustle bustle thrive vibe energy rhythm tempo beat melody harmony chorus octave scale chord gamma beta alpha omega sigma sigma theta kappa psi delta byte kilobyte megabyte giga tera peta nano micro macro quantum quark lepton photon pixel voxel shader raster vector logic boolean string number object array class method function system kernel thread mutex queue stack heap cache compile bundle deploy commit push merge branch fork pull tag release action run build test debug lint format verify secure encrypt decrypt hash salt pepper ginger basil cumin thyme oregano cocoa mocha latte espresso caramel vanilla sugar candy cookie brownie donut waffle pancake cereal bread pizza pasta ramen sushi taco burrito nacho burger salad veggie fruit apple pear peach mango kiwi lemon lime cherry berry grape melon banana orange clementine tangerine plum fig date olive cocoa cloud rain snow hail sleet frost ice glacier arctic polar winter spring summer autumn windy breezy chilly brisk crisp warm humid muggy toasty blazing frozen bright dim shadow shade light dark night cityscape skyline window balcony rooftop lantern beacon harbor anchor sailor captain voyage cruise ferry cargo diesel petrol turbine fusion battery solar wind hydro geo quantum neon cyber matrix cortex neuron synapse logic agile sprint kanban scrum ticket issue epic story backlog roadmap velocity estimate review refactor design pattern solid clean robust elegant swift rapid vivid lucid luma chrome tone hue tint glow glint twinkle sprinkle sparkle shimmer glitter glossy silky satin velvet`
+    ).split(/\s+/).filter(Boolean);
+
+    const CONFIG = {
+      baseSpeed: 65,         // px per second baseline
+      speedRand: 35,         // random extra speed
+      spawnBase: 1300,       // ms spawn interval baseline
+      spawnMin: 380,         // ms minimum spawn interval
+      levelUpEvery: 20,      // words cleared per level
+      maxSimultaneous: 10,
+      lives: 3,
+      dropPadding: 24,
+      lightningChance: .004, // per second
+    };
+
+    const state = {
+      w: innerWidth,
+      h: innerHeight,
+      floor: 0,
+      drops: [],
+      nextId: 1,
+      playing: false,
+      paused: false,
+      over: false,
+      typed: '',
+      targetId: null,
+      score: 0,
+      level: 1,
+      lives: CONFIG.lives,
+      totalKeys: 0,
+      goodKeys: 0,
+      wordsCleared: 0,
+      combo: 1,
+      maxCombo: 1,
+      lastSpawn: 0,
+      spawnEvery: CONFIG.spawnBase,
+      lastTick: 0,
+      startTimeMs: 0,
+      sound: true,
+      wpmWindow: [], // timestamps of correct letters
+    };
+
+    // Setup lives hearts
+    const renderLives = ()=>{
+      livesEl.innerHTML = '';
+      for(let i=0;i<CONFIG.lives;i++){
+        const span = document.createElement('span');
+        span.className = 'heart'+(i<state.lives?'':' dead');
+        span.innerHTML = '<svg class="heart" viewBox="0 0 24 24"><use href="#heart"/></svg>';
+        livesEl.appendChild(span);
+      }
+    };
+
+    const loadHS = ()=> Number(localStorage.getItem(HS_KEY)||0);
+    const saveHS = (score)=> localStorage.setItem(HS_KEY, String(score));
+
+    const audio = (()=>{
+      let ctx; let enabled=false;
+      const ensure = ()=>{ if(!enabled){ try{ ctx = new (window.AudioContext||window.webkitAudioContext)(); enabled=true; }catch(e){ enabled=false; } } return enabled };
+      const beep = (freq=660, dur=0.05, vol=0.08)=>{ if(!state.sound) return; if(!ensure()) return; const o=ctx.createOscillator(); const g=ctx.createGain(); o.type='triangle'; o.frequency.value=freq; g.gain.value=vol; o.connect(g); g.connect(ctx.destination); o.start(); o.stop(ctx.currentTime+dur); };
+      const click = ()=> beep(520, 0.05, 0.06);
+      const bad = ()=> beep(220, 0.09, 0.08);
+      const word = ()=> beep(880, 0.09, 0.10);
+      return {click,bad,word};
+    })();
+
+    function reset(){
+      state.w = innerWidth; state.h = innerHeight; state.floor = state.h - 70; // above street
+      dropsEl.innerHTML = '';
+      state.drops.length = 0; state.nextId = 1;
+      state.playing=false; state.paused=false; state.over=false; state.typed=''; state.targetId=null;
+      state.score=0; state.level=1; state.lives=CONFIG.lives; state.totalKeys=0; state.goodKeys=0; state.wordsCleared=0; state.combo=1; state.maxCombo=1; state.spawnEvery=CONFIG.spawnBase; state.wpmWindow.length=0;
+      updateHUD(); renderLives(); updateBuffer();
+    }
+
+    function start(){
+      reset();
+      state.playing = true; state.over=false; state.startTimeMs = performance.now(); state.lastTick = state.startTimeMs; state.lastSpawn = state.startTimeMs;
+      startOverlay.classList.add('hidden');
+      gameOverOverlay.classList.add('hidden');
+      focusInput();
+      rafLoop(state.startTimeMs);
+    }
+
+    function gameOver(){
+      state.playing=false; state.over=true;
+      // Summary
+      sumScore.textContent = state.score;
+      sumLevel.textContent = state.level;
+      sumAcc.textContent = calcAccuracy();
+      sumWords.textContent = state.wordsCleared;
+      sumCombo.textContent = 'x'+state.maxCombo;
+      const hs = Math.max(loadHS(), state.score);
+      if(hs!==loadHS()) saveHS(hs);
+      hs2.textContent = String(hs);
+      gameOverOverlay.classList.remove('hidden');
+    }
+
+    function pauseToggle(){ if(!state.playing) return; state.paused = !state.paused; pauseBtn.textContent = state.paused ? 'Resume' : 'Pause'; if(!state.paused){ state.lastTick = performance.now(); rafLoop(state.lastTick); } }
+
+    function calcAccuracy(){ const pct = state.totalKeys ? Math.round((state.goodKeys/state.totalKeys)*100) : 100; return pct+"%"; }
+
+    function calcWPM(){
+      const now = performance.now();
+      // Keep only last 20s
+      state.wpmWindow = state.wpmWindow.filter(t => now - t < 20000);
+      const chars = state.wpmWindow.length;
+      const minutes = 20000/60000; // 1/3 minute
+      const wpm = (chars/5)/minutes;
+      return Math.round(wpm);
+    }
+
+    function updateHUD(){ scoreEl.textContent = state.score; levelEl.textContent = state.level; accEl.textContent = calcAccuracy(); wpmEl.textContent = calcWPM(); }
+
+    function updateBuffer(){
+      const t = state.typed;
+      if(!t){ bufferEl.innerHTML = '<span class="ghost">Tap or type to begin targeting…</span>'; return; }
+      const target = getTarget();
+      if(target){
+        const typedPart = target.text.slice(0, target.progress);
+        const rest = target.text.slice(target.progress);
+        bufferEl.innerHTML = `<span class="ok">${escapeHtml(typedPart)}</span><span class="ghost">${escapeHtml(rest)}</span>`;
+      } else {
+        bufferEl.textContent = t;
+      }
+    }
+
+    function focusInput(){ hiddenInput.focus({preventScroll:true}); try{ hiddenInput.setSelectionRange(hiddenInput.value.length, hiddenInput.value.length);}catch(_e){} }
+
+    function spawn(){
+      if(state.drops.length >= CONFIG.maxSimultaneous) return;
+      const word = pickWord();
+      const id = state.nextId++;
+      const el = document.createElement('div');
+      el.className = 'drop';
+      el.dataset.id = id;
+      el.innerHTML = `<span class="typed"></span><span class="rest"></span>`;
+      dropsEl.appendChild(el);
+      const speed = CONFIG.baseSpeed + Math.random()*CONFIG.speedRand + (state.level-1)*18; // px/s
+      const x = clamp(rand(8, state.w-8-200), 8, state.w-80);
+      const drop = { id, text: word, progress: 0, x, y: -20, speed, el, dead:false };
+      state.drops.push(drop);
+      measureAndPlace(drop);
+    }
+
+    function measureAndPlace(d){
+      const typed = d.text.slice(0, d.progress);
+      const rest = d.text.slice(d.progress);
+      d.el.querySelector('.typed').textContent = typed;
+      d.el.querySelector('.rest').textContent = rest;
+      d.el.style.setProperty('--x', d.x+'px');
+      d.el.style.setProperty('--y', d.y+'px');
+      d.el.style.transform = `translate3d(${d.x}px, ${d.y}px, 0)`;
+    }
+
+    function removeDrop(drop){
+      drop.dead = true;
+      drop.el.remove();
+      const idx = state.drops.findIndex(x=>x.id===drop.id);
+      if(idx>=0) state.drops.splice(idx,1);
+      if(state.targetId===drop.id){ state.targetId=null; state.typed=''; updateBuffer(); }
+    }
+
+    function miss(drop){
+      removeDrop(drop);
+      state.lives--; renderLives();
+      if(state.lives<=0){ gameOver(); }
+    }
+
+    function pickWord(){
+      // Harder levels bias toward longer words
+      const lenBias = clamp(3 + Math.floor(state.level*0.6), 3, 12);
+      // pick three candidates and choose closest to lenBias
+      const candidates = [pick(DICT), pick(DICT), pick(DICT), pick(DICT)];
+      candidates.sort((a,b)=> Math.abs(a.length-lenBias) - Math.abs(b.length-lenBias));
+      return candidates[0];
+    }
+
+    function getTarget(){ return state.targetId ? state.drops.find(d=>d.id===state.targetId) : null; }
+
+    function setTarget(drop){
+      // clear previous
+      state.drops.forEach(d=> d.el.classList.toggle('target', d.id===drop?.id));
+      state.targetId = drop? drop.id : null;
+    }
+
+    function handleKey(e){
+      if(e.isComposing) return;
+      const k = e.key;
+      if(k===' '){ if(startOverlay && !startOverlay.classList.contains('hidden')){ e.preventDefault(); start(); return; } }
+      if(k==='Escape' || k==='Esc' || k==='p' || k==='P'){ e.preventDefault(); pauseToggle(); return; }
+      if(k==='m' || k==='M'){ e.preventDefault(); state.sound = !state.sound; muteBtn.textContent = state.sound? 'Sound On' : 'Sound Off'; return; }
+      if(!state.playing || state.paused || state.over){ return; }
+
+      if(k==='Backspace'){
+        const t = getTarget();
+        if(t && t.progress>0){ t.progress--; state.typed = state.typed.slice(0,-1); audio.click(); measureAndPlace(t); updateBuffer(); }
+        e.preventDefault(); return;
+      }
+
+      if(k.length!==1) return; // only printable
+      const ch = k.toLowerCase();
+      if(!/^[a-z]$/.test(ch)) return; // letters only
+
+      state.totalKeys++;
+
+      let target = getTarget();
+      if(!target){
+        // find candidate starting with ch, prioritize those closer to bottom
+        const cands = state.drops.filter(d=> !d.dead && d.text[0]?.toLowerCase()===ch);
+        if(cands.length){ cands.sort((a,b)=> b.y - a.y); target = cands[0]; setTarget(target); }
+      }
+
+      if(target){
+        const need = target.text[target.progress]?.toLowerCase();
+        if(ch===need){
+          target.progress++; state.goodKeys++; state.typed += k; measureAndPlace(target); updateBuffer(); audio.click();
+          state.wpmWindow.push(performance.now());
+          state.score += 1*state.combo; // per letter
+          if(target.progress>=target.text.length){
+            // word cleared
+            audio.word();
+            state.wordsCleared++;
+            state.score += Math.round(10*state.level*state.combo + Math.max(0, target.text.length-3));
+            spawnSplash(target.x, target.y);
+            removeDrop(target);
+            state.combo = Math.min(state.combo+1, 9);
+            state.maxCombo = Math.max(state.maxCombo, state.combo);
+            // level up check
+            if(state.wordsCleared % CONFIG.levelUpEvery === 0){ levelUp(); }
+          }
+        } else {
+          // wrong letter
+          audio.bad();
+          state.combo = 1;
+          // visual shake
+          target.el.classList.remove('shake');
+          void target.el.offsetWidth; // reflow
+          target.el.classList.add('shake');
+        }
+      } else {
+        // no target available
+        audio.bad();
+        state.combo = 1;
+      }
+      updateHUD();
+    }
+
+    function levelUp(){
+      state.level++;
+      // faster spawns
+      state.spawnEvery = Math.max(CONFIG.spawnMin, Math.round(state.spawnEvery * 0.9));
+      // cosmetic lightning flash
+      document.body.classList.add('flash');
+      setTimeout(()=>document.body.classList.remove('flash'), 1200);
+    }
+
+    function spawnSplash(x,y){
+      const s = document.createElement('div');
+      s.className = 'splash';
+      s.style.left = (x)+'px';
+      s.style.top = (y)+'px';
+      dropsEl.appendChild(s);
+      setTimeout(()=> s.remove(), 700);
+    }
+
+    function rafLoop(t){
+      if(!state.playing || state.paused || state.over) return;
+      const dt = Math.min(0.05, (t - state.lastTick)/1000); // clamp dt for stability
+      state.lastTick = t;
+
+      // move drops
+      for(const d of state.drops){
+        if(d.dead) continue;
+        d.y += d.speed * dt;
+        if(d.y + 24 >= state.floor){ // hit street
+          miss(d);
+          continue;
+        }
+        d.el.style.transform = `translate3d(${d.x}px, ${d.y}px, 0)`;
+      }
+
+      // spawn
+      if(t - state.lastSpawn >= state.spawnEvery){
+        spawn(); state.lastSpawn = t;
+      }
+
+      // occasional lightning chance increases with level
+      if(Math.random() < CONFIG.lightningChance * dt * (1 + state.level*0.3)){
+        document.body.classList.add('flash');
+        setTimeout(()=> document.body.classList.remove('flash'), 400);
+      }
+
+      updateHUD();
+      requestAnimationFrame(rafLoop);
+    }
+
+    function resize(){ state.w = innerWidth; state.h = innerHeight; state.floor = state.h - 70; }
+
+    function init(){
+      renderLives();
+      const hs = loadHS(); hs1.textContent = String(hs); hs2.textContent = String(hs);
+      updateBuffer();
+      window.addEventListener('resize', resize);
+      window.addEventListener('keydown', handleKey, {passive:false});
+      hiddenInput.addEventListener('blur', ()=>{ /* keep indicator */ });
+      bufferEl.addEventListener('click', ()=> focusInput());
+      $('#startBtn').addEventListener('click', ()=> start());
+      $('#restartBtn').addEventListener('click', ()=> start());
+      pauseBtn.addEventListener('click', ()=> pauseToggle());
+      muteBtn.addEventListener('click', ()=>{ state.sound = !state.sound; muteBtn.textContent = state.sound? 'Sound On' : 'Sound Off'; });
+      // Allow click on overlay to start
+      startOverlay.addEventListener('click', (e)=>{ if(e.target.id==='startOverlay') start(); });
+      // Ensure input is reachable on mobile
+      startOverlay.addEventListener('touchend', ()=> focusInput(), {passive:true});
+      document.addEventListener('click', ()=> focusInput());
+      focusInput();
+    }
+
+    // Helpers
+    function escapeHtml(s){ return s.replace(/[&<>"']/g, c=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]) ); }
+
+    // Kickoff
+    init();
+  })();
+  </script>
+</body>
+</html>

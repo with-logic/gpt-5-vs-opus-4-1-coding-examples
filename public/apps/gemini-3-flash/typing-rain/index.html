@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Typing Rain</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #020617;
+            font-family: 'Inter', sans-serif;
+            color: white;
+        }
+        canvas {
+            display: block;
+        }
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .cyber-gradient {
+            background: linear-gradient(180deg, rgba(2, 6, 23, 0) 0%, rgba(15, 23, 42, 0.8) 100%);
+        }
+        .neon-text {
+            text-shadow: 0 0 10px rgba(56, 189, 248, 0.8), 0 0 20px rgba(56, 189, 248, 0.4);
+        }
+        .city-silhouette {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 40%;
+            z-index: 1;
+            pointer-events: none;
+            opacity: 0.4;
+        }
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        .cursor-blink {
+            animation: blink 1s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        const WORDS = [
+            "function", "variable", "const", "let", "async", "await", "promise", "callback", "object", "array",
+            "string", "number", "boolean", "undefined", "null", "symbol", "bigint", "return", "export", "import",
+            "default", "class", "extends", "super", "constructor", "method", "property", "prototype", "scope",
+            "closure", "hoisting", "event", "listener", "dispatch", "capture", "bubble", "target", "element",
+            "document", "window", "navigator", "location", "history", "storage", "cookie", "fetch", "request",
+            "response", "header", "body", "status", "method", "query", "params", "middleware", "router", "model",
+            "view", "controller", "component", "props", "state", "effect", "context", "reducer", "dispatch",
+            "hook", "render", "mount", "update", "unmount", "ref", "memo", "callback", "fragment", "portal",
+            "stack", "queue", "heap", "tree", "graph", "node", "edge", "algorithm", "complexity", "recursive",
+            "iterate", "loop", "condition", "switch", "case", "break", "continue", "throw", "catch", "finally"
+        ];
+
+        const Game = () => {
+            const [gameState, setGameState] = useState('START'); // START, PLAYING, GAMEOVER
+            const [score, setScore] = useState(0);
+            const [accuracy, setAccuracy] = useState(100);
+            const [stats, setStats] = useState({ correct: 0, total: 0 });
+            const [level, setLevel] = useState(1);
+            const [currentInput, setCurrentInput] = useState('');
+            
+            const canvasRef = useRef(null);
+            const wordsRef = useRef([]);
+            const particlesRef = useRef([]);
+            const gameStateRef = useRef('START');
+            const scoreRef = useRef(0);
+            const statsRef = useRef({ correct: 0, total: 0 });
+            
+            // Sync refs with state for engine access
+            useEffect(() => { gameStateRef.current = gameState; }, [gameState]);
+            useEffect(() => { scoreRef.current = score; }, [score]);
+            useEffect(() => { statsRef.current = stats; }, [stats]);
+
+            const spawnWord = useCallback(() => {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+                
+                const word = WORDS[Math.floor(Math.random() * WORDS.length)];
+                const x = Math.random() * (canvas.width - 150) + 75;
+                const speed = 1 + (level * 0.2) + Math.random() * 0.5;
+                
+                wordsRef.current.push({
+                    text: word,
+                    x,
+                    y: -50,
+                    speed,
+                    typed: '',
+                    id: Math.random().toString(36).substr(2, 9)
+                });
+            }, [level]);
+
+            const createExplosion = (x, y, color) => {
+                for (let i = 0; i < 15; i++) {
+                    particlesRef.current.push({
+                        x,
+                        y,
+                        vx: (Math.random() - 0.5) * 8,
+                        vy: (Math.random() - 0.5) * 8,
+                        life: 1.0,
+                        color
+                    });
+                }
+            };
+
+            const handleGameOver = () => {
+                setGameState('GAMEOVER');
+            };
+
+            const resetGame = () => {
+                setScore(0);
+                setStats({ correct: 0, total: 0 });
+                setLevel(1);
+                setAccuracy(100);
+                setCurrentInput('');
+                wordsRef.current = [];
+                particlesRef.current = [];
+                setGameState('PLAYING');
+            };
+
+            useEffect(() => {
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+                let animationFrameId;
+                let lastSpawnTime = 0;
+
+                const resize = () => {
+                    canvas.width = window.innerWidth;
+                    canvas.height = window.innerHeight;
+                };
+
+                window.addEventListener('resize', resize);
+                resize();
+
+                const loop = (timestamp) => {
+                    if (gameStateRef.current === 'PLAYING') {
+                        // Spawning
+                        const spawnInterval = Math.max(500, 2000 - (level * 100));
+                        if (timestamp - lastSpawnTime > spawnInterval) {
+                            spawnWord();
+                            lastSpawnTime = timestamp;
+                        }
+
+                        // Update Logic
+                        wordsRef.current.forEach((word, index) => {
+                            word.y += word.speed;
+                            if (word.y > canvas.height) {
+                                wordsRef.current.splice(index, 1);
+                                handleGameOver();
+                            }
+                        });
+
+                        particlesRef.current.forEach((p, index) => {
+                            p.x += p.vx;
+                            p.y += p.vy;
+                            p.life -= 0.02;
+                            if (p.life <= 0) particlesRef.current.splice(index, 1);
+                        });
+                    }
+
+                    // Drawing
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    
+                    // Draw City (Simple dynamic silhouette)
+                    ctx.fillStyle = '#0f172a';
+                    const cityWidth = canvas.width / 10;
+                    for (let i = 0; i < 12; i++) {
+                        const h = (Math.sin(i * 1.5) + 1.5) * (canvas.height * 0.1) + (canvas.height * 0.1);
+                        ctx.fillRect(i * cityWidth - 20, canvas.height - h, cityWidth + 5, h);
+                        // Add some "windows"
+                        ctx.fillStyle = '#1e293b';
+                        if (i % 2 === 0) {
+                            for (let j = 0; j < 5; j++) {
+                                ctx.fillRect(i * cityWidth + 10, canvas.height - h + 20 + j * 30, 10, 10);
+                            }
+                        }
+                        ctx.fillStyle = '#0f172a';
+                    }
+
+                    // Draw Words
+                    wordsRef.current.forEach(word => {
+                        ctx.font = 'bold 24px "JetBrains Mono"';
+                        const metrics = ctx.measureText(word.text);
+                        
+                        // Glow effect for words
+                        ctx.shadowBlur = 15;
+                        ctx.shadowColor = '#38bdf8';
+                        
+                        // Background "raindrop" trail
+                        const gradient = ctx.createLinearGradient(word.x, word.y - 40, word.x, word.y);
+                        gradient.addColorStop(0, 'transparent');
+                        gradient.addColorStop(1, 'rgba(56, 189, 248, 0.2)');
+                        ctx.fillStyle = gradient;
+                        ctx.fillRect(word.x - 5, word.y - 40, metrics.width + 10, 40);
+
+                        // Draw word text
+                        ctx.fillStyle = '#94a3b8'; // Base color
+                        ctx.fillText(word.text, word.x, word.y);
+                        
+                        // Highlight typed part
+                        if (word.typed.length > 0) {
+                            ctx.fillStyle = '#38bdf8';
+                            ctx.fillText(word.text.substring(0, word.typed.length), word.x, word.y);
+                        }
+                        
+                        ctx.shadowBlur = 0;
+                    });
+
+                    // Draw Particles
+                    particlesRef.current.forEach(p => {
+                        ctx.globalAlpha = p.life;
+                        ctx.fillStyle = p.color;
+                        ctx.beginPath();
+                        ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+                        ctx.fill();
+                    });
+                    ctx.globalAlpha = 1.0;
+
+                    animationFrameId = requestAnimationFrame(loop);
+                };
+
+                animationFrameId = requestAnimationFrame(loop);
+                return () => {
+                    cancelAnimationFrame(animationFrameId);
+                    window.removeEventListener('resize', resize);
+                };
+            }, [level, spawnWord]);
+
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if (gameStateRef.current !== 'PLAYING') return;
+                    
+                    // Ignore non-character keys
+                    if (e.key.length !== 1) return;
+
+                    const char = e.key.toLowerCase();
+                    let foundMatch = false;
+                    
+                    setStats(prev => ({ ...prev, total: prev.total + 1 }));
+
+                    // Find if any word starts with current total progress or fits next char
+                    // Actually, simpler logic: check all active words.
+                    // If a word matches the input string so far + this char, it's a hit.
+                    
+                    const nextInput = currentInput + char;
+                    let possibleMatch = false;
+
+                    const updatedWords = wordsRef.current.map(word => {
+                        if (word.text.startsWith(nextInput)) {
+                            possibleMatch = true;
+                            return { ...word, typed: nextInput };
+                        } else {
+                            // If it doesn't match nextInput, reset its typed state if it was partially matched
+                            return { ...word, typed: '' };
+                        }
+                    });
+
+                    if (possibleMatch) {
+                        wordsRef.current = updatedWords;
+                        setCurrentInput(nextInput);
+                        setStats(prev => ({ ...prev, correct: prev.correct + 1 }));
+                        
+                        // Check if any word is completed
+                        const completedIndex = wordsRef.current.findIndex(w => w.text === nextInput);
+                        if (completedIndex !== -1) {
+                            const completedWord = wordsRef.current[completedIndex];
+                            createExplosion(completedWord.x + 50, completedWord.y, '#38bdf8');
+                            setScore(prev => prev + (completedWord.text.length * 10));
+                            wordsRef.current.splice(completedIndex, 1);
+                            setCurrentInput('');
+                            
+                            // Every 10 words, increase level
+                            if ((score + (completedWord.text.length * 10)) % 200 === 0) {
+                                setLevel(l => l + 1);
+                            }
+                        }
+                    } else {
+                        // Missed
+                        setCurrentInput('');
+                        wordsRef.current = wordsRef.current.map(w => ({ ...w, typed: '' }));
+                    }
+                };
+
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [currentInput, score]);
+
+            useEffect(() => {
+                if (stats.total > 0) {
+                    setAccuracy(Math.round((stats.correct / stats.total) * 100));
+                }
+            }, [stats]);
+
+            return (
+                <div className="relative w-screen h-screen overflow-hidden bg-slate-950 flex flex-col items-center justify-center">
+                    <canvas ref={canvasRef} className="absolute inset-0 z-0" />
+                    
+                    {/* HUD */}
+                    {gameState === 'PLAYING' && (
+                        <div className="absolute top-0 left-0 w-full p-8 flex justify-between items-start z-10 pointer-events-none">
+                            <div className="flex flex-col gap-2">
+                                <div className="text-sky-400 text-sm font-bold tracking-widest uppercase">Score</div>
+                                <div className="text-4xl font-black mono text-white neon-text">{score.toLocaleString()}</div>
+                            </div>
+                            <div className="flex gap-12 text-center">
+                                <div>
+                                    <div className="text-slate-500 text-xs font-bold tracking-widest uppercase mb-1">Accuracy</div>
+                                    <div className="text-2xl font-bold mono text-white">{accuracy}%</div>
+                                </div>
+                                <div>
+                                    <div className="text-slate-500 text-xs font-bold tracking-widest uppercase mb-1">Level</div>
+                                    <div className="text-2xl font-bold mono text-white">{level}</div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Current Input Display */}
+                    {gameState === 'PLAYING' && currentInput && (
+                        <div className="absolute bottom-24 z-10 px-6 py-2 bg-slate-900/80 border border-sky-500/50 rounded-lg backdrop-blur-md">
+                            <span className="text-3xl font-black mono text-sky-400">
+                                {currentInput}
+                                <span className="text-white cursor-blink">_</span>
+                            </span>
+                        </div>
+                    )}
+
+                    {/* Start Screen */}
+                    {gameState === 'START' && (
+                        <div className="z-20 flex flex-col items-center text-center p-12 bg-slate-900/60 backdrop-blur-xl border border-slate-800 rounded-3xl shadow-2xl max-w-lg">
+                            <h1 className="text-6xl font-black mb-4 tracking-tighter italic text-white">
+                                TYPING <span className="text-sky-400">RAIN</span>
+                            </h1>
+                            <p className="text-slate-400 text-lg mb-8 leading-relaxed">
+                                Words are falling from the digital clouds. Type them before they crash into the city's firewall.
+                            </p>
+                            <button 
+                                onClick={resetGame}
+                                className="group relative px-8 py-4 bg-sky-500 hover:bg-sky-400 text-slate-950 font-black text-xl rounded-full transition-all hover:scale-105 active:scale-95 overflow-hidden"
+                            >
+                                <span className="relative z-10">INITIALIZE SYSTEM</span>
+                                <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
+                            </button>
+                            <div className="mt-8 grid grid-cols-2 gap-4 w-full">
+                                <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700">
+                                    <div className="text-sky-400 font-bold mb-1">SPEED</div>
+                                    <div className="text-slate-400 text-sm">Increases every level</div>
+                                </div>
+                                <div className="p-4 bg-slate-800/50 rounded-xl border border-slate-700">
+                                    <div className="text-sky-400 font-bold mb-1">ACCURACY</div>
+                                    <div className="text-slate-400 text-sm">Track your precision</div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Game Over Screen */}
+                    {gameState === 'GAMEOVER' && (
+                        <div className="z-20 flex flex-col items-center text-center p-12 bg-slate-900/80 backdrop-blur-2xl border border-red-500/50 rounded-3xl shadow-2xl max-w-lg">
+                            <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mb-6">
+                                <svg className="w-10 h-10 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </div>
+                            <h2 className="text-5xl font-black mb-2 tracking-tight text-white uppercase">System Failure</h2>
+                            <p className="text-slate-400 mb-8 font-mono">Word overflow detected. Connection lost.</p>
+                            
+                            <div className="grid grid-cols-2 gap-4 w-full mb-8">
+                                <div className="p-6 bg-slate-800/80 rounded-2xl border border-slate-700">
+                                    <div className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-1">Score</div>
+                                    <div className="text-3xl font-black text-white">{score.toLocaleString()}</div>
+                                </div>
+                                <div className="p-6 bg-slate-800/80 rounded-2xl border border-slate-700">
+                                    <div className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-1">Accuracy</div>
+                                    <div className="text-3xl font-black text-white">{accuracy}%</div>
+                                </div>
+                            </div>
+
+                            <button 
+                                onClick={resetGame}
+                                className="w-full py-4 bg-white text-slate-950 font-black text-xl rounded-2xl hover:bg-sky-400 transition-colors"
+                            >
+                                REBOOT SESSION
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Visual Overlay for Atmosphere */}
+                    <div className="absolute inset-0 pointer-events-none cyber-gradient opacity-60 z-[2]" />
+                    <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_50%_50%,rgba(56,189,248,0.05)_0%,transparent_100%)] z-[1]" />
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<Game />);
+    </script>
+</body>
+</html>

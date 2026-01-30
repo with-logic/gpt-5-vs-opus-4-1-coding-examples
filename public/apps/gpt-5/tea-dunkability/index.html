@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tea Dunkability Simulator</title>
+    <meta name="description" content="Simulate tea dunkability for classic biscuits with animated teacup, crumble‑o‑meter, crumbs, glass UI, dark mode, and keyboard shortcuts." />
+    <!-- Tailwind CDN (allowed per spec) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              tea: {
+                light: '#c4843b',
+                dark: '#8a5a2f',
+              },
+              glass: 'rgba(255,255,255,0.6)',
+              glassdark: 'rgba(17,25,40,0.55)'
+            },
+            dropShadow: {
+              glow: '0 0 20px rgba(255,255,255,0.35)'
+            },
+            boxShadow: {
+              glass: '0 8px 32px rgba(0,0,0,0.25)'
+            },
+            animation: {
+              steam: 'steam 5s linear infinite',
+              steam2: 'steam 6.5s linear infinite',
+              steam3: 'steam 7.8s linear infinite',
+              bob: 'bob 3.2s ease-in-out infinite',
+              wave: 'wave 3.8s ease-in-out infinite',
+              pulsefast: 'pulse 1.2s ease-in-out infinite',
+              crumbfall: 'crumbfall var(--crumb-dur, 2.8s) linear forwards'
+            },
+            keyframes: {
+              steam: {
+                '0%': { transform: 'translateY(0) translateX(0) scale(1)', opacity: '0' },
+                '10%': { opacity: '0.4' },
+                '50%': { transform: 'translateY(-40px) translateX(6px) scale(1.1)', opacity: '0.6' },
+                '100%': { transform: 'translateY(-80px) translateX(10px) scale(1.2)', opacity: '0' },
+              },
+              bob: {
+                '0%,100%': { transform: 'translateY(0)' },
+                '50%': { transform: 'translateY(-2px)' }
+              },
+              wave: {
+                '0%,100%': { transform: 'translateX(0)' },
+                '50%': { transform: 'translateX(-10px)' }
+              },
+              crumbfall: {
+                '0%': { transform: 'translateY(0) translateX(0) rotate(0deg)', opacity: '0' },
+                '10%': { opacity: '1' },
+                '100%': { transform: 'translateY(140%) translateX(var(--crumb-dx, 20px)) rotate(var(--crumb-rot, 120deg))', opacity: '0' }
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <!-- React 18 UMD -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel for inline JSX (allowed as CDN lib) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+      /* Global background with subtle animated gradient */
+      :root {
+        --bg1: #0f172a; /* slate-900 */
+        --bg2: #1e293b; /* slate-800 */
+        --accent: #f59e0b; /* amber-500 */
+        --glass: rgba(255,255,255,0.6);
+        --glass-dark: rgba(17,25,40,0.55);
+      }
+      html, body, #root { height: 100%; }
+      body {
+        background: radial-gradient(1200px 800px at 10% 10%, rgba(245, 158, 11, 0.15), transparent 50%),
+                    radial-gradient(900px 600px at 90% 30%, rgba(56, 189, 248, 0.12), transparent 50%),
+                    linear-gradient(160deg, var(--bg1), var(--bg2));
+        background-attachment: fixed;
+      }
+      .glass {
+        background: var(--glass);
+        backdrop-filter: blur(12px) saturate(120%);
+        -webkit-backdrop-filter: blur(12px) saturate(120%);
+      }
+      .glass-dark {
+        background: var(--glass-dark);
+        backdrop-filter: blur(12px) saturate(120%);
+        -webkit-backdrop-filter: blur(12px) saturate(120%);
+      }
+      .tick:before {
+        content: '';
+        position: absolute;
+        top: -6px;
+        left: 50%;
+        width: 2px; height: 6px;
+        background: currentColor;
+        transform: translateX(-50%);
+        opacity: 0.5;
+      }
+      .range::-webkit-slider-thumb { cursor: grab; }
+      .range:active::-webkit-slider-thumb { cursor: grabbing; }
+      .kbd {
+        border: 1px solid rgba(255,255,255,0.25);
+        border-bottom-width: 2px;
+        background: rgba(255,255,255,0.06);
+        padding: 0 6px;
+        border-radius: 6px;
+      }
+      .crumb {
+        position: absolute;
+        width: var(--crumb-size, 4px);
+        height: var(--crumb-size, 4px);
+        background: #b8894a; /* biscuit crumb */
+        border-radius: 40% 60% 35% 65% / 60% 40% 70% 30%;
+        box-shadow: 0 1px 0 rgba(0,0,0,0.15);
+        filter: blur(0.1px);
+        will-change: transform, opacity;
+      }
+      /* Focus ring helper for keyboard focus */
+      .focus-ring:focus { outline: 2px solid #93c5fd; outline-offset: 2px; border-radius: 10px; }
+    </style>
+  </head>
+  <body class="text-slate-800 dark:text-slate-100">
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const { useEffect, useMemo, useRef, useState } = React;
+
+      // --- Utilities ---
+      const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+      const lerp = (a,b,t) => a + (b-a)*t;
+      const map = (v, inMin, inMax, outMin, outMax) => outMin + (outMax - outMin) * ((v - inMin) / (inMax - inMin));
+
+      // Biscuit catalogue with dunk characteristics (empirical fun values)
+      const BISCUITS = [
+        { name: 'Digestive', soakRate: 1.0, fragility: 0.9, crumbiness: 0.8, color: '#caa46a' },
+        { name: 'Rich Tea', soakRate: 1.1, fragility: 1.1, crumbiness: 0.9, color: '#e2c487' },
+        { name: 'Hobnob', soakRate: 0.8, fragility: 0.6, crumbiness: 0.7, color: '#b7874e' },
+        { name: 'Shortbread', soakRate: 1.2, fragility: 1.3, crumbiness: 1.0, color: '#efd5a8' },
+        { name: 'Custard Cream', soakRate: 1.0, fragility: 1.0, crumbiness: 0.95, color: '#edd4a7' },
+        { name: 'Ginger Nut', soakRate: 0.7, fragility: 0.7, crumbiness: 0.6, color: '#a7672f' },
+      ];
+
+      function useTheme() {
+        const [theme, setTheme] = useState(() => {
+          const saved = localStorage.getItem('theme');
+          if (saved) return saved;
+          return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        });
+        useEffect(() => {
+          const root = document.documentElement;
+          if (theme === 'dark') root.classList.add('dark'); else root.classList.remove('dark');
+          localStorage.setItem('theme', theme);
+        }, [theme]);
+        return [theme, setTheme];
+      }
+
+      function computeRisk({ tempC, timeS, integrity, biscuit }) {
+        // Model: base risk rises with temp & time, mitigated by integrity and biscuit strength
+        const b = BISCUITS[biscuit];
+        const tempFactor = map(clamp(tempC, 40, 100), 40, 100, 0.3, 1.0); // hotter => faster softening
+        // time sweet spot ~ 3.5s; beyond 7s risk spikes
+        const sweet = Math.exp(-Math.pow((timeS - 3.5) / 2.0, 2)); // 0..1
+        const timeFactor = map(clamp(timeS, 0, 12), 0, 12, 0.05, 1.4) * (1.1 - 0.5 * sweet);
+        const structural = map(integrity, 0, 100, 1.6, 0.5); // higher integrity reduces risk
+        const biscuitFragility = b.fragility;
+        const soak = b.soakRate * tempFactor * (timeS + 0.5);
+        let risk = (timeFactor * structural * biscuitFragility * b.crumbiness * 52) + soak * 2.7;
+        risk = clamp(risk, 0, 100);
+        const dunkability = clamp(100 - (risk * 0.85) + sweet * 25 - (100 - integrity) * 0.12, 0, 100);
+        return { risk, dunkability, sweet };
+      }
+
+      // Sparkline/area SVG for crumble-o-meter
+      function CrumbleMeter({ values, risk, dunkability }) {
+        const w = 420, h = 140, pad = 8;
+        const path = useMemo(() => {
+          if (!values.length) return '';
+          const max = 100, min = 0;
+          const step = (w - pad * 2) / (values.length - 1);
+          let d = `M ${pad} ${h - pad}`;
+          values.forEach((v, i) => {
+            const x = pad + i * step;
+            const y = pad + (1 - (v - min) / (max - min)) * (h - pad * 2);
+            d += ` L ${x} ${y}`;
+          });
+          d += ` L ${w - pad} ${h - pad} Z`;
+          return d;
+        }, [values]);
+
+        const last = values[values.length - 1] || 0;
+        const color = last > 75 ? '#ef4444' : last > 50 ? '#f59e0b' : '#22c55e';
+
+        return (
+          <div className="w-full">
+            <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-36">
+              <defs>
+                <linearGradient id="riskGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={color} stopOpacity="0.6" />
+                  <stop offset="100%" stopColor={color} stopOpacity="0.05" />
+                </linearGradient>
+                <linearGradient id="gridGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="rgba(255,255,255,0.12)" />
+                  <stop offset="100%" stopColor="rgba(255,255,255,0.04)" />
+                </linearGradient>
+              </defs>
+              {/* grid */}
+              {[0,25,50,75,100].map((g, i) => (
+                <g key={i}>
+                  <line x1="0" x2={w} y1={map(g, 0, 100, h-8, 8)} y2={map(g, 0, 100, h-8, 8)} stroke="url(#gridGrad)" strokeWidth="1" />
+                  <text x={w-4} y={map(g, 0, 100, h-8, 8)-2} textAnchor="end" className="fill-slate-500 dark:fill-slate-300 text-[10px]">{g}</text>
+                </g>
+              ))}
+              <path d={path} fill="url(#riskGrad)" stroke={color} strokeWidth="2" />
+            </svg>
+            <div className="flex items-center justify-between mt-1 text-sm">
+              <div className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-sm" style={{background: color}}></span> Crumble‑o‑meter</div>
+              <div className="opacity-80">Risk: <span className="font-semibold" style={{color}}>{risk.toFixed(0)}%</span> · Dunkability: <span className="font-semibold text-emerald-400">{dunkability.toFixed(0)}%</span></div>
+            </div>
+          </div>
+        );
+      }
+
+      function Teacup({ tempC, risk, sweet, onDunk }) {
+        const steamOpacity = map(tempC, 40, 100, 0.2, 1);
+        const teaColor = tempC > 75 ? '#9c5f2d' : tempC > 60 ? '#b37237' : '#c4843b';
+        const shakeRef = useRef(null);
+
+        useEffect(() => {
+          if (risk > 80 && shakeRef.current) {
+            shakeRef.current.animate([
+              { transform: 'rotate(0deg)' },
+              { transform: 'rotate(1.5deg)' },
+              { transform: 'rotate(-1.2deg)' },
+              { transform: 'rotate(0deg)' },
+            ], { duration: 420, easing: 'ease-in-out' });
+          }
+        }, [risk]);
+
+        return (
+          <div className="relative w-full flex items-center justify-center select-none">
+            <div ref={shakeRef} className="relative">
+              {/* Saucer */}
+              <div className="absolute left-1/2 -translate-x-1/2 top-[92px] w-64 h-6 rounded-[50%] bg-gradient-to-b from-white/70 to-white/10 dark:from-white/15 dark:to-white/5 blur-[0.2px]"></div>
+              {/* Cup */}
+              <svg width="260" height="160" viewBox="0 0 260 160" className="drop-shadow-glow">
+                {/* cup body */}
+                <defs>
+                  <linearGradient id="cupGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#fff" stopOpacity="0.9"/>
+                    <stop offset="100%" stopColor="#fff" stopOpacity="0.7"/>
+                  </linearGradient>
+                  <linearGradient id="teaGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={teaColor} stopOpacity="0.95"/>
+                    <stop offset="100%" stopColor={teaColor} stopOpacity="0.85"/>
+                  </linearGradient>
+                </defs>
+                {/* handle */}
+                <path d="M205,60c25,0 35,12 35,22s-8,22-25,22c-8,0-15-6-15-13 0-7 6-12 13-12 7,0 11,4 11,10 0,7-5,10-9,10" fill="none" stroke="#ffffff" strokeOpacity="0.85" strokeWidth="5" />
+                <g className="animate-bob" transform="translate(0,0)">
+                  <path d="M30,50 h140 a10,10 0 0 1 10,10 v30 a40,30 0 0 1 -80,20 a40,30 0 0 1 -80,-20 v-30 a10,10 0 0 1 10,-10 z" fill="url(#cupGrad)"/>
+                  {/* tea */}
+                  <g>
+                    <path d="M40,70 h120 v20 q0,10-10,16 q-20,12-50,12 q-30,0-50,-12 q-10,-6-10,-16 z" fill="url(#teaGrad)"/>
+                    {/* wave overlay */}
+                    <g className="animate-wave" style={{transformOrigin:'100px 84px'}}>
+                      <path d="M40,80 c20,-6 40,6 60,0 c20,-6 40,6 60,0 v10 h-120z" fill="rgba(255,255,255,0.18)"/>
+                    </g>
+                  </g>
+                </g>
+                {/* steam */}
+                <g opacity={steamOpacity}>
+                  <circle cx="100" cy="38" r="8" fill="#ffffff" fillOpacity="0.4" className="animate-steam" />
+                  <circle cx="120" cy="36" r="6" fill="#ffffff" fillOpacity="0.35" className="animate-steam2" />
+                  <circle cx="140" cy="34" r="7" fill="#ffffff" fillOpacity="0.38" className="animate-steam3" />
+                </g>
+              </svg>
+
+              {/* dunk button overlay */}
+              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2">
+                <button
+                  onClick={onDunk}
+                  className="px-3 py-1.5 text-sm rounded-full bg-amber-500/90 hover:bg-amber-500 text-white shadow focus-ring"
+                  aria-label="Dunk now (Space)">
+                  Dunk Now
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      function Slider({ label, min, max, step, value, onChange, unit, marks, id, kbd }) {
+        const percent = ((value - min) / (max - min)) * 100;
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label htmlFor={id} className="text-sm font-medium opacity-90">{label}</label>
+              <div className="text-sm tabular-nums opacity-80">{value}{unit ? unit : ''}{kbd && <span className="ml-2 kbd text-xs">{kbd}</span>}</div>
+            </div>
+            <div className="relative">
+              <input id={id} type="range" className="range w-full accent-amber-500" min={min} max={max} step={step} value={value} onChange={e => onChange(Number(e.target.value))} />
+              <div className="absolute inset-x-0 -bottom-4 flex justify-between text-[10px] opacity-60">
+                {marks?.map((m, i) => (
+                  <div key={i} className="relative tick text-center" style={{left: `${(m - min) / (max - min) * 100}%`}}>
+                    <span className="absolute -left-1/2" style={{transform: 'translateX(-50%)'}}>{m}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="h-1 rounded bg-slate-300/40 dark:bg-white/10 overflow-hidden">
+              <div className="h-full bg-amber-500/70" style={{width: `${percent}%`}} />
+            </div>
+          </div>
+        );
+      }
+
+      function BiscuitSlider({ index, setIndex }) {
+        const min = 0, max = BISCUITS.length - 1;
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-medium opacity-90">Biscuit Type</div>
+              <div className="text-sm opacity-80"><span className="font-semibold">{BISCUITS[index].name}</span> <span className="ml-2 kbd text-xs">3</span></div>
+            </div>
+            <input type="range" min={min} max={max} step={1} value={index} onChange={e => setIndex(Number(e.target.value))} className="w-full accent-amber-500" aria-label="Biscuit type" />
+            <div className="flex justify-between text-[10px] opacity-70">
+              {BISCUITS.map((b, i) => (
+                <div key={b.name} className="text-center" style={{ width: `${100 / BISCUITS.length}%`}}>
+                  <div className="w-1 h-1 mx-auto rounded-full" style={{ background: i <= index ? '#f59e0b' : 'rgba(255,255,255,0.25)'}}></div>
+                  <div className="truncate mt-1" title={b.name}>{b.name}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
+      function HelpShortcuts() {
+        const Row = ({ keys, text }) => (
+          <div className="flex items-center justify-between py-1 text-sm">
+            <div className="space-x-1">
+              {keys.map((k,i) => <span key={i} className="kbd mr-1 inline-block">{k}</span>)}
+            </div>
+            <div className="opacity-80">{text}</div>
+          </div>
+        );
+        return (
+          <div className="text-sm">
+            <Row keys={["1","2","3","4"]} text="Focus Temp / Time / Biscuit / Integrity"/>
+            <Row keys={["←","→"]} text="Adjust focused control (Shift for bigger)"/>
+            <Row keys={["Space"]} text="Dunk now"/>
+            <Row keys={["T"]} text="Toggle dark mode"/>
+            <Row keys={["R"]} text="Reset to defaults"/>
+          </div>
+        );
+      }
+
+      function App() {
+        const [theme, setTheme] = useTheme();
+        const [tempC, setTempC] = useState(85);
+        const [timeS, setTimeS] = useState(4);
+        const [biscuit, setBiscuit] = useState(0);
+        const [integrity, setIntegrity] = useState(78);
+        const [focus, setFocus] = useState(1); // 1=temp,2=time,3=biscuit,4=integrity
+        const [crumbs, setCrumbs] = useState([]);
+        const [history, setHistory] = useState(() => Array.from({length: 60}, () => 10));
+        const overRef = useRef(null);
+
+        const { risk, dunkability, sweet } = useMemo(() => computeRisk({ tempC, timeS, integrity, biscuit }), [tempC, timeS, integrity, biscuit]);
+
+        // Update graph history loop
+        useEffect(() => {
+          const id = setInterval(() => {
+            setHistory(h => {
+              const next = h.slice(1);
+              const wobble = (Math.random() - 0.5) * 3;
+              next.push(clamp(risk + wobble, 0, 100));
+              return next;
+            });
+          }, 220);
+          return () => clearInterval(id);
+        }, [risk]);
+
+        // Crumbs when over-dunk
+        useEffect(() => {
+          if (risk > 68) sprinkleCrumbs(Math.floor(map(risk, 68, 100, 3, 10)));
+        }, [risk]);
+
+        function sprinkleCrumbs(count=8) {
+          const rect = overRef.current?.getBoundingClientRect?.() || { width: 800, height: 600 };
+          const now = Date.now();
+          const newCrumbs = Array.from({length: count}).map((_,i) => ({
+            id: now + i,
+            x: Math.random() * rect.width * 0.8 + rect.width*0.1,
+            y: Math.random() * rect.height * 0.1 + 10,
+            size: Math.random() * 4 + 3,
+            dx: (Math.random() - 0.5) * 120,
+            rot: (Math.random() - 0.5) * 300 + 'deg',
+            dur: Math.random() * 1.5 + 2.0,
+          }));
+          setCrumbs(c => [...c, ...newCrumbs]);
+          // cleanup after longest duration
+          setTimeout(() => {
+            setCrumbs(c => c.filter(k => now + 4000 < Date.now() ? false : true));
+          }, 4500);
+        }
+
+        function dunkBurst() {
+          sprinkleCrumbs(risk > 60 ? 22 : 12);
+          // quick dunk ripple effect by nudging time briefly
+          setTimeS(t => clamp(t + 0.2, 0, 12));
+          setTimeout(() => setTimeS(t => clamp(t - 0.2, 0, 12)), 320);
+        }
+
+        function resetAll() {
+          setTempC(85); setTimeS(4); setBiscuit(0); setIntegrity(78);
+        }
+
+        // Keyboard shortcuts
+        useEffect(() => {
+          const onKey = (e) => {
+            if (['INPUT','TEXTAREA'].includes(e.target.tagName)) return;
+            if (e.key.toLowerCase() === 't') { setTheme(t => t==='dark'?'light':'dark'); return; }
+            if (e.key.toLowerCase() === 'r') { resetAll(); return; }
+            if (e.code === 'Space') { e.preventDefault(); dunkBurst(); return; }
+            if (['1','2','3','4'].includes(e.key)) { setFocus(Number(e.key)); return; }
+            const big = e.shiftKey ? 5 : 1;
+            if (e.key === 'ArrowLeft') {
+              if (focus === 1) setTempC(v => clamp(v - big, 40, 100));
+              if (focus === 2) setTimeS(v => clamp(parseFloat((v - 0.25*big).toFixed(2)), 0, 12));
+              if (focus === 3) setBiscuit(v => clamp(v - 1, 0, BISCUITS.length-1));
+              if (focus === 4) setIntegrity(v => clamp(v - big, 0, 100));
+            }
+            if (e.key === 'ArrowRight') {
+              if (focus === 1) setTempC(v => clamp(v + big, 40, 100));
+              if (focus === 2) setTimeS(v => clamp(parseFloat((v + 0.25*big).toFixed(2)), 0, 12));
+              if (focus === 3) setBiscuit(v => clamp(v + 1, 0, BISCUITS.length-1));
+              if (focus === 4) setIntegrity(v => clamp(v + big, 0, 100));
+            }
+          };
+          window.addEventListener('keydown', onKey);
+          return () => window.removeEventListener('keydown', onKey);
+        }, [focus, setTheme]);
+
+        const b = BISCUITS[biscuit];
+        const glassClass = 'glass dark:glass-dark bg-white/60 dark:bg-white/5';
+
+        return (
+          <div className="min-h-full py-8 px-4 sm:px-6 lg:px-10">
+            <div className="max-w-6xl mx-auto">
+              {/* Header */}
+              <div className={`rounded-2xl ${glassClass} shadow-glass p-4 sm:p-6 mb-6 border border-white/30 dark:border-white/10`}> 
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">Tea Dunkability Simulator</h1>
+                    <p className="text-sm opacity-80">Tune your tea, time, and biscuit to master the dunk.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setTheme(t => t==='dark'?'light':'dark')} className="px-3 py-2 rounded-lg bg-white/50 dark:bg-white/10 hover:bg-white/70 dark:hover:bg-white/20 border border-white/30 dark:border-white/10 focus-ring" aria-label="Toggle dark mode (T)">
+                      <span className="hidden sm:inline">{theme==='dark'?'Light':'Dark'} Mode</span>
+                      <span className="sm:hidden">{theme==='dark'?'☀️':'🌙'}</span>
+                    </button>
+                    <button onClick={resetAll} className="px-3 py-2 rounded-lg bg-amber-500/90 hover:bg-amber-500 text-white focus-ring" aria-label="Reset (R)">Reset</button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Main grid */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" ref={overRef}>
+                {/* Simulation + Teacup */}
+                <div className={`rounded-2xl ${glassClass} shadow-glass p-5 sm:p-6 relative overflow-hidden border border-white/30 dark:border-white/10`}>
+                  <div className="absolute -top-24 -right-24 w-72 h-72 rounded-full bg-amber-400/20 blur-3xl pointer-events-none"></div>
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex items-center gap-3">
+                      <div className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse"></div>
+                      <div className="text-sm opacity-80">Live Simulation</div>
+                    </div>
+                    <div className="text-sm opacity-80">{BISCUITS[biscuit].name} | {tempC}°C | {timeS.toFixed(2)}s</div>
+                  </div>
+
+                  <Teacup tempC={tempC} risk={risk} sweet={sweet} onDunk={dunkBurst} />
+
+                  <div className="mt-8">
+                    <CrumbleMeter values={history} risk={risk} dunkability={dunkability} />
+                  </div>
+
+                  {/* crumbs overlay */}
+                  <div className="pointer-events-none absolute inset-0">
+                    {crumbs.map(c => (
+                      <span key={c.id} className="crumb animate-crumbfall" style={{ left: c.x + 'px', top: c.y + 'px', '--crumb-size': c.size + 'px', '--crumb-dx': c.dx + 'px', '--crumb-rot': c.rot, '--crumb-dur': c.dur + 's' }}></span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Controls */}
+                <div className="space-y-6">
+                  <div className={`rounded-2xl ${glassClass} shadow-glass p-5 sm:p-6 border border-white/30 dark:border-white/10`}>
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-lg font-semibold">Controls</h2>
+                      <div className="text-xs opacity-70">Use keyboard shortcuts</div>
+                    </div>
+                    <div className="space-y-6">
+                      <div className={focus===1?"ring-2 ring-sky-300 rounded-xl p-2 -m-2":"rounded-xl p-2 -m-2"} tabIndex={0} onFocus={() => setFocus(1)}>
+                        <Slider id="temp" label="Tea Temperature" min={40} max={100} step={1} value={tempC} onChange={setTempC} unit="°C" marks={[40,60,80,100]} kbd="1" />
+                      </div>
+                      <div className={focus===2?"ring-2 ring-sky-300 rounded-xl p-2 -m-2":"rounded-xl p-2 -m-2"} tabIndex={0} onFocus={() => setFocus(2)}>
+                        <Slider id="time" label="Dunk Time" min={0} max={12} step={0.25} value={timeS} onChange={setTimeS} unit="s" marks={[0,3,6,9,12]} kbd="2" />
+                      </div>
+                      <div className={focus===3?"ring-2 ring-sky-300 rounded-xl p-2 -m-2":"rounded-xl p-2 -m-2"} tabIndex={0} onFocus={() => setFocus(3)}>
+                        <BiscuitSlider index={biscuit} setIndex={setBiscuit} />
+                      </div>
+                      <div className={focus===4?"ring-2 ring-sky-300 rounded-xl p-2 -m-2":"rounded-xl p-2 -m-2"} tabIndex={0} onFocus={() => setFocus(4)}>
+                        <Slider id="integrity" label="Structural Integrity" min={0} max={100} step={1} value={integrity} onChange={setIntegrity} unit="%" marks={[0,25,50,75,100]} kbd="4" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Biscuit card */}
+                  <div className={`rounded-2xl ${glassClass} shadow-glass p-5 sm:p-6 border border-white/30 dark:border-white/10`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <h2 className="text-lg font-semibold">Biscuit Profile</h2>
+                      <span className="text-sm opacity-75">#{biscuit+1}</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-full border border-white/40" style={{background: b.color}}></div>
+                      <div className="grid grid-cols-3 gap-3 w-full text-sm">
+                        <div>
+                          <div className="opacity-70">Soak Rate</div>
+                          <div className="font-semibold">{(b.soakRate*100).toFixed(0)}%</div>
+                        </div>
+                        <div>
+                          <div className="opacity-70">Fragility</div>
+                          <div className="font-semibold">{(b.fragility*100).toFixed(0)}%</div>
+                        </div>
+                        <div>
+                          <div className="opacity-70">Crumbiness</div>
+                          <div className="font-semibold">{(b.crumbiness*100).toFixed(0)}%</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
+                      <div className="rounded-xl bg-white/40 dark:bg-white/5 border border-white/40 dark:border-white/10 p-3">
+                        <div className="opacity-70">Dunkability</div>
+                        <div className="text-2xl font-semibold text-emerald-400">{dunkability.toFixed(0)}%</div>
+                      </div>
+                      <div className="rounded-xl bg-white/40 dark:bg-white/5 border border-white/40 dark:border-white/10 p-3">
+                        <div className="opacity-70">Crumble Risk</div>
+                        <div className={`text-2xl font-semibold ${risk>75?'text-red-400':risk>50?'text-amber-400':'text-emerald-400'}`}>{risk.toFixed(0)}%</div>
+                      </div>
+                    </div>
+                    <div className="mt-4 text-xs opacity-75">Tip: aim for ~3–5s dunk time for a tasty sweet‑spot without structural failure.</div>
+                  </div>
+
+                  {/* Help / Shortcuts */}
+                  <div className={`rounded-2xl ${glassClass} shadow-glass p-5 sm:p-6 border border-white/30 dark:border-white/10`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <h2 className="text-lg font-semibold">Shortcuts</h2>
+                      <span className="text-xs opacity-70">Pro tip: press <span className="kbd">T</span> to toggle theme.</span>
+                    </div>
+                    <HelpShortcuts />
+                  </div>
+                </div>
+              </div>
+
+              <footer className="mt-8 text-center text-xs opacity-70">
+                Built with React · Glass UI · SVG animation · Keyboard friendly.
+              </footer>
+            </div>
+          </div>
+        );
+      }
+
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+    </script>
+  </body>
+  </html>

@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Micro Habit Tracker</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <!-- Confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#6366f1', // Indigo 500
+                        secondary: '#ec4899', // Pink 500
+                        success: '#10b981', // Emerald 500
+                        warning: '#f59e0b', // Amber 500
+                        background: '#0f172a', // Slate 900
+                        surface: '#1e293b', // Slate 800
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    animation: {
+                        'bounce-short': 'bounce 0.5s ease-in-out 1',
+                        'fade-in': 'fadeIn 0.3s ease-out',
+                        'slide-up': 'slideUp 0.3s ease-out',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(10px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b; 
+        }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .habit-card {
+            transition: all 0.2s ease;
+        }
+        .habit-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Mobile optimizations */
+        @media (max-width: 640px) {
+            .mobile-hide { display: none; }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col overflow-x-hidden selection:bg-primary selection:text-white">
+    <div id="app" class="flex flex-col min-h-screen max-w-5xl mx-auto w-full p-4 md:p-6 lg:p-8 space-y-6">
+        
+        <!-- Header Section -->
+        <header class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 animate-fade-in">
+            <div>
+                <h1 class="text-3xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+                    Micro Habit Tracker
+                </h1>
+                <p class="text-slate-400 text-sm mt-1">{{ currentDateDisplay }}</p>
+            </div>
+            
+            <div class="flex items-center gap-3">
+                <div class="text-right hidden md:block">
+                    <div class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Daily Completion</div>
+                    <div class="text-lg font-bold text-white">{{ completionPercentage }}%</div>
+                </div>
+                <div class="w-12 h-12 relative flex items-center justify-center">
+                    <svg class="transform -rotate-90 w-12 h-12">
+                        <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-width="4" fill="transparent" class="text-slate-700" />
+                        <circle cx="24" cy="24" r="20" stroke="currentColor" stroke-width="4" fill="transparent" 
+                                :stroke-dasharray="circumference" 
+                                :stroke-dashoffset="circumference - (completionPercentage / 100) * circumference" 
+                                class="text-primary transition-all duration-1000 ease-out" />
+                    </svg>
+                    <i class="ph ph-check text-white absolute"></i>
+                </div>
+                <button @click="showAddModal = true" class="bg-primary hover:bg-indigo-600 text-white p-3 rounded-full shadow-lg shadow-indigo-500/30 transition-all active:scale-95 flex items-center justify-center" title="Add Habit">
+                    <i class="ph ph-plus text-xl"></i>
+                </button>
+                <button @click="toggleStats" class="bg-surface hover:bg-slate-700 text-slate-200 p-3 rounded-full border border-slate-700 transition-all active:scale-95" title="Statistics">
+                    <i class="ph ph-chart-bar text-xl"></i>
+                </button>
+                <button @click="showSettings = true" class="bg-surface hover:bg-slate-700 text-slate-200 p-3 rounded-full border border-slate-700 transition-all active:scale-95" title="Settings">
+                    <i class="ph ph-gear text-xl"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content Grid -->
+        <main class="flex-grow grid grid-cols-1 lg:grid-cols-3 gap-6 animate-slide-up">
+            
+            <!-- Habits List (Left Column) -->
+            <div class="lg:col-span-2 space-y-4">
+                <div v-if="habits.length === 0" class="text-center py-20 border-2 border-dashed border-slate-700 rounded-2xl bg-slate-800/30">
+                    <i class="ph ph-sparkle text-4xl text-slate-500 mb-3"></i>
+                    <p class="text-slate-400 text-lg">No habits yet. Start small!</p>
+                    <button @click="showAddModal = true" class="mt-4 text-primary font-semibold hover:underline">Create your first habit</button>
+                </div>
+
+                <div v-for="habit in habits" :key="habit.id" 
+                     class="habit-card glass-panel rounded-2xl p-4 md:p-5 flex flex-col md:flex-row gap-4 md:items-center justify-between group relative overflow-hidden">
+                    
+                    <!-- Decorative color bar -->
+                    <div class="absolute left-0 top-0 bottom-0 w-1.5" :style="{ backgroundColor: habit.color }"></div>
+
+                    <!-- Habit Info -->
+                    <div class="flex-grow pl-3">
+                        <div class="flex items-center gap-3 mb-1">
+                            <span class="text-2xl">{{ habit.icon }}</span>
+                            <h3 class="text-xl font-bold text-white">{{ habit.name }}</h3>
+                            <div v-if="getStreak(habit) > 2" class="flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">
+                                <i class="ph ph-fire-fill"></i> {{ getStreak(habit) }}
+                            </div>
+                        </div>
+                        <!-- Mini Heatmap for last 7 days -->
+                        <div class="flex gap-1 mt-2">
+                            <div v-for="(day, index) in getLast7Days()" :key="index" class="flex flex-col items-center gap-1">
+                                <div class="w-6 h-1 rounded-full transition-colors duration-300" 
+                                     :class="getStatusColorClass(habit, day.dateString)"
+                                     :title="day.displayDate + ': ' + (getHistoryStatus(habit, day.dateString) || 'Pending')">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="flex items-center gap-2 self-end md:self-center">
+                        <!-- Skip Button -->
+                        <button 
+                            @click="toggleStatus(habit, 'skipped')"
+                            class="px-3 py-2 rounded-xl border border-slate-600 hover:bg-slate-700 text-slate-400 transition-colors flex items-center gap-2"
+                            :class="{ 'bg-slate-700 text-slate-200 border-slate-500': isSkippedToday(habit) }"
+                            title="Skip today (keeps streak)"
+                        >
+                            <i class="ph ph-skip-forward"></i>
+                            <span class="text-sm font-medium hidden md:inline">Skip</span>
+                        </button>
+
+                        <!-- Complete Button -->
+                        <button 
+                            @click="toggleStatus(habit, 'completed', $event)"
+                            class="px-5 py-2 rounded-xl flex items-center gap-2 font-bold shadow-lg transition-all active:scale-95"
+                            :class="isCompletedToday(habit) 
+                                ? 'bg-success text-white shadow-success/30 hover:bg-emerald-600' 
+                                : 'bg-surface border border-slate-600 text-slate-300 hover:border-success hover:text-success'"
+                        >
+                            <i class="ph" :class="isCompletedToday(habit) ? 'ph-check-fat-fill' : 'ph-check-fat'"></i>
+                            <span>{{ isCompletedToday(habit) ? 'Done' : 'Check' }}</span>
+                        </button>
+                        
+                        <!-- Menu -->
+                        <div class="relative ml-2">
+                             <button @click="activeMenu = activeMenu === habit.id ? null : habit.id" class="p-2 text-slate-400 hover:text-white transition-colors">
+                                <i class="ph ph-dots-three-vertical text-xl"></i>
+                             </button>
+                             
+                             <!-- Dropdown -->
+                             <div v-if="activeMenu === habit.id" class="absolute right-0 top-full mt-2 w-32 bg-slate-800 border border-slate-600 rounded-xl shadow-xl z-10 overflow-hidden animate-fade-in">
+                                 <button @click="editHabit(habit)" class="w-full text-left px-4 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white flex items-center gap-2">
+                                     <i class="ph ph-pencil"></i> Edit
+                                 </button>
+                                 <button @click="deleteHabit(habit.id)" class="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-red-900/30 hover:text-red-300 flex items-center gap-2">
+                                     <i class="ph ph-trash"></i> Delete
+                                 </button>
+                             </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats & Motivation (Right Column) -->
+            <div class="space-y-6">
+                <!-- Quote Card -->
+                <div class="glass-panel p-5 rounded-2xl relative overflow-hidden">
+                    <div class="absolute -right-4 -top-4 text-8xl text-slate-700/20 rotate-12 font-serif">"</div>
+                    <p class="text-slate-300 italic relative z-10 leading-relaxed">{{ randomQuote }}</p>
+                </div>
+
+                <!-- Monthly Overview Chart -->
+                <div class="glass-panel p-5 rounded-2xl">
+                    <h3 class="text-slate-400 text-sm font-semibold uppercase tracking-wider mb-4 flex items-center gap-2">
+                        <i class="ph ph-chart-line-up"></i> Last 30 Days
+                    </h3>
+                    <div class="h-48">
+                        <canvas id="mainChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Streak Leaderboard -->
+                <div class="glass-panel p-5 rounded-2xl">
+                    <h3 class="text-slate-400 text-sm font-semibold uppercase tracking-wider mb-3 flex items-center gap-2">
+                        <i class="ph ph-trophy"></i> Top Streaks
+                    </h3>
+                    <div class="space-y-3">
+                        <div v-for="habit in sortedByStreak.slice(0, 3)" :key="habit.id" class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <div class="w-2 h-8 rounded-full" :style="{ backgroundColor: habit.color }"></div>
+                                <span class="text-slate-200 font-medium">{{ habit.name }}</span>
+                            </div>
+                            <span class="text-lg font-bold text-slate-400">{{ getStreak(habit) }} <span class="text-xs font-normal text-slate-600">days</span></span>
+                        </div>
+                        <div v-if="habits.length === 0" class="text-slate-500 text-sm text-center italic">Add habits to see rankings</div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Add/Edit Modal -->
+        <div v-if="showAddModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" @click.self="closeModal">
+            <div class="bg-surface border border-slate-600 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-slide-up">
+                <div class="p-6">
+                    <h2 class="text-2xl font-bold text-white mb-6">{{ isEditing ? 'Edit Habit' : 'New Habit' }}</h2>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-400 mb-1">Habit Name</label>
+                            <input v-model="currentHabit.name" type="text" placeholder="e.g. Read 10 pages" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all">
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-400 mb-1">Color</label>
+                                <div class="flex flex-wrap gap-2">
+                                    <button v-for="color in colors" :key="color" 
+                                        @click="currentHabit.color = color"
+                                        class="w-8 h-8 rounded-full border-2 transition-transform hover:scale-110"
+                                        :style="{ backgroundColor: color }"
+                                        :class="currentHabit.color === color ? 'border-white' : 'border-transparent'">
+                                    </button>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-400 mb-1">Icon</label>
+                                <input v-model="currentHabit.icon" type="text" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white text-center text-xl" placeholder="Emoji 🏃">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-3 mt-8">
+                        <button @click="closeModal" class="flex-1 px-4 py-3 rounded-xl border border-slate-600 text-slate-300 hover:bg-slate-700 font-medium transition-colors">Cancel</button>
+                        <button @click="saveHabit" class="flex-1 px-4 py-3 rounded-xl bg-primary hover:bg-indigo-600 text-white font-bold shadow-lg shadow-indigo-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed" :disabled="!currentHabit.name">Save</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Modal -->
+        <div v-if="showSettings" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" @click.self="showSettings = false">
+            <div class="bg-surface border border-slate-600 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-slide-up">
+                <div class="p-6">
+                    <h2 class="text-2xl font-bold text-white mb-6">Settings</h2>
+                    
+                    <div class="space-y-4">
+                        <div class="p-4 bg-slate-900 rounded-xl border border-slate-700">
+                            <h3 class="text-white font-semibold mb-2">Data Management</h3>
+                            <div class="flex gap-2 flex-col">
+                                <button @click="exportData" class="w-full px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm border border-slate-600 flex items-center justify-center gap-2">
+                                    <i class="ph ph-download-simple"></i> Export JSON
+                                </button>
+                                <div class="relative">
+                                    <input type="file" ref="fileInput" @change="importData" class="hidden" accept=".json">
+                                    <button @click="$refs.fileInput.click()" class="w-full px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm border border-slate-600 flex items-center justify-center gap-2">
+                                        <i class="ph ph-upload-simple"></i> Import JSON
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="p-4 bg-red-900/10 rounded-xl border border-red-900/30">
+                            <h3 class="text-red-400 font-semibold mb-2">Danger Zone</h3>
+                            <button @click="clearAllData" class="w-full px-4 py-2 rounded-lg bg-red-900/20 hover:bg-red-900/40 text-red-400 text-sm border border-red-900/30 flex items-center justify-center gap-2">
+                                <i class="ph ph-trash"></i> Clear All Data
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="mt-8">
+                        <button @click="showSettings = false" class="w-full px-4 py-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-medium transition-colors">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
+
+        createApp({
+            setup() {
+                // --- State ---
+                const habits = ref([]);
+                const showAddModal = ref(false);
+                const showSettings = ref(false);
+                const isEditing = ref(false);
+                const activeMenu = ref(null);
+                const currentHabit = ref({
+                    id: null,
+                    name: '',
+                    icon: '⚡',
+                    color: '#6366f1',
+                    history: {}
+                });
+                const chartInstance = ref(null);
+
+                // --- Constants ---
+                const colors = ['#6366f1', '#ec4899', '#10b981', '#f59e0b', '#3b82f6', '#8b5cf6', '#ef4444'];
+                const quotes = [
+                    "Success is the sum of small efforts, repeated day in and day out.",
+                    "We are what we repeatedly do. Excellence, then, is not an act, but a habit.",
+                    "The secret of your future is hidden in your daily routine.",
+                    "Don't watch the clock; do what it does. Keep going.",
+                    "Small steps every day add up to big results."
+                ];
+                const randomQuote = ref(quotes[Math.floor(Math.random() * quotes.length)]);
+
+                // --- Computed ---
+                const today = new Date().toISOString().split('T')[0];
+                const currentDateDisplay = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+                const circumference = 2 * Math.PI * 20;
+
+                const completionPercentage = computed(() => {
+                    if (habits.value.length === 0) return 0;
+                    const completed = habits.value.filter(h => h.history[today] === 'completed').length;
+                    return Math.round((completed / habits.value.length) * 100);
+                });
+
+                const sortedByStreak = computed(() => {
+                    return [...habits.value].sort((a, b) => getStreak(b) - getStreak(a));
+                });
+
+                // --- Methods ---
+
+                const getHistoryStatus = (habit, dateStr) => {
+                    return habit.history[dateStr];
+                };
+
+                const isCompletedToday = (habit) => {
+                    return habit.history[today] === 'completed';
+                };
+
+                const isSkippedToday = (habit) => {
+                    return habit.history[today] === 'skipped';
+                };
+
+                const getStatusColorClass = (habit, dateStr) => {
+                    const status = getHistoryStatus(habit, dateStr);
+                    if (status === 'completed') return 'bg-success shadow-[0_0_8px_rgba(16,185,129,0.6)]';
+                    if (status === 'skipped') return 'bg-slate-600';
+                    return 'bg-slate-700/50';
+                };
+
+                const getLast7Days = () => {
+                    const days = [];
+                    for (let i = 6; i >= 0; i--) {
+                        const d = new Date();
+                        d.setDate(d.getDate() - i);
+                        const dateString = d.toISOString().split('T')[0];
+                        const displayDate = d.toLocaleDateString('en-US', { weekday: 'narrow' });
+                        days.push({ dateString, displayDate });
+                    }
+                    return days;
+                };
+
+                const getStreak = (habit) => {
+                    let streak = 0;
+                    const d = new Date();
+                    // Start checking from yesterday. 
+                    // If today is completed, streak includes today. 
+                    // If today is skipped, streak is maintained.
+                    
+                    // Check today first
+                    const todayStr = d.toISOString().split('T')[0];
+                    if (habit.history[todayStr] === 'completed') {
+                        streak++;
+                    }
+
+                    // Loop backwards from yesterday
+                    d.setDate(d.getDate() - 1);
+                    while (true) {
+                        const dateStr = d.toISOString().split('T')[0];
+                        const status = habit.history[dateStr];
+                        
+                        if (status === 'completed') {
+                            streak++;
+                        } else if (status === 'skipped') {
+                            // Maintain streak but don't increment count? 
+                            // Or count as part of consistency? 
+                            // Standard interpretation: Skips freeze the streak.
+                            // We won't increment streak counter for skipped days, but we won't break the loop.
+                            // However, the prompt says "Streak counter". Users usually want to see the number of active days.
+                            // Let's stick to: count completed days in the continuous chain (ignoring skips).
+                        } else {
+                            break; // Break streak
+                        }
+                        d.setDate(d.getDate() - 1);
+                    }
+                    return streak;
+                };
+
+                const toggleStatus = (habit, status, event) => {
+                    if (habit.history[today] === status) {
+                        // Toggle off
+                        delete habit.history[today];
+                    } else {
+                        // Set status
+                        habit.history[today] = status;
+                        if (status === 'completed' && event) {
+                            triggerConfetti(event);
+                        }
+                    }
+                    saveData();
+                    updateChart();
+                };
+
+                const triggerConfetti = (event) => {
+                    const rect = event.target.getBoundingClientRect();
+                    const x = (rect.left + rect.width / 2) / window.innerWidth;
+                    const y = (rect.top + rect.height / 2) / window.innerHeight;
+                    
+                    confetti({
+                        particleCount: 60,
+                        spread: 70,
+                        origin: { x, y },
+                        colors: ['#6366f1', '#ec4899', '#10b981'],
+                        disableForReducedMotion: true,
+                        zIndex: 100
+                    });
+                };
+
+                const resetForm = () => {
+                    currentHabit.value = { id: null, name: '', icon: '⚡', color: colors[Math.floor(Math.random() * colors.length)], history: {} };
+                    isEditing.value = false;
+                };
+
+                const closeModal = () => {
+                    showAddModal.value = false;
+                    resetForm();
+                };
+
+                const saveHabit = () => {
+                    if (isEditing.value) {
+                        const index = habits.value.findIndex(h => h.id === currentHabit.value.id);
+                        if (index !== -1) {
+                            habits.value[index] = { ...currentHabit.value, history: habits.value[index].history }; // Preserve history
+                        }
+                    } else {
+                        if (habits.value.length >= 7) {
+                            alert("You can only track up to 7 habits in this version.");
+                            return;
+                        }
+                        habits.value.push({
+                            ...currentHabit.value,
+                            id: crypto.randomUUID(),
+                            history: {} // Ensure new habit has empty history
+                        });
+                    }
+                    saveData();
+                    closeModal();
+                    updateChart();
+                };
+
+                const editHabit = (habit) => {
+                    currentHabit.value = JSON.parse(JSON.stringify(habit));
+                    isEditing.value = true;
+                    showAddModal.value = true;
+                    activeMenu.value = null;
+                };
+
+                const deleteHabit = (id) => {
+                    if (confirm('Are you sure you want to delete this habit?')) {
+                        habits.value = habits.value.filter(h => h.id !== id);
+                        saveData();
+                        updateChart();
+                    }
+                };
+
+                // --- Persistence ---
+                const saveData = () => {
+                    localStorage.setItem('microHabitData', JSON.stringify(habits.value));
+                };
+
+                const loadData = () => {
+                    const data = localStorage.getItem('microHabitData');
+                    if (data) {
+                        habits.value = JSON.parse(data);
+                    } else {
+                        // Demo Data
+                        generateDemoData();
+                    }
+                };
+
+                const generateDemoData = () => {
+                    const demoHabits = [
+                        { id: '1', name: 'Drink Water', icon: '💧', color: '#3b82f6', history: {} },
+                        { id: '2', name: 'Read 30 mins', icon: '📚', color: '#8b5cf6', history: {} },
+                        { id: '3', name: 'Workout', icon: '💪', color: '#ec4899', history: {} },
+                    ];
+
+                    // Fill some history for demo
+                    const now = new Date();
+                    for(let i=0; i<10; i++) {
+                        const d = new Date(now);
+                        d.setDate(d.getDate() - i);
+                        const ds = d.toISOString().split('T')[0];
+                        
+                        // Random patterns
+                        if (Math.random() > 0.3) demoHabits[0].history[ds] = 'completed';
+                        if (Math.random() > 0.5) demoHabits[1].history[ds] = 'completed';
+                        if (Math.random() > 0.6) demoHabits[2].history[ds] = 'completed';
+                        else if (Math.random() > 0.8) demoHabits[2].history[ds] = 'skipped';
+                    }
+                    
+                    habits.value = demoHabits;
+                    saveData();
+                };
+
+                const exportData = () => {
+                    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(habits.value));
+                    const downloadAnchorNode = document.createElement('a');
+                    downloadAnchorNode.setAttribute("href", dataStr);
+                    downloadAnchorNode.setAttribute("download", "habits_backup.json");
+                    document.body.appendChild(downloadAnchorNode);
+                    downloadAnchorNode.click();
+                    downloadAnchorNode.remove();
+                };
+
+                const importData = (event) => {
+                    const file = event.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const imported = JSON.parse(e.target.result);
+                            if (Array.isArray(imported)) {
+                                habits.value = imported;
+                                saveData();
+                                updateChart();
+                                alert("Data imported successfully!");
+                                showSettings.value = false;
+                            } else {
+                                alert("Invalid JSON format.");
+                            }
+                        } catch (err) {
+                            alert("Error reading file.");
+                        }
+                    };
+                    reader.readAsText(file);
+                };
+
+                const clearAllData = () => {
+                    if (confirm("Are you surely you want to wipe all data? This cannot be undone.")) {
+                        habits.value = [];
+                        saveData();
+                        showSettings.value = false;
+                        updateChart();
+                    }
+                };
+
+                // --- Chart Logic ---
+                const initChart = () => {
+                    const ctx = document.getElementById('mainChart');
+                    if (!ctx) return;
+                    
+                    // Generate last 30 days labels
+                    const labels = [];
+                    const dataPoints = [];
+                    for (let i = 29; i >= 0; i--) {
+                        const d = new Date();
+                        d.setDate(d.getDate() - i);
+                        labels.push(d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' }));
+                        
+                        const ds = d.toISOString().split('T')[0];
+                        let totalCompleted = 0;
+                        habits.value.forEach(h => {
+                            if (h.history[ds] === 'completed') totalCompleted++;
+                        });
+                        dataPoints.push(habits.value.length ? (totalCompleted / habits.value.length) * 100 : 0);
+                    }
+
+                    Chart.defaults.color = '#94a3b8';
+                    Chart.defaults.font.family = "'Inter', sans-serif";
+                    
+                    chartInstance.value = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: 'Daily Completion Rate',
+                                data: dataPoints,
+                                borderColor: '#6366f1',
+                                backgroundColor: (context) => {
+                                    const ctx = context.chart.ctx;
+                                    const gradient = ctx.createLinearGradient(0, 0, 0, 200);
+                                    gradient.addColorStop(0, 'rgba(99, 102, 241, 0.5)');
+                                    gradient.addColorStop(1, 'rgba(99, 102, 241, 0)');
+                                    return gradient;
+                                },
+                                fill: true,
+                                tension: 0.4,
+                                pointRadius: 2,
+                                pointHoverRadius: 6
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                    backgroundColor: 'rgba(30, 41, 59, 0.9)',
+                                    padding: 12,
+                                    borderColor: 'rgba(255,255,255,0.1)',
+                                    borderWidth: 1,
+                                    displayColors: false,
+                                    callbacks: {
+                                        label: (context) => `Completion: ${Math.round(context.raw)}%`
+                                    }
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: true,
+                                    max: 100,
+                                    grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                                    ticks: { callback: (val) => val + '%' }
+                                },
+                                x: {
+                                    grid: { display: false },
+                                    ticks: { maxTicksLimit: 6 }
+                                }
+                            }
+                        }
+                    });
+                };
+
+                const updateChart = () => {
+                    if (!chartInstance.value) {
+                         nextTick(initChart);
+                         return;
+                    }
+                    
+                    const dataPoints = [];
+                    const labels = [];
+                     for (let i = 29; i >= 0; i--) {
+                        const d = new Date();
+                        d.setDate(d.getDate() - i);
+                        labels.push(d.toLocaleDateString('en-US', { day: 'numeric', month: 'short' }));
+                        const ds = d.toISOString().split('T')[0];
+                        let totalCompleted = 0;
+                        habits.value.forEach(h => {
+                            if (h.history[ds] === 'completed') totalCompleted++;
+                        });
+                        dataPoints.push(habits.value.length ? (totalCompleted / habits.value.length) * 100 : 0);
+                    }
+                    
+                    chartInstance.value.data.labels = labels;
+                    chartInstance.value.data.datasets[0].data = dataPoints;
+                    chartInstance.value.update();
+                };
+
+                const toggleStats = () => {
+                    // Just scroll to bottom on mobile, or visualize more stats in future
+                    const el = document.getElementById('mainChart');
+                    if(el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                };
+
+                onMounted(() => {
+                    loadData();
+                    nextTick(() => {
+                        initChart();
+                    });
+                    
+                    // Close dropdowns on outside click
+                    document.addEventListener('click', (e) => {
+                        if (!e.target.closest('.relative')) {
+                            activeMenu.value = null;
+                        }
+                    });
+                });
+
+                return {
+                    habits, showAddModal, showSettings, isEditing, currentHabit,
+                    colors, randomQuote, today, currentDateDisplay, completionPercentage, circumference,
+                    sortedByStreak, activeMenu,
+                    // methods
+                    toggleStatus, getStreak, getStatusColorClass, getLast7Days,
+                    saveHabit, editHabit, deleteHabit, closeModal,
+                    exportData, importData, clearAllData,
+                    isCompletedToday, isSkippedToday, getHistoryStatus,
+                    toggleStats
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music Theory Trainer</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Outfit:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            user-select: none;
+        }
+        h1, h2, h3 {
+            font-family: 'Outfit', sans-serif;
+        }
+        .piano-key-white {
+            height: 200px;
+            width: 40px;
+            border: 1px solid #cbd5e1;
+            background: white;
+            border-radius: 0 0 4px 4px;
+            transition: background 0.1s, transform 0.05s;
+            cursor: pointer;
+            z-index: 1;
+        }
+        .piano-key-white:active, .piano-key-white.active {
+            background: #e2e8f0;
+            transform: translateY(2px);
+        }
+        .piano-key-black {
+            height: 120px;
+            width: 28px;
+            background: #1e293b;
+            margin-left: -14px;
+            margin-right: -14px;
+            z-index: 2;
+            border-radius: 0 0 4px 4px;
+            transition: background 0.1s, transform 0.05s;
+            cursor: pointer;
+        }
+        .piano-key-black:active, .piano-key-black.active {
+            background: #475569;
+            transform: translateY(2px);
+        }
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .correct-flash {
+            animation: correct-bg 0.5s ease-out;
+        }
+        @keyframes correct-bg {
+            0% { background-color: rgba(34, 197, 94, 0.2); }
+            100% { background-color: transparent; }
+        }
+        .wrong-flash {
+            animation: wrong-bg 0.5s ease-out;
+        }
+        @keyframes wrong-bg {
+            0% { background-color: rgba(239, 68, 68, 0.2); }
+            100% { background-color: transparent; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        const OCTAVES = [3, 4, 5];
+        
+        const SCALES = {
+            'Major': [0, 2, 4, 5, 7, 9, 11, 12],
+            'Natural Minor': [0, 2, 3, 5, 7, 8, 10, 12],
+            'Harmonic Minor': [0, 2, 3, 5, 7, 8, 11, 12],
+            'Major Pentatonic': [0, 2, 4, 7, 9, 12],
+            'Minor Pentatonic': [0, 3, 5, 7, 10, 12],
+            'Dorian': [0, 2, 3, 5, 7, 9, 10, 12],
+            'Phrygian': [0, 1, 3, 5, 7, 8, 10, 12],
+        };
+
+        const CHORDS = {
+            'Major': [0, 4, 7],
+            'Minor': [0, 3, 7],
+            'Diminished': [0, 3, 6],
+            'Augmented': [0, 4, 8],
+            'Major 7th': [0, 4, 7, 11],
+            'Minor 7th': [0, 3, 7, 10],
+            'Dominant 7th': [0, 4, 7, 10],
+        };
+
+        // Initialize Synth
+        const synth = new Tone.PolySynth(Tone.Synth).toDestination();
+        synth.set({
+            oscillator: { type: "triangle" },
+            envelope: { release: 1 }
+        });
+
+        const App = () => {
+            const [view, setView] = useState('menu'); // menu, explore, training
+            const [score, setScore] = useState(0);
+            const [activeNotes, setActiveNotes] = useState(new Set());
+
+            const playNote = (note, duration = "8n") => {
+                Tone.start();
+                synth.triggerAttackRelease(note, duration);
+                setActiveNotes(prev => {
+                    const next = new Set(prev);
+                    next.add(note);
+                    return next;
+                });
+                setTimeout(() => {
+                    setActiveNotes(prev => {
+                        const next = new Set(prev);
+                        next.delete(note);
+                        return next;
+                    });
+                }, 200);
+            };
+
+            return (
+                <div className="min-h-screen p-4 md:p-8 max-w-5xl mx-auto flex flex-col">
+                    <header className="flex justify-between items-center mb-8">
+                        <div>
+                            <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
+                                Music Theory Trainer
+                            </h1>
+                            <p className="text-slate-400">Master the language of music</p>
+                        </div>
+                        <div className="text-right">
+                            <div className="text-sm text-slate-500 uppercase tracking-widest">Global Score</div>
+                            <div className="text-3xl font-bold text-white tracking-tighter">{score} XP</div>
+                        </div>
+                    </header>
+
+                    <main className="flex-grow flex flex-col gap-8">
+                        {view === 'menu' && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <MenuCard 
+                                    title="Explore Mode" 
+                                    desc="Free-play piano and visualize scales & chords."
+                                    icon="🎹"
+                                    onClick={() => setView('explore')}
+                                    color="from-blue-500/20 to-indigo-500/20"
+                                />
+                                <MenuCard 
+                                    title="Ear Training" 
+                                    desc="Identify notes, intervals, and chords by ear."
+                                    icon="👂"
+                                    onClick={() => setView('training')}
+                                    color="from-emerald-500/20 to-teal-500/20"
+                                />
+                            </div>
+                        )}
+
+                        {view === 'explore' && (
+                            <div className="space-y-8 animate-in fade-in duration-300">
+                                <button onClick={() => setView('menu')} className="text-slate-400 hover:text-white transition-colors flex items-center gap-2">
+                                    ← Back to Menu
+                                </button>
+                                <ExploreView playNote={playNote} activeNotes={activeNotes} />
+                            </div>
+                        )}
+
+                        {view === 'training' && (
+                            <div className="space-y-8 animate-in fade-in duration-300">
+                                <button onClick={() => setView('menu')} className="text-slate-400 hover:text-white transition-colors flex items-center gap-2">
+                                    ← Back to Menu
+                                </button>
+                                <TrainingView playNote={playNote} setScore={setScore} />
+                            </div>
+                        )}
+                    </main>
+
+                    <footer className="mt-12 py-6 border-t border-slate-800 text-center text-slate-500 text-sm">
+                        Built with Tone.js & React • Use your computer keyboard to play (A-K for white keys)
+                    </footer>
+                </div>
+            );
+        };
+
+        const MenuCard = ({ title, desc, icon, onClick, color }) => (
+            <div 
+                onClick={onClick}
+                className={`glass-panel p-8 rounded-2xl cursor-pointer hover:scale-[1.02] transition-all group border-opacity-20 bg-gradient-to-br ${color}`}
+            >
+                <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">{icon}</div>
+                <h2 className="text-2xl font-bold mb-2">{title}</h2>
+                <p className="text-slate-400">{desc}</p>
+            </div>
+        );
+
+        const Piano = ({ playNote, activeNotes = new Set(), highlightNotes = [] }) => {
+            const keys = [];
+            // Map keys for 2 octaves
+            [3, 4].forEach(octave => {
+                NOTES.forEach(noteName => {
+                    const note = noteName + octave;
+                    const isBlack = noteName.includes('#');
+                    const isHighlighted = highlightNotes.includes(noteName);
+                    const isActive = activeNotes.has(note);
+                    
+                    keys.push(
+                        <div 
+                            key={note}
+                            onClick={() => playNote(note)}
+                            className={`${isBlack ? 'piano-key-black' : 'piano-key-white'} 
+                                ${isActive ? 'active' : ''} 
+                                ${isHighlighted ? (isBlack ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-900' : 'bg-emerald-100') : ''}
+                                flex flex-col justify-end pb-2 items-center relative`}
+                        >
+                            {!isBlack && (
+                                <span className="text-[10px] text-slate-400 font-bold pointer-events-none">
+                                    {noteName}
+                                </span>
+                            )}
+                        </div>
+                    );
+                });
+            });
+
+            return (
+                <div className="flex justify-center overflow-x-auto py-8 bg-slate-900/50 rounded-xl border border-slate-800 shadow-2xl">
+                    <div className="flex">
+                        {keys}
+                    </div>
+                </div>
+            );
+        };
+
+        const ExploreView = ({ playNote, activeNotes }) => {
+            const [selectedScale, setSelectedScale] = useState(null);
+            const [rootNote, setRootNote] = useState('C');
+            const [selectedChord, setSelectedChord] = useState(null);
+
+            const getScaleNotes = () => {
+                if (!selectedScale) return [];
+                const rootIdx = NOTES.indexOf(rootNote);
+                return SCALES[selectedScale].map(interval => NOTES[(rootIdx + interval) % 12]);
+            };
+
+            const getChordNotes = () => {
+                if (!selectedChord) return [];
+                const rootIdx = NOTES.indexOf(rootNote);
+                return CHORDS[selectedChord].map(interval => NOTES[(rootIdx + interval) % 12]);
+            };
+
+            const highlightNotes = selectedScale ? getScaleNotes() : (selectedChord ? getChordNotes() : []);
+
+            return (
+                <div className="space-y-6">
+                    <div className="glass-panel p-6 rounded-2xl flex flex-wrap gap-6 items-end">
+                        <div className="space-y-2">
+                            <label className="text-xs uppercase tracking-tighter text-slate-400">Root Note</label>
+                            <div className="flex flex-wrap gap-2">
+                                {NOTES.map(n => (
+                                    <button 
+                                        key={n}
+                                        onClick={() => setRootNote(n)}
+                                        className={`w-8 h-8 rounded text-xs font-bold transition-colors ${rootNote === n ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+                                    >
+                                        {n}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-xs uppercase tracking-tighter text-slate-400">Scale Helper</label>
+                            <select 
+                                className="bg-slate-800 border-none rounded p-2 text-sm w-48 outline-none focus:ring-2 ring-blue-500"
+                                onChange={(e) => { setSelectedScale(e.target.value || null); setSelectedChord(null); }}
+                                value={selectedScale || ""}
+                            >
+                                <option value="">None</option>
+                                {Object.keys(SCALES).map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-xs uppercase tracking-tighter text-slate-400">Chord Helper</label>
+                            <select 
+                                className="bg-slate-800 border-none rounded p-2 text-sm w-48 outline-none focus:ring-2 ring-emerald-500"
+                                onChange={(e) => { setSelectedChord(e.target.value || null); setSelectedScale(null); }}
+                                value={selectedChord || ""}
+                            >
+                                <option value="">None</option>
+                                {Object.keys(CHORDS).map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                        </div>
+                    </div>
+
+                    <Piano playNote={playNote} activeNotes={activeNotes} highlightNotes={highlightNotes} />
+                    
+                    <div className="text-center text-slate-500 italic">
+                        {highlightNotes.length > 0 && `Notes in ${rootNote} ${selectedScale || selectedChord}: ${highlightNotes.join(', ')}`}
+                    </div>
+                </div>
+            );
+        };
+
+        const TrainingView = ({ playNote, setScore }) => {
+            const [mode, setMode] = useState(null); // notes, scales, chords
+            const [currentChallenge, setCurrentChallenge] = useState(null);
+            const [feedback, setFeedback] = useState(null);
+            const [options, setOptions] = useState([]);
+
+            const startChallenge = (newMode = mode) => {
+                setFeedback(null);
+                setMode(newMode);
+                
+                if (newMode === 'notes') {
+                    const note = NOTES[Math.floor(Math.random() * NOTES.length)];
+                    const octave = 4;
+                    setCurrentChallenge({ type: 'note', answer: note, octave });
+                    playNote(note + octave, "2n");
+                    
+                    // Shuffle options
+                    setOptions([...NOTES].sort(() => Math.random() - 0.5).slice(0, 4).includes(note) 
+                        ? [...NOTES].sort(() => Math.random() - 0.5).slice(0, 4)
+                        : [note, ...[...NOTES].filter(n => n !== note).sort(() => Math.random() - 0.5).slice(0, 3)].sort(() => Math.random() - 0.5)
+                    );
+                } else if (newMode === 'scales') {
+                    const scaleNames = Object.keys(SCALES);
+                    const scale = scaleNames[Math.floor(Math.random() * scaleNames.length)];
+                    const root = NOTES[Math.floor(Math.random() * NOTES.length)];
+                    setCurrentChallenge({ type: 'scale', answer: scale, root });
+                    
+                    const rootIdx = NOTES.indexOf(root);
+                    const scaleNotes = SCALES[scale].map(interval => NOTES[(rootIdx + interval) % 12] + (rootIdx + interval >= 12 ? 5 : 4));
+                    
+                    playChallengeSequence(scaleNotes);
+                    setOptions(scaleNames.sort(() => Math.random() - 0.5).slice(0, 4).includes(scale) 
+                        ? scaleNames.sort(() => Math.random() - 0.5).slice(0, 4)
+                        : [scale, ...scaleNames.filter(n => n !== scale).sort(() => Math.random() - 0.5).slice(0, 3)].sort(() => Math.random() - 0.5)
+                    );
+                } else if (newMode === 'chords') {
+                    const chordNames = Object.keys(CHORDS);
+                    const chord = chordNames[Math.floor(Math.random() * chordNames.length)];
+                    const root = NOTES[Math.floor(Math.random() * NOTES.length)];
+                    setCurrentChallenge({ type: 'chord', answer: chord, root });
+
+                    const rootIdx = NOTES.indexOf(root);
+                    const chordNotes = CHORDS[chord].map(interval => NOTES[(rootIdx + interval) % 12] + (rootIdx + interval >= 12 ? 5 : 4));
+                    
+                    // Play chord arpeggio then together
+                    playChallengeSequence(chordNotes, true);
+                    setOptions(chordNames.sort(() => Math.random() - 0.5).slice(0, 4).includes(chord) 
+                        ? chordNames.sort(() => Math.random() - 0.5).slice(0, 4)
+                        : [chord, ...chordNames.filter(n => n !== chord).sort(() => Math.random() - 0.5).slice(0, 3)].sort(() => Math.random() - 0.5)
+                    );
+                }
+            };
+
+            const playChallengeSequence = (notes, together = false) => {
+                const now = Tone.now();
+                notes.forEach((n, i) => {
+                    synth.triggerAttackRelease(n, "8n", now + i * 0.4);
+                });
+                if (together) {
+                    synth.triggerAttackRelease(notes, "2n", now + notes.length * 0.4 + 0.2);
+                }
+            };
+
+            const handleAnswer = (choice) => {
+                if (feedback) return;
+
+                if (choice === currentChallenge.answer) {
+                    setFeedback({ status: 'correct', message: 'Perfect! +10 XP' });
+                    setScore(prev => prev + 10);
+                } else {
+                    setFeedback({ status: 'wrong', message: `Not quite. It was ${currentChallenge.answer}.` });
+                }
+
+                setTimeout(() => {
+                    startChallenge();
+                }, 2000);
+            };
+
+            return (
+                <div className="max-w-2xl mx-auto space-y-8">
+                    {!mode ? (
+                        <div className="grid grid-cols-1 gap-4">
+                            <h2 className="text-2xl font-bold text-center mb-4">Choose Your Focus</h2>
+                            <button onClick={() => startChallenge('notes')} className="glass-panel p-6 rounded-xl hover:bg-slate-700 transition-colors text-left flex justify-between items-center">
+                                <span>Note Identification</span>
+                                <span className="text-slate-500">Beginner</span>
+                            </button>
+                            <button onClick={() => startChallenge('scales')} className="glass-panel p-6 rounded-xl hover:bg-slate-700 transition-colors text-left flex justify-between items-center">
+                                <span>Scale Recognition</span>
+                                <span className="text-slate-500">Intermediate</span>
+                            </button>
+                            <button onClick={() => startChallenge('chords')} className="glass-panel p-6 rounded-xl hover:bg-slate-700 transition-colors text-left flex justify-between items-center">
+                                <span>Chord Qualities</span>
+                                <span className="text-slate-500">Advanced</span>
+                            </button>
+                        </div>
+                    ) : (
+                        <div className={`glass-panel p-10 rounded-3xl text-center space-y-8 border-t-4 ${feedback?.status === 'correct' ? 'border-emerald-500 correct-flash' : feedback?.status === 'wrong' ? 'border-red-500 wrong-flash' : 'border-blue-500'}`}>
+                            <div className="space-y-2">
+                                <h3 className="text-sm uppercase tracking-widest text-slate-400">Identify the {currentChallenge.type}</h3>
+                                <button 
+                                    onClick={() => {
+                                        if (currentChallenge.type === 'note') playNote(currentChallenge.answer + currentChallenge.octave);
+                                        else if (currentChallenge.type === 'scale') {
+                                            const rootIdx = NOTES.indexOf(currentChallenge.root);
+                                            playChallengeSequence(SCALES[currentChallenge.answer].map(interval => NOTES[(rootIdx + interval) % 12] + (rootIdx + interval >= 12 ? 5 : 4)));
+                                        } else {
+                                            const rootIdx = NOTES.indexOf(currentChallenge.root);
+                                            playChallengeSequence(CHORDS[currentChallenge.answer].map(interval => NOTES[(rootIdx + interval) % 12] + (rootIdx + interval >= 12 ? 5 : 4)), true);
+                                        }
+                                    }}
+                                    className="p-4 rounded-full bg-slate-800 hover:bg-slate-700 transition-colors shadow-lg group"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-blue-400 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                </button>
+                                <p className="text-xs text-slate-500">Click play to hear again</p>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                {options.map(opt => (
+                                    <button
+                                        key={opt}
+                                        disabled={!!feedback}
+                                        onClick={() => handleAnswer(opt)}
+                                        className={`p-6 rounded-2xl font-bold text-xl transition-all ${
+                                            feedback?.status === 'correct' && opt === currentChallenge.answer ? 'bg-emerald-500 text-white shadow-emerald-500/20 shadow-xl' :
+                                            feedback?.status === 'wrong' && opt === currentChallenge.answer ? 'bg-emerald-500/50 text-white' :
+                                            feedback?.status === 'wrong' && opt !== currentChallenge.answer ? 'bg-slate-800 opacity-50' :
+                                            'bg-slate-800 hover:bg-slate-700 hover:scale-105 active:scale-95'
+                                        }`}
+                                    >
+                                        {opt}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {feedback && (
+                                <div className={`text-xl font-bold animate-bounce ${feedback.status === 'correct' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    {feedback.message}
+                                </div>
+                            )}
+                            
+                            <div className="pt-4">
+                                <button onClick={() => setMode(null)} className="text-slate-500 hover:text-white transition-colors text-sm underline underline-offset-4">
+                                    Change Exercise Mode
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+
+        // Handle Keyboard Shortcuts
+        const keyMap = {
+            'a': 'C4', 'w': 'C#4', 's': 'D4', 'e': 'D#4', 'd': 'E4', 'f': 'F4', 't': 'F#4', 'g': 'G4', 'y': 'G#4', 'h': 'A4', 'u': 'A#4', 'j': 'B4', 'k': 'C5'
+        };
+
+        window.addEventListener('keydown', (e) => {
+            if (e.repeat) return;
+            const note = keyMap[e.key];
+            if (note) {
+                synth.triggerAttack(note);
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            const note = keyMap[e.key];
+            if (note) {
+                synth.triggerRelease(note);
+            }
+        });
+    </script>
+</body>
+</html>

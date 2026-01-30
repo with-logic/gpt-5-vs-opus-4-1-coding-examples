@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Data Visualization Playground — CSV to Charts</title>
+  <meta name="description" content="Upload a CSV and instantly turn it into beautiful, customizable charts. Choose chart types, tweak colors, and export as an image — all in one page." />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+  <!-- Tailwind CSS (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff', 100: '#e0e7ff', 200: '#c7d2fe', 300: '#a5b4fc', 400: '#818cf8', 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca', 800: '#3730a3', 900: '#312e81'
+            },
+          }
+        }
+      }
+    }
+  </script>
+  <!-- Chart.js + plugins -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2"></script>
+  <!-- PapaParse for CSV -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <style>
+    :root { --panel: 255 255 255; --panel-contrast: 15 23 42; }
+    .dark:root { --panel: 15 23 42; --panel-contrast: 241 245 249; }
+    .glass {
+      background: color-mix(in oklab, rgb(var(--panel) / 1) 75%, transparent);
+      backdrop-filter: saturate(1.2) blur(8px);
+      -webkit-backdrop-filter: saturate(1.2) blur(8px);
+    }
+    .dropzone {
+      border: 1.5px dashed rgba(99,102,241,.5);
+      transition: all .2s ease;
+    }
+    .dropzone.dragover { border-color: #22d3ee; background: rgba(34,211,238,.08); }
+    .scroll-shadow {
+      mask-image: linear-gradient(to bottom, transparent, black 20px, black calc(100% - 20px), transparent);
+    }
+  </style>
+</head>
+<body class="h-full bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100">
+  <div id="app" class="min-h-screen flex flex-col">
+    <!-- Header -->
+    <header class="sticky top-0 z-30 border-b border-slate-200/60 dark:border-slate-700/60 bg-white/70 dark:bg-slate-900/60 glass">
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div class="flex items-center justify-between py-3 gap-3">
+          <div class="flex items-center gap-3">
+            <div class="h-9 w-9 grid place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-cyan-400 text-white shadow-lg shadow-brand-500/20">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 3v18h18"/><path d="M7 15l4-5 3 4 4-6"/></svg>
+            </div>
+            <div>
+              <h1 class="text-lg sm:text-xl font-semibold tracking-tight">Data Visualization Playground</h1>
+              <p class="text-xs text-slate-600 dark:text-slate-300">Upload CSV → configure → chart → save as image</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="sampleBtn" class="hidden sm:inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm shadow-sm">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="opacity-90"><path d="M12 5v14M5 12h14"/></svg>
+              Sample CSV
+            </button>
+            <button id="themeToggle" class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 hover:bg-black text-white dark:bg-slate-100 dark:text-slate-900 text-sm shadow-sm" aria-label="Toggle theme">
+              <svg id="sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="hidden dark:inline"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2m10-10h-2M4 12H2m15.5-7.5L16 6m-8 12-1.5 1.5m0-15L8 6m8 12 1.5 1.5"/></svg>
+              <svg id="moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="dark:hidden"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              Theme
+            </button>
+            <button id="downloadBtn" class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm shadow-sm disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M21 21H3"/></svg>
+              Download PNG
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main -->
+    <main class="mx-auto max-w-7xl w-full grow px-4 sm:px-6 lg:px-8 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <!-- Left Panel -->
+      <aside class="lg:col-span-4 xl:col-span-3">
+        <div class="glass rounded-2xl border border-slate-200/70 dark:border-slate-700/70 p-4 space-y-5">
+          <!-- Upload -->
+          <section>
+            <h2 class="text-sm font-semibold tracking-wide uppercase text-slate-500 dark:text-slate-400 mb-2">1. Upload CSV</h2>
+            <label for="fileInput" id="dropzone" class="dropzone rounded-xl p-4 grid place-items-center text-center cursor-pointer bg-white/70 dark:bg-slate-800/40">
+              <div class="flex flex-col items-center gap-2">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" class="text-brand-600"><path d="M12 13V3m0 10 4-4m-4 4-4-4"/><path d="M20 21H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3l2-3h6l2 3h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2z"/></svg>
+                <div>
+                  <p class="font-medium">Click to choose a CSV</p>
+                  <p class="text-xs text-slate-500">or drag & drop here</p>
+                </div>
+              </div>
+              <input id="fileInput" type="file" accept=".csv,text/csv" class="sr-only" />
+            </label>
+            <div class="mt-2 flex items-center justify-between gap-3">
+              <label class="inline-flex items-center gap-2 text-xs select-none"><input id="headerRow" type="checkbox" class="rounded border-slate-300 text-brand-600 focus:ring-brand-500" checked>First row is headers</label>
+              <button id="clearBtn" class="text-xs text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white">Reset</button>
+            </div>
+          </section>
+
+          <!-- Mapping -->
+          <section>
+            <h2 class="text-sm font-semibold tracking-wide uppercase text-slate-500 dark:text-slate-400 mb-2">2. Configure</h2>
+            <div class="space-y-3">
+              <div>
+                <label class="text-xs text-slate-500">Chart Type</label>
+                <select id="chartType" class="mt-1 w-full rounded-lg border-slate-300 bg-white/70 dark:bg-slate-800/40 text-sm focus:ring-brand-500 focus:border-brand-500">
+                  <option value="line">Line</option>
+                  <option value="bar">Bar</option>
+                  <option value="scatter">Scatter</option>
+                  <option value="pie">Pie</option>
+                  <option value="doughnut">Doughnut</option>
+                  <option value="radar">Radar</option>
+                  <option value="polarArea">Polar Area</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs text-slate-500">X Column</label>
+                <select id="xColumn" class="mt-1 w-full rounded-lg border-slate-300 bg-white/70 dark:bg-slate-800/40 text-sm focus:ring-brand-500 focus:border-brand-500"></select>
+                <div class="mt-1 flex items-center justify-between">
+                  <label class="inline-flex items-center gap-2 text-xs select-none"><input id="parseTime" type="checkbox" class="rounded border-slate-300 text-brand-600 focus:ring-brand-500">Treat X as date/time</label>
+                  <label class="inline-flex items-center gap-2 text-xs select-none"><input id="aggregate" type="checkbox" class="rounded border-slate-300 text-brand-600 focus:ring-brand-500">Aggregate duplicate X</label>
+                </div>
+              </div>
+              <div>
+                <label class="text-xs text-slate-500">Y Columns</label>
+                <div id="yColumns" class="mt-1 grid gap-2 max-h-40 overflow-auto pr-1 scroll-shadow"></div>
+                <div class="mt-1 flex items-center justify-between">
+                  <label class="text-xs text-slate-500">Aggregation</label>
+                  <select id="aggFunc" class="rounded-lg border-slate-300 bg-white/70 dark:bg-slate-800/40 text-xs focus:ring-brand-500 focus:border-brand-500">
+                    <option value="sum">Sum</option>
+                    <option value="avg">Average</option>
+                    <option value="count">Count</option>
+                    <option value="min">Min</option>
+                    <option value="max">Max</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Visuals -->
+          <section>
+            <h2 class="text-sm font-semibold tracking-wide uppercase text-slate-500 dark:text-slate-400 mb-2">3. Visual Options</h2>
+            <div class="space-y-3">
+              <div class="grid grid-cols-2 gap-3">
+                <label class="inline-flex items-center gap-2 text-xs select-none"><input id="showPoints" type="checkbox" class="rounded border-slate-300 text-brand-600 focus:ring-brand-500" checked>Points</label>
+                <label class="inline-flex items-center gap-2 text-xs select-none"><input id="fillArea" type="checkbox" class="rounded border-slate-300 text-brand-600 focus:ring-brand-500">Fill</label>
+                <label class="inline-flex items-center gap-2 text-xs select-none"><input id="stacked" type="checkbox" class="rounded border-slate-300 text-brand-600 focus:ring-brand-500">Stacked</label>
+                <label class="inline-flex items-center gap-2 text-xs select-none"><input id="smooth" type="checkbox" class="rounded border-slate-300 text-brand-600 focus:ring-brand-500" checked>Smooth</label>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="text-xs text-slate-500">Palette</label>
+                  <select id="palette" class="mt-1 w-full rounded-lg border-slate-300 bg-white/70 dark:bg-slate-800/40 text-xs focus:ring-brand-500 focus:border-brand-500">
+                    <option value="vibrant">Vibrant</option>
+                    <option value="pastel">Pastel</option>
+                    <option value="earth">Earth</option>
+                    <option value="ocean">Ocean</option>
+                    <option value="mono">Monochrome</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="text-xs text-slate-500">Background</label>
+                  <input id="bgColor" type="color" value="#ffffff" class="mt-1 w-full h-9 rounded-lg border-slate-300 bg-white/70 dark:bg-slate-800/40">
+                </div>
+              </div>
+              <div>
+                <label class="text-xs text-slate-500">Dataset Colors</label>
+                <div id="colorPickers" class="mt-1 grid gap-2"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Actions -->
+          <section>
+            <div class="flex flex-wrap items-center gap-2 pt-1">
+              <button id="renderBtn" class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm shadow-sm disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                Render Chart
+              </button>
+              <button id="resetZoomBtn" class="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-800 dark:bg-slate-700 dark:text-slate-100 dark:hover:bg-slate-600 text-sm shadow-sm" disabled>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 3h7v7H3zM14 14h7v7h-7zM3 14l7 7M21 3l-7 7"/></svg>
+                Reset Zoom
+              </button>
+            </div>
+          </section>
+
+          <!-- Preview (small) -->
+          <section>
+            <h2 class="text-sm font-semibold tracking-wide uppercase text-slate-500 dark:text-slate-400 mb-2">Data Preview</h2>
+            <div class="rounded-xl border border-slate-200/70 dark:border-slate-700/70 overflow-hidden">
+              <div class="max-h-48 overflow-auto scroll-shadow">
+                <table id="previewTable" class="min-w-full text-xs">
+                  <thead class="bg-slate-100/60 dark:bg-slate-800/60 sticky top-0">
+                    <tr id="previewHead"></tr>
+                  </thead>
+                  <tbody id="previewBody" class="divide-y divide-slate-200/60 dark:divide-slate-700/60"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </div>
+      </aside>
+
+      <!-- Chart Area -->
+      <section class="lg:col-span-8 xl:col-span-9">
+        <div class="relative grid gap-4">
+          <div class="rounded-2xl glass border border-slate-200/70 dark:border-slate-700/70 p-3 sm:p-4">
+            <div class="flex items-center justify-between px-1 pb-2">
+              <div>
+                <h2 class="text-sm font-semibold">Chart</h2>
+                <p id="chartSubtitle" class="text-xs text-slate-500 dark:text-slate-400">Load a CSV to begin.</p>
+              </div>
+              <div class="hidden sm:flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-500"></span>Legend toggle</span>
+                <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-cyan-400"></span>Pan/Zoom: wheel/drag</span>
+              </div>
+            </div>
+            <div class="relative bg-white dark:bg-slate-800 rounded-xl border border-slate-200/60 dark:border-slate-700/60 overflow-hidden">
+              <canvas id="chartCanvas" class="w-full aspect-[16/9]"></canvas>
+              <div id="emptyState" class="absolute inset-0 grid place-items-center pointer-events-none select-none">
+                <div class="text-center text-slate-500 dark:text-slate-400">
+                  <svg class="mx-auto mb-2" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 4 4-6"/></svg>
+                  <p>Waiting for data…</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-2xl glass border border-slate-200/70 dark:border-slate-700/70 p-4">
+            <h3 class="text-sm font-semibold mb-2">Tips</h3>
+            <ul class="text-sm text-slate-600 dark:text-slate-300 list-disc pl-5 space-y-1">
+              <li>Click legend items to toggle series visibility.</li>
+              <li>Use mouse wheel or drag to zoom/pan; Reset with “Reset Zoom”.</li>
+              <li>For pie/doughnut/polar charts, select one numeric Y and a label X.</li>
+              <li>Enable “Aggregate duplicate X” to group repeating categories or timestamps.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="mx-auto max-w-7xl w-full px-4 sm:px-6 lg:px-8 pb-8 pt-2 text-xs text-slate-500 dark:text-slate-400">
+      Built with Chart.js + PapaParse. No data leaves your browser.
+    </footer>
+  </div>
+
+  <script>
+    // --- Theme: honor system preference, allow toggle ---
+    const root = document.documentElement;
+    const themeToggle = document.getElementById('themeToggle');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
+    function applyTheme(dark) {
+      root.classList.toggle('dark', dark);
+      document.getElementById('bgColor').value = dark ? '#0f172a' : '#ffffff';
+    }
+    // Initialize theme from localStorage or system
+    const savedTheme = localStorage.getItem('dvp-theme');
+    applyTheme(savedTheme ? savedTheme === 'dark' : prefersDark.matches);
+    themeToggle.addEventListener('click', () => {
+      const isDark = !root.classList.contains('dark');
+      applyTheme(isDark);
+      localStorage.setItem('dvp-theme', isDark ? 'dark' : 'light');
+    });
+
+    // --- State ---
+    let state = {
+      rows: [],
+      headers: [],
+      headerRow: true,
+      xKey: null,
+      yKeys: [],
+      colors: {},
+      chart: null,
+      meta: { filename: null }
+    };
+
+    // --- Elements ---
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const headerRowEl = document.getElementById('headerRow');
+    const clearBtn = document.getElementById('clearBtn');
+    const sampleBtn = document.getElementById('sampleBtn');
+
+    const chartTypeEl = document.getElementById('chartType');
+    const xColumnEl = document.getElementById('xColumn');
+    const yColumnsEl = document.getElementById('yColumns');
+    const parseTimeEl = document.getElementById('parseTime');
+    const aggregateEl = document.getElementById('aggregate');
+    const aggFuncEl = document.getElementById('aggFunc');
+
+    const showPointsEl = document.getElementById('showPoints');
+    const fillAreaEl = document.getElementById('fillArea');
+    const stackedEl = document.getElementById('stacked');
+    const smoothEl = document.getElementById('smooth');
+    const paletteEl = document.getElementById('palette');
+    const bgColorEl = document.getElementById('bgColor');
+    const colorPickersEl = document.getElementById('colorPickers');
+
+    const renderBtn = document.getElementById('renderBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const resetZoomBtn = document.getElementById('resetZoomBtn');
+
+    const chartCanvas = document.getElementById('chartCanvas');
+    const emptyState = document.getElementById('emptyState');
+    const chartSubtitle = document.getElementById('chartSubtitle');
+
+    const previewHead = document.getElementById('previewHead');
+    const previewBody = document.getElementById('previewBody');
+
+    // --- Palettes ---
+    const PALETTES = {
+      vibrant: ['#ef4444','#f59e0b','#10b981','#3b82f6','#8b5cf6','#ec4899','#14b8a6','#84cc16','#06b6d4','#f97316'],
+      pastel:  ['#fbb6ce','#fcd06b','#b4e0a7','#a5d8ff','#c7b9ff','#ffd6a5','#c0e8e0','#e6d5f7','#ffe3e3','#d3f8ff'],
+      earth:   ['#92400e','#b45309','#166534','#1e3a8a','#6d28d9','#064e3b','#78350f','#14532d','#0f766e','#7c3aed'],
+      ocean:   ['#0ea5e9','#06b6d4','#0891b2','#0e7490','#155e75','#1e40af','#2563eb','#38bdf8','#60a5fa','#3b82f6'],
+      mono:    ['#111827','#1f2937','#374151','#4b5563','#6b7280','#9ca3af','#d1d5db','#e5e7eb']
+    };
+    function getPalette(n) {
+      const base = PALETTES[paletteEl.value] || PALETTES.vibrant;
+      const out = [];
+      for (let i = 0; i < n; i++) out.push(base[i % base.length]);
+      return out;
+    }
+
+    // --- Helpers ---
+    function safeNumber(v) {
+      if (v == null || v === '') return null;
+      const n = typeof v === 'number' ? v : Number(String(v).replace(/[^0-9eE+\-\.]/g, ''));
+      return Number.isFinite(n) ? n : null;
+    }
+    function isDateLike(v) {
+      if (v == null || v === '') return false;
+      const t = new Date(v);
+      return !isNaN(t.getTime());
+    }
+    function aggregateValues(values, func) {
+      const nums = values.map(safeNumber).filter(v => v != null);
+      if (nums.length === 0) return null;
+      switch (func) {
+        case 'avg': return nums.reduce((a,b)=>a+b,0)/nums.length;
+        case 'min': return Math.min(...nums);
+        case 'max': return Math.max(...nums);
+        case 'count': return values.length;
+        default: return nums.reduce((a,b)=>a+b,0); // sum
+      }
+    }
+    function textColorFor(hex) {
+      try {
+        const c = hex.replace('#','');
+        const r = parseInt(c.substring(0,2),16), g = parseInt(c.substring(2,4),16), b = parseInt(c.substring(4,6),16);
+        const l = (0.2126*r + 0.7152*g + 0.0722*b);
+        return l > 160 ? '#0f172a' : '#ffffff';
+      } catch { return '#0f172a'; }
+    }
+
+    // --- UI Wiring ---
+    function enableControls(enabled) {
+      [renderBtn, downloadBtn, resetZoomBtn].forEach(el => { el.disabled = !enabled; });
+    }
+    function populateSelectors(headers) {
+      xColumnEl.innerHTML = headers.map(h=>`<option value="${h}">${h}</option>`).join('');
+      // Default x: first header that looks like date, else first header
+      const maybeDate = headers.find(h => state.rows.some(r => isDateLike(r[h])));
+      state.xKey = maybeDate || headers[0];
+      xColumnEl.value = state.xKey;
+
+      // Y columns: all numeric by default (up to 5) else all except x
+      const numericKeys = headers.filter(h => state.rows.some(r => typeof r[h] === 'number'));
+      const defaults = (numericKeys.length ? numericKeys : headers.filter(h => h!==state.xKey)).slice(0,3);
+      state.yKeys = defaults;
+
+      renderYColumns(headers);
+      renderColorPickers();
+    }
+    function renderYColumns(headers) {
+      yColumnsEl.innerHTML = headers.map(h => {
+        const checked = state.yKeys.includes(h) ? 'checked' : '';
+        return `<label class="flex items-center justify-between gap-2 px-2 py-1 rounded-lg bg-white/50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60">
+          <span class="text-xs">${h}</span>
+          <span class="inline-flex items-center gap-2">
+            <input type="color" data-key="${h}" class="h-7 w-10 rounded" value="${state.colors[h]||''}">
+            <input type="checkbox" data-key="${h}" ${checked} class="rounded border-slate-300 text-brand-600 focus:ring-brand-500">
+          </span>
+        </label>`;
+      }).join('');
+      // Bind checkboxes & color inputs
+      yColumnsEl.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const key = cb.getAttribute('data-key');
+          if (cb.checked) { if (!state.yKeys.includes(key)) state.yKeys.push(key); }
+          else { state.yKeys = state.yKeys.filter(k => k!==key); }
+          renderColorPickers();
+        });
+      });
+      yColumnsEl.querySelectorAll('input[type="color"]').forEach(ci => {
+        ci.addEventListener('input', () => { state.colors[ci.getAttribute('data-key')] = ci.value; renderColorPickers(); if (state.chart) drawChart(); });
+      });
+    }
+    function renderColorPickers() {
+      const n = state.yKeys.length || 1;
+      const palette = getPalette(n);
+      colorPickersEl.innerHTML = state.yKeys.map((k, i) => {
+        const c = state.colors[k] || palette[i];
+        return `<div class="flex items-center justify-between gap-2 px-2 py-1 rounded-lg bg-white/50 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60">
+          <span class="text-xs">${k}</span>
+          <span class="inline-flex items-center gap-2">
+            <span class="text-[10px] opacity-70">${c.toUpperCase()}</span>
+            <input type="color" data-pkey="${k}" value="${c}" class="h-7 w-10 rounded"/>
+          </span>
+        </div>`;
+      }).join('');
+      colorPickersEl.querySelectorAll('input[type="color"]').forEach(ci => {
+        ci.addEventListener('input', () => { state.colors[ci.getAttribute('data-pkey')] = ci.value; if (state.chart) drawChart(); });
+      });
+    }
+
+    // Update controls availability based on chart type
+    function applyChartTypeRules() {
+      const type = chartTypeEl.value;
+      const isPieLike = ['pie','doughnut','polarArea'].includes(type);
+      const allowMultipleY = !isPieLike;
+      // If pie-like, ensure exactly one Y
+      if (isPieLike && state.yKeys.length > 1) {
+        state.yKeys = [state.yKeys[0]];
+        renderYColumns(state.headers);
+      }
+      // Stacked only for bar/line
+      stackedEl.disabled = !['bar','line'].includes(type);
+      showPointsEl.disabled = type==='pie'||type==='doughnut'||type==='polarArea';
+      fillAreaEl.disabled = type==='pie'||type==='doughnut'||type==='polarArea';
+      parseTimeEl.disabled = ['pie','doughnut','polarArea','radar'].includes(type);
+      renderColorPickers();
+    }
+
+    // --- CSV Handling ---
+    function loadCSVFromFile(file) {
+      return new Promise((resolve, reject) => {
+        Papa.parse(file, {
+          header: headerRowEl.checked,
+          dynamicTyping: true,
+          skipEmptyLines: true,
+          complete: (res) => resolve(res),
+          error: (err) => reject(err)
+        });
+      });
+    }
+
+    function setParsedData(results, filename = 'data.csv') {
+      const rows = results.data || [];
+      // Determine headers
+      const headers = results.meta && results.meta.fields && results.meta.fields.length
+        ? results.meta.fields
+        : (rows.length ? Object.keys(rows[0]) : []);
+
+      state.rows = rows;
+      state.headers = headers;
+      state.meta.filename = filename;
+
+      populateSelectors(headers);
+      updatePreview();
+      chartSubtitle.textContent = `${filename} · ${rows.length} rows`;
+      emptyState.classList.toggle('hidden', rows.length > 0);
+      renderBtn.disabled = rows.length === 0;
+    }
+
+    function updatePreview() {
+      const headers = state.headers;
+      previewHead.innerHTML = headers.map(h=>`<th class="text-left font-medium px-3 py-2">${h}</th>`).join('');
+      previewBody.innerHTML = '';
+      const firstRows = state.rows.slice(0, 8);
+      firstRows.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.className = 'odd:bg-slate-50/60 dark:odd:bg-slate-800/40';
+        tr.innerHTML = headers.map(h=>`<td class="px-3 py-1.5 whitespace-nowrap">${r[h] ?? ''}</td>`).join('');
+        previewBody.appendChild(tr);
+      });
+    }
+
+    // Drag & drop
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', async (e) => {
+      e.preventDefault(); dropzone.classList.remove('dragover');
+      const file = e.dataTransfer.files?.[0]; if (!file) return;
+      const res = await loadCSVFromFile(file); setParsedData(res, file.name);
+    });
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files?.[0]; if (!file) return;
+      const res = await loadCSVFromFile(file); setParsedData(res, file.name);
+    });
+    headerRowEl.addEventListener('change', () => {
+      // Reparse last file if available
+      if (state.meta.filename && state.meta.filename !== 'SAMPLE.csv' && fileInput.files?.[0]) {
+        loadCSVFromFile(fileInput.files[0]).then(res => setParsedData(res, fileInput.files[0].name));
+      }
+    });
+    clearBtn.addEventListener('click', () => {
+      state = { rows: [], headers: [], headerRow: true, xKey: null, yKeys: [], colors: {}, chart: state.chart, meta: { filename: null } };
+      xColumnEl.innerHTML = yColumnsEl.innerHTML = colorPickersEl.innerHTML = '';
+      previewHead.innerHTML = previewBody.innerHTML = '';
+      chartSubtitle.textContent = 'Load a CSV to begin.';
+      emptyState.classList.remove('hidden');
+      renderBtn.disabled = true; enableControls(false);
+      if (state.chart) { state.chart.destroy(); state.chart = null; }
+    });
+
+    // --- Sample CSV ---
+    const SAMPLE = `Date,Revenue,Expenses,Customers\n2025-01-01,1200,800,42\n2025-01-08,1350,820,46\n2025-01-15,1280,790,45\n2025-01-22,1600,920,50\n2025-02-01,2000,1100,58\n2025-02-08,1850,1020,55\n2025-02-15,2100,1150,60\n2025-02-22,1950,1080,57\n2025-03-01,2200,1200,62\n2025-03-08,2400,1300,65\n2025-03-15,2300,1250,63\n2025-03-22,2600,1400,68\n`;
+    sampleBtn.addEventListener('click', () => {
+      const res = Papa.parse(SAMPLE, { header: true, dynamicTyping: true, skipEmptyLines: true });
+      setParsedData(res, 'SAMPLE.csv');
+      parseTimeEl.checked = true; // Example sample uses dates
+    });
+
+    // --- Control bindings ---
+    chartTypeEl.addEventListener('change', () => { applyChartTypeRules(); if (state.chart) drawChart(); });
+    xColumnEl.addEventListener('change', () => { state.xKey = xColumnEl.value; if (state.chart) drawChart(); });
+    parseTimeEl.addEventListener('change', () => { if (state.chart) drawChart(); });
+    aggregateEl.addEventListener('change', () => { if (state.chart) drawChart(); });
+    aggFuncEl.addEventListener('change', () => { if (state.chart) drawChart(); });
+    [showPointsEl, fillAreaEl, stackedEl, smoothEl, paletteEl, bgColorEl].forEach(el => el.addEventListener('change', () => { renderColorPickers(); if (state.chart) drawChart(); }));
+
+    renderBtn.addEventListener('click', drawChart);
+
+    downloadBtn.addEventListener('click', () => {
+      if (!state.chart) return;
+      const link = document.createElement('a');
+      link.download = `${(state.meta.filename||'chart').replace(/\.[^/.]+$/, '')}-${chartTypeEl.value}.png`;
+      link.href = state.chart.toBase64Image('image/png', 1);
+      link.click();
+    });
+
+    resetZoomBtn.addEventListener('click', () => {
+      if (state.chart) state.chart.resetZoom();
+    });
+
+    // --- Chart Building ---
+    function buildDatasets(type, rows, xKey, yKeys, parseTime, aggregate, aggFunc) {
+      const n = Math.max(yKeys.length, 1);
+      const palette = getPalette(n);
+      const isPieLike = ['pie','doughnut','polarArea'].includes(type);
+      const needAggregate = aggregate || isPieLike;
+      const isTime = !['radar','pie','doughnut','polarArea','scatter'].includes(type) && (parseTime && rows.some(r => isDateLike(r[xKey])));
+
+      const canon = (v, time) => time ? new Date(v).getTime() : String(v);
+      const toLabel = (k, time) => time ? new Date(Number(k)) : String(k);
+
+      // PIE/DOUGHNUT/POLAR: one numeric Y, labels from X (aggregated)
+      if (isPieLike) {
+        const y = yKeys[0];
+        const grouped = new Map();
+        for (const r of rows) {
+          const k = String(r[xKey]);
+          const g = grouped.get(k) || []; g.push(r); grouped.set(k, g);
+        }
+        const entries = [];
+        for (const [k, list] of grouped.entries()) {
+          const val = aggregateValues(list.map(r => r[y]), aggFunc);
+          if (val != null) entries.push([k, val]);
+        }
+        entries.sort((a,b) => b[1]-a[1]);
+        const colors = entries.map((_, i) => state.colors[y] || getPalette(entries.length)[i]);
+        return {
+          type,
+          data: {
+            labels: entries.map(e => String(e[0])),
+            datasets: [{
+              label: y,
+              data: entries.map(e => e[1]),
+              backgroundColor: colors,
+              borderColor: colors,
+              borderWidth: 1
+            }]
+          }
+        };
+      }
+
+      // RADAR: categories from unique X; each Y aggregated per category
+      if (type === 'radar') {
+        const grouped = new Map();
+        for (const r of rows) {
+          const k = String(r[xKey]);
+          const g = grouped.get(k) || []; g.push(r); grouped.set(k, g);
+        }
+        const labels = Array.from(grouped.keys());
+        const datasets = [];
+        for (let i = 0; i < yKeys.length; i++) {
+          const y = yKeys[i];
+          const color = state.colors[y] || palette[i];
+          const data = labels.map(lbl => aggregateValues((grouped.get(lbl)||[]).map(r => r[y]), aggFunc));
+          datasets.push({
+            label: y,
+            data,
+            borderColor: color,
+            backgroundColor: hexToRgba(color, 0.2),
+            pointRadius: showPointsEl.checked ? 3 : 0,
+            tension: smoothEl.checked ? 0.35 : 0
+          });
+        }
+        return { type, data: { labels, datasets } };
+      }
+
+      // SCATTER: numeric or time X
+      if (type === 'scatter') {
+        const isTimeX = parseTime && rows.some(r => isDateLike(r[xKey]));
+        const datasets = [];
+        for (let i = 0; i < yKeys.length; i++) {
+          const y = yKeys[i];
+          const color = state.colors[y] || palette[i];
+          const points = rows.map(r => ({
+            x: isTimeX ? (isDateLike(r[xKey]) ? new Date(r[xKey]) : null) : safeNumber(r[xKey]),
+            y: safeNumber(r[y])
+          })).filter(p => p.x != null && p.y != null);
+          datasets.push({
+            label: y,
+            data: points,
+            showLine: false,
+            borderColor: color,
+            backgroundColor: hexToRgba(color, 0.4),
+            pointRadius: showPointsEl.checked ? 3 : 0
+          });
+        }
+        return { type: 'scatter', data: { datasets }, isTime: isTimeX };
+      }
+
+      // LINE/BAR
+      const datasets = [];
+      if (needAggregate) {
+        const grouped = new Map();
+        for (const r of rows) {
+          const k = canon(r[xKey], isTime);
+          const g = grouped.get(k) || []; g.push(r); grouped.set(k, g);
+        }
+        let xKeys = Array.from(grouped.keys());
+        if (isTime) xKeys.sort((a,b)=>a-b);
+        for (let i = 0; i < yKeys.length; i++) {
+          const y = yKeys[i];
+          const color = state.colors[y] || palette[i];
+          const data = xKeys.map(k => aggregateValues((grouped.get(k)||[]).map(r => r[y]), aggFunc));
+          datasets.push({
+            label: y,
+            data,
+            borderColor: color,
+            backgroundColor: hexToRgba(color, fillAreaEl.checked ? 0.25 : 0.08),
+            tension: smoothEl.checked ? 0.35 : 0,
+            pointRadius: showPointsEl.checked ? 3 : 0,
+            borderWidth: 2,
+            fill: fillAreaEl.checked
+          });
+        }
+        const labels = xKeys.map(k => toLabel(k, isTime));
+        return { type, data: { labels, datasets }, isTime };
+      } else {
+        const xKeys = rows.map(r => canon(r[xKey], isTime));
+        for (let i = 0; i < yKeys.length; i++) {
+          const y = yKeys[i];
+          const color = state.colors[y] || palette[i];
+          const data = rows.map(r => safeNumber(r[y]));
+          datasets.push({
+            label: y,
+            data,
+            borderColor: color,
+            backgroundColor: hexToRgba(color, fillAreaEl.checked ? 0.25 : 0.08),
+            tension: smoothEl.checked ? 0.35 : 0,
+            pointRadius: showPointsEl.checked ? 3 : 0,
+            borderWidth: 2,
+            fill: fillAreaEl.checked
+          });
+        }
+        const labels = xKeys.map(k => toLabel(k, isTime));
+        return { type, data: { labels, datasets }, isTime };
+      }
+    }
+
+    function hexToRgba(hex, alpha=1) {
+      const c = hex.replace('#','');
+      const r = parseInt(c.substring(0,2),16), g = parseInt(c.substring(2,4),16), b = parseInt(c.substring(4,6),16);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    function drawChart() {
+      if (!state.rows.length || !state.yKeys.length || !state.xKey) return;
+      const type = chartTypeEl.value;
+      const xKey = xColumnEl.value;
+      state.xKey = xKey;
+      const yKeys = state.yKeys.slice();
+      const parseTime = !!parseTimeEl.checked;
+      const aggregate = !!aggregateEl.checked;
+      const aggFunc = aggFuncEl.value;
+
+      const spec = buildDatasets(type, state.rows, xKey, yKeys, parseTime, aggregate, aggFunc);
+
+      // Destroy existing chart to avoid memory leaks
+      if (state.chart) { state.chart.destroy(); state.chart = null; }
+
+      const ctx = chartCanvas.getContext('2d');
+      const bgcolor = bgColorEl.value || (root.classList.contains('dark') ? '#0f172a' : '#ffffff');
+
+      const commonOptions = {
+        responsive: true,
+        maintainAspectRatio: true,
+        animation: { duration: 450 },
+        plugins: {
+          legend: { position: 'top', labels: { color: getTickColor() } },
+          title: { display: false },
+          tooltip: { mode: 'nearest', intersect: false },
+          canvasBG: { color: bgcolor },
+          zoom: {
+            pan: { enabled: true, mode: 'xy' },
+            zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'xy' }
+          }
+        },
+        scales: {}
+      };
+
+      if (type === 'radar') {
+        commonOptions.scales = {
+          r: {
+            angleLines: { color: getGridColor() },
+            grid: { color: getGridColor() },
+            pointLabels: { color: getTickColor() },
+            ticks: { color: getTickColor() }
+          }
+        };
+      } else if (!['pie','doughnut','polarArea'].includes(type)) {
+        if (type === 'scatter') {
+          commonOptions.scales = {
+            x: { type: spec.isTime ? 'time' : 'linear', grid: { color: getGridColor() }, ticks: { color: getTickColor() } },
+            y: { grid: { color: getGridColor() }, ticks: { color: getTickColor() } }
+          };
+        } else {
+          commonOptions.scales = {
+            x: {
+              type: spec.isTime ? 'time' : 'category',
+              stacked: stackedEl.checked,
+              grid: { color: getGridColor() },
+              ticks: { color: getTickColor(), maxRotation: 30, autoSkip: true }
+            },
+            y: {
+              stacked: stackedEl.checked,
+              grid: { color: getGridColor() },
+              ticks: { color: getTickColor() }
+            }
+          };
+        }
+      }
+
+      // Register plugins: zoom + background fill
+      try {
+        const zoomGlobal = window.zoomPlugin || window.ChartZoom || window['chartjs-plugin-zoom'];
+        if (zoomGlobal && !Chart.registry.plugins.get('zoom')) Chart.register(zoomGlobal);
+      } catch {}
+      if (!Chart.registry.plugins.get('canvasBG')) {
+        Chart.register({
+          id: 'canvasBG',
+          beforeDraw(chart, args, opts) {
+            if (!opts || !opts.color) return;
+            const {ctx, canvas} = chart;
+            ctx.save();
+            ctx.globalCompositeOperation = 'destination-over';
+            ctx.fillStyle = opts.color;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.restore();
+          }
+        });
+      }
+
+      state.chart = new Chart(ctx, {
+        type: spec.type,
+        data: spec.data,
+        options: commonOptions
+      });
+
+      enableControls(true);
+    }
+
+    function getTickColor() { return root.classList.contains('dark') ? '#cbd5e1' : '#334155'; }
+    function getGridColor() { return root.classList.contains('dark') ? 'rgba(148,163,184,0.2)' : 'rgba(2,6,23,0.06)'; }
+
+    // Initial state
+    applyChartTypeRules();
+  </script>
+  
+</body>
+</html>

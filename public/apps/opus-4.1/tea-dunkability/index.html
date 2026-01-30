@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tea Dunkability Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;500;600&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+
+        h1 {
+            font-family: 'Playfair Display', serif;
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+        }
+
+        .dark .glass-card {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .teacup-container {
+            perspective: 1000px;
+        }
+
+        .teacup {
+            animation: float 4s ease-in-out infinite;
+            transform-style: preserve-3d;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0) rotateX(5deg); }
+            50% { transform: translateY(-10px) rotateX(5deg); }
+        }
+
+        .steam {
+            animation: steam 3s ease-in-out infinite;
+            opacity: 0.6;
+        }
+
+        @keyframes steam {
+            0% { transform: translateY(0) scaleX(1); opacity: 0.6; }
+            50% { transform: translateY(-30px) scaleX(1.2); opacity: 0.3; }
+            100% { transform: translateY(-60px) scaleX(1.5); opacity: 0; }
+        }
+
+        .crumb {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: #8B4513;
+            border-radius: 50%;
+            animation: fall 1.5s ease-in forwards;
+            pointer-events: none;
+        }
+
+        @keyframes fall {
+            0% {
+                transform: translateY(0) rotate(0deg);
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(200px) rotate(720deg);
+                opacity: 0;
+            }
+        }
+
+        .slider-track {
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            height: 6px;
+            border-radius: 3px;
+            position: relative;
+        }
+
+        .slider-thumb {
+            width: 20px;
+            height: 20px;
+            background: white;
+            border: 3px solid #3b82f6;
+            border-radius: 50%;
+            cursor: grab;
+            transition: transform 0.2s;
+        }
+
+        .slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        .slider-thumb:active {
+            cursor: grabbing;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: transparent;
+            cursor: pointer;
+        }
+
+        input[type="range"]::-webkit-slider-track {
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            height: 6px;
+            border-radius: 3px;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border: 3px solid #3b82f6;
+            border-radius: 50%;
+            cursor: grab;
+            margin-top: -7px;
+            transition: transform 0.2s;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        .integrity-bar {
+            transition: width 0.5s ease, background-color 0.5s ease;
+        }
+
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .graph-line {
+            stroke-dasharray: 1000;
+            stroke-dashoffset: 1000;
+            animation: draw 2s ease forwards;
+        }
+
+        @keyframes draw {
+            to {
+                stroke-dashoffset: 0;
+            }
+        }
+
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 1000;
+        }
+
+        .tooltip.show {
+            opacity: 1;
+        }
+
+        .biscuit-icon {
+            transition: transform 0.3s ease;
+        }
+
+        .biscuit-icon:hover {
+            transform: scale(1.1) rotate(5deg);
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-amber-50 to-orange-100 min-h-screen transition-all duration-300">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        const BISCUIT_TYPES = {
+            'Digestive': { strength: 75, color: '#D2691E', icon: '🍪' },
+            'Rich Tea': { strength: 45, color: '#F4A460', icon: '🍘' },
+            'Hobnob': { strength: 90, color: '#8B4513', icon: '🟫' },
+            'Ginger Nut': { strength: 95, color: '#A0522D', icon: '🟠' },
+            'Custard Cream': { strength: 30, color: '#FFDEAD', icon: '🥮' },
+            'Bourbon': { strength: 60, color: '#654321', icon: '🍫' }
+        };
+
+        function App() {
+            const [isDark, setIsDark] = useState(false);
+            const [teaTemp, setTeaTemp] = useState(75);
+            const [dunkTime, setDunkTime] = useState(2);
+            const [biscuitType, setBiscuitType] = useState('Digestive');
+            const [integrity, setIntegrity] = useState(100);
+            const [isDunking, setIsDunking] = useState(false);
+            const [crumbs, setCrumbs] = useState([]);
+            const [graphData, setGraphData] = useState([]);
+            const [showTooltip, setShowTooltip] = useState(false);
+            const [tooltipText, setTooltipText] = useState('');
+            const crumbIdRef = useRef(0);
+            const containerRef = useRef(null);
+
+            useEffect(() => {
+                const calculateIntegrity = () => {
+                    const baseStrength = BISCUIT_TYPES[biscuitType].strength;
+                    const tempFactor = teaTemp / 100;
+                    const timeFactor = Math.max(0, 1 - (dunkTime / 10));
+                    const newIntegrity = Math.max(0, Math.min(100,
+                        baseStrength * timeFactor - (tempFactor * dunkTime * 10)
+                    ));
+                    setIntegrity(Math.round(newIntegrity));
+
+                    // Update graph data
+                    setGraphData(prev => {
+                        const newData = [...prev, { time: Date.now(), integrity: newIntegrity }];
+                        return newData.slice(-20); // Keep last 20 points
+                    });
+                };
+
+                calculateIntegrity();
+            }, [teaTemp, dunkTime, biscuitType]);
+
+            useEffect(() => {
+                if (integrity < 30 && isDunking) {
+                    generateCrumbs();
+                }
+            }, [integrity, isDunking]);
+
+            const generateCrumbs = () => {
+                const newCrumbs = [];
+                for (let i = 0; i < 10; i++) {
+                    newCrumbs.push({
+                        id: crumbIdRef.current++,
+                        left: Math.random() * 100,
+                        delay: Math.random() * 500
+                    });
+                }
+                setCrumbs(prev => [...prev, ...newCrumbs]);
+                setTimeout(() => {
+                    setCrumbs(prev => prev.slice(10));
+                }, 1500);
+            };
+
+            const handleDunk = () => {
+                setIsDunking(true);
+                setTimeout(() => setIsDunking(false), 1000);
+            };
+
+            // Keyboard shortcuts
+            useEffect(() => {
+                const handleKeyPress = (e) => {
+                    switch(e.key.toLowerCase()) {
+                        case 'd':
+                            handleDunk();
+                            break;
+                        case 'm':
+                            setIsDark(prev => !prev);
+                            break;
+                        case 'r':
+                            setTeaTemp(75);
+                            setDunkTime(2);
+                            setBiscuitType('Digestive');
+                            break;
+                        case '1':
+                        case '2':
+                        case '3':
+                        case '4':
+                        case '5':
+                        case '6':
+                            const types = Object.keys(BISCUIT_TYPES);
+                            const index = parseInt(e.key) - 1;
+                            if (index < types.length) {
+                                setBiscuitType(types[index]);
+                            }
+                            break;
+                    }
+                };
+
+                window.addEventListener('keydown', handleKeyPress);
+                return () => window.removeEventListener('keydown', handleKeyPress);
+            }, []);
+
+            const getIntegrityColor = () => {
+                if (integrity > 70) return 'text-green-500';
+                if (integrity > 40) return 'text-yellow-500';
+                return 'text-red-500';
+            };
+
+            const getIntegrityBarColor = () => {
+                if (integrity > 70) return 'bg-green-500';
+                if (integrity > 40) return 'bg-yellow-500';
+                return 'bg-red-500';
+            };
+
+            useEffect(() => {
+                if (isDark) {
+                    document.body.classList.add('dark', 'bg-gradient-to-br', 'from-gray-900', 'to-gray-800');
+                    document.body.classList.remove('from-amber-50', 'to-orange-100');
+                } else {
+                    document.body.classList.remove('dark', 'from-gray-900', 'to-gray-800');
+                    document.body.classList.add('from-amber-50', 'to-orange-100');
+                }
+            }, [isDark]);
+
+            return (
+                <div className={`min-h-screen p-8 ${isDark ? 'text-white' : 'text-gray-800'}`} ref={containerRef}>
+                    {/* Header */}
+                    <header className="max-w-7xl mx-auto mb-8">
+                        <div className="flex justify-between items-center">
+                            <h1 className="text-5xl font-bold bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">
+                                Tea Dunkability Simulator
+                            </h1>
+                            <button
+                                onClick={() => setIsDark(!isDark)}
+                                className="p-3 rounded-full glass-card hover:scale-110 transition-transform"
+                                title="Toggle dark mode (M)"
+                            >
+                                {isDark ? '☀️' : '🌙'}
+                            </button>
+                        </div>
+                    </header>
+
+                    <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        {/* Controls Panel */}
+                        <div className="glass-card rounded-2xl p-6 space-y-6">
+                            <h2 className="text-2xl font-semibold mb-4">Dunk Parameters</h2>
+
+                            {/* Tea Temperature */}
+                            <div>
+                                <label className="flex justify-between mb-2 font-medium">
+                                    <span>Tea Temperature</span>
+                                    <span className="text-orange-500">{teaTemp}°C</span>
+                                </label>
+                                <input
+                                    type="range"
+                                    min="40"
+                                    max="100"
+                                    value={teaTemp}
+                                    onChange={(e) => setTeaTemp(Number(e.target.value))}
+                                    className="w-full"
+                                />
+                                <div className="flex justify-between text-sm mt-1 opacity-60">
+                                    <span>Lukewarm</span>
+                                    <span>Scalding</span>
+                                </div>
+                            </div>
+
+                            {/* Dunk Time */}
+                            <div>
+                                <label className="flex justify-between mb-2 font-medium">
+                                    <span>Dunk Time</span>
+                                    <span className="text-blue-500">{dunkTime}s</span>
+                                </label>
+                                <input
+                                    type="range"
+                                    min="0.5"
+                                    max="10"
+                                    step="0.5"
+                                    value={dunkTime}
+                                    onChange={(e) => setDunkTime(Number(e.target.value))}
+                                    className="w-full"
+                                />
+                                <div className="flex justify-between text-sm mt-1 opacity-60">
+                                    <span>Quick Dip</span>
+                                    <span>Marathon Soak</span>
+                                </div>
+                            </div>
+
+                            {/* Biscuit Type */}
+                            <div>
+                                <label className="block mb-3 font-medium">Biscuit Type</label>
+                                <div className="grid grid-cols-3 gap-3">
+                                    {Object.entries(BISCUIT_TYPES).map(([type, info], index) => (
+                                        <button
+                                            key={type}
+                                            onClick={() => setBiscuitType(type)}
+                                            className={`p-3 rounded-lg glass-card transition-all hover:scale-105 biscuit-icon ${
+                                                biscuitType === type ? 'ring-2 ring-orange-500' : ''
+                                            }`}
+                                            title={`${type} (${index + 1})`}
+                                        >
+                                            <div className="text-2xl mb-1">{info.icon}</div>
+                                            <div className="text-xs">{type}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Structural Integrity */}
+                            <div>
+                                <label className="flex justify-between mb-2 font-medium">
+                                    <span>Structural Integrity</span>
+                                    <span className={`font-bold ${getIntegrityColor()}`}>{integrity}%</span>
+                                </label>
+                                <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                    <div
+                                        className={`h-full integrity-bar ${getIntegrityBarColor()} ${integrity < 30 ? 'pulse' : ''}`}
+                                        style={{ width: `${integrity}%` }}
+                                    />
+                                </div>
+                                <div className="text-sm mt-2 text-center opacity-60">
+                                    {integrity > 70 ? 'Rock Solid' :
+                                     integrity > 40 ? 'Getting Soggy' :
+                                     'Imminent Collapse!'}
+                                </div>
+                            </div>
+
+                            {/* Dunk Button */}
+                            <button
+                                onClick={handleDunk}
+                                className="w-full py-4 bg-gradient-to-r from-orange-500 to-amber-500 text-white font-semibold rounded-lg hover:scale-105 transition-transform shadow-lg"
+                                title="Perform dunk test (D)"
+                            >
+                                🍪 Perform Dunk Test
+                            </button>
+                        </div>
+
+                        {/* Visualization Panel */}
+                        <div className="glass-card rounded-2xl p-6">
+                            <h2 className="text-2xl font-semibold mb-4">Dunk Visualization</h2>
+
+                            {/* Teacup Animation */}
+                            <div className="teacup-container relative h-64 flex items-center justify-center mb-6">
+                                <div className={`teacup ${isDunking ? 'animate-bounce' : ''}`}>
+                                    {/* Steam */}
+                                    <div className="absolute -top-8 left-1/2 transform -translate-x-1/2">
+                                        <div className="steam w-2 h-12 bg-gradient-to-t from-gray-400 to-transparent rounded-full"></div>
+                                        <div className="steam w-2 h-12 bg-gradient-to-t from-gray-400 to-transparent rounded-full absolute left-3" style={{ animationDelay: '0.5s' }}></div>
+                                        <div className="steam w-2 h-12 bg-gradient-to-t from-gray-400 to-transparent rounded-full absolute -left-3" style={{ animationDelay: '1s' }}></div>
+                                    </div>
+
+                                    {/* Cup */}
+                                    <svg width="150" height="150" viewBox="0 0 150 150">
+                                        <defs>
+                                            <linearGradient id="teaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                                                <stop offset="0%" stopColor="#8B4513" stopOpacity="0.8"/>
+                                                <stop offset="100%" stopColor="#A0522D" stopOpacity="0.9"/>
+                                            </linearGradient>
+                                        </defs>
+                                        {/* Cup body */}
+                                        <path d="M 30 50 Q 30 120 75 120 Q 120 120 120 50 Z"
+                                              fill="white"
+                                              stroke="#D2691E"
+                                              strokeWidth="3"/>
+                                        {/* Tea */}
+                                        <path d="M 40 70 Q 40 110 75 110 Q 110 110 110 70 Z"
+                                              fill="url(#teaGradient)"/>
+                                        {/* Handle */}
+                                        <path d="M 120 70 Q 140 70 140 90 Q 140 110 120 110"
+                                              fill="none"
+                                              stroke="#D2691E"
+                                              strokeWidth="3"
+                                              strokeLinecap="round"/>
+                                        {/* Saucer */}
+                                        <ellipse cx="75" cy="130" rx="50" ry="8" fill="#F5DEB3"/>
+
+                                        {/* Biscuit when dunking */}
+                                        {isDunking && (
+                                            <rect x="65" y="60" width="20" height="25"
+                                                  fill={BISCUIT_TYPES[biscuitType].color}
+                                                  rx="3"
+                                                  className="animate-pulse"/>
+                                        )}
+                                    </svg>
+                                </div>
+
+                                {/* Crumbs */}
+                                <div className="absolute inset-0 pointer-events-none">
+                                    {crumbs.map(crumb => (
+                                        <div
+                                            key={crumb.id}
+                                            className="crumb"
+                                            style={{
+                                                left: `${crumb.left}%`,
+                                                animationDelay: `${crumb.delay}ms`
+                                            }}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Crumble-o-meter Graph */}
+                            <div>
+                                <h3 className="text-lg font-semibold mb-3">Crumble-o-meter™</h3>
+                                <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
+                                    <svg width="100%" height="150" viewBox="0 0 400 150">
+                                        <defs>
+                                            <linearGradient id="graphGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                                                <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.8"/>
+                                                <stop offset="100%" stopColor="#3b82f6" stopOpacity="0.1"/>
+                                            </linearGradient>
+                                        </defs>
+
+                                        {/* Grid lines */}
+                                        {[0, 25, 50, 75, 100].map(y => (
+                                            <line
+                                                key={y}
+                                                x1="0"
+                                                y1={150 - (y * 1.5)}
+                                                x2="400"
+                                                y2={150 - (y * 1.5)}
+                                                stroke={isDark ? '#4B5563' : '#D1D5DB'}
+                                                strokeWidth="1"
+                                                strokeDasharray="5,5"
+                                            />
+                                        ))}
+
+                                        {/* Graph line */}
+                                        {graphData.length > 1 && (
+                                            <polyline
+                                                points={graphData.map((d, i) =>
+                                                    `${(i / (graphData.length - 1)) * 380 + 10},${150 - (d.integrity * 1.5)}`
+                                                ).join(' ')}
+                                                fill="none"
+                                                stroke="#3b82f6"
+                                                strokeWidth="3"
+                                                className="graph-line"
+                                            />
+                                        )}
+
+                                        {/* Fill area */}
+                                        {graphData.length > 1 && (
+                                            <polygon
+                                                points={`10,150 ${graphData.map((d, i) =>
+                                                    `${(i / (graphData.length - 1)) * 380 + 10},${150 - (d.integrity * 1.5)}`
+                                                ).join(' ')} ${380 + 10},150`}
+                                                fill="url(#graphGradient)"
+                                                opacity="0.5"
+                                            />
+                                        )}
+
+                                        {/* Data points */}
+                                        {graphData.map((d, i) => (
+                                            <circle
+                                                key={i}
+                                                cx={(i / Math.max(1, graphData.length - 1)) * 380 + 10}
+                                                cy={150 - (d.integrity * 1.5)}
+                                                r="4"
+                                                fill="#3b82f6"
+                                                className="hover:r-6 transition-all"
+                                            />
+                                        ))}
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Keyboard Shortcuts */}
+                    <div className="max-w-7xl mx-auto mt-8 glass-card rounded-lg p-4">
+                        <h3 className="font-semibold mb-2">Keyboard Shortcuts</h3>
+                        <div className="flex flex-wrap gap-4 text-sm opacity-80">
+                            <span><kbd className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded">D</kbd> Dunk Test</span>
+                            <span><kbd className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded">M</kbd> Dark Mode</span>
+                            <span><kbd className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded">R</kbd> Reset</span>
+                            <span><kbd className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded">1-6</kbd> Select Biscuit</span>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
