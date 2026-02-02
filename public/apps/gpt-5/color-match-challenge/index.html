@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Color Match Challenge</title>
+  <meta name="description" content="Fast-paced 30s Stroop-style color matching game. Click the ink color, not the word!" />
+  <style>
+    :root {
+      --bg: #0b1020;
+      --bg-2: #0e1430;
+      --panel: #121936;
+      --text: #e7e9f3;
+      --muted: #a7b0d4;
+      --accent: #7dd3fc;
+      --ok: #22c55e;
+      --bad: #ef4444;
+      --shadow: 0 10px 30px rgba(0,0,0,.45);
+
+      /* Timer var (updated via JS) */
+      --angle: 360deg;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      color: var(--text);
+      background: radial-gradient(1200px 800px at 20% 10%, #16224b 0%, transparent 60%),
+                  radial-gradient(1200px 800px at 120% 10%, #1a2b5f 0%, transparent 60%),
+                  linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%);
+      background-attachment: fixed;
+    }
+
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px clamp(16px, 3.5vw, 40px) 56px;
+      display: grid;
+      gap: 24px;
+    }
+
+    header {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    }
+
+    .brand { display: flex; align-items: center; gap: 14px; }
+    .logo {
+      width: 40px; height: 40px; border-radius: 12px;
+      background: conic-gradient(from 220deg at 50% 50%, #7dd3fc, #a78bfa, #f472b6, #f59e0b, #34d399, #60a5fa, #7dd3fc);
+      filter: saturate(1.2) brightness(1.05);
+      box-shadow: 0 6px 16px rgba(0,0,0,.35);
+    }
+    h1 { font-size: clamp(22px, 2.6vw, 30px); margin: 0; letter-spacing: .4px; }
+
+    .panel {
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 18px; box-shadow: var(--shadow);
+    }
+
+    .statusbar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 18px; padding: 16px 18px; }
+    .cta-row { display: flex; gap: 10px; align-items: center; justify-content: flex-start; }
+    .hint { color: var(--muted); font-size: 13px; opacity: .9; }
+
+    .score {
+      display: flex; justify-content: center; align-items: center; gap: 10px;
+      font-weight: 700; font-size: 20px;
+    }
+    .score b { font-size: 26px; letter-spacing: .5px; }
+
+    .timer {
+      width: 88px; height: 88px; border-radius: 50%; position: relative;
+      background: conic-gradient(var(--accent) var(--angle), rgba(255,255,255,0.08) 0deg);
+      display: grid; place-items: center; margin: 0 auto;
+      box-shadow: 0 8px 24px rgba(125, 211, 252, 0.25);
+    }
+    .timer::before {
+      content: ""; position: absolute; inset: 6px; border-radius: 50%; background: #0f1534; border: 1px solid rgba(255,255,255,0.08);
+    }
+    .timer span { position: relative; font-weight: 800; font-variant-numeric: tabular-nums; font-size: 22px; }
+
+    .board { text-align: center; padding: 20px 24px 10px; }
+    .task { color: var(--muted); font-size: 14px; letter-spacing: .3px; margin-bottom: 10px; }
+
+    .word {
+      font-size: clamp(42px, 8.5vw, 96px);
+      font-weight: 900; letter-spacing: .5px; line-height: 1.05;
+      margin: 6px auto 6px; text-shadow: 0 8px 28px rgba(0,0,0,.35);
+      transition: transform .16s ease, filter .2s ease;
+      user-select: none;
+    }
+
+    .ui {
+      padding: 20px; display: grid; gap: 18px;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+    @media (max-width: 820px) { .ui { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+    @media (max-width: 560px) { .ui { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+    .color-btn {
+      position: relative; isolation: isolate;
+      border: 0; border-radius: 14px; padding: 16px 14px; cursor: pointer;
+      color: #0d1020; font-weight: 800; letter-spacing: .4px;
+      transform: translateZ(0);
+      box-shadow: 0 10px 20px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.25);
+      transition: transform .08s ease, box-shadow .16s ease, filter .2s;
+      outline: none;
+    }
+    .color-btn .k { position: absolute; top: 8px; right: 10px; font-size: 12px; font-weight: 900; opacity: .65; }
+    .color-btn:active { transform: translateY(2px) scale(0.98); box-shadow: 0 8px 14px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.15); }
+    .color-btn:focus-visible { outline: 3px solid rgba(255,255,255,.28); outline-offset: 2px; }
+
+    .disabled { pointer-events: none; filter: grayscale(.15) contrast(.9) brightness(.9); }
+
+    /* Shake for wrong */
+    @keyframes shake { from, to { transform: translateX(0); } 20% { transform: translateX(-6px); } 40% { transform: translateX(6px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(5px); } }
+    .shaking { animation: shake .28s linear; }
+
+    /* Correct flash */
+    .flash-ok { box-shadow: 0 0 0 0 rgba(34,197,94,.45); animation: pulse-ok .6s ease; }
+    @keyframes pulse-ok { to { box-shadow: 0 0 0 20px rgba(34,197,94,0); } }
+
+    /* Overlay */
+    .overlay {
+      position: fixed; inset: 0; display: grid; place-items: center; z-index: 20;
+      background: radial-gradient(900px 600px at 20% 0%, rgba(124,58,237,.18), transparent 60%),
+                  radial-gradient(900px 600px at 120% 0%, rgba(56,189,248,.16), transparent 60%),
+                  rgba(5, 8, 20, .72);
+      backdrop-filter: blur(6px);
+      transition: opacity .25s ease, visibility .25s ease; visibility: visible; opacity: 1;
+    }
+    .overlay.hide { opacity: 0; visibility: hidden; }
+    .card { background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02)); border: 1px solid rgba(255,255,255,.1); border-radius: 18px; padding: 20px clamp(16px, 3vw, 28px); width: min(780px, 92vw); box-shadow: var(--shadow); }
+    .card h2 { margin: 0 0 6px; font-size: clamp(22px, 3vw, 30px); }
+    .card p { margin: 8px 0; color: var(--muted); }
+    .card ul { margin: 12px 0 0; padding: 0 0 0 18px; color: var(--muted); }
+
+    .btn-primary {
+      margin-top: 16px; appearance: none; border: 0; border-radius: 12px; padding: 14px 18px; cursor: pointer; font-weight: 800; letter-spacing: .5px; color: #091022;
+      background: linear-gradient(180deg, #7dd3fc, #60a5fa);
+      box-shadow: 0 10px 24px rgba(96,165,250,.35), inset 0 1px 0 rgba(255,255,255,.6);
+      transition: transform .08s ease, filter .15s ease;
+    }
+    .btn-primary:active { transform: translateY(1px) scale(.99); }
+
+    .small { font-size: 12px; color: var(--muted); margin-left: 8px; }
+
+    /* Confetti canvas */
+    canvas#fx { position: fixed; inset: 0; pointer-events: none; z-index: 15; }
+
+    /* Reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      .color-btn, .word, .overlay, .btn-primary { transition: none; animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="fx"></canvas>
+  <div class="wrap">
+    <header>
+      <div class="brand"><div class="logo" aria-hidden="true"></div><h1>Color Match Challenge</h1></div>
+      <div class="cta-row">
+        <button id="restart" class="btn-primary" aria-label="Restart game" title="Restart (R)">Restart<span class="small">R</span></button>
+      </div>
+    </header>
+
+    <section class="panel statusbar" aria-label="Status bar">
+      <div class="score" aria-live="polite">Score: <b id="score">0</b></div>
+      <div class="timer" role="timer" aria-live="polite" aria-atomic="true"><span id="time">30</span></div>
+      <div class="score" title="Best score this device">Best: <b id="best">0</b></div>
+    </section>
+
+    <section class="panel board" aria-label="Game board">
+      <div class="task">Pick the ink color, not the word.</div>
+      <div id="word" class="word" aria-live="polite">READY?</div>
+      <div class="ui" id="ui" role="group" aria-label="Color choices">
+        <!-- Buttons injected by JS -->
+      </div>
+    </section>
+  </div>
+
+  <div id="overlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="title">
+    <div class="card">
+      <h2 id="title">Welcome to Color Match</h2>
+      <p>Match the ink color of the word, not the word itself. Score as many as you can in 30 seconds.</p>
+      <ul>
+        <li>Click a color button or press keys 1–8.</li>
+        <li>Each correct pick scores +1. No penalty for mistakes.</li>
+        <li>Tip: Stay focused — it’s a classic Stroop twist!</li>
+      </ul>
+      <button id="play" class="btn-primary">Play</button>
+      <span class="small">Space/Enter also start</span>
+    </div>
+  </div>
+
+  <script>
+    (function(){
+      const COLORS = [
+        { name: 'Red',    value: '#ef4444' },
+        { name: 'Blue',   value: '#3b82f6' },
+        { name: 'Green',  value: '#22c55e' },
+        { name: 'Yellow', value: '#eab308' },
+        { name: 'Purple', value: '#a855f7' },
+        { name: 'Orange', value: '#f97316' },
+        { name: 'Pink',   value: '#ec4899' },
+        { name: 'Teal',   value: '#14b8a6' },
+      ];
+
+      const ui   = document.getElementById('ui');
+      const word = document.getElementById('word');
+      const scoreEl = document.getElementById('score');
+      const bestEl  = document.getElementById('best');
+      const timeEl  = document.getElementById('time');
+      const timer   = document.querySelector('.timer');
+      const overlay = document.getElementById('overlay');
+      const btnPlay = document.getElementById('play');
+      const btnRestart = document.getElementById('restart');
+
+      const fxCanvas = document.getElementById('fx');
+      const ctx = fxCanvas.getContext('2d');
+      let confetti = [];
+
+      const GAME_DURATION = 30_000; // ms
+      let running = false, startTs = 0, rafId = 0, tickId = 0;
+      let score = 0, best = Number(localStorage.getItem('cmc:best')||0);
+      let currentAnswer = null; // hex
+      let acceptInput = false;
+
+      bestEl.textContent = best;
+
+      // Render color buttons with keyboard hints 1-8
+      function renderButtons(){
+        const frag = document.createDocumentFragment();
+        COLORS.forEach((c, idx) => {
+          const b = document.createElement('button');
+          b.className = 'color-btn';
+          const dark = shade(c.value, -28);
+          b.style.background = `linear-gradient(180deg, ${lighten(c.value, 14)}, ${c.value})`;
+          b.style.border = `1px solid ${dark}`;
+          b.style.boxShadow = `0 10px 20px ${hexToRgba(c.value, .28)}, inset 0 1px 0 rgba(255,255,255,.35)`;
+          b.dataset.value = normalizeHex(c.value);
+          b.setAttribute('aria-label', c.name);
+          b.innerHTML = `<span>${c.name}</span><span class="k">${idx+1}</span>`;
+          b.addEventListener('click', (ev) => {
+            if(!running || !acceptInput) return;
+            pick(b.dataset.value, ev);
+          });
+          frag.appendChild(b);
+        });
+        ui.innerHTML = '';
+        ui.appendChild(frag);
+      }
+
+      function pick(hex, ev){
+        acceptInput = false;
+        const correct = hex === currentAnswer;
+        feedback(correct, ev);
+        if(correct){ score++; scoreEl.textContent = score; }
+        setTimeout(nextRound, 220);
+      }
+
+      function feedback(ok, ev){
+        if(ok){
+          document.querySelector('.panel.board').classList.add('flash-ok');
+          burst(ev ? ev.clientX : window.innerWidth/2, ev ? ev.clientY : window.innerHeight/2);
+          setTimeout(()=>document.querySelector('.panel.board').classList.remove('flash-ok'), 300);
+        } else {
+          word.classList.add('shaking');
+          setTimeout(()=>word.classList.remove('shaking'), 260);
+        }
+      }
+
+      // New challenge
+      function nextRound(){
+        const colorIdx = (Math.random()*COLORS.length)|0;
+        const textIdx  = (Math.random()*COLORS.length)|0;
+        let ink = COLORS[colorIdx];
+        let textColor = ink.value;
+        let label = COLORS[textIdx].name;
+        // 80% of the time ensure mismatch for stronger Stroop effect
+        if(label === ink.name && Math.random() < 0.8){
+          label = COLORS[(textIdx+1)%COLORS.length].name;
+        }
+        word.style.color = textColor;
+        word.textContent = label.toUpperCase();
+        currentAnswer = normalizeHex(textColor);
+        acceptInput = true;
+      }
+
+      // Start/stop logic
+      function start(){
+        running = true; score = 0; scoreEl.textContent = '0';
+        startTs = performance.now();
+        overlay.classList.add('hide');
+        enableButtons(false);
+        nextRound();
+        tick();
+        rafId = requestAnimationFrame(loop);
+      }
+
+      function end(){
+        running = false; acceptInput = false;
+        cancelAnimationFrame(rafId);
+        clearTimeout(tickId);
+        timeEl.textContent = '0';
+        timer.style.setProperty('--angle', '0deg');
+        if(score > best){ best = score; localStorage.setItem('cmc:best', String(best)); bestEl.textContent = best; }
+        word.textContent = 'TIME\'S UP!';
+        word.style.color = '#eab308';
+        celebrate();
+        setTimeout(()=>overlay.classList.remove('hide'), 450);
+        document.getElementById('title').textContent = 'Time\'s Up!';
+        overlay.querySelector('p').innerHTML = `Final score: <b>${score}</b>. Can you beat your best of <b>${best}</b>?`;
+        btnPlay.textContent = 'Play Again';
+      }
+
+      function loop(ts){
+        const elapsed = ts - startTs;
+        const left = Math.max(0, GAME_DURATION - elapsed);
+        const angle = (left / GAME_DURATION) * 360;
+        timer.style.setProperty('--angle', angle+'deg');
+        timeEl.textContent = Math.ceil(left/1000);
+        if(left <= 0){ end(); return; }
+        rafId = requestAnimationFrame(loop);
+      }
+
+      function tick(){
+        // Minor periodic visual nudge to keep focus
+        word.style.transform = 'translateY(-1px)';
+        setTimeout(()=>{ word.style.transform = 'translateY(0)'; }, 80);
+        if(running){ tickId = setTimeout(tick, 1200); }
+      }
+
+      function restart(){
+        if(running){ cancelAnimationFrame(rafId); clearTimeout(tickId); }
+        overlay.classList.add('hide');
+        document.getElementById('title').textContent = 'Welcome to Color Match';
+        overlay.querySelector('p').textContent = 'Match the ink color of the word, not the word itself. Score as many as you can in 30 seconds.';
+        btnPlay.textContent = 'Play';
+        setTimeout(start, 120);
+      }
+
+      function enableButtons(disabled){
+        ui.classList.toggle('disabled', disabled);
+        [...ui.children].forEach(b => b.disabled = disabled);
+      }
+
+      // Utilities
+      function normalizeHex(h){
+        const c = h.trim().toLowerCase();
+        if(c.length === 4 && c[0] === '#'){
+          return '#'+c[1]+c[1]+c[2]+c[2]+c[3]+c[3];
+        }
+        return c;
+      }
+      function hexToRgba(hex, a){
+        hex = normalizeHex(hex).slice(1);
+        const r = parseInt(hex.slice(0,2),16), g=parseInt(hex.slice(2,4),16), b=parseInt(hex.slice(4,6),16);
+        return `rgba(${r},${g},${b},${a})`;
+        }
+      function clamp(n, min, max){ return Math.min(max, Math.max(min, n)); }
+      function shade(hex, amount){
+        hex = normalizeHex(hex).slice(1);
+        let r = clamp(parseInt(hex.substring(0,2), 16) + amount, 0, 255);
+        let g = clamp(parseInt(hex.substring(2,4), 16) + amount, 0, 255);
+        let b = clamp(parseInt(hex.substring(4,6), 16) + amount, 0, 255);
+        return '#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
+      }
+      function lighten(hex, pct){ return shade(hex, Math.round(255*(pct/100))); }
+
+      // Confetti FX
+      function burst(x, y){
+        // Transform to canvas space
+        const rect = fxCanvas.getBoundingClientRect();
+        const px = x - rect.left, py = y - rect.top;
+        // Generate handful of pieces
+        const count = 20;
+        for(let i=0;i<count;i++){
+          const angle = Math.random()*2*Math.PI;
+          const speed = 2 + Math.random()*4;
+          confetti.push({
+            x: px, y: py, vx: Math.cos(angle)*speed, vy: Math.sin(angle)*speed - 3,
+            size: 3 + Math.random()*4,
+            rot: Math.random()*Math.PI,
+            vr: (Math.random()-.5)*0.2,
+            color: COLORS[(Math.random()*COLORS.length)|0].value,
+            life: 600, born: performance.now()
+          });
+        }
+        if(confetti.length && !fxAnimating){ fxAnimating = true; requestAnimationFrame(fxLoop); }
+      }
+
+      let fxAnimating = false;
+      function fxLoop(now){
+        resizeCanvas();
+        ctx.clearRect(0,0,fxCanvas.width, fxCanvas.height);
+        const g = 0.16;
+        confetti = confetti.filter(p => now - p.born < p.life);
+        for(const p of confetti){
+          p.vy += g;
+          p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+          ctx.save();
+          ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+          ctx.fillStyle = p.color; ctx.globalAlpha = 1 - ((now - p.born)/p.life);
+          ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size*1.4);
+          ctx.restore();
+        }
+        if(confetti.length){ requestAnimationFrame(fxLoop); } else { fxAnimating = false; }
+      }
+      function resizeCanvas(){
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        const { width, height } = fxCanvas.getBoundingClientRect();
+        const w = Math.round(width*dpr), h = Math.round(height*dpr);
+        if(fxCanvas.width !== w || fxCanvas.height !== h){ fxCanvas.width = w; fxCanvas.height = h; ctx.setTransform(dpr,0,0,dpr,0,0); }
+      }
+      window.addEventListener('resize', resizeCanvas, { passive: true });
+      resizeCanvas();
+
+      // Celebrate at game end
+      function celebrate(){
+        const centerX = window.innerWidth/2, centerY = window.innerHeight*0.35;
+        for(let i=0;i<6;i++) setTimeout(()=>burst(centerX, centerY), i*120);
+      }
+
+      // Keyboard shortcuts
+      window.addEventListener('keydown', (e) => {
+        if(e.key === ' ' || e.key === 'Enter'){
+          if(overlay && !overlay.classList.contains('hide')) { e.preventDefault(); start(); }
+          return;
+        }
+        if((e.key === 'r' || e.key === 'R') && !running){ restart(); }
+        const idx = Number(e.key) - 1;
+        if(running && acceptInput && idx >= 0 && idx < COLORS.length){
+          const btn = ui.children[idx]; if(btn) btn.click();
+        }
+      });
+
+      // Wire controls
+      btnPlay.addEventListener('click', start);
+      btnRestart.addEventListener('click', restart);
+
+      // Init
+      renderButtons();
+    })();
+  </script>
+</body>
+</html>

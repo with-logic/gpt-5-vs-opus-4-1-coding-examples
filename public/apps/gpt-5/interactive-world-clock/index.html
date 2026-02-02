@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Interactive World Clock</title>
+    <meta name="description" content="Display current times in multiple cities with an elegant, interactive world clock. Add/remove cities, toggle 12/24h, and enjoy time-of-day colors and icons." />
+    <style>
+      /* --- Base & Theme -------------------------------------------------- */
+      :root {
+        --bg: #0b1020;
+        --panel: rgba(255, 255, 255, 0.06);
+        --panel-strong: rgba(255, 255, 255, 0.12);
+        --text: #e6ecff;
+        --muted: #b4c0e0;
+        --accent: #7aa2ff;
+        --good: #22c55e;
+        --danger: #ef4444;
+
+        /* Daypart gradients */
+        --morning-a: #fff1c1;  /* pale gold */
+        --morning-b: #ffd59e;  /* warm peach */
+        --afternoon-a: #c6e6ff; /* sky */
+        --afternoon-b: #8fc8ff; /* bright sky */
+        --evening-a: #ffd2a8;  /* sunset peach */
+        --evening-b: #f7a7c6;  /* rose */
+        --night-a: #0b1020;    /* deep navy */
+        --night-b: #1b2342;    /* slate blue */
+      }
+
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+        color: var(--text);
+        background: radial-gradient(1200px 700px at 85% -10%, #1b2c6b 0%, #0b1020 60%, #070b17 100%);
+        letter-spacing: 0.2px;
+      }
+
+      .container {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 24px 16px 48px;
+      }
+
+      /* --- Header -------------------------------------------------------- */
+      header {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 18px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .brand h1 {
+        font-size: 20px;
+        margin: 0;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+      }
+      .brand small { color: var(--muted); }
+      .logo {
+        width: 28px; height: 28px;
+        display: inline-flex; align-items: center; justify-content: center;
+        border-radius: 8px; overflow: hidden;
+        background: linear-gradient(135deg, #6ea8ff 0%, #8fd6ff 50%, #b6e3ff 100%);
+        box-shadow: 0 4px 16px rgba(111, 170, 255, 0.35), inset 0 0 18px rgba(255,255,255,0.25);
+      }
+
+      .toolbar { display: flex; gap: 10px; align-items: center; }
+      .field {
+        display: flex; align-items: stretch; gap: 8px;
+        background: var(--panel);
+        border: 1px solid var(--panel-strong);
+        border-radius: 12px;
+        padding: 6px 6px 6px 10px;
+        backdrop-filter: blur(6px);
+      }
+      .field input[type="search"] {
+        width: 260px;
+        background: transparent; border: 0; outline: none; color: var(--text);
+        font-size: 14px;
+      }
+      .btn {
+        appearance: none; border: 0;
+        padding: 8px 12px; border-radius: 10px;
+        font-weight: 600; font-size: 13px; letter-spacing: 0.2px;
+        color: #081025; background: #8fb4ff;
+        cursor: pointer; transition: transform .06s ease, filter .2s ease, background .2s ease;
+        box-shadow: 0 6px 22px rgba(143, 180, 255, 0.35), inset 0 0 0 1px rgba(255,255,255,0.4);
+      }
+      .btn:active { transform: translateY(1px) scale(0.99); }
+      .btn[disabled] { filter: grayscale(0.6) brightness(0.85); cursor: not-allowed; }
+
+      /* Toggle switch */
+      .toggle {
+        --w: 64px; --h: 34px;
+        position: relative; width: var(--w); height: var(--h);
+        background: var(--panel);
+        border: 1px solid var(--panel-strong);
+        border-radius: calc(var(--h) / 2);
+        display: inline-grid; grid-auto-flow: column; place-items: center;
+        color: var(--muted);
+        user-select: none; cursor: pointer;
+        padding: 0 8px;
+      }
+      .knob {
+        position: absolute; top: 3px; left: 3px; width: calc(var(--h) - 6px); height: calc(var(--h) - 6px);
+        background: linear-gradient(180deg, #ffffff 0%, #dfe6ff 100%);
+        border-radius: 999px; box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+        transition: left .18s ease;
+      }
+      .toggle.on .knob { left: calc(var(--w) - var(--h) + 3px); }
+      .toggle span { font-size: 11px; font-weight: 700; opacity: .9; }
+
+      /* --- Grid & Card --------------------------------------------------- */
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 14px;
+      }
+
+      .card {
+        position: relative;
+        border-radius: 16px;
+        overflow: hidden;
+        padding: 14px 14px 16px;
+        background: linear-gradient(135deg, #20283f, #161c31);
+        border: 1px solid rgba(255,255,255,0.06);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.35), inset 0 0 32px rgba(255,255,255,0.04);
+        min-height: 140px;
+        transition: transform .15s ease, box-shadow .2s ease;
+      }
+      .card:focus-within, .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 16px 36px rgba(0,0,0,0.45), inset 0 0 42px rgba(255,255,255,0.05);
+      }
+      .card .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .title { display: flex; align-items: baseline; gap: 8px; }
+      .city { font-weight: 800; font-size: 16px; letter-spacing: 0.2px; }
+      .tz-abbr { color: var(--muted); font-weight: 600; font-size: 12px; }
+      .phase {
+        font-weight: 800; font-size: 11px; padding: 4px 8px; border-radius: 999px;
+        background: rgba(0,0,0,.28); border: 1px solid rgba(255,255,255,.14);
+        text-transform: uppercase; letter-spacing: 0.9px; color: #fff;
+      }
+      .time {
+        font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1;
+        font-weight: 800; letter-spacing: -0.6px;
+        font-size: clamp(28px, 5.4vw, 44px);
+        margin: 6px 0 4px;
+      }
+      .date { color: var(--muted); font-weight: 600; font-size: 12px; }
+      .actions { display: flex; align-items: center; gap: 6px; }
+      .icon {
+        width: 42px; height: 42px;
+        display: inline-flex; align-items: center; justify-content: center;
+        background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.25);
+        border-radius: 12px; backdrop-filter: blur(6px);
+      }
+      .remove { color: #fff; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.22); }
+      .remove:hover { background: rgba(255,255,255,.16); }
+
+      /* Daypart backgrounds per card */
+      .card.morning { background: linear-gradient(135deg, var(--morning-a), var(--morning-b)); color: #3d2a00; }
+      .card.afternoon { background: linear-gradient(135deg, var(--afternoon-a), var(--afternoon-b)); color: #072038; }
+      .card.evening { background: linear-gradient(135deg, var(--evening-a), var(--evening-b)); color: #3a1220; }
+      .card.night { background: radial-gradient(600px 300px at 130% -30%, #2a3f7a 0%, var(--night-b) 40%, var(--night-a) 100%); }
+      .card.morning .phase, .card.afternoon .phase, .card.evening .phase { background: rgba(255,255,255,.55); border-color: rgba(0,0,0,.1); color: #0a0d14; }
+
+      /* Night stars */
+      .card.night::after {
+        content: ""; position: absolute; inset: 0; pointer-events: none;
+        background-image:
+          radial-gradient(2px 2px at 15% 25%, rgba(255,255,255,0.6) 50%, transparent 51%),
+          radial-gradient(1.6px 1.6px at 45% 70%, rgba(255,255,255,0.45) 50%, transparent 51%),
+          radial-gradient(1.8px 1.8px at 75% 30%, rgba(255,255,255,0.5) 50%, transparent 51%),
+          radial-gradient(1.3px 1.3px at 88% 60%, rgba(255,255,255,0.35) 50%, transparent 51%);
+        animation: twinkle 2.6s infinite ease-in-out alternate;
+        opacity: .9;
+      }
+      @keyframes twinkle { from { opacity: .45 } to { opacity: .95 } }
+
+      /* Drag & drop cue */
+      .card.drag-over { outline: 2px dashed rgba(255,255,255,.8); outline-offset: -8px; }
+
+      /* Footer note */
+      footer { margin-top: 20px; color: var(--muted); font-size: 12px; opacity: .9; }
+
+      /* Small screens tweaks */
+      @media (max-width: 520px) {
+        header { grid-template-columns: 1fr; }
+        .field input[type="search"] { width: 100%; }
+        .toolbar { justify-content: space-between; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <div class="brand" aria-label="App Title">
+          <span class="logo" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Globe clock">
+              <defs>
+                <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="#002a7f"/>
+                  <stop offset="1" stop-color="#00a4ff"/>
+                </linearGradient>
+              </defs>
+              <circle cx="12" cy="12" r="10" fill="url(#g1)" stroke="white" stroke-opacity=".7"/>
+              <path d="M12 5v7l4 2" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <div>
+            <h1>Interactive World Clock</h1>
+            <small>Add cities • Time-of-day colors • 12/24h</small>
+          </div>
+        </div>
+        <div class="toolbar" aria-label="Time Format Toggle">
+          <div id="formatToggle" class="toggle" role="switch" aria-checked="false" tabindex="0" title="Toggle 12/24-hour format">
+            <span>12h</span>
+            <div class="knob" aria-hidden="true"></div>
+            <span>24h</span>
+          </div>
+        </div>
+        <div class="toolbar" aria-label="Add City">
+          <div class="field" style="--ring:var(--accent)">
+            <input id="cityInput" type="search" placeholder="Search city or time zone…" list="tz-list" autocomplete="off" />
+            <button id="addBtn" class="btn" disabled title="Add city">Add</button>
+          </div>
+          <datalist id="tz-list"></datalist>
+        </div>
+      </header>
+
+      <main class="grid" id="cards" aria-live="polite"></main>
+
+      <footer>
+        Pro tip: drag cards to reorder. Your cities and format preference are saved locally.
+      </footer>
+    </div>
+
+    <script>
+      ;(() => {
+        const $ = (sel, el = document) => el.querySelector(sel)
+        const $$ = (sel, el = document) => Array.from(el.querySelectorAll(sel))
+
+        // Storage keys
+        const STORE_KEY = 'iwc.cities.v1'
+        const FORMAT_KEY = 'iwc.format.v1' // '12' | '24'
+
+        // Defaults
+        const DEFAULT_CITIES = [
+          { id: uid(), label: 'New York', timeZone: 'America/New_York' },
+          { id: uid(), label: 'London', timeZone: 'Europe/London' },
+          { id: uid(), label: 'Tokyo', timeZone: 'Asia/Tokyo' },
+          { id: uid(), label: 'Sydney', timeZone: 'Australia/Sydney' },
+        ]
+
+        // Known friendly cities for quick search
+        const KNOWN_CITIES = [
+          ['Los Angeles', 'America/Los_Angeles'],
+          ['San Francisco', 'America/Los_Angeles'],
+          ['Vancouver', 'America/Vancouver'],
+          ['Denver', 'America/Denver'],
+          ['Chicago', 'America/Chicago'],
+          ['New York', 'America/New_York'],
+          ['Toronto', 'America/Toronto'],
+          ['Mexico City', 'America/Mexico_City'],
+          ['Bogotá', 'America/Bogota'],
+          ['Lima', 'America/Lima'],
+          ['São Paulo', 'America/Sao_Paulo'],
+          ['Buenos Aires', 'America/Argentina/Buenos_Aires'],
+          ['Reykjavík', 'Atlantic/Reykjavik'],
+          ['Dublin', 'Europe/Dublin'],
+          ['London', 'Europe/London'],
+          ['Lisbon', 'Europe/Lisbon'],
+          ['Madrid', 'Europe/Madrid'],
+          ['Paris', 'Europe/Paris'],
+          ['Berlin', 'Europe/Berlin'],
+          ['Amsterdam', 'Europe/Amsterdam'],
+          ['Rome', 'Europe/Rome'],
+          ['Stockholm', 'Europe/Stockholm'],
+          ['Helsinki', 'Europe/Helsinki'],
+          ['Athens', 'Europe/Athens'],
+          ['Istanbul', 'Europe/Istanbul'],
+          ['Cairo', 'Africa/Cairo'],
+          ['Johannesburg', 'Africa/Johannesburg'],
+          ['Nairobi', 'Africa/Nairobi'],
+          ['Tel Aviv', 'Asia/Jerusalem'],
+          ['Dubai', 'Asia/Dubai'],
+          ['Tehran', 'Asia/Tehran'],
+          ['Karachi', 'Asia/Karachi'],
+          ['Delhi', 'Asia/Kolkata'],
+          ['Dhaka', 'Asia/Dhaka'],
+          ['Bangkok', 'Asia/Bangkok'],
+          ['Jakarta', 'Asia/Jakarta'],
+          ['Singapore', 'Asia/Singapore'],
+          ['Kuala Lumpur', 'Asia/Kuala_Lumpur'],
+          ['Hong Kong', 'Asia/Hong_Kong'],
+          ['Taipei', 'Asia/Taipei'],
+          ['Seoul', 'Asia/Seoul'],
+          ['Tokyo', 'Asia/Tokyo'],
+          ['Melbourne', 'Australia/Melbourne'],
+          ['Sydney', 'Australia/Sydney'],
+          ['Auckland', 'Pacific/Auckland'],
+          ['Honolulu', 'Pacific/Honolulu'],
+          ['Anchorage', 'America/Anchorage'],
+          ['Phoenix', 'America/Phoenix'],
+          ['Warsaw', 'Europe/Warsaw'],
+          ['Zurich', 'Europe/Zurich'],
+          ['Prague', 'Europe/Prague'],
+          ['Vienna', 'Europe/Vienna'],
+          ['Bucharest', 'Europe/Bucharest'],
+          ['Moscow', 'Europe/Moscow']
+        ]
+
+        // Try to gather full IANA list if the browser supports it
+        const ALL_TZ = getAllTimeZones()
+
+        // App state
+        let cities = loadCities()
+        let hourFormat = loadFormat() // '12' or '24'
+
+        // DOM refs
+        const $cards = $('#cards')
+        const $formatToggle = $('#formatToggle')
+        const $cityInput = $('#cityInput')
+        const $addBtn = $('#addBtn')
+        const $datalist = $('#tz-list')
+
+        // Initialize UI
+        hydrateDatalist()
+        setToggle(hourFormat)
+        render()
+        startTicker()
+        wireEvents()
+
+        function wireEvents() {
+          // Toggle 12/24
+          const toggle = () => {
+            hourFormat = hourFormat === '12' ? '24' : '12'
+            persistFormat()
+            setToggle(hourFormat)
+            updateTimes()
+          }
+          $formatToggle.addEventListener('click', toggle)
+          $formatToggle.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle() }
+          })
+
+          // City input behaviors
+          $cityInput.addEventListener('input', () => {
+            const candidate = resolveInputToTZ($cityInput.value)
+            $addBtn.disabled = !candidate
+          })
+          $cityInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault(); addCityFromInput()
+            }
+          })
+          $addBtn.addEventListener('click', addCityFromInput)
+        }
+
+        function addCityFromInput() {
+          const raw = $cityInput.value.trim()
+          const match = resolveInputToTZ(raw)
+          if (!match) return
+          const { label, timeZone } = match
+          if (cities.some(c => c.timeZone === timeZone && c.label.toLowerCase() === label.toLowerCase())) {
+            pulseExistingCard(timeZone)
+            $cityInput.value = ''
+            $addBtn.disabled = true
+            return
+          }
+          cities.push({ id: uid(), label, timeZone })
+          persistCities()
+          render()
+          $cityInput.value = ''
+          $addBtn.disabled = true
+        }
+
+        function pulseExistingCard(timeZone) {
+          const el = $cards.querySelector(`[data-tz="${cssEscape(timeZone)}"]`)
+          if (!el) return
+          el.animate([{ transform: 'scale(1.00)' }, { transform: 'scale(1.03)' }, { transform: 'scale(1.00)' }], { duration: 420 })
+        }
+
+        // Rendering --------------------------------------------------------
+        function render() {
+          $cards.innerHTML = cities.map(cardHTML).join('')
+          // Bind card controls and make draggable
+          $$(".card").forEach((card, idx) => {
+            const id = card.getAttribute('data-id')
+            // Remove
+            card.querySelector('.remove').addEventListener('click', () => removeCity(id))
+            // Dragging
+            card.addEventListener('dragstart', (e) => {
+              e.dataTransfer.setData('text/plain', id)
+              e.dataTransfer.effectAllowed = 'move'
+              card.classList.add('dragging')
+            })
+            card.addEventListener('dragend', () => card.classList.remove('dragging'))
+            card.addEventListener('dragover', (e) => { e.preventDefault(); card.classList.add('drag-over') })
+            card.addEventListener('dragleave', () => card.classList.remove('drag-over'))
+            card.addEventListener('drop', (e) => {
+              e.preventDefault(); card.classList.remove('drag-over')
+              const draggedId = e.dataTransfer.getData('text/plain')
+              if (draggedId === id) return
+              const from = cities.findIndex(c => c.id === draggedId)
+              const to = cities.findIndex(c => c.id === id)
+              if (from < 0 || to < 0) return
+              const [moved] = cities.splice(from, 1)
+              cities.splice(to, 0, moved)
+              persistCities(); render()
+            })
+          })
+          updateTimes()
+        }
+
+        function cardHTML(city) {
+          const { label, timeZone, id } = city
+          const period = getDayPeriod(timeZone)
+          const abbr = getTimeZoneAbbr(timeZone)
+          return `
+            <article class="card ${period}" data-id="${id}" data-tz="${esc(timeZone)}" draggable="true" aria-label="${esc(label)} card">
+              <div class="row">
+                <div class="title">
+                  <span class="city">${esc(label)}</span>
+                  <span class="tz-abbr" title="${esc(timeZone)}">${esc(abbr)}</span>
+                </div>
+                <div class="actions">
+                  <span class="phase">${period}</span>
+                  <span class="icon" aria-hidden="true">${iconFor(period)}</span>
+                  <button class="btn remove" title="Remove ${esc(label)}">✕</button>
+                </div>
+              </div>
+              <div class="time" data-role="time" data-tz="${esc(timeZone)}">--:--</div>
+              <div class="date" data-role="date" data-tz="${esc(timeZone)}"></div>
+            </article>
+          `
+        }
+
+        function updateTimes() {
+          const now = Date.now()
+          const hour12 = (hourFormat === '12')
+          $$("[data-role='time']").forEach(el => {
+            const tz = el.getAttribute('data-tz')
+            const t = formatTime(now, tz, hour12)
+            el.textContent = t
+          })
+          $$("[data-role='date']").forEach(el => {
+            const tz = el.getAttribute('data-tz')
+            el.textContent = formatDate(now, tz)
+          })
+          // Also refresh daypart classes and icons once per minute
+          if (new Date().getSeconds() === 0) {
+            $$('.card').forEach(el => {
+              const tz = el.getAttribute('data-tz')
+              el.classList.remove('morning','afternoon','evening','night')
+              const p = getDayPeriod(tz)
+              el.classList.add(p)
+              const icon = el.querySelector('.icon')
+              if (icon) icon.innerHTML = iconFor(p)
+              const phase = el.querySelector('.phase')
+              if (phase) phase.textContent = p
+            })
+          }
+        }
+
+        function startTicker() {
+          // Align first tick to the next second boundary for crisp updates
+          const ms = 1000 - (Date.now() % 1000)
+          setTimeout(() => {
+            updateTimes()
+            setInterval(updateTimes, 1000)
+          }, ms)
+        }
+
+        function removeCity(id) {
+          const idx = cities.findIndex(c => c.id === id)
+          if (idx >= 0) {
+            cities.splice(idx, 1)
+            persistCities(); render()
+          }
+        }
+
+        // Time & formatting -----------------------------------------------
+        function formatTime(ts, timeZone, hour12) {
+          const fmt = new Intl.DateTimeFormat(undefined, {
+            hour: '2-digit', minute: '2-digit', second: '2-digit', hour12, timeZone
+          })
+          return fmt.format(ts)
+        }
+        function formatDate(ts, timeZone) {
+          const fmt = new Intl.DateTimeFormat(undefined, {
+            weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', timeZone
+          })
+          return fmt.format(ts)
+        }
+
+        function getHours24(timeZone) {
+          const parts = new Intl.DateTimeFormat('en-US', { hour: 'numeric', hour12: false, timeZone }).formatToParts(Date.now())
+          const hh = parts.find(p => p.type === 'hour')?.value || '0'
+          return parseInt(hh, 10)
+        }
+
+        function getDayPeriod(timeZone) {
+          const h = getHours24(timeZone)
+          // Morning 5–11, Afternoon 11–17, Evening 17–21, Night otherwise
+          if (h >= 5 && h < 11) return 'morning'
+          if (h >= 11 && h < 17) return 'afternoon'
+          if (h >= 17 && h < 21) return 'evening'
+          return 'night'
+        }
+
+        function getTimeZoneAbbr(timeZone) {
+          // Prefer shortOffset (e.g., UTC+9) where available; fallback to short (PDT/GMT+1)
+          try {
+            const withOffset = new Intl.DateTimeFormat('en', { timeZone, timeZoneName: 'shortOffset' }).formatToParts(Date.now())
+            const off = withOffset.find(p => p.type === 'timeZoneName')?.value
+            if (off) return off.replace('GMT', 'UTC')
+          } catch {}
+          try {
+            const parts = new Intl.DateTimeFormat('en', { timeZone, timeZoneName: 'short' }).formatToParts(Date.now())
+            const n = parts.find(p => p.type === 'timeZoneName')?.value
+            if (n) return n.replace('GMT', 'UTC')
+          } catch {}
+          return timeZone
+        }
+
+        // Icons ------------------------------------------------------------
+        function iconFor(period) {
+          switch (period) {
+            case 'morning': return svgSunrise()
+            case 'afternoon': return svgSun()
+            case 'evening': return svgSunset()
+            case 'night': default: return svgMoon()
+          }
+        }
+        function svgSun() {
+          return `
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <circle cx="12" cy="12" r="4.5" fill="#ffb800"/>
+              <g stroke="#ffb800" stroke-width="1.6" stroke-linecap="round">
+                <path d="M12 2v2.4M12 19.6V22M2 12h2.4M19.6 12H22M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7"/>
+              </g>
+            </svg>`
+        }
+        function svgSunrise() {
+          return `
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <defs>
+                <linearGradient id="sr" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#ffcd5b"/>
+                  <stop offset="1" stop-color="#ff7a7a"/>
+                </linearGradient>
+              </defs>
+              <path d="M4 16h16" stroke="#9b4e00" stroke-width="1.6" stroke-linecap="round"/>
+              <circle cx="12" cy="14" r="3.6" fill="url(#sr)"/>
+              <path d="M12 4v4M6 10l2 2M18 10l-2 2" stroke="#ffb800" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>`
+        }
+        function svgSunset() {
+          return `
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <defs>
+                <linearGradient id="ss" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#ff9a5b"/>
+                  <stop offset="1" stop-color="#b65bff"/>
+                </linearGradient>
+              </defs>
+              <path d="M4 16h16" stroke="#6d2a3c" stroke-width="1.6" stroke-linecap="round"/>
+              <circle cx="12" cy="14" r="3.6" fill="url(#ss)"/>
+              <path d="M12 6v4M6 10l2-2M18 10l-2-2" stroke="#ff7a59" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>`
+        }
+        function svgMoon() {
+          return `
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M15.5 3.5c-5.3 0-9.5 4.2-9.5 9.5 0 3.9 2.4 7.2 5.8 8.6 4.5 1.9 9.7-.6 11.1-5.3-1.5.8-3.2 1.2-5 1.2-5.3 0-9.5-4.2-9.5-9.5 0-1.9.5-3.7 1.4-5.2.2-.2.4-.4.6-.6z" fill="#e6ecff" opacity=".95"/>
+            </svg>`
+        }
+
+        // Datalist population ---------------------------------------------
+        function hydrateDatalist() {
+          const opts = new Set()
+          // Friendly names first
+          KNOWN_CITIES.forEach(([label, tz]) => opts.add(`${label} — ${tz}`))
+          // All IANA zones appended
+          ALL_TZ.forEach(tz => opts.add(tz))
+          const frag = document.createDocumentFragment()
+          for (const v of opts) {
+            const o = document.createElement('option')
+            o.value = v
+            frag.appendChild(o)
+          }
+          $datalist.innerHTML = ''
+          $datalist.appendChild(frag)
+        }
+
+        // Input resolution -------------------------------------------------
+        function resolveInputToTZ(input) {
+          if (!input) return null
+          const q = input.trim()
+          // Exact form: "City — Area/Zone"
+          const emDash = '—'
+          if (q.includes(emDash)) {
+            const [label, tz] = q.split(emDash).map(s => s.trim())
+            if (isValidTZ(tz)) return { label, timeZone: tz }
+          }
+          // If looks like IANA zone
+          if (isValidTZ(q)) {
+            const label = friendlyLabelForTZ(q)
+            return { label, timeZone: q }
+          }
+          // Fuzzy match friendly cities
+          const lc = q.toLowerCase()
+          const byCity = KNOWN_CITIES.find(([label]) => label.toLowerCase().includes(lc))
+          if (byCity) return { label: byCity[0], timeZone: byCity[1] }
+          // Fuzzy match in IANA list
+          const byTZ = ALL_TZ.find(tz => tz.toLowerCase().includes(lc))
+          if (byTZ) return { label: friendlyLabelForTZ(byTZ), timeZone: byTZ }
+          return null
+        }
+
+        function isValidTZ(tz) {
+          try { new Intl.DateTimeFormat('en-US', { timeZone: tz }).format(0); return true } catch { return false }
+        }
+        function friendlyLabelForTZ(tz) {
+          // Prefer a known friendly label
+          const found = KNOWN_CITIES.find(([, t]) => t === tz)
+          if (found) return found[0]
+          // Otherwise derive: split by '/' and replace '_' with ' '
+          const parts = tz.split('/')
+          const city = parts[parts.length - 1].replace(/_/g, ' ')
+          return city
+        }
+
+        // Persistence ------------------------------------------------------
+        function loadCities() {
+          try {
+            const raw = localStorage.getItem(STORE_KEY)
+            if (raw) {
+              const arr = JSON.parse(raw)
+              if (Array.isArray(arr) && arr.length) return arr
+            }
+          } catch {}
+          return DEFAULT_CITIES
+        }
+        function persistCities() {
+          localStorage.setItem(STORE_KEY, JSON.stringify(cities))
+        }
+        function loadFormat() {
+          try { return localStorage.getItem(FORMAT_KEY) === '24' ? '24' : '12' } catch { return '12' }
+        }
+        function persistFormat() {
+          localStorage.setItem(FORMAT_KEY, hourFormat)
+        }
+
+        function setToggle(fmt) {
+          const on = fmt === '24'
+          $formatToggle.classList.toggle('on', on)
+          $formatToggle.setAttribute('aria-checked', String(on))
+        }
+
+        // Utilities --------------------------------------------------------
+        function uid() { return Math.random().toString(36).slice(2, 10) }
+        function esc(s) { return String(s).replace(/[&<>"]+/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])) }
+        function cssEscape(s) {
+          try { if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(s) } catch {}
+          return String(s).replace(/[^a-zA-Z0-9_-]/g, ch => '\\' + ch)
+        }
+
+        function getAllTimeZones() {
+          try {
+            if (typeof Intl.supportedValuesOf === 'function') {
+              const list = Intl.supportedValuesOf('timeZone')
+              if (Array.isArray(list) && list.length) return list
+            }
+          } catch {}
+          // Fallback selection
+          return [
+            'Pacific/Honolulu','America/Anchorage','America/Los_Angeles','America/Phoenix','America/Denver','America/Chicago','America/New_York','America/Toronto','America/Mexico_City','America/Bogota','America/Lima','America/Sao_Paulo','America/Argentina/Buenos_Aires','Atlantic/Reykjavik','Europe/Dublin','Europe/London','Europe/Lisbon','Europe/Madrid','Europe/Paris','Europe/Amsterdam','Europe/Berlin','Europe/Rome','Europe/Prague','Europe/Vienna','Europe/Zurich','Europe/Stockholm','Europe/Helsinki','Europe/Athens','Europe/Istanbul','Europe/Warsaw','Europe/Bucharest','Europe/Moscow','Africa/Cairo','Africa/Johannesburg','Africa/Nairobi','Asia/Jerusalem','Asia/Dubai','Asia/Tehran','Asia/Karachi','Asia/Kolkata','Asia/Dhaka','Asia/Bangkok','Asia/Jakarta','Asia/Singapore','Asia/Kuala_Lumpur','Asia/Hong_Kong','Asia/Taipei','Asia/Seoul','Asia/Tokyo','Australia/Melbourne','Australia/Sydney','Pacific/Auckland'
+          ]
+        }
+      })()
+    </script>
+  </body>
+</html>

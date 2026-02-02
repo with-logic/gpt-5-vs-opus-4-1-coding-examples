@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webcam Filter Playground</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: radial-gradient(circle at center, #1a1a2e 0%, #0f0f1a 100%);
+            color: white;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        .glass {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .filter-btn {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .filter-btn:hover {
+            transform: translateY(-2px);
+            background: rgba(255, 255, 255, 0.15);
+        }
+        .filter-btn.active {
+            background: #6366f1;
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
+        }
+        .canvas-container {
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            position: relative;
+            overflow: hidden;
+            border-radius: 1.5rem;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+        @keyframes scanline {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(100%); }
+        }
+        .scanline {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 2px;
+            background: rgba(255, 255, 255, 0.1);
+            animation: scanline 4s linear infinite;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        const FILTERS = [
+            { id: 'none', name: 'Original', icon: 'camera' },
+            { id: 'grayscale', name: 'Noir', icon: 'moon' },
+            { id: 'sepia', name: 'Vintage', icon: 'history' },
+            { id: 'invert', name: 'X-Ray', icon: 'activity' },
+            { id: 'pixelate', name: '8-Bit', icon: 'grid' },
+            { id: 'rgbShift', name: 'Glitch', icon: 'zap' },
+            { id: 'thermal', name: 'Thermal', icon: 'thermometer' },
+            { id: 'edges', name: 'Sketch', icon: 'edit-3' },
+            { id: 'vibrant', name: 'Neon', icon: 'sun' },
+            { id: 'posterize', name: 'Pop Art', icon: 'layers' }
+        ];
+
+        const App = () => {
+            const [activeFilter, setActiveFilter] = useState('none');
+            const [isStreaming, setIsStreaming] = useState(false);
+            const [snapshots, setSnapshots] = useState([]);
+            const [error, setError] = useState(null);
+            
+            const videoRef = useRef(null);
+            const canvasRef = useRef(null);
+            const bufferCanvasRef = useRef(null);
+            const animationRef = useRef(null);
+
+            // Initialize Webcam
+            useEffect(() => {
+                let stream = null;
+                const startVideo = async () => {
+                    try {
+                        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                            throw new Error("Browser does not support camera access");
+                        }
+                        stream = await navigator.mediaDevices.getUserMedia({ 
+                            video: { width: 1280, height: 720 }, 
+                            audio: false 
+                        });
+                        if (videoRef.current) {
+                            videoRef.current.srcObject = stream;
+                            videoRef.current.onloadedmetadata = () => {
+                                videoRef.current.play().catch(e => console.warn("Video play interrupted"));
+                                setIsStreaming(true);
+                            };
+                        }
+                    } catch (err) {
+                        setError("Camera access denied or not available. Please enable your webcam.");
+                        console.warn("Webcam access error:", err.message || err);
+                    }
+                };
+
+                startVideo();
+                return () => {
+                    if (stream) {
+                        stream.getTracks().forEach(track => track.stop());
+                    }
+                    if (videoRef.current) {
+                        videoRef.current.srcObject = null;
+                    }
+                    if (animationRef.current) {
+                        cancelAnimationFrame(animationRef.current);
+                    }
+                };
+            }, []);
+
+            // Process Frames
+            useEffect(() => {
+                if (!isStreaming) return;
+
+                const render = () => {
+                    const video = videoRef.current;
+                    const canvas = canvasRef.current;
+                    const buffer = bufferCanvasRef.current;
+                    
+                    if (!video || !canvas || !buffer) return;
+
+                    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                        const bCtx = buffer.getContext('2d', { willReadFrequently: true });
+
+                        if (!ctx || !bCtx) return;
+
+                        // Match canvas sizes
+                        if (video.videoWidth > 0 && canvas.width !== video.videoWidth) {
+                            canvas.width = buffer.width = video.videoWidth;
+                            canvas.height = buffer.height = video.videoHeight;
+                        }
+
+                        if (canvas.width > 0 && canvas.height > 0) {
+                            // Draw original to buffer
+                            bCtx.drawImage(video, 0, 0, buffer.width, buffer.height);
+                            let imageData = bCtx.getImageData(0, 0, buffer.width, buffer.height);
+                            
+                            // Apply Filter
+                            applyFilterEffect(imageData, activeFilter, buffer.width, buffer.height);
+                            
+                            // Render to screen
+                            ctx.putImageData(imageData, 0, 0);
+                        }
+                    }
+                    animationRef.current = requestAnimationFrame(render);
+                };
+
+                animationRef.current = requestAnimationFrame(render);
+                return () => {
+                    if (animationRef.current) {
+                        cancelAnimationFrame(animationRef.current);
+                    }
+                };
+            }, [activeFilter, isStreaming]);
+
+            const applyFilterEffect = (imageData, filter, width, height) => {
+                const data = imageData.data;
+                const len = data.length;
+
+                switch (filter) {
+                    case 'grayscale':
+                        for (let i = 0; i < len; i += 4) {
+                            const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                            data[i] = data[i+1] = data[i+2] = avg;
+                        }
+                        break;
+                    case 'sepia':
+                        for (let i = 0; i < len; i += 4) {
+                            const r = data[i], g = data[i+1], b = data[i+2];
+                            data[i] = (r * 0.393) + (g * 0.769) + (b * 0.189);
+                            data[i+1] = (r * 0.349) + (g * 0.686) + (b * 0.168);
+                            data[i+2] = (r * 0.272) + (g * 0.534) + (b * 0.131);
+                        }
+                        break;
+                    case 'invert':
+                        for (let i = 0; i < len; i += 4) {
+                            data[i] = 255 - data[i];
+                            data[i+1] = 255 - data[i+1];
+                            data[i+2] = 255 - data[i+2];
+                        }
+                        break;
+                    case 'pixelate':
+                        const size = 12;
+                        for (let y = 0; y < height; y += size) {
+                            for (let x = 0; x < width; x += size) {
+                                const i = (y * width + x) * 4;
+                                const r = data[i], g = data[i+1], b = data[i+2];
+                                for (let ny = 0; ny < size && y + ny < height; ny++) {
+                                    for (let nx = 0; nx < size && x + nx < width; nx++) {
+                                        const ni = ((y + ny) * width + (x + nx)) * 4;
+                                        data[ni] = r; data[ni+1] = g; data[ni+2] = b;
+                                    }
+                                }
+                            }
+                        }
+                        break;
+                    case 'rgbShift':
+                        const original = new Uint8ClampedArray(data);
+                        const shift = 15;
+                        for (let i = 0; i < len; i += 4) {
+                            data[i] = original[i + shift * 4] || original[i]; // Red from right
+                            data[i+2] = original[i - shift * 4] || original[i+2]; // Blue from left
+                        }
+                        break;
+                    case 'thermal':
+                        for (let i = 0; i < len; i += 4) {
+                            const avg = (data[i] + data[i+1] + data[i+2]) / 3;
+                            data[i] = avg > 128 ? 255 : avg * 2;
+                            data[i+1] = avg;
+                            data[i+2] = 255 - avg;
+                        }
+                        break;
+                    case 'edges':
+                        // Simple Sobel-ish grayscale difference
+                        const temp = new Uint8ClampedArray(data);
+                        for (let i = 0; i < len; i += 4) {
+                            if (i + 4 < len) {
+                                const diff = Math.abs(temp[i] - temp[i+4]) + Math.abs(temp[i+1] - temp[i+5]);
+                                const val = diff > 30 ? 255 : 0;
+                                data[i] = data[i+1] = data[i+2] = 255 - val;
+                            }
+                        }
+                        break;
+                    case 'vibrant':
+                        for (let i = 0; i < len; i += 4) {
+                            data[i] *= 1.5;
+                            data[i+1] *= 1.2;
+                            data[i+2] *= 1.8;
+                        }
+                        break;
+                    case 'posterize':
+                        const levels = 4;
+                        const step = 255 / (levels - 1);
+                        for (let i = 0; i < len; i += 4) {
+                            data[i] = Math.round(data[i] / step) * step;
+                            data[i+1] = Math.round(data[i+1] / step) * step;
+                            data[i+2] = Math.round(data[i+2] / step) * step;
+                        }
+                        break;
+                }
+            };
+
+            const takeSnapshot = () => {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+                const url = canvas.toDataURL('image/png');
+                setSnapshots(prev => [url, ...prev].slice(0, 8));
+                
+                // Visual feedback
+                const flash = document.createElement('div');
+                flash.className = 'fixed inset-0 bg-white z-50 pointer-events-none opacity-0 transition-opacity duration-100';
+                document.body.appendChild(flash);
+                
+                setTimeout(() => {
+                    if (flash) flash.style.opacity = '0.5';
+                }, 10);
+                
+                setTimeout(() => {
+                    if (flash) flash.style.opacity = '0';
+                    setTimeout(() => {
+                        if (flash && flash.parentNode === document.body) {
+                            document.body.removeChild(flash);
+                        }
+                    }, 100);
+                }, 200);
+            };
+
+            const downloadImage = (url) => {
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `filter-playground-${Date.now()}.png`;
+                link.click();
+            };
+
+            // Lucide Icon Component - Wrapped to prevent React/Lucide DOM conflicts
+            const Icon = ({ name, className }) => {
+                const iconRef = useRef(null);
+                
+                useEffect(() => {
+                    if (iconRef.current && window.lucide) {
+                        try {
+                            iconRef.current.innerHTML = `<i data-lucide="${name}" class="${className || ''}"></i>`;
+                            window.lucide.createIcons({
+                                root: iconRef.current
+                            });
+                        } catch (e) {
+                            console.warn("Lucide icon error:", e);
+                        }
+                    }
+                }, [name, className]);
+                
+                return <span ref={iconRef} className="inline-flex items-center justify-center"></span>;
+            };
+
+            return (
+                <div className="max-w-6xl mx-auto px-4 py-8 md:py-12">
+                    {/* Header */}
+                    <header className="text-center mb-10">
+                        <h1 className="text-4xl md:text-6xl font-black mb-3 bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-400">
+                            FILTER PLAYGROUND
+                        </h1>
+                        <p className="text-gray-400 text-lg font-light tracking-wide uppercase">Fun real-time webcam effects</p>
+                    </header>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+                        {/* Sidebar: Gallery */}
+                        <div className="lg:col-span-1 space-y-6 order-2 lg:order-1">
+                            <div className="glass rounded-3xl p-6 h-full min-h-[400px]">
+                                <h3 className="text-sm font-semibold text-gray-400 mb-4 flex items-center">
+                                    <Icon name="image" className="w-4 h-4 mr-2" />
+                                    SNAPSHOTS
+                                </h3>
+                                <div className="grid grid-cols-2 lg:grid-cols-1 gap-4 overflow-y-auto max-h-[60vh] pr-2">
+                                    {snapshots.length === 0 ? (
+                                        <div className="text-center py-12 border-2 border-dashed border-white/5 rounded-2xl">
+                                            <p className="text-xs text-gray-500">No snapshots yet</p>
+                                        </div>
+                                    ) : snapshots.map((url, idx) => (
+                                        <div key={idx} className="group relative rounded-xl overflow-hidden cursor-pointer" onClick={() => downloadImage(url)}>
+                                            <img src={url} className="w-full aspect-video object-cover transition-transform group-hover:scale-105" />
+                                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                <Icon name="download" className="w-6 h-6 text-white" />
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Main Stage */}
+                        <div className="lg:col-span-3 space-y-6 order-1 lg:order-2">
+                            {error ? (
+                                <div className="glass rounded-3xl p-12 text-center text-red-400 border-red-500/20">
+                                    <Icon name="alert-circle" className="w-12 h-12 mx-auto mb-4" />
+                                    <p className="text-xl font-medium">{error}</p>
+                                </div>
+                            ) : (
+                                <div className="canvas-container group">
+                                    <canvas 
+                                        ref={canvasRef} 
+                                        className="w-full aspect-video bg-black object-cover"
+                                    />
+                                    <div className="scanline"></div>
+                                    
+                                    {/* Action Buttons Overlay */}
+                                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                        <button 
+                                            onClick={takeSnapshot}
+                                            className="bg-white text-black p-4 rounded-full shadow-2xl hover:scale-110 active:scale-95 transition-all"
+                                            title="Take Snapshot"
+                                        >
+                                            <Icon name="camera" className="w-8 h-8" />
+                                        </button>
+                                    </div>
+
+                                    {!isStreaming && (
+                                        <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                                            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-indigo-500"></div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* Filters Grid */}
+                            <div className="glass rounded-3xl p-6 overflow-x-auto">
+                                <div className="flex gap-4 min-w-max pb-2">
+                                    {FILTERS.map(filter => (
+                                        <button
+                                            key={filter.id}
+                                            onClick={() => setActiveFilter(filter.id)}
+                                            className={`filter-btn px-6 py-4 rounded-2xl flex flex-col items-center gap-2 min-w-[100px] ${activeFilter === filter.id ? 'active' : 'glass'}`}
+                                        >
+                                            <Icon name={filter.icon} className={`w-6 h-6 ${activeFilter === filter.id ? 'text-white' : 'text-indigo-400'}`} />
+                                            <span className="text-xs font-bold uppercase tracking-tighter">{filter.name}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <footer className="mt-12 text-center text-gray-600 text-sm">
+                        <p>&copy; 2026 Webcam Filter Playground &bull; Built with React & Canvas</p>
+                    </footer>
+
+                    {/* Hidden elements for processing */}
+                    <video ref={videoRef} className="hidden" playsInline muted />
+                    <canvas ref={bufferCanvasRef} className="hidden" />
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

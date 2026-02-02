@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tea Dunkability Simulator</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/react-is@18/umd/react-is.production.min.js"></script>
+    <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/framer-motion@6.5.1/dist/framer-motion.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/recharts@2.10.3/umd/Recharts.js"></script>
+    <script>
+        // Shim for libraries that might expect React to be global in a specific way
+        window.React = React;
+        window.ReactDOM = ReactDOM;
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        .glass {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        .tea-gradient {
+            background: linear-gradient(180deg, #78350f 0%, #451a03 100%);
+        }
+
+        .steam {
+            filter: blur(8px);
+            opacity: 0.6;
+        }
+
+        input[type="range"] {
+            accent-color: #fbbf24;
+        }
+
+        @keyframes drift {
+            0% { transform: translateY(0) translateX(0) scale(1); opacity: 0; }
+            50% { opacity: 0.6; }
+            100% { transform: translateY(-100px) translateX(20px) scale(1.5); opacity: 0; }
+        }
+
+        .crumb {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: #d97706;
+            border-radius: 50%;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+        const fm = window.framerMotion || window.Motion || {};
+        const { motion, AnimatePresence } = fm;
+        const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } = window.Recharts || {};
+
+        const BISCUITS = {
+            digestive: { name: 'Digestive', absorbency: 0.8, integrity: 0.5, color: '#d97706', texture: 'Rough' },
+            richTea: { name: 'Rich Tea', absorbency: 0.5, integrity: 0.3, color: '#fcd34d', texture: 'Smooth' },
+            hobnob: { name: 'Hobnob', absorbency: 0.7, integrity: 0.8, color: '#b45309', texture: 'Oaty' },
+            bourbon: { name: 'Bourbon', absorbency: 0.4, integrity: 0.7, color: '#451a03', texture: 'Filled' },
+            gingerNut: { name: 'Ginger Nut', absorbency: 0.2, integrity: 0.9, color: '#92400e', texture: 'Hard' }
+        };
+
+        const App = () => {
+            const [temp, setTemp] = useState(75);
+            const [dunkTime, setDunkTime] = useState(0);
+            const [biscuitType, setBiscuitType] = useState('digestive');
+            const [integrity, setIntegrity] = useState(100);
+            const [isDunking, setIsDunking] = useState(false);
+            const [history, setHistory] = useState([]);
+            const [crumbs, setCrumbs] = useState([]);
+            const [isCollapsed, setIsCollapsed] = useState(false);
+
+            const requestRef = useRef();
+            const lastTimeRef = useRef();
+
+            // Keyboard Shortcuts
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if (e.code === 'Space') {
+                        e.preventDefault();
+                        setIsDunking(prev => !prev);
+                    }
+                    if (e.code === 'KeyR') {
+                        resetSim();
+                    }
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, []);
+
+            const resetSim = () => {
+                setDunkTime(0);
+                setIntegrity(100);
+                setIsCollapsed(false);
+                setCrumbs([]);
+                setHistory([]);
+                setIsDunking(false);
+            };
+
+            const simulate = (time) => {
+                if (lastTimeRef.current !== undefined && isDunking && !isCollapsed) {
+                    const deltaTime = (time - lastTimeRef.current) / 1000;
+                    setDunkTime(prev => {
+                        const newTime = prev + deltaTime;
+                        
+                        // Calculate integrity decay
+                        const biscuit = BISCUITS[biscuitType];
+                        const heatFactor = (temp / 100) ** 2;
+                        const decay = (biscuit.absorbency / biscuit.integrity) * heatFactor * 15 * deltaTime;
+                        
+                        setIntegrity(prevInt => {
+                            const nextInt = Math.max(0, prevInt - decay);
+                            if (nextInt <= 0 && !isCollapsed) {
+                                setIsCollapsed(true);
+                                triggerCrumbs();
+                            }
+                            return nextInt;
+                        });
+
+                        // Update history for graph
+                        if (Math.floor(newTime * 10) > Math.floor(prev * 10)) {
+                            setHistory(prevH => [...prevH, { time: newTime.toFixed(1), integrity: Math.max(0, integrity).toFixed(1) }].slice(-20));
+                        }
+
+                        return newTime;
+                    });
+                }
+                lastTimeRef.current = time;
+                requestRef.current = requestAnimationFrame(simulate);
+            };
+
+            useEffect(() => {
+                requestRef.current = requestAnimationFrame(simulate);
+                return () => cancelAnimationFrame(requestRef.current);
+            }, [isDunking, integrity, isCollapsed, biscuitType, temp]);
+
+            const triggerCrumbs = () => {
+                const newCrumbs = Array.from({ length: 12 }).map((_, i) => ({
+                    id: Date.now() + i,
+                    x: Math.random() * 40 - 20,
+                    y: Math.random() * 20
+                }));
+                setCrumbs(newCrumbs);
+            };
+
+            const getRiskColor = () => {
+                if (integrity > 60) return 'text-green-400';
+                if (integrity > 30) return 'text-yellow-400';
+                return 'text-red-500';
+            };
+
+            return (
+                <div className="min-h-screen p-4 md:p-8 flex flex-col items-center justify-center bg-slate-950">
+                    <header className="mb-8 text-center">
+                        <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-amber-200 to-amber-500 mb-2">
+                            Tea Dunkability Simulator
+                        </h1>
+                        <p className="text-slate-400">Master the art of the perfect biscuit dunk</p>
+                    </header>
+
+                    <main className="grid grid-cols-1 lg:grid-cols-12 gap-8 w-full max-w-6xl">
+                        {/* Controls Panel */}
+                        <div className="lg:col-span-4 space-y-6">
+                            <div className="glass p-6 rounded-2xl">
+                                <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
+                                    <i data-lucide="settings-2" className="w-5 h-5 text-amber-400"></i>
+                                    Parameters
+                                </h2>
+                                
+                                <div className="space-y-6">
+                                    <div>
+                                        <div className="flex justify-between mb-2">
+                                            <label className="text-sm text-slate-300">Tea Temperature</label>
+                                            <span className="text-amber-400 font-mono">{temp}°C</span>
+                                        </div>
+                                        <input 
+                                            type="range" 
+                                            min="40" max="100" 
+                                            value={temp} 
+                                            onChange={(e) => setTemp(e.target.value)}
+                                            className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-sm text-slate-300 mb-2 block">Biscuit Variety</label>
+                                        <select 
+                                            value={biscuitType}
+                                            onChange={(e) => { setBiscuitType(e.target.value); resetSim(); }}
+                                            className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 focus:ring-2 focus:ring-amber-500 outline-none"
+                                        >
+                                            {Object.entries(BISCUITS).map(([key, b]) => (
+                                                <option key={key} value={key}>{b.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div className="pt-4 flex gap-4">
+                                        <button 
+                                            onClick={() => setIsDunking(!isDunking)}
+                                            disabled={isCollapsed}
+                                            className={`flex-1 py-3 rounded-xl font-bold transition-all transform active:scale-95 ${
+                                                isDunking 
+                                                ? 'bg-red-500/20 text-red-400 border border-red-500/50 shadow-[0_0_15px_rgba(239,68,68,0.2)]' 
+                                                : 'bg-amber-500 text-slate-900 hover:bg-amber-400'
+                                            }`}
+                                        >
+                                            {isDunking ? 'PULL OUT!' : 'DUNK!'}
+                                        </button>
+                                        <button 
+                                            onClick={resetSim}
+                                            className="p-3 glass rounded-xl hover:bg-white/10 transition-colors"
+                                            title="Reset (R)"
+                                        >
+                                            <i data-lucide="refresh-cw" className="w-6 h-6"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="glass p-6 rounded-2xl">
+                                <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                                    <i data-lucide="info" className="w-5 h-5 text-blue-400"></i>
+                                    Biscuit Stats
+                                </h2>
+                                <div className="space-y-3 text-sm">
+                                    <div className="flex justify-between">
+                                        <span className="text-slate-400">Structural Integrity:</span>
+                                        <span className="text-slate-200">{(BISCUITS[biscuitType].integrity * 100).toFixed(0)}%</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-slate-400">Absorbency Rate:</span>
+                                        <span className="text-slate-200">{(BISCUITS[biscuitType].absorbency * 10).toFixed(1)}x</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-slate-400">Texture:</span>
+                                        <span className="text-slate-200">{BISCUITS[biscuitType].texture}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Simulation Visualizer */}
+                        <div className="lg:col-span-4 flex flex-col gap-6">
+                            <div className="glass rounded-3xl aspect-square flex items-center justify-center relative overflow-hidden bg-gradient-to-b from-slate-900/50 to-slate-950/50">
+                                {/* Steam Effects */}
+                                <div className="absolute top-1/4 left-1/2 -translate-x-1/2 flex gap-4">
+                                    {[1, 2, 3].map(i => (
+                                        <motion.div
+                                            key={i}
+                                            animate={{ 
+                                                y: [-20, -120], 
+                                                x: [0, Math.sin(i) * 30],
+                                                opacity: [0, 0.4, 0],
+                                                scale: [0.5, 2]
+                                            }}
+                                            transition={{ 
+                                                duration: 3 + i, 
+                                                repeat: Infinity, 
+                                                delay: i * 0.8,
+                                                ease: "easeOut"
+                                            }}
+                                            className="w-8 h-24 bg-white/20 steam rounded-full"
+                                        />
+                                    ))}
+                                </div>
+
+                                {/* The Cup */}
+                                <div className="relative z-10 mt-20">
+                                    <div className="w-64 h-48 bg-slate-200 rounded-b-[4rem] relative overflow-hidden border-x-8 border-b-8 border-slate-300">
+                                        {/* Tea Liquid */}
+                                        <motion.div 
+                                            animate={{ 
+                                                height: [140, 145, 140],
+                                                borderRadius: ['0% 0% 0% 0%', '0% 0% 5% 5%', '0% 0% 0% 0%']
+                                            }}
+                                            transition={{ duration: 4, repeat: Infinity }}
+                                            className="absolute bottom-0 w-full tea-gradient opacity-90"
+                                            style={{ height: '140px' }}
+                                        />
+                                        
+                                        {/* Biscuit */}
+                                        <motion.div
+                                            animate={{ 
+                                                y: isDunking ? 80 : 0,
+                                                rotate: isCollapsed ? 15 : 0
+                                            }}
+                                            className="absolute left-1/2 -translate-x-1/2 w-32 h-32 rounded-lg flex items-center justify-center shadow-2xl"
+                                            style={{ 
+                                                backgroundColor: BISCUITS[biscuitType].color,
+                                                top: '-60px',
+                                                backgroundImage: `radial-gradient(circle, rgba(0,0,0,0.1) 2px, transparent 2px)`,
+                                                backgroundSize: '15px 15px'
+                                            }}
+                                        >
+                                            {isCollapsed && (
+                                                <div className="absolute inset-0 bg-black/20 backdrop-blur-[1px] flex items-center justify-center font-black text-white/50 text-xl tracking-tighter">
+                                                    CRUMBLED
+                                                </div>
+                                            )}
+                                            {/* Crumb Particles */}
+                                            {crumbs.map(crumb => (
+                                                <motion.div
+                                                    key={crumb.id}
+                                                    initial={{ y: 0, opacity: 1 }}
+                                                    animate={{ y: 200, opacity: 0, x: crumb.x }}
+                                                    className="crumb"
+                                                    style={{ left: '50%' }}
+                                                />
+                                            ))}
+                                        </motion.div>
+                                    </div>
+                                    {/* Cup Handle */}
+                                    <div className="absolute top-10 -right-12 w-16 h-24 border-[12px] border-slate-300 rounded-[3rem]" />
+                                </div>
+
+                                {/* Feedback HUD */}
+                                <div className="absolute top-6 left-6 right-6 flex justify-between items-start pointer-events-none">
+                                    <div className="glass px-4 py-2 rounded-full">
+                                        <span className="text-xs text-slate-400 block uppercase tracking-wider">Time</span>
+                                        <span className="font-mono text-xl">{dunkTime.toFixed(2)}s</span>
+                                    </div>
+                                    <div className="glass px-4 py-2 rounded-full text-right">
+                                        <span className="text-xs text-slate-400 block uppercase tracking-wider">Stability</span>
+                                        <span className={`font-mono text-xl ${getRiskColor()}`}>
+                                            {Math.round(integrity)}%
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Analysis Panel */}
+                        <div className="lg:col-span-4 space-y-6">
+                            <div className="glass p-6 rounded-2xl h-full flex flex-col">
+                                <h2 className="text-xl font-semibold mb-6 flex items-center gap-2">
+                                    <i data-lucide="activity" className="w-5 h-5 text-emerald-400"></i>
+                                    Crumble-o-meter
+                                </h2>
+                                
+                                <div className="flex-1 min-h-[300px]">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <AreaChart data={history}>
+                                            <defs>
+                                                <linearGradient id="colorInt" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="5%" stopColor="#fbbf24" stopOpacity={0.3}/>
+                                                    <stop offset="95%" stopColor="#fbbf24" stopOpacity={0}/>
+                                                </linearGradient>
+                                            </defs>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
+                                            <XAxis 
+                                                dataKey="time" 
+                                                stroke="#94a3b8" 
+                                                fontSize={12} 
+                                                tickFormatter={(val) => `${val}s`}
+                                            />
+                                            <YAxis 
+                                                domain={[0, 100]} 
+                                                stroke="#94a3b8" 
+                                                fontSize={12} 
+                                            />
+                                            <Tooltip 
+                                                contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px' }}
+                                                itemStyle={{ color: '#fbbf24' }}
+                                            />
+                                            <Area 
+                                                type="monotone" 
+                                                dataKey="integrity" 
+                                                stroke="#fbbf24" 
+                                                fillOpacity={1} 
+                                                fill="url(#colorInt)" 
+                                                strokeWidth={3}
+                                                isAnimationActive={false}
+                                            />
+                                        </AreaChart>
+                                    </ResponsiveContainer>
+                                </div>
+
+                                <div className="mt-6 p-4 rounded-xl bg-slate-800/50 border border-slate-700">
+                                    <h3 className="text-sm font-semibold text-slate-400 mb-2 uppercase tracking-tighter">Scientific Analysis</h3>
+                                    <p className="text-sm text-slate-300 leading-relaxed">
+                                        {integrity > 80 ? "The biscuit remains structurally sound. Optimal capillary action detected." :
+                                         integrity > 40 ? "Saturation levels reaching critical mass. Softening observed in core layers." :
+                                         integrity > 0 ? "WARNING: Material fatigue imminent. Immediate extraction recommended!" :
+                                         "Catastrophic failure. Biscuit lost to the depths. Cleanup required."}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </main>
+
+                    <footer className="mt-12 text-slate-500 text-sm flex gap-6">
+                        <div className="flex items-center gap-2">
+                            <kbd className="px-2 py-1 bg-slate-800 rounded border border-slate-700 text-slate-400">Space</kbd>
+                            <span>Dunk / Pull</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <kbd className="px-2 py-1 bg-slate-800 rounded border border-slate-700 text-slate-400">R</kbd>
+                            <span>Reset</span>
+                        </div>
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+
+        // Initialize Lucide icons
+        setTimeout(() => lucide.createIcons(), 100);
+    </script>
+</body>
+</html>

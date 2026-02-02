@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Regex Lab</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        gray: {
+                            750: '#2d3748',
+                            850: '#1a202c',
+                            950: '#0d1117',
+                        },
+                        accent: {
+                            light: '#3b82f6',
+                            dark: '#60a5fa',
+                        }
+                    },
+                    fontFamily: {
+                        mono: ['"Fira Code"', '"JetBrains Mono"', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&display=swap');
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+
+        .font-mono {
+            font-family: 'Fira Code', monospace;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background-color: rgba(156, 163, 175, 0.5);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background-color: rgba(107, 114, 128, 0.8);
+        }
+
+        .match-0 { background-color: rgba(59, 130, 246, 0.3); border-bottom: 2px solid rgba(59, 130, 246, 0.8); }
+        .match-1 { background-color: rgba(16, 185, 129, 0.3); border-bottom: 2px solid rgba(16, 185, 129, 0.8); }
+        .match-2 { background-color: rgba(245, 158, 11, 0.3); border-bottom: 2px solid rgba(245, 158, 11, 0.8); }
+        .match-3 { background-color: rgba(239, 68, 68, 0.3); border-bottom: 2px solid rgba(239, 68, 68, 0.8); }
+        .match-4 { background-color: rgba(139, 92, 246, 0.3); border-bottom: 2px solid rgba(139, 92, 246, 0.8); }
+        .match-5 { background-color: rgba(236, 72, 153, 0.3); border-bottom: 2px solid rgba(236, 72, 153, 0.8); }
+
+        /* Dark mode adjustments */
+        .dark .match-0 { background-color: rgba(96, 165, 250, 0.25); border-bottom-color: rgba(96, 165, 250, 0.8); }
+        .dark .match-1 { background-color: rgba(52, 211, 153, 0.25); border-bottom-color: rgba(52, 211, 153, 0.8); }
+        .dark .match-2 { background-color: rgba(251, 191, 36, 0.25); border-bottom-color: rgba(251, 191, 36, 0.8); }
+        .dark .match-3 { background-color: rgba(248, 113, 113, 0.25); border-bottom-color: rgba(248, 113, 113, 0.8); }
+        .dark .match-4 { background-color: rgba(167, 139, 250, 0.25); border-bottom-color: rgba(167, 139, 250, 0.8); }
+        .dark .match-5 { background-color: rgba(244, 114, 182, 0.25); border-bottom-color: rgba(244, 114, 182, 0.8); }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-950 text-gray-800 dark:text-gray-200 transition-colors duration-300 h-screen overflow-hidden">
+    <div id="root" class="h-full"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // --- Constants & Utilities ---
+
+        const TOKENS = [
+            { label: 'Character', code: '.', desc: 'Any character except newline' },
+            { label: 'Digit', code: '\\d', desc: 'Any digit (0-9)' },
+            { label: 'Not Digit', code: '\\D', desc: 'Any non-digit' },
+            { label: 'Word Char', code: '\\w', desc: 'Alphanumeric & underscore' },
+            { label: 'Whitespace', code: '\\s', desc: 'Any whitespace (space, tab, newline)' },
+            { label: 'Start', code: '^', desc: 'Start of string/line' },
+            { label: 'End', code: '$', desc: 'End of string/line' },
+            { label: 'Word Bound', code: '\\b', desc: 'Word boundary' },
+            { label: '0 or more', code: '*', desc: 'Zero or more quantifiers' },
+            { label: '1 or more', code: '+', desc: 'One or more quantifiers' },
+            { label: 'Optional', code: '?', desc: 'Zero or one quantifier' },
+            { label: 'Group', code: '()', desc: 'Capture group', cursorOffset: -1 },
+            { label: 'Set', code: '[]', desc: 'Character set', cursorOffset: -1 },
+            { label: 'Range', code: 'a-z', desc: 'Character range' },
+            { label: 'Or', code: '|', desc: 'Alternation' },
+            { label: 'Escape', code: '\\', desc: 'Escape character' },
+        ];
+
+        const FLAGS_INFO = {
+            g: { name: 'Global', desc: 'Don\'t return after first match' },
+            i: { name: 'Insensitive', desc: 'Case insensitive match' },
+            m: { name: 'Multiline', desc: '^ and $ match start/end of line' },
+            s: { name: 'Single line', desc: 'Dot matches newline' },
+            u: { name: 'Unicode', desc: 'Enable full unicode support' },
+            y: { name: 'Sticky', desc: 'Anchor to last match position' },
+        };
+
+        const EXPLANATIONS = [
+             { regex: /^[\\^]/, text: "Asserts position at start of the string/line" },
+             { regex: /["\\$]$/, text: "Asserts position at end of the string/line" },
+             { regex: /\\d/, text: "Matches any digit (0-9)" },
+             { regex: /\\w/, text: "Matches any word character (alphanumeric + underscore)" },
+             { regex: /\\s/, text: "Matches any whitespace character" },
+             { regex: /[[.*?]]/, text: "Matches any character in the set" },
+             { regex: /\\(.*?\\)/, text: "Groups multiple tokens together and creates a capture group" },
+             { regex: /\\+/, text: "Matches 1 or more of the preceding token" },
+             { regex: /\\*/, text: "Matches 0 or more of the preceding token" },
+             { regex: /\\?/, text: "Matches 0 or 1 of the preceding token (optional)" },
+             { regex: /\\|/, text: "Acts like a logical OR" },
+             { regex: /\\b/, text: "Matches a word boundary position" },
+             { regex: /(?<!\\)\\./, text: "Matches any character except line breaks" },
+        ];
+
+        // --- Components ---
+
+        function Header({ theme, toggleTheme, onCopyLink }) {
+            return (
+                <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-6 py-3 flex items-center justify-between shadow-sm z-10">
+                    <div className="flex items-center gap-3">
+                        <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                        <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                        <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                        <h1 className="ml-4 font-mono font-bold text-lg text-gray-800 dark:text-gray-100 tracking-tight">
+                            <i className="fa-solid fa-flask text-accent-dark mr-2"></i>
+                            Regex<span className="text-accent-dark">Lab</span>
+                        </h1>
+                    </div>
+                    <div className="flex items-center gap-3">
+                         <button 
+                            onClick={onCopyLink}
+                            className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition-colors"
+                            title="Copy Permalink"
+                        >
+                            <i className="fa-solid fa-share-nodes"></i>
+                        </button>
+                        <button 
+                            onClick={toggleTheme}
+                            className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition-colors"
+                            title="Toggle Theme"
+                        >
+                            {theme === 'dark' ? <i className="fa-solid fa-sun"></i> : <i className="fa-solid fa-moon"></i>}
+                        </button>
+                    </div>
+                </header>
+            );
+        }
+
+        function QuickInserts({ onInsert }) {
+            return (
+                <div className="flex flex-wrap gap-2 mb-4 px-1">
+                    {TOKENS.map((token, i) => (
+                        <button
+                            key={i}
+                            onClick={() => onInsert(token.code, token.cursorOffset)}
+                            className="px-2 py-1 text-xs font-mono rounded border border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 transition-colors shadow-sm"
+                            title={token.desc}
+                        >
+                            {token.label}
+                        </button>
+                    ))}
+                </div>
+            );
+        }
+
+        function FlagSelector({ flags, onChange }) {
+            const toggleFlag = (flag) => {
+                if (flags.includes(flag)) {
+                    onChange(flags.replace(flag, ''));
+                } else {
+                    onChange(flags + flag);
+                }
+            };
+
+            return (
+                <div className="flex items-center gap-2 mt-2 text-sm">
+                    <span className="text-gray-500 dark:text-gray-400 font-semibold text-xs uppercase tracking-wider mr-2">Flags:</span>
+                    {Object.keys(FLAGS_INFO).map(flag => (
+                        <button
+                            key={flag}
+                            onClick={() => toggleFlag(flag)}
+                            className={`px-2 py-0.5 rounded text-xs font-mono border transition-all ${flags.includes(flag) 
+                                ? 'bg-accent-dark/20 border-accent-dark text-accent-dark' 
+                                : 'bg-transparent border-gray-300 dark:border-gray-700 text-gray-500 hover:border-gray-400 dark:hover:border-gray-500'}`}
+                            title={FLAGS_INFO[flag].desc}
+                        >
+                            {flag}
+                        </button>
+                    ))}
+                </div>
+            );
+        }
+
+        function RegexInput({ pattern, setPattern, flags, setFlags, error, onInsert }) {
+            return (
+                <div className="bg-white dark:bg-gray-900 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 mb-4">
+                    <div className="flex justify-between items-center mb-2">
+                         <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Regular Expression</label>
+                    </div>
+                    
+                    <div className={`relative flex items-center bg-gray-50 dark:bg-gray-950 border rounded-md transition-colors ${error ? 'border-red-500' : 'border-gray-300 dark:border-gray-700 focus-within:border-accent-dark'}`}>
+                        <div className="pl-3 py-2 text-gray-400 font-mono text-lg select-none">/</div>
+                        <input 
+                            type="text" 
+                            value={pattern}
+                            onChange={(e) => setPattern(e.target.value)}
+                            className="flex-1 bg-transparent border-none outline-none text-lg font-mono p-2 text-gray-900 dark:text-gray-100 placeholder-gray-400"
+                            placeholder="Type a pattern..."
+                            spellCheck="false"
+                            autoComplete="off"
+                            id="regex-input"
+                        />
+                        <div className="pr-3 py-2 text-gray-400 font-mono text-lg select-none">/{flags}</div>
+                    </div>
+                    
+                    {error && (
+                        <div className="mt-2 text-red-500 text-sm flex items-center">
+                            <i className="fa-solid fa-triangle-exclamation mr-1.5"></i>
+                            {error}
+                        </div>
+                    )}
+
+                    <div className="mt-3">
+                        <FlagSelector flags={flags} onChange={setFlags} />
+                    </div>
+                    
+                    <div className="mt-4 border-t border-gray-100 dark:border-gray-800 pt-3">
+                        <div className="text-xs text-gray-400 mb-2">Quick Insert</div>
+                        <QuickInserts onInsert={onInsert} />
+                    </div>
+                </div>
+            );
+        }
+
+        function TestStringInput({ text, setText, onClear }) {
+            return (
+                <div className="bg-white dark:bg-gray-900 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 flex flex-col flex-1 min-h-[200px]">
+                    <div className="flex justify-between items-center mb-2">
+                        <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Test String</label>
+                         <button onClick={onClear} className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                            Clear
+                        </button>
+                    </div>
+                    <textarea 
+                        value={text}
+                        onChange={(e) => setText(e.target.value)}
+                        className="flex-1 w-full bg-gray-50 dark:bg-gray-950 text-gray-800 dark:text-gray-200 p-3 rounded-md font-mono text-sm border border-gray-300 dark:border-gray-700 focus:border-accent-dark outline-none resize-none"
+                        placeholder="Paste your test text here..."
+                        spellCheck="false"
+                    ></textarea>
+                </div>
+            );
+        }
+
+        function HighlightedOutput({ text, matches }) {
+            // Construct the highlighted HTML
+            const renderHighlights = () => {
+                if (!matches || matches.length === 0) return text;
+
+                let lastIndex = 0;
+                const parts = [];
+
+                // Sort matches by index to be safe
+                const sortedMatches = [...matches].sort((a, b) => a.index - b.index);
+
+                // We need to handle overlapping matches or just pick the first ones that fit.
+                // Standard JS RegExp matches don't overlap in the main match array.
+                
+                sortedMatches.forEach((match, i) => {
+                    // Text before match
+                    if (match.index > lastIndex) {
+                        parts.push(<span key={`text-${i}`}>{text.slice(lastIndex, match.index)}</span>);
+                    }
+                    
+                    // The match itself
+                    const matchText = match[0];
+                    const colorClass = `match-${i % 6}`;
+                    parts.push(
+                        <span key={`match-${i}`} className={`${colorClass} relative group cursor-default`}>
+                            {matchText}
+                            {/* Tooltip for match info */}
+                            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-black text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-20">
+                                Match {i + 1} (Index: {match.index})
+                            </span>
+                        </span>
+                    );
+                    
+                    lastIndex = match.index + matchText.length;
+                });
+
+                // Remaining text
+                if (lastIndex < text.length) {
+                    parts.push(<span key="text-end">{text.slice(lastIndex)}</span>);
+                }
+
+                return parts;
+            };
+
+            return (
+                <div className="bg-white dark:bg-gray-900 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 flex flex-col h-full overflow-hidden">
+                    <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">Match Highlight</label>
+                    <div className="flex-1 bg-gray-50 dark:bg-gray-950 p-3 rounded-md font-mono text-sm border border-gray-300 dark:border-gray-700 overflow-auto whitespace-pre-wrap break-words text-gray-800 dark:text-gray-200">
+                        {renderHighlights()}
+                    </div>
+                </div>
+            );
+        }
+
+        function MatchTable({ matches }) {
+            if (!matches || matches.length === 0) {
+                return (
+                     <div className="bg-white dark:bg-gray-900 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 h-full">
+                        <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2 block">Match Info</label>
+                        <div className="text-sm text-gray-400 italic text-center mt-10">No matches found</div>
+                     </div>
+                )
+            }
+
+            return (
+                <div className="bg-white dark:bg-gray-900 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 h-full flex flex-col">
+                    <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2 block">
+                        Match Info <span className="text-accent-dark ml-2">({matches.length} matches)</span>
+                    </label>
+                    <div className="flex-1 overflow-auto">
+                        <table className="w-full text-sm text-left">
+                            <thead className="text-xs text-gray-500 dark:text-gray-400 uppercase bg-gray-50 dark:bg-gray-800 sticky top-0">
+                                <tr>
+                                    <th className="px-3 py-2">#</th>
+                                    <th className="px-3 py-2">Match</th>
+                                    <th className="px-3 py-2">Index</th>
+                                    <th className="px-3 py-2">Groups</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                                {matches.map((match, i) => (
+                                    <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                                        <td className="px-3 py-2 text-gray-400 font-mono">{i + 1}</td>
+                                        <td className="px-3 py-2 font-mono text-accent-dark max-w-[150px] truncate" title={match[0]}>"{match[0]}"</td>
+                                        <td className="px-3 py-2 font-mono text-gray-500">{match.index}</td>
+                                        <td className="px-3 py-2">
+                                            {match.length > 1 ? (
+                                                <div className="flex gap-1 flex-wrap">
+                                                    {Array.from(match).slice(1).map((group, gi) => (
+                                                        <span key={gi} className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs font-mono text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700" title={`Group ${gi + 1}`}>
+                                                            ${gi + 1}: {group || 'undefined'}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <span className="text-gray-300 dark:text-gray-700">-</span>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        }
+
+        function ExplanationPanel({ pattern }) {
+            const getExplanations = () => {
+                if (!pattern) return [];
+                const steps = [];
+                // Very naive explanation generator for demonstration
+                // A real one needs a full parser
+                EXPLANATIONS.forEach(exp => {
+                    if (exp.regex.test(pattern)) {
+                        steps.push(exp.text);
+                    }
+                });
+                
+                // Add literal chars explanation if it doesn't look like just metachars
+                if (/[a-zA-Z0-9]/.test(pattern)) {
+                    steps.push("Matches literal characters");
+                }
+
+                return [...new Set(steps)]; // Unique
+            };
+
+            const steps = getExplanations();
+
+            return (
+                 <div className="bg-white dark:bg-gray-900 p-4 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 h-full overflow-auto">
+                    <label className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2 block">Explanation</label>
+                    
+                    {steps.length > 0 ? (
+                        <ul className="space-y-2">
+                            {steps.map((step, i) => (
+                                <li key={i} className="flex items-start text-sm text-gray-700 dark:text-gray-300">
+                                    <i className="fa-solid fa-info-circle text-accent-dark mt-0.5 mr-2 text-xs"></i>
+                                    {step}
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <div className="text-sm text-gray-400 italic">Enter a pattern to see explanation...</div>
+                    )}
+                 </div>
+            );
+        }
+
+        function Footer() {
+            return (
+                <footer className="bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 px-6 py-2 text-xs text-center text-gray-400 dark:text-gray-600 flex justify-between items-center z-10">
+                     <span>Regex Lab &copy; 2026</span>
+                     <span className="flex items-center gap-2">
+                        <i className="fa-brands fa-js"></i>
+                        <span>Browser-based processing</span>
+                     </span>
+                </footer>
+            );
+        }
+
+        // --- Main App ---
+
+        function App() {
+            const [theme, setTheme] = useState('dark');
+            const [pattern, setPattern] = useState(String.raw`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b`);
+            const [flags, setFlags] = useState('gm');
+            const [text, setText] = useState("Contact us at support@example.com or sales@example.org for assistance.\nInvalid emails like test@.com or @domain.com won't match.");
+            const [error, setError] = useState(null);
+            const [matches, setMatches] = useState([]);
+
+            // Theme handling
+            useEffect(() => {
+                if (theme === 'dark') {
+                    document.documentElement.classList.add('dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                }
+            }, [theme]);
+
+            // URL Hash handling (Load)
+            useEffect(() => {
+                const hash = window.location.hash.slice(1);
+                if (hash) {
+                    try {
+                        const params = new URLSearchParams(hash);
+                        if (params.has('p')) setPattern(decodeURIComponent(params.get('p')));
+                        if (params.has('f')) setFlags(decodeURIComponent(params.get('f')));
+                        if (params.has('t')) setText(decodeURIComponent(params.get('t')));
+                    } catch (e) {
+                        console.error("Failed to parse URL hash");
+                    }
+                }
+            }, []);
+
+            // URL Hash handling (Save)
+            useEffect(() => {
+                const params = new URLSearchParams();
+                params.set('p', pattern);
+                params.set('f', flags);
+                params.set('t', text); // Might be too long, but per spec "copy/share permalink"
+                // Debounce hash update to avoid history spam
+                const timer = setTimeout(() => {
+                    window.history.replaceState(null, null, `#${params.toString()}`);
+                }, 500);
+                return () => clearTimeout(timer);
+            }, [pattern, flags, text]);
+
+            // Regex Processing
+            useEffect(() => {
+                try {
+                    setError(null);
+                    if (!pattern) {
+                        setMatches([]);
+                        return;
+                    }
+                    const regex = new RegExp(pattern, flags);
+                    
+                    let foundMatches = [];
+                    
+                    // Safety mechanism: limit execution time/matches to prevent browser freeze on bad regex
+                    const startTime = performance.now();
+                    const MAX_TIME = 100; // ms
+                    const MAX_MATCHES = 2000;
+
+                    if (flags.includes('g')) {
+                         foundMatches = [...text.matchAll(regex)];
+                    } else {
+                        const match = text.match(regex);
+                        if (match) foundMatches = [match];
+                    }
+
+                    if (foundMatches.length > MAX_MATCHES) {
+                        foundMatches = foundMatches.slice(0, MAX_MATCHES);
+                        // Could warn user about truncation
+                    }
+                    
+                    setMatches(foundMatches);
+
+                } catch (err) {
+                    setError(err.message);
+                    setMatches([]);
+                }
+            }, [pattern, flags, text]);
+
+            const handleInsert = (code, offset = 0) => {
+                const input = document.getElementById('regex-input');
+                if (input) {
+                    const start = input.selectionStart;
+                    const end = input.selectionEnd;
+                    const newPattern = pattern.substring(0, start) + code + pattern.substring(end);
+                    setPattern(newPattern);
+                    
+                    // Restore focus and move cursor
+                    setTimeout(() => {
+                        input.focus();
+                        const newCursorPos = start + code.length + (offset !== 0 ? offset : 0);
+                        input.setSelectionRange(newCursorPos, newCursorPos);
+                    }, 0);
+                } else {
+                    setPattern(pattern + code);
+                }
+            };
+
+            const toggleTheme = () => {
+                setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+            };
+
+            const copyLink = () => {
+                navigator.clipboard.writeText(window.location.href).then(() => {
+                    alert('Permalink copied to clipboard!');
+                });
+            };
+
+            return (
+                <div className="flex flex-col h-full">
+                    <Header theme={theme} toggleTheme={toggleTheme} onCopyLink={copyLink} />
+                    
+                    <main className="flex-1 overflow-hidden flex flex-col md:flex-row bg-gray-100 dark:bg-black p-2 gap-2">
+                        {/* Left Pane: Inputs */}
+                        <div className="w-full md:w-1/2 flex flex-col gap-2 overflow-hidden h-full">
+                            <RegexInput 
+                                pattern={pattern} 
+                                setPattern={setPattern} 
+                                flags={flags} 
+                                setFlags={setFlags}
+                                error={error}
+                                onInsert={handleInsert}
+                            />
+                            <TestStringInput text={text} setText={setText} onClear={() => setText('')} />
+                        </div>
+
+                        {/* Right Pane: Outputs */}
+                        <div className="w-full md:w-1/2 flex flex-col gap-2 overflow-hidden h-full">
+                            <div className="h-1/2 min-h-[200px]">
+                                <HighlightedOutput text={text} matches={matches} />
+                            </div>
+                            <div className="h-1/2 min-h-[200px] flex gap-2">
+                                <div className="w-2/3">
+                                    <MatchTable matches={matches} />
+                                </div>
+                                <div className="w-1/3">
+                                    <ExplanationPanel pattern={pattern} />
+                                </div>
+                            </div>
+                        </div>
+                    </main>
+
+                    <Footer />
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Customer Journey Flow</title>
+  <!-- Tailwind via CDN for polished UI -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Subtle grid background */
+    .board-bg {
+      background-image:
+        linear-gradient(to right, rgba(148, 163, 184, 0.12) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(148, 163, 184, 0.12) 1px, transparent 1px);
+      background-size: 24px 24px, 24px 24px;
+      background-position: -1px -1px;
+    }
+    .node {
+      position: absolute;
+      width: 220px;
+      min-height: 92px;
+      user-select: none;
+      touch-action: none;
+      transition: box-shadow 120ms ease, transform 120ms ease;
+    }
+    .node[contenteditable="true"],
+    .node *[contenteditable="true"] {
+      outline: none;
+    }
+    .node.selected { box-shadow: 0 0 0 3px rgba(59,130,246,.35); }
+
+    .port { /* connection handles */
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 14px;
+      height: 14px;
+      border-radius: 9999px;
+      background: white;
+      border: 2px solid #64748b; /* slate-500 */
+      box-shadow: 0 1px 0 rgba(0,0,0,.05);
+      cursor: crosshair;
+    }
+    .port:hover { border-color: #1d4ed8; /* blue-700 */ }
+    .port.in { left: -7px; }
+    .port.out { right: -7px; }
+
+    svg#conn-svg { pointer-events: none; }
+    path.conn { pointer-events: stroke; }
+
+    .conn { stroke: #94a3b8; /* slate-400 */ stroke-width: 3; fill: none; }
+    .conn:hover { stroke: #3b82f6; }
+    .conn.selected { stroke: #2563eb; /* blue-600 */ }
+
+    .ghost-line { stroke-dasharray: 6 6; stroke: #3b82f6; stroke-width: 2.5; }
+
+    .pill { font-variant-numeric: tabular-nums; }
+
+    /* Toolbar button focus ring refinement */
+    .btn:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+
+    /* Tooltip */
+    .hint::after {
+      content: attr(data-hint);
+      position: absolute; left: 50%; bottom: calc(100% + 8px);
+      transform: translateX(-50%);
+      background: rgba(15,23,42,.9);
+      color: white; font-size: 12px; padding: 4px 8px; border-radius: 6px;
+      white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 120ms;
+    }
+    .hint:hover::after { opacity: 1; }
+
+    /* Hide file input */
+    input[type=file] { display: none; }
+
+    /* Scrollbars subtle (WebKit) */
+    ::-webkit-scrollbar { height: 10px; width: 10px; }
+    ::-webkit-scrollbar-thumb { background: rgba(100,116,139,.35); border-radius: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-800">
+  <header class="sticky top-0 z-30 backdrop-blur bg-white/80 border-b border-slate-200">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3">
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-sky-400 grid place-items-center text-white font-bold">CJ</div>
+        <h1 class="text-lg sm:text-xl font-semibold tracking-tight">Customer Journey Flow</h1>
+        <span class="hidden sm:inline text-slate-500 text-sm">Visualize steps from awareness to purchase</span>
+      </div>
+      <div class="ml-auto flex items-center gap-2">
+        <button id="addStageBtn" class="btn inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          <span class="hidden sm:inline">Add Stage</span>
+        </button>
+        <button id="autoArrangeBtn" class="btn inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 text-white hover:bg-slate-900">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
+          <span class="hidden sm:inline">Tidy Layout</span>
+        </button>
+        <button id="exportBtn" class="btn inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-300 hover:bg-slate-50">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4m0 12l-4-4m4 4l4-4"/><path d="M20 20H4"/></svg>
+          <span class="hidden sm:inline">Export</span>
+        </button>
+        <label for="importFile" class="btn hint relative inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-300 hover:bg-slate-50 cursor-pointer" data-hint="Import JSON">
+          <input id="importFile" type="file" accept="application/json" />
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v12m0-12l-4 4m4-4l4 4"/><path d="M20 4H4"/></svg>
+          <span class="hidden sm:inline">Import</span>
+        </label>
+        <button id="resetBtn" class="btn inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-300 hover:bg-slate-50">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.708"/><path d="M3 3v6h6"/></svg>
+          <span class="hidden sm:inline">Reset</span>
+        </button>
+        <button id="helpBtn" class="btn inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-300 hover:bg-slate-50">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19h.01"/><path d="M12 12a4 4 0 1 0-4-4"/><path d="M12 16v-4"/></svg>
+          <span class="hidden sm:inline">Help</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="relative">
+    <div id="board" class="board-bg relative w-full h-[calc(100vh-68px)] overflow-auto">
+      <!-- Connections layer (under nodes) -->
+      <svg id="conn-svg" class="absolute inset-0" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"></path>
+          </marker>
+          <marker id="arrowSelected" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563eb"></path>
+          </marker>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="2.25" result="coloredBlur"/>
+            <feMerge>
+              <feMergeNode in="coloredBlur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+        </defs>
+        <g id="conn-layer"></g>
+        <g id="ghost-layer"></g>
+      </svg>
+
+      <!-- Nodes layer -->
+      <div id="nodes-layer" class="absolute inset-0"></div>
+    </div>
+  </main>
+
+  <!-- Help modal -->
+  <div id="helpModal" class="fixed inset-0 z-40 hidden">
+    <div class="absolute inset-0 bg-slate-900/60"></div>
+    <div class="relative max-w-2xl mx-auto mt-20 bg-white rounded-2xl shadow-2xl ring-1 ring-slate-200 p-6">
+      <div class="flex items-start gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-sky-400 text-white grid place-items-center font-bold">CJ</div>
+        <div class="flex-1">
+          <h2 class="text-xl font-semibold">Welcome to Customer Journey Flow</h2>
+          <p class="text-slate-600 mt-1">Build and edit a journey from awareness to purchase using draggable stages and drag-to-connect arrows.</p>
+          <ul class="mt-3 space-y-2 text-slate-700">
+            <li>• Drag a stage to move it. Title and notes are editable — just click to type.</li>
+            <li>• Drag from the right port (●) of a stage to the left port of another to create a connection.</li>
+            <li>• Click a line or stage to select, then press Delete to remove.</li>
+            <li>• Use “Tidy Layout” to neatly distribute stages left → right.</li>
+            <li>• Your work auto-saves locally. Export/Import to share.</li>
+          </ul>
+        </div>
+        <button id="closeHelpBtn" class="ml-2 p-2 rounded-lg hover:bg-slate-100">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M6 18L18 6"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  ;(() => {
+    const STORAGE_KEY = 'customer-journey-flow.v1';
+
+    const board = document.getElementById('board');
+    const nodesLayer = document.getElementById('nodes-layer');
+    const connLayer = document.getElementById('conn-layer');
+    const ghostLayer = document.getElementById('ghost-layer');
+
+    const addStageBtn = document.getElementById('addStageBtn');
+    const autoArrangeBtn = document.getElementById('autoArrangeBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const importFile = document.getElementById('importFile');
+    const resetBtn = document.getElementById('resetBtn');
+    const helpBtn = document.getElementById('helpBtn');
+    const helpModal = document.getElementById('helpModal');
+    const closeHelpBtn = document.getElementById('closeHelpBtn');
+
+    const state = {
+      nodes: new Map(), // id -> {id, x, y, title, notes, color}
+      conns: [], // {id, from, to}
+      selected: { nodeId: null, connId: null },
+      dragging: null, // { id, offX, offY }
+      linking: null, // { fromId, tempPath }
+    };
+
+    const palette = [
+      '#0ea5e9', // sky-500
+      '#22c55e', // green-500
+      '#f59e0b', // amber-500
+      '#ef4444', // red-500
+      '#8b5cf6', // violet-500
+      '#14b8a6', // teal-500
+      '#e11d48', // rose-600
+      '#f97316', // orange-500
+    ];
+
+    const defaults = () => ({
+      nodes: [
+        { title: 'Awareness', notes: 'Ads, SEO, social reach', x: 80,  y: 160, color: '#0ea5e9' },
+        { title: 'Consideration', notes: 'Research, comparisons', x: 320, y: 160, color: '#22c55e' },
+        { title: 'Intent', notes: 'Trials, demos, add to cart', x: 560, y: 160, color: '#f59e0b' },
+        { title: 'Purchase', notes: 'Checkout, payment', x: 800, y: 160, color: '#ef4444' },
+        { title: 'Post‑Purchase', notes: 'Onboarding, support, advocacy', x: 1040, y: 160, color: '#8b5cf6' },
+      ],
+      conns: [ ['Awareness','Consideration'], ['Consideration','Intent'], ['Intent','Purchase'], ['Purchase','Post‑Purchase'] ]
+    });
+
+    // Utilities
+    const uid = (p='id') => p + '-' + Math.random().toString(36).slice(2,9);
+    const clamp = (v, a, b) => Math.min(Math.max(v, a), b);
+    const snap = (v, n=10) => Math.round(v / n) * n;
+
+    const boardRect = () => board.getBoundingClientRect();
+    const nodeEl = (id) => document.querySelector(`[data-id="${id}"]`);
+
+    const persist = () => {
+      const data = {
+        nodes: Array.from(state.nodes.values()).map(n=>({ id:n.id, x:n.x, y:n.y, title:n.title, notes:n.notes||'', color:n.color })),
+        conns: state.conns.map(c=>({ id:c.id, from:c.from, to:c.to })),
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    };
+
+    const restore = () => {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw);
+      } catch (e) { console.warn('Failed to parse saved data', e); return null; }
+    };
+
+    // Path helpers
+    function portPos(el, side) {
+      const r = el.getBoundingClientRect();
+      const b = boardRect();
+      const x = side === 'out' ? (r.right - b.left) : (r.left - b.left);
+      const y = r.top - b.top + r.height/2;
+      return { x, y };
+    }
+
+    function nodePortPos(id, side) {
+      const el = nodeEl(id);
+      const port = el.querySelector(side === 'out' ? '.port.out' : '.port.in');
+      return portPos(port, side);
+    }
+
+    function pathD(p0, p1) {
+      const dx = Math.max(60, Math.abs(p1.x - p0.x) * 0.4);
+      const c1 = { x: p0.x + dx, y: p0.y };
+      const c2 = { x: p1.x - dx, y: p1.y };
+      return `M ${p0.x} ${p0.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${p1.x} ${p1.y}`;
+    }
+
+    function drawConnPath(conn, selected=false) {
+      let path = document.getElementById(conn.id);
+      if (!path) {
+        path = document.createElementNS('http://www.w3.org/2000/svg','path');
+        path.setAttribute('id', conn.id);
+        path.classList.add('conn');
+        path.setAttribute('filter', 'url(#glow)');
+        connLayer.appendChild(path);
+        path.addEventListener('pointerdown', (e) => {
+          e.stopPropagation();
+          selectConn(conn.id);
+        });
+      }
+      const p0 = nodePortPos(conn.from, 'out');
+      const p1 = nodePortPos(conn.to, 'in');
+      path.setAttribute('d', pathD(p0, p1));
+      path.setAttribute('marker-end', selected ? 'url(#arrowSelected)' : 'url(#arrow)');
+      path.setAttribute('stroke-linecap','round');
+      path.setAttribute('stroke-linejoin','round');
+      path.classList.toggle('selected', state.selected.connId === conn.id);
+    }
+
+    function redrawAllConns() {
+      state.conns.forEach(c => drawConnPath(c, state.selected.connId === c.id));
+    }
+
+    function addConn(from, to) {
+      if (from === to) return; // no self-conn
+      if (state.conns.some(c => c.from === from && c.to === to)) return; // prevent dup
+      const id = uid('c');
+      const conn = { id, from, to };
+      state.conns.push(conn);
+      drawConnPath(conn);
+      persist();
+    }
+
+    function deleteConn(id) {
+      const idx = state.conns.findIndex(c => c.id === id);
+      if (idx >= 0) {
+        const el = document.getElementById(state.conns[idx].id);
+        if (el) el.remove();
+        state.conns.splice(idx, 1);
+        state.selected.connId = null;
+        persist();
+      }
+    }
+
+    function selectNode(id) {
+      state.selected.connId = null;
+      state.selected.nodeId = id;
+      document.querySelectorAll('.node').forEach(n => n.classList.toggle('selected', n.dataset.id === id));
+      document.querySelectorAll('.conn').forEach(c => c.classList.remove('selected'));
+    }
+
+    function selectConn(id) {
+      state.selected.nodeId = null;
+      state.selected.connId = id;
+      document.querySelectorAll('.node').forEach(n => n.classList.remove('selected'));
+      document.querySelectorAll('.conn').forEach(c => c.classList.toggle('selected', c.id === id));
+    }
+
+    // Node creation & events
+    function createNode({ id=uid('n'), title='Stage', notes='', x=120, y=120, color='#0ea5e9' }={}) {
+      const el = document.createElement('div');
+      el.className = 'node';
+      el.dataset.id = id;
+      el.style.left = x + 'px';
+      el.style.top = y + 'px';
+
+      el.innerHTML = `
+        <div class="h-full w-full rounded-2xl shadow-lg ring-1 ring-slate-200 bg-white">
+          <div class="drag-handle flex items-center gap-2 px-3 py-2 border-b border-slate-100 rounded-t-2xl" style="cursor: grab">
+            <div class="h-3 w-3 rounded-full" style="background:${color}"></div>
+            <div class="pill text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">Stage</div>
+            <div class="ml-auto flex items-center gap-1 text-slate-400">
+              <button class="duplicate p-1 rounded hover:bg-slate-100" title="Duplicate">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 8h12v12H8z"/><path d="M4 4h12v12H4z"/></svg>
+              </button>
+              <button class="remove p-1 rounded hover:bg-slate-100" title="Delete">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6v12"/><path d="M16 6v12"/><path d="M5 6l1-2h12l1 2"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="px-3 py-2">
+            <div class="title font-semibold leading-6 text-slate-800" contenteditable="true">${escapeHtml(title)}</div>
+            <div class="notes mt-1 text-[13px] leading-5 text-slate-600" contenteditable="true">${escapeHtml(notes)}</div>
+          </div>
+          <div class="port in" title="Drop connection here"></div>
+          <div class="port out hint" title="Drag to connect" data-hint="Drag to connect"></div>
+        </div>
+      `;
+
+      nodesLayer.appendChild(el);
+
+      // State
+      state.nodes.set(id, { id, x, y, title, notes, color });
+
+      // Event wiring
+      const handle = el.querySelector('.drag-handle');
+      handle.addEventListener('pointerdown', startDrag);
+
+      el.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        selectNode(id);
+      });
+
+      el.querySelector('.title').addEventListener('input', (e) => {
+        const n = state.nodes.get(id); n.title = e.currentTarget.textContent.trim();
+        persist();
+      });
+      el.querySelector('.notes').addEventListener('input', (e) => {
+        const n = state.nodes.get(id); n.notes = e.currentTarget.textContent.trim();
+        persist();
+        redrawAllConns();
+      });
+
+      el.querySelector('.remove').addEventListener('click', (e) => { e.stopPropagation(); removeNode(id); });
+      el.querySelector('.duplicate').addEventListener('click', (e) => { e.stopPropagation(); duplicateNode(id); });
+
+      // Ports
+      const outPort = el.querySelector('.port.out');
+      outPort.addEventListener('pointerdown', startLinkFromPort);
+
+      const inPort = el.querySelector('.port.in');
+      inPort.addEventListener('pointerup', (e) => {
+        e.stopPropagation();
+        if (state.linking && state.linking.fromId && state.linking.fromId !== id) {
+          addConn(state.linking.fromId, id);
+        }
+        cancelLink();
+      });
+
+      return id;
+    }
+
+    function removeNode(id) {
+      // Remove associated connections
+      const toRemove = state.conns.filter(c => c.from === id || c.to === id).map(c => c.id);
+      toRemove.forEach(deleteConn);
+      const el = nodeEl(id);
+      if (el) el.remove();
+      state.nodes.delete(id);
+      if (state.selected.nodeId === id) state.selected.nodeId = null;
+      persist();
+    }
+
+    function duplicateNode(id) {
+      const n = state.nodes.get(id);
+      const clone = { ...n, id: uid('n'), x: n.x + 24, y: n.y + 24, title: n.title + ' (copy)' };
+      createNode(clone);
+      persist();
+      redrawAllConns();
+    }
+
+    // Dragging
+    function startDrag(e) {
+      const el = e.currentTarget.closest('.node');
+      const id = el.dataset.id;
+      selectNode(id);
+      const r = boardRect();
+      const startX = e.clientX - r.left;
+      const startY = e.clientY - r.top;
+      const n = state.nodes.get(id);
+      state.dragging = { id, offX: startX - n.x, offY: startY - n.y };
+      el.setPointerCapture?.(e.pointerId);
+      document.addEventListener('pointermove', onDragMove);
+      document.addEventListener('pointerup', endDrag);
+    }
+
+    function onDragMove(e) {
+      if (!state.dragging) return;
+      const { id, offX, offY } = state.dragging;
+      const r = boardRect();
+      const x = snap(e.clientX - r.left - offX);
+      const y = snap(e.clientY - r.top - offY);
+      const n = state.nodes.get(id);
+      n.x = x; n.y = y;
+      const el = nodeEl(id);
+      el.style.left = x + 'px';
+      el.style.top = y + 'px';
+      redrawAllConns();
+    }
+
+    function endDrag(e) {
+      if (!state.dragging) return;
+      persist();
+      state.dragging = null;
+      document.removeEventListener('pointermove', onDragMove);
+      document.removeEventListener('pointerup', endDrag);
+    }
+
+    // Linking
+    function startLinkFromPort(e) {
+      e.stopPropagation();
+      const el = e.currentTarget.closest('.node');
+      const fromId = el.dataset.id;
+      const p0 = portPos(e.currentTarget, 'out');
+
+      // Temp ghost path
+      const g = document.createElementNS('http://www.w3.org/2000/svg','path');
+      g.classList.add('ghost-line');
+      ghostLayer.appendChild(g);
+
+      state.linking = { fromId, tempPath: g };
+
+      function onMove(ev) {
+        const r = boardRect();
+        const p = { x: ev.clientX - r.left, y: ev.clientY - r.top };
+        g.setAttribute('d', pathD(p0, p));
+      }
+      function onUp(ev) {
+        cancelLink();
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+      }
+
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+    }
+
+    function cancelLink() {
+      if (state.linking) {
+        state.linking.tempPath?.remove();
+        state.linking = null;
+      }
+    }
+
+    // Layout
+    function tidyLayout() {
+      const nodes = Array.from(state.nodes.values());
+      if (nodes.length === 0) return;
+      nodes.sort((a,b) => a.x - b.x);
+      const startX = 80, gap = 240;
+      const y = Math.min(240, Math.max(120, nodes[0].y));
+      nodes.forEach((n, i) => {
+        n.x = startX + i * gap; n.y = y;
+        const el = nodeEl(n.id); el.style.left = n.x + 'px'; el.style.top = n.y + 'px';
+      });
+      redrawAllConns();
+      persist();
+    }
+
+    // Selection & deletion
+    board.addEventListener('pointerdown', () => {
+      state.selected.nodeId = null; state.selected.connId = null;
+      document.querySelectorAll('.node').forEach(n => n.classList.remove('selected'));
+      document.querySelectorAll('.conn').forEach(c => c.classList.remove('selected'));
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Delete' || (e.key === 'Backspace' && !isEditing())) {
+        if (state.selected.nodeId) { removeNode(state.selected.nodeId); }
+        else if (state.selected.connId) { deleteConn(state.selected.connId); }
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') { // select none default
+        if (document.activeElement && ['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) return;
+        e.preventDefault();
+      }
+    });
+
+    function isEditing() {
+      const ae = document.activeElement;
+      return ae && (ae.getAttribute('contenteditable') === 'true' || ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA');
+    }
+
+    // Toolbar actions
+    addStageBtn.addEventListener('click', () => {
+      const color = palette[state.nodes.size % palette.length];
+      const id = createNode({ title: 'New Stage', notes: 'Describe this step…', x: 120 + state.nodes.size*24, y: 300, color });
+      persist();
+    });
+
+    autoArrangeBtn.addEventListener('click', tidyLayout);
+
+    exportBtn.addEventListener('click', () => {
+      const data = {
+        nodes: Array.from(state.nodes.values()),
+        conns: state.conns,
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'customer-journey-flow.json'; a.click();
+      setTimeout(()=> URL.revokeObjectURL(url), 500);
+    });
+
+    importFile.addEventListener('change', (e) => {
+      const file = e.target.files?.[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result);
+          loadFromData(data);
+        } catch (err) { alert('Invalid JSON'); }
+      };
+      reader.readAsText(file);
+      e.target.value = '';
+    });
+
+    resetBtn.addEventListener('click', () => {
+      if (!confirm('Reset to default journey? This clears local changes.')) return;
+      localStorage.removeItem(STORAGE_KEY);
+      clearAll();
+      boot(true);
+    });
+
+    helpBtn.addEventListener('click', () => helpModal.classList.remove('hidden'));
+    closeHelpBtn.addEventListener('click', () => helpModal.classList.add('hidden'));
+    helpModal.addEventListener('click', (e) => { if (e.target === helpModal) helpModal.classList.add('hidden'); });
+
+    // Rendering helpers
+    function clearAll() {
+      nodesLayer.innerHTML = '';
+      connLayer.innerHTML = '';
+      ghostLayer.innerHTML = '';
+      state.nodes.clear();
+      state.conns = [];
+      state.selected = { nodeId: null, connId: null };
+    }
+
+    function loadFromData(data) {
+      clearAll();
+      if (!data || !Array.isArray(data.nodes)) return;
+      data.nodes.forEach(n => createNode(n));
+      if (Array.isArray(data.conns)) {
+        data.conns.forEach(c => {
+          const id = c.id || uid('c');
+          const conn = { id, from: c.from, to: c.to };
+          state.conns.push(conn);
+        });
+        redrawAllConns();
+      }
+      persist();
+    }
+
+    // Window changes
+    window.addEventListener('resize', () => { redrawAllConns(); });
+
+    // Escape HTML utility
+    function escapeHtml(str='') { return str.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])); }
+
+    // Boot
+    function boot(showHelpIfFresh=false) {
+      const saved = restore();
+      if (saved) {
+        loadFromData(saved);
+      } else {
+        const d = defaults();
+        const idByTitle = new Map();
+        d.nodes.forEach((n) => { const id = createNode(n); idByTitle.set(n.title, id); });
+        d.conns.forEach(([a,b]) => addConn(idByTitle.get(a), idByTitle.get(b)));
+        persist();
+        if (showHelpIfFresh) helpModal.classList.remove('hidden');
+      }
+    }
+
+    // Initial boot
+    boot(true);
+  })();
+  </script>
+</body>
+</html>

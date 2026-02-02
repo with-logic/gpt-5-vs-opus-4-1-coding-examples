@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Markdown → Slides</title>
+  <meta name="description" content="Convert Markdown (--- as slide breaks) into a polished, live slide deck with themes, fullscreen, and keyboard navigation." />
+
+  <!-- Tailwind CSS via CDN (for layout and utility classes) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: ['class', '[data-theme="dark"]'],
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui', 'Segoe UI', 'Helvetica', 'Arial', 'Apple Color Emoji', 'Segoe UI Emoji'],
+            serif: ['Merriweather', 'Georgia', 'ui-serif', 'serif'],
+            mono: ['ui-monospace','SFMono-Regular','Menlo','Monaco','Consolas','Liberation Mono','monospace']
+          },
+          boxShadow: {
+            brand: '0 10px 30px rgba(2,6,23,.08)'
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&family=Merriweather:wght@300;400;700&display=swap" rel="stylesheet">
+
+  <!-- Markdown + Sanitizer -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+
+  <style>
+    /* App theme variables (light/dark/sepia/ocean) */
+    :root,[data-theme="light"]{
+      --app-bg:#f8fafc;          /* slate-50 */
+      --text:#0f172a;            /* slate-900 */
+      --muted:#475569;           /* slate-600 */
+      --accent:#2563eb;          /* blue-600 */
+      --card:#ffffff;            /* white */
+      --stage:#eef2f7;           /* soft panel */
+      --slide-bg:#ffffff;
+      --slide-fg:#0b1220;
+      --ring:rgba(37,99,235,.35);
+      --shadow:0 10px 30px rgba(2,6,23,.10);
+      --grid:#e5e7eb;
+    }
+    [data-theme="dark"]{
+      --app-bg:#0b1220;          /* deep navy */
+      --text:#e2e8f0;            /* slate-200 */
+      --muted:#94a3b8;           /* slate-400 */
+      --accent:#60a5fa;          /* blue-400 */
+      --card:#0f172a;            /* slate-900 */
+      --stage:#0b1220;
+      --slide-bg:#0f172a;
+      --slide-fg:#e2e8f0;
+      --ring:rgba(96,165,250,.45);
+      --shadow:0 16px 40px rgba(0,0,0,.55);
+      --grid:#1e293b;
+    }
+    [data-theme="sepia"]{
+      --app-bg:#f7f2ea;
+      --text:#3b2f2f;
+      --muted:#6b5e55;
+      --accent:#b45309;
+      --card:#fbf7f2;
+      --stage:#f3ece3;
+      --slide-bg:#fbf7f2;
+      --slide-fg:#3b2f2f;
+      --ring:rgba(244,165,96,.4);
+      --shadow:0 12px 30px rgba(120,80,20,.20);
+      --grid:#eadfce;
+    }
+    [data-theme="ocean"]{
+      --app-bg:#061423;
+      --text:#e6f1ff;
+      --muted:#9bb6d1;
+      --accent:#22d3ee; /* cyan-400 */
+      --card:#0a1f33;
+      --stage:#061423;
+      --slide-bg:linear-gradient(160deg,#0a2540 0%,#003459 100%);
+      --slide-fg:#e6f1ff;
+      --ring:rgba(34,211,238,.45);
+      --shadow:0 18px 50px rgba(2,8,23,.65);
+      --grid:#0f2a42;
+    }
+
+    html, body { height: 100%; }
+    body {
+      background: var(--app-bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Card-like containers */
+    .surface { background: var(--card); box-shadow: var(--shadow); }
+
+    /* Editor styles */
+    #mdInput {
+      background: var(--card);
+      color: var(--text);
+      box-shadow: inset 0 0 0 1px rgba(15,23,42,.06);
+      border-radius: 12px;
+      caret-color: var(--accent);
+      outline: none;
+    }
+    #mdInput:focus { box-shadow: 0 0 0 3px var(--ring), inset 0 0 0 1px rgba(15,23,42,.10); }
+
+    /* Stage (slide viewport) */
+    #stage {
+      position: relative;
+      background: repeating-linear-gradient(90deg, var(--stage), var(--stage) 4px, transparent 4px, transparent 5px),
+                  repeating-linear-gradient(0deg,  var(--stage), var(--stage) 4px, transparent 4px, transparent 5px);
+      background-color: var(--stage);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      isolation: isolate;
+    }
+    .stage-inner {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      aspect-ratio: 16 / 9;
+      margin: 0 auto;
+      overflow: hidden;
+    }
+
+    /* Slides */
+    .slide {
+      position: absolute;
+      inset: 0;
+      background: var(--slide-bg);
+      color: var(--slide-fg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: clamp(28px, 5vw, 64px);
+      opacity: 0;
+      transform: translateX(10px) scale(1.02);
+      transition: opacity .35s ease, transform .45s cubic-bezier(.16,.84,.44,1);
+      pointer-events: none;
+    }
+    .slide.active {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+      pointer-events: auto;
+    }
+    .slide-content {
+      max-width: 1400px;
+      width: 100%;
+    }
+
+    /* Typography inside slides */
+    .slide h1 { font-size: clamp(2.4rem, 6vw, 5rem); line-height: 1.05; font-weight: 800; letter-spacing: -0.02em; margin-bottom: .4em; }
+    .slide h2 { font-size: clamp(1.8rem, 4.2vw, 3.2rem); line-height: 1.1; font-weight: 700; letter-spacing: -0.01em; margin-bottom: .5em; }
+    .slide h3 { font-size: clamp(1.4rem, 3vw, 2.2rem); line-height: 1.2; font-weight: 700; margin-bottom: .6em; }
+    .slide p { font-size: clamp(1.05rem, 1.6vw, 1.4rem); line-height: 1.6; margin: .6em 0; color: var(--slide-fg); }
+    .slide ul, .slide ol { padding-left: 1.2em; margin: .6em 0; }
+    .slide li { font-size: clamp(1.05rem, 1.5vw, 1.35rem); line-height: 1.5; margin: .25em 0; }
+    .slide blockquote { border-left: 6px solid var(--accent); padding-left: 1em; margin: 1em 0; font-style: italic; opacity: .95; }
+    .slide code { background: rgba(2,6,23,.08); color: inherit; padding: .15em .4em; border-radius: .35rem; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: .95em; }
+    .slide pre { background: rgba(2,6,23,.08); padding: 1em; border-radius: .75rem; overflow: auto; }
+
+    /* On-screen controls for presentation */
+    .control-btn { backdrop-filter: blur(8px); background: rgba(15,23,42,.5); color: #fff; border: 1px solid rgba(255,255,255,.15); }
+    [data-theme="light"] .control-btn { background: rgba(15,23,42,.75); }
+
+    /* Progress bar */
+    #progressTrack { background: rgba(148,163,184,.25); height: 6px; border-radius: 999px; overflow: hidden; }
+    #progressBar { background: var(--accent); height: 100%; width: 0%; transition: width .25s ease; }
+
+    /* Tooltips */
+    .hint { position: relative; }
+    .hint:hover::after { content: attr(aria-label); position: absolute; top: 110%; left: 50%; transform: translateX(-50%); background: rgba(2,6,23,.9); color: #fff; padding: .35rem .55rem; border-radius: .375rem; white-space: nowrap; font-size: .75rem; opacity: .95; pointer-events: none; }
+
+    /* Compact scrollbars for editor */
+    #mdInput::-webkit-scrollbar { width: 10px; }
+    #mdInput::-webkit-scrollbar-thumb { background: rgba(100,116,139,.45); border-radius: 8px; }
+
+    /* Hide grid backdrop within stage when in ocean gradient theme for clarity */
+    [data-theme="ocean"] #stage { background: radial-gradient(1000px 600px at 15% 10%, rgba(34,211,238,.08), transparent 60%),
+                                      radial-gradient(900px 500px at 85% 80%, rgba(59,130,246,.12), transparent 60%),
+                                      var(--stage); }
+  </style>
+</head>
+<body>
+  <!-- Header / Toolbar -->
+  <header class="sticky top-0 z-40 border-b border-slate-200/40" style="background: color-mix(in oklab, var(--app-bg) 92%, transparent)">
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3 flex items-center gap-3">
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="h-9 w-9 rounded-xl flex items-center justify-center text-white shadow-brand" style="background: linear-gradient(135deg,var(--accent),#7c3aed)">
+          <!-- logo -->
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M4 6h10v4H4z" fill="currentColor" opacity=".9"/>
+            <path d="M4 12h7v4H4z" fill="currentColor" opacity=".7"/>
+            <rect x="13.5" y="12" width="6.5" height="4" rx="1" fill="#fff"/>
+          </svg>
+        </div>
+        <div class="leading-tight">
+          <div class="font-extrabold tracking-tight text-lg">Markdown → Slides</div>
+          <div class="text-xs text-slate-500" style="color: var(--muted)">Live deck from Markdown (--- splits slides)</div>
+        </div>
+      </div>
+
+      <div class="ml-auto flex items-center gap-2 sm:gap-3">
+        <!-- Theme select -->
+        <label for="themeSelect" class="sr-only">Theme</label>
+        <select id="themeSelect" class="rounded-lg px-3 py-2 text-sm border border-slate-300/50 bg-[var(--card)]" title="Presentation theme">
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+          <option value="sepia">Sepia</option>
+          <option value="ocean">Ocean</option>
+        </select>
+
+        <!-- Load sample -->
+        <button id="loadSampleBtn" class="hint rounded-lg px-3 py-2 text-sm border border-slate-300/50 bg-[var(--card)]" aria-label="Load example deck">
+          Load Sample
+        </button>
+
+        <!-- Start slideshow (fullscreen) -->
+        <button id="presentBtn" class="rounded-lg px-3 py-2 text-sm text-white" style="background: linear-gradient(135deg,var(--accent),#7c3aed)" title="Start presentation (F)">
+          Start Slideshow
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main layout -->
+  <main class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- Editor Panel -->
+    <section class="surface rounded-2xl p-4 lg:p-6">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-semibold tracking-tight">Markdown</h2>
+        <div class="text-xs" style="color: var(--muted)"><span id="charCount">0</span> chars • <span id="slideCount">0</span> slides</div>
+      </div>
+      <textarea id="mdInput" class="w-full h-[52vh] lg:h-[64vh] resize-none p-4 font-mono text-sm leading-6" spellcheck="false"></textarea>
+      <div class="mt-3 flex items-center gap-2 text-xs" style="color: var(--muted)">
+        <span>Shortcuts: ←/→ next/prev • Home/End • Space/PageUp/PageDown • F fullscreen • T theme</span>
+      </div>
+    </section>
+
+    <!-- Preview Panel -->
+    <section class="surface rounded-2xl p-4 lg:p-6">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-semibold tracking-tight">Live Preview</h2>
+        <div class="flex items-center gap-3 text-sm" style="color: var(--muted)">
+          <div id="counter">1 / 1</div>
+          <button id="fullscreenBtn" class="hint rounded-lg px-3 py-1.5 border border-slate-300/50 bg-[var(--card)]" aria-label="Toggle fullscreen (F)">
+            Fullscreen
+          </button>
+        </div>
+      </div>
+
+      <div id="stage" class="w-full">
+        <div class="stage-inner">
+          <div id="slidesContainer"></div>
+
+          <!-- Onstage controls (visible in fullscreen) -->
+          <div class="pointer-events-none absolute inset-0 flex items-end justify-center p-5">
+            <div class="w-full max-w-4xl">
+              <div id="progressTrack" class="w-full"><div id="progressBar"></div></div>
+            </div>
+          </div>
+
+          <div class="pointer-events-none absolute inset-0 flex items-center justify-between p-4">
+            <button class="control-btn pointer-events-auto h-10 w-10 rounded-full flex items-center justify-center" id="prevBtn" title="Previous (←)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <button class="control-btn pointer-events-auto h-10 w-10 rounded-full flex items-center justify-center" id="nextBtn" title="Next (→)">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // --- Utilities ---
+    const $ = (sel, el=document) => el.querySelector(sel);
+    const $$ = (sel, el=document) => Array.from(el.querySelectorAll(sel));
+    const debounce = (fn, ms=160) => { let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); } }
+
+    // --- Elements ---
+    const mdInput = document.getElementById('mdInput');
+    const slidesContainer = document.getElementById('slidesContainer');
+    const counterEl = document.getElementById('counter');
+    const progressBar = document.getElementById('progressBar');
+    const charCount = document.getElementById('charCount');
+    const slideCount = document.getElementById('slideCount');
+    const themeSelect = document.getElementById('themeSelect');
+    const stage = document.getElementById('stage');
+    const presentBtn = document.getElementById('presentBtn');
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const prevBtn = document.getElementById('prevBtn');
+    const loadSampleBtn = document.getElementById('loadSampleBtn');
+
+    // --- State ---
+    let slidesHTML = [];
+    let current = 0;
+
+    // --- Sample Markdown ---
+    const SAMPLE_MD = `# Quarterly Business Review
+
+### Q4 FY2025 — North America
+
+- Growth up **18.4% YoY** (record)
+- NRR at **124%**; churn at **2.1%**
+- EBITDA margin improved **+3.2pp**
+
+> "Strategy without execution is hallucination." — Thomas Edison
+
+---
+
+## Agenda
+
+1. Highlights & KPI recap
+2. Customer stories
+3. Product & roadmap
+4. Financials
+5. Risks & asks
+
+---
+
+## Highlights
+
+- 3 of top 5 deals were expansions
+- Activation time reduced from 10 → 6 days
+- Launched **Enterprise SSO** and **Data Residency (EU)**
+- Support CSAT 4.8/5, median response 42m
+
+---
+
+## Customer Story — Acme Corp
+
+> "Your platform enabled our go‑to‑market in 6 weeks."
+
+- 1.2k seats across 7 regions
+- Deployed with zero downtime
+- Renewed early, **+40%** expansion
+
+---
+
+## Product & Roadmap
+
+- Q1: Admin audit log, Teams v2
+- Q2: AI-assisted workflows
+- Q3: Offline mode (beta)
+
+\`\`\`js
+// Example: lightweight client init
+import { Client } from 'sdk'
+const client = new Client({ baseUrl: 'https://api.example.com' })
+await client.connect()
+\`\`\`
+
+---
+
+## Financials (USD)
+
+- Revenue: **$18.7M** (+19% QoQ)
+- Gross margin: **81%**
+- Burn multiple: **0.8x**
+
+> Focus: Efficient growth with durable margins.
+
+---
+
+## Risks & Asks
+
+- Hiring velocity vs. budget
+- Data residency for APAC
+- Asking: Green‑light two strategic hires (Security, Data)
+
+---
+
+# Thank You
+
+Questions? Reach out: **team@example.com**`;
+
+    // --- Persistence ---
+    const STORAGE_KEY = 'md2slides.content.v1';
+    const THEME_KEY = 'md2slides.theme.v1';
+
+    // --- Markdown rendering ---
+    marked.setOptions({
+      breaks: true,
+      gfm: true,
+      headerIds: false,
+      mangle: false
+    });
+
+    function parseSlides(raw) {
+      const parts = raw.split(/^\s*---\s*$/m).map(s => s.trim());
+      return parts.map(src => DOMPurify.sanitize(marked.parse(src)));
+    }
+
+    function buildSlides() {
+      slidesContainer.innerHTML = '';
+      slidesHTML.forEach((html, idx) => {
+        const sec = document.createElement('section');
+        sec.className = 'slide';
+        sec.setAttribute('data-index', String(idx));
+        const inner = document.createElement('div');
+        inner.className = 'slide-content';
+        inner.innerHTML = html;
+        sec.appendChild(inner);
+        slidesContainer.appendChild(sec);
+      });
+    }
+
+    function showSlide(index) {
+      if (slidesHTML.length === 0) return;
+      current = Math.max(0, Math.min(index, slidesHTML.length - 1));
+      const slides = $$('#slidesContainer .slide');
+      slides.forEach(el => el.classList.remove('active'));
+      const active = slides[current];
+      if (active) active.classList.add('active');
+      counterEl.textContent = `${current + 1} / ${slidesHTML.length}`;
+      const pct = ((current + 1) / slidesHTML.length) * 100;
+      progressBar.style.width = pct.toFixed(2) + '%';
+      slideCount.textContent = String(slidesHTML.length);
+    }
+
+    const render = debounce(() => {
+      const md = mdInput.value || '';
+      localStorage.setItem(STORAGE_KEY, md);
+      charCount.textContent = String(md.length);
+      slidesHTML = parseSlides(md);
+      buildSlides();
+      showSlide(Math.min(current, slidesHTML.length - 1));
+      // Optional: basic code highlight styles without library
+      // If highlight.js is present, apply it
+      if (window.hljs) {
+        $$('#slidesContainer pre code').forEach(block => hljs.highlightElement(block));
+      }
+    }, 120);
+
+    function next() { showSlide(current + 1); }
+    function prev() { showSlide(current - 1); }
+
+    function isFullscreen() { return !!document.fullscreenElement; }
+    async function enterFullscreen() { try { await stage.requestFullscreen(); } catch(e){} }
+    async function exitFullscreen() { try { await document.exitFullscreen(); } catch(e){} }
+
+    function cycleTheme() {
+      const opts = ['light','dark','sepia','ocean'];
+      const cur = document.documentElement.getAttribute('data-theme') || 'light';
+      const nextIdx = (opts.indexOf(cur) + 1) % opts.length;
+      setTheme(opts[nextIdx]);
+    }
+
+    function setTheme(name) {
+      document.documentElement.setAttribute('data-theme', name);
+      themeSelect.value = name;
+      localStorage.setItem(THEME_KEY, name);
+    }
+
+    // --- Events ---
+    mdInput.addEventListener('input', render);
+    nextBtn.addEventListener('click', next);
+    prevBtn.addEventListener('click', prev);
+    fullscreenBtn.addEventListener('click', () => isFullscreen() ? exitFullscreen() : enterFullscreen());
+    presentBtn.addEventListener('click', async () => { if (!isFullscreen()) await enterFullscreen(); showSlide(0); });
+    loadSampleBtn.addEventListener('click', () => { mdInput.value = SAMPLE_MD; render(); });
+
+    themeSelect.addEventListener('change', (e) => setTheme(e.target.value));
+
+    document.addEventListener('keydown', (e) => {
+      const inEditor = e.target === mdInput || e.target.isContentEditable;
+      const presenting = isFullscreen();
+      // Don’t hijack typing/navigation inside the editor unless in fullscreen
+      if (!presenting && inEditor) return;
+      switch (e.key) {
+        case 'ArrowRight': case 'PageDown': case ' ': case 'Enter': e.preventDefault(); next(); break;
+        case 'ArrowLeft': case 'PageUp': case 'Backspace': e.preventDefault(); prev(); break;
+        case 'Home': e.preventDefault(); showSlide(0); break;
+        case 'End': e.preventDefault(); showSlide(slidesHTML.length - 1); break;
+        case 'f': case 'F': e.preventDefault(); isFullscreen()? exitFullscreen(): enterFullscreen(); break;
+        case 't': case 'T': e.preventDefault(); cycleTheme(); break;
+      }
+    });
+
+    document.addEventListener('fullscreenchange', () => {
+      fullscreenBtn.textContent = isFullscreen() ? 'Exit Fullscreen' : 'Fullscreen';
+    });
+
+    // --- Boot ---
+    (function init(){
+      const saved = localStorage.getItem(STORAGE_KEY);
+      mdInput.value = saved && saved.trim().length ? saved : SAMPLE_MD;
+      const savedTheme = localStorage.getItem(THEME_KEY) || 'light';
+      setTheme(savedTheme);
+      render();
+    })();
+  </script>
+
+  <!-- Optional: highlight.js (for nicer code blocks if available) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/highlight.min.js"></script>
+</body>
+</html>

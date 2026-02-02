@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Theatre</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Special+Elite&family=Lato:wght@300;400&display=swap" rel="stylesheet">
+
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        body {
+            background-color: #0f0c08;
+            color: #d4c5b0;
+            font-family: 'Lato', sans-serif;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        .stage-frame {
+            box-shadow: 
+                inset 0 0 100px #000,
+                0 0 0 20px #1a1612,
+                0 0 0 22px #4a3b2a,
+                0 0 50px rgba(0,0,0,0.8);
+            border-radius: 4px;
+        }
+
+        .curtain {
+            background: 
+                repeating-linear-gradient(90deg, #8b0000 0px, #600000 40px, #8b0000 80px);
+            transition: transform 1.5s cubic-bezier(0.645, 0.045, 0.355, 1);
+            transform-origin: top;
+            box-shadow: inset 0 -20px 50px rgba(0,0,0,0.7);
+            z-index: 50;
+        }
+
+        .curtain-left { transform-origin: top left; }
+        .curtain-right { transform-origin: top right; }
+        
+        .curtain.open-left { transform: scaleX(0); }
+        .curtain.open-right { transform: scaleX(0); }
+
+        .slider-thumb::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #d4c5b0;
+            cursor: pointer;
+            border: 2px solid #4a3b2a;
+        }
+        
+        .typewriter {
+            font-family: 'Special Elite', monospace;
+        }
+
+        /* Scanline effect */
+        .scanlines::before {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+            z-index: 2;
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        // --- UTILS ---
+        const lerp = (start, end, t) => start * (1 - t) + end * t;
+        const clamp = (num, min, max) => Math.min(Math.max(num, min), max);
+        const randomRange = (min, max) => Math.random() * (max - min) + min;
+
+        // --- CONSTANTS ---
+        const MOCK_WEATHER = {
+            temp: 14,
+            condition: "Partly Cloudy",
+            wind: 12
+        };
+
+        // --- RENDER ENGINE CLASS ---
+        class StageRenderer {
+            constructor(canvas) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.width = canvas.width;
+                this.height = canvas.height;
+                this.particles = [];
+                this.time = 0;
+                
+                // Procedural terrain seeds
+                this.mountainPoints = [];
+                this.treePoints = [];
+                this.generateTerrain();
+            }
+
+            resize(w, h) {
+                this.width = w;
+                this.height = h;
+                this.canvas.width = w;
+                this.canvas.height = h;
+                this.generateTerrain();
+            }
+
+            generateTerrain() {
+                // Generate consistent random points for terrain
+                this.mountainPoints = [];
+                let y = this.height * 0.6;
+                for (let x = 0; x <= this.width; x += 50) {
+                    this.mountainPoints.push({
+                        x, 
+                        y: 0, // calculated at render time based on mood
+                        baseNoise: Math.random()
+                    });
+                }
+                
+                this.treePoints = [];
+                for(let i=0; i<15; i++) {
+                    this.treePoints.push({
+                        x: Math.random() * this.width,
+                        scale: 0.5 + Math.random() * 1.0,
+                        type: Math.random() > 0.5 ? 'A' : 'B'
+                    });
+                }
+            }
+
+            // The main draw loop
+            render(moods, isNight, mouseX, mouseY) {
+                const ctx = this.ctx;
+                const w = this.width;
+                const h = this.height;
+                this.time += 0.01;
+
+                // --- 1. SETTING THE STAGE (PARAMETERS) ---
+                // Blend parameters based on sliders
+                const jaggedness = lerp(0.1, 0.9, moods.heroic) + lerp(0, 0.5, moods.eerie) - (moods.cozy * 0.5);
+                const amplitude = lerp(50, 250, moods.heroic) + lerp(20, 80, moods.eerie) - (moods.cozy * 20);
+                const gloom = moods.eerie;
+                const warmth = moods.cozy;
+                const epicness = moods.heroic;
+
+                // Colors
+                let skyTop, skyBot, mountColor, mountMist, groundColor;
+
+                if (isNight) {
+                    skyTop = `rgb(${lerp(20, 10, gloom)}, ${lerp(24, 10, gloom)}, ${lerp(50, 30, gloom)})`;
+                    skyBot = `rgb(${lerp(60, 30, gloom)}, ${lerp(40, 20, gloom)}, ${lerp(80, 40, gloom)})`;
+                    if (warmth > 0.5) skyBot = `rgb(40, 30, 60)`; // Cozy night
+                } else {
+                    // Matinee
+                    const rTop = lerp(135, 100, gloom) + (warmth * 20);
+                    const gTop = lerp(206, 100, gloom) + (warmth * 10);
+                    const bTop = lerp(235, 120, gloom);
+                    skyTop = `rgb(${rTop}, ${gTop}, ${bTop})`;
+                    
+                    const rBot = lerp(240, 150, gloom) + (warmth * 15);
+                    const gBot = lerp(240, 180, gloom) + (warmth * 15);
+                    const bBot = lerp(255, 200, gloom); // Golden if cozy
+                    skyBot = `rgb(${rBot}, ${gBot}, ${bBot})`;
+                }
+
+                // Parallax offset
+                const mx = (mouseX - w/2) * 0.05;
+                const my = (mouseY - h/2) * 0.05;
+
+                // --- 2. BACKGROUND (SKY) ---
+                const grad = ctx.createLinearGradient(0, 0, 0, h);
+                grad.addColorStop(0, skyTop);
+                grad.addColorStop(1, skyBot);
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, w, h);
+
+                // Celestial Body (Sun/Moon)
+                ctx.save();
+                const celestialX = w * 0.7 - mx * 0.5;
+                const celestialY = h * 0.2 - my * 0.5;
+                const celestialSize = lerp(40, 80, epicness);
+                ctx.translate(celestialX, celestialY);
+                
+                if (isNight) {
+                    // Moon
+                    ctx.fillStyle = "#fff";
+                    ctx.shadowBlur = 20 + (gloom * 20);
+                    ctx.shadowColor = "#fff";
+                    ctx.beginPath();
+                    ctx.arc(0, 0, celestialSize * 0.6, 0, Math.PI * 2);
+                    ctx.fill();
+                    // Crater noise if eerie
+                    if (gloom > 0.5) {
+                        ctx.globalCompositeOperation = 'destination-out';
+                        ctx.beginPath();
+                        ctx.arc(-10, 10, 10, 0, Math.PI*2);
+                        ctx.fill();
+                        ctx.globalCompositeOperation = 'source-over';
+                    }
+                } else {
+                    // Sun
+                    ctx.fillStyle = warmth > 0.5 ? "#ffdb4d" : "#ffffb0";
+                    ctx.shadowBlur = 40 + (epicness * 40);
+                    ctx.shadowColor = warmth > 0.5 ? "orange" : "white";
+                    ctx.beginPath();
+                    ctx.arc(0, 0, celestialSize, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+
+                // --- 3. MIDGROUND (MOUNTAINS/CITY) ---
+                ctx.save();
+                ctx.translate(mx * 2, my * 2); // Parallax
+                
+                // Color calc
+                const mR = lerp(80, 40, gloom) + (warmth * 20) - (epicness * 20);
+                const mG = lerp(90, 50, gloom) + (warmth * 10) - (epicness * 20);
+                const mB = lerp(110, 60, gloom) - (warmth * 10) + (epicness * 10);
+                mountColor = `rgb(${mR},${mG},${mB})`;
+
+                ctx.fillStyle = mountColor;
+                ctx.beginPath();
+                ctx.moveTo(0, h);
+                
+                // Draw dynamic mountain path
+                for (let i = 0; i < this.mountainPoints.length; i++) {
+                    const p = this.mountainPoints[i];
+                    // Modulate height based on sliders
+                    let yOffset = Math.sin(i * 0.5 + this.time * 0.1) * 10 * gloom; // Eerie breathing
+                    let noise = (p.baseNoise - 0.5) * amplitude; 
+                    
+                    // Cozy = Rounder (Cos)
+                    if (warmth > 0.5) {
+                        noise = Math.cos(i * 0.2) * (amplitude * 0.5);
+                    }
+
+                    // Heroic = Higher peaks
+                    const baseHeight = h * 0.6 - (epicness * 100);
+                    
+                    const x = p.x;
+                    const y = baseHeight + noise + yOffset;
+                    ctx.lineTo(x, y);
+                }
+                ctx.lineTo(w, h);
+                ctx.closePath();
+                ctx.fill();
+
+                // Fog / Mist
+                if (gloom > 0.3 || warmth > 0.6) {
+                    const gradMist = ctx.createLinearGradient(0, h * 0.5, 0, h);
+                    const mistColor = warmth > 0.6 ? "255, 240, 200" : "200, 220, 230";
+                    gradMist.addColorStop(0, `rgba(${mistColor}, 0)`);
+                    gradMist.addColorStop(1, `rgba(${mistColor}, ${0.3 + gloom * 0.4})`);
+                    ctx.fillStyle = gradMist;
+                    ctx.fillRect(0, h/2, w, h/2);
+                }
+                ctx.restore();
+
+                // --- 4. FOREGROUND PROPS ---
+                ctx.save();
+                ctx.translate(mx * 4, my * 4); // More parallax
+                
+                // Ground
+                ctx.fillStyle = isNight ? "#1a1a1a" : "#2d2d2d";
+                if (warmth > 0.6) ctx.fillStyle = isNight ? "#2a2015" : "#4a3c2a"; // Warmer ground
+                
+                ctx.beginPath();
+                ctx.ellipse(w/2, h + 100, w * 0.8, 200, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Props (Trees/Ruins)
+                this.treePoints.forEach((tree, i) => {
+                    const x = tree.x;
+                    const y = h - 40; 
+                    
+                    // Only draw visible ones
+                    if (x < -100 || x > w + 100) return;
+
+                    ctx.save();
+                    ctx.translate(x, y);
+                    ctx.scale(tree.scale, tree.scale);
+
+                    if (gloom > 0.5) {
+                        // Dead Trees (Eerie)
+                        ctx.strokeStyle = "#111";
+                        ctx.lineWidth = 4;
+                        ctx.beginPath();
+                        ctx.moveTo(0,0);
+                        ctx.lineTo(0, -100);
+                        ctx.lineTo(-20, -130);
+                        ctx.moveTo(0, -80);
+                        ctx.lineTo(20, -110);
+                        ctx.stroke();
+                    } else if (warmth > 0.5) {
+                        // Round Bushy Trees (Cozy)
+                        ctx.fillStyle = isNight ? "#1e3320" : "#2d4a30";
+                        ctx.beginPath();
+                        ctx.arc(0, -60, 40, 0, Math.PI * 2);
+                        ctx.arc(-30, -40, 30, 0, Math.PI * 2);
+                        ctx.arc(30, -40, 30, 0, Math.PI * 2);
+                        ctx.fill();
+                        // Trunk
+                        ctx.fillStyle = "#3e2723";
+                        ctx.fillRect(-10, -20, 20, 20);
+                    } else {
+                        // Generic Pines (Heroic/Normal)
+                        ctx.fillStyle = "#1b2e25";
+                        ctx.beginPath();
+                        ctx.moveTo(-30, 0);
+                        ctx.lineTo(0, -120 - (epicness * 50)); // Taller in heroic
+                        ctx.lineTo(30, 0);
+                        ctx.fill();
+                    }
+                    ctx.restore();
+                });
+
+                // --- 5. PARTICLES (RAIN/SNOW/LEAVES) ---
+                this.manageParticles(moods);
+                this.drawParticles(ctx, w, h);
+
+                ctx.restore();
+
+                // --- 6. LIGHTING & OVERLAYS ---
+                // Spotlight Sweep
+                const spotlightX = w/2 + Math.sin(this.time * 0.5) * (w * 0.3);
+                
+                if (epicness > 0.3) {
+                    // God Rays
+                    ctx.save();
+                    ctx.globalCompositeOperation = 'overlay';
+                    const grd = ctx.createLinearGradient(spotlightX - 100, 0, spotlightX + 200, h);
+                    grd.addColorStop(0, "rgba(255, 255, 255, 0)");
+                    grd.addColorStop(0.5, `rgba(255, 255, 200, ${epicness * 0.3})`);
+                    grd.addColorStop(1, "rgba(255, 255, 255, 0)");
+                    ctx.fillStyle = grd;
+                    ctx.transform(1, 0, -0.4, 1, 0, 0); // Slant
+                    ctx.fillRect(-w, 0, w*2, h);
+                    ctx.restore();
+                }
+
+                if (gloom > 0.3) {
+                    // Vignette
+                    const gradV = ctx.createRadialGradient(w/2, h/2, h*0.3, w/2, h/2, h);
+                    gradV.addColorStop(0, "transparent");
+                    gradV.addColorStop(1, `rgba(0,0,0, ${gloom * 0.8})`);
+                    ctx.fillStyle = gradV;
+                    ctx.fillRect(0,0,w,h);
+                }
+
+                // Warm Hearth Glow (Cozy)
+                if (warmth > 0.5) {
+                    const glowX = w * 0.2;
+                    const glowY = h * 0.8;
+                    const gradG = ctx.createRadialGradient(glowX, glowY, 10, glowX, glowY, 300);
+                    gradG.addColorStop(0, `rgba(255, 150, 50, ${warmth * 0.4})`);
+                    gradG.addColorStop(1, "transparent");
+                    ctx.globalCompositeOperation = 'screen';
+                    ctx.fillStyle = gradG;
+                    ctx.fillRect(0,0,w,h);
+                    ctx.globalCompositeOperation = 'source-over';
+                }
+            }
+
+            manageParticles(moods) {
+                // Add particles
+                const count = this.particles.length;
+                let desiredCount = 50;
+                let type = 'dust';
+                let speedY = 1;
+                let speedX = 0;
+
+                if (moods.heroic > 0.5) { type = 'rain'; desiredCount = 200; speedY = 15; speedX = 5; }
+                if (moods.eerie > 0.5) { type = 'fog'; desiredCount = 100; speedY = -0.5; speedX = 1; }
+                if (moods.cozy > 0.5) { type = 'snow'; desiredCount = 150; speedY = 2; speedX = Math.sin(this.time); }
+
+                if (count < desiredCount) {
+                    this.particles.push({
+                        x: Math.random() * this.width,
+                        y: Math.random() * this.height,
+                        size: Math.random() * 3 + 1,
+                        type: type
+                    });
+                } else if (count > desiredCount) {
+                    this.particles.pop();
+                }
+
+                // Update
+                this.particles.forEach(p => {
+                    p.y += speedY;
+                    p.x += speedX + Math.sin(this.time + p.y * 0.01);
+                    if (p.y > this.height) p.y = -10;
+                    if (p.y < -10) p.y = this.height;
+                    if (p.x > this.width) p.x = 0;
+                    if (p.x < 0) p.x = this.width;
+                    p.type = type; // morph existing
+                });
+            }
+
+            drawParticles(ctx, w, h) {
+                ctx.fillStyle = "rgba(255,255,255,0.6)";
+                this.particles.forEach(p => {
+                    if (p.type === 'rain') {
+                        ctx.strokeStyle = "rgba(200,200,255,0.6)";
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(p.x, p.y);
+                        ctx.lineTo(p.x - 2, p.y + 10);
+                        ctx.stroke();
+                    } else if (p.type === 'snow') {
+                        ctx.fillStyle = "rgba(255,255,255,0.9)";
+                        ctx.beginPath();
+                        ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+                        ctx.fill();
+                    } else if (p.type === 'fog') {
+                        ctx.fillStyle = `rgba(150,255,150,${0.1})`;
+                        ctx.beginPath();
+                        ctx.arc(p.x, p.y, p.size * 10, 0, Math.PI*2);
+                        ctx.fill();
+                    } else {
+                        // Dust
+                        ctx.fillStyle = "rgba(255,255,200,0.3)";
+                        ctx.fillRect(p.x, p.y, 2, 2);
+                    }
+                });
+            }
+        }
+
+        // --- SUBTITLE COMPONENT ---
+        const Subtitle = ({ mood, isNight }) => {
+            const [text, setText] = useState("");
+            const targetText = useMemo(() => {
+                const dominant = Object.keys(mood).reduce((a, b) => mood[a] > mood[b] ? a : b);
+                
+                // Mixing text logic
+                if (mood.eerie > 0.6) {
+                    return isNight 
+                        ? "THE MIST CREEPS OVER THE FORGOTTEN RUINS, WHISPERING SECRETS TO THE MOON."
+                        : "A PALE SUN STRUGGLES AGAINST THE GLOOM OF THE HAUNTED VALLEY.";
+                }
+                if (mood.heroic > 0.6) {
+                    return isNight 
+                        ? "THE STORM BREWS OVER THE PEAKS AS DESTINY AWAITS."
+                        : "GLORIOUS SUNLIGHT BATHES THE REALM IN GOLDEN PROMISE.";
+                }
+                if (mood.cozy > 0.6) {
+                    return isNight 
+                        ? "A GENTLE FIRE CRACKLES AS SNOW FALLS SOFTLY OUTSIDE."
+                        : "A PLEASANT MORNING BREEZE RUSTLES THE LEAVES OF THE ORCHARD.";
+                }
+                return isNight
+                    ? "THE WORLD SLEEPS UNDER A BLANKET OF STARS."
+                    : "A QUIET DAY IN THE THEATRE OF NATURE.";
+
+            }, [mood, isNight]);
+
+            useEffect(() => {
+                let i = 0;
+                setText("");
+                const interval = setInterval(() => {
+                    setText(targetText.substring(0, i));
+                    i++;
+                    if (i > targetText.length) clearInterval(interval);
+                }, 40);
+                return () => clearInterval(interval);
+            }, [targetText]);
+
+            return (
+                <div className="w-full text-center mt-6 h-16 flex items-center justify-center">
+                    <p className="typewriter text-xl md:text-2xl text-yellow-100 tracking-widest drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]">
+                        {text}<span className="animate-pulse">_</span>
+                    </p>
+                </div>
+            );
+        };
+
+        // --- MAIN APP ---
+        const App = () => {
+            const canvasRef = useRef(null);
+            const rendererRef = useRef(null);
+            const containerRef = useRef(null);
+            
+            const [moods, setMoods] = useState({ cozy: 0.2, eerie: 0, heroic: 0 });
+            const [isNight, setIsNight] = useState(false);
+            const [curtainOpen, setCurtainOpen] = useState(false);
+            const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
+            // Initialize Curtain
+            useEffect(() => {
+                setTimeout(() => setCurtainOpen(true), 500);
+            }, []);
+
+            // Initialize Canvas
+            useEffect(() => {
+                if (canvasRef.current) {
+                    rendererRef.current = new StageRenderer(canvasRef.current);
+                    
+                    const handleResize = () => {
+                        const rect = containerRef.current.getBoundingClientRect();
+                        rendererRef.current.resize(rect.width, rect.height);
+                    };
+                    
+                    window.addEventListener('resize', handleResize);
+                    handleResize(); // Initial size
+
+                    return () => window.removeEventListener('resize', handleResize);
+                }
+            }, []);
+
+            // Animation Loop
+            useEffect(() => {
+                let animationId;
+                const loop = () => {
+                    if (rendererRef.current) {
+                        rendererRef.current.render(moods, isNight, mousePos.x, mousePos.y);
+                    }
+                    animationId = requestAnimationFrame(loop);
+                };
+                loop();
+                return () => cancelAnimationFrame(animationId);
+            }, [moods, isNight, mousePos]);
+
+            // Handlers
+            const handleMoodChange = (key, val) => {
+                setMoods(prev => {
+                    const next = { ...prev, [key]: parseFloat(val) };
+                    // Normalize? Optional. Let's allow blending but maybe dampen others slightly? 
+                    // No, raw mixing is more fun.
+                    return next;
+                });
+            };
+
+            const handleMouseMove = (e) => {
+                // Throttle slightly if needed, but modern browsers handle this ok
+                setMousePos({ x: e.clientX, y: e.clientY });
+            };
+
+            return (
+                <div 
+                    className="w-full h-full flex flex-col items-center justify-center relative bg-neutral-900 scanlines" 
+                    onMouseMove={handleMouseMove}
+                >
+                    {/* Header */}
+                    <div className="absolute top-4 z-40 font-cinzel text-amber-500/80 text-sm tracking-[0.3em] uppercase">
+                        The Weather Theatre
+                    </div>
+
+                    {/* Stage Container */}
+                    <div className="relative w-full max-w-5xl aspect-video stage-frame bg-black overflow-hidden shadow-2xl z-10" ref={containerRef}>
+                        
+                        {/* The Canvas */}
+                        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block" />
+
+                        {/* Curtains */}
+                        <div className={`curtain curtain-left absolute top-0 left-0 w-1/2 h-full ${curtainOpen ? 'open-left' : ''}`}></div>
+                        <div className={`curtain curtain-right absolute top-0 right-0 w-1/2 h-full ${curtainOpen ? 'open-right' : ''}`}></div>
+                        
+                        {/* Overlay GUI (Weather Stats) */}
+                        <div className={`absolute top-6 right-6 text-right font-special-elite transition-opacity duration-1000 ${curtainOpen ? 'opacity-80' : 'opacity-0'}`}>
+                            <div className="text-4xl text-white drop-shadow-lg">{MOCK_WEATHER.temp}°C</div>
+                            <div className="text-sm text-gray-300 uppercase tracking-widest">{MOCK_WEATHER.condition}</div>
+                            <div className="text-xs text-gray-400 mt-1">Wind: {MOCK_WEATHER.wind} km/h</div>
+                        </div>
+                    </div>
+
+                    {/* Subtitle */}
+                    <Subtitle mood={moods} isNight={isNight} />
+
+                    {/* Controls */}
+                    <div className="z-50 w-full max-w-3xl px-8 py-6 bg-[#1a1612] border-t-2 border-[#4a3b2a] mt-4 rounded-xl flex flex-col md:flex-row gap-8 items-center justify-between shadow-2xl">
+                        
+                        {/* Sliders */}
+                        <div className="flex-1 w-full grid grid-cols-1 md:grid-cols-3 gap-6">
+                            {['cozy', 'eerie', 'heroic'].map(m => (
+                                <div key={m} className="flex flex-col gap-2">
+                                    <label className="text-xs uppercase tracking-widest text-amber-700/80 font-bold flex justify-between">
+                                        {m} <span>{(moods[m] * 100).toFixed(0)}%</span>
+                                    </label>
+                                    <input 
+                                        type="range" 
+                                        min="0" max="1" step="0.01" 
+                                        value={moods[m]}
+                                        onChange={(e) => handleMoodChange(m, e.target.value)}
+                                        className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb"
+                                    />
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Toggle */}
+                        <div className="flex items-center gap-4 border-l border-[#4a3b2a] pl-8">
+                            <span className={`text-sm uppercase tracking-wider ${!isNight ? 'text-amber-400' : 'text-gray-600'}`}>Matinée</span>
+                            <button 
+                                onClick={() => setIsNight(!isNight)}
+                                className="relative inline-flex h-8 w-14 items-center rounded-full bg-gray-800 border border-gray-600 transition-colors focus:outline-none"
+                            >
+                                <span className="sr-only">Toggle Night</span>
+                                <span 
+                                    className={`${isNight ? 'translate-x-7 bg-indigo-500' : 'translate-x-1 bg-yellow-500'} inline-block h-6 w-6 transform rounded-full transition duration-300 ease-in-out`}
+                                />
+                            </button>
+                            <span className={`text-sm uppercase tracking-wider ${isNight ? 'text-indigo-300' : 'text-gray-600'}`}>Night</span>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

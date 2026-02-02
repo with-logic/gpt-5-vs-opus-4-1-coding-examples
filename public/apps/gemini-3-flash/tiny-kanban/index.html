@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tiny Kanban | Daily Standup</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .kanban-column { min-height: calc(100vh - 200px); }
+        .sortable-ghost { opacity: 0.4; background: #e2e8f0 !important; border: 2px dashed #94a3b8 !important; }
+        .sortable-drag { cursor: grabbing !important; transform: rotate(2deg); }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+    </style>
+</head>
+<body class="bg-[#F8FAFC] text-slate-900 overflow-hidden">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        const INITIAL_COLUMNS = [
+            { id: 'todo', title: 'Todo', limit: 10, color: 'bg-slate-500' },
+            { id: 'doing', title: 'Doing', limit: 5, color: 'bg-blue-600' },
+            { id: 'done', title: 'Done', limit: 0, color: 'bg-emerald-600' }
+        ];
+
+        const PRIORITIES = {
+            low: { label: 'Low', color: 'bg-slate-100 text-slate-600 border-slate-200' },
+            medium: { label: 'Medium', color: 'bg-amber-100 text-amber-700 border-amber-200' },
+            high: { label: 'High', color: 'bg-rose-100 text-rose-700 border-rose-200' }
+        };
+
+        const AVATARS = [
+            { name: 'Steve', color: 'bg-indigo-500' },
+            { name: 'Anna', color: 'bg-emerald-500' },
+            { name: 'John', color: 'bg-orange-500' },
+            { name: 'Maria', color: 'bg-pink-500' },
+            { name: 'Alex', color: 'bg-sky-500' }
+        ];
+
+        const App = () => {
+            const [tasks, setTasks] = useState(() => {
+                const saved = localStorage.getItem('tiny-kanban-tasks');
+                return saved ? JSON.parse(saved) : [
+                    { id: '1', title: 'Implement search filter', description: 'Add a search bar to filter tasks by title or assignee.', priority: 'high', assignee: 'Steve', status: 'todo', createdAt: Date.now() },
+                    { id: '2', title: 'UI Polish for standup', description: 'Increase font sizes and improve contrast for shared screens.', priority: 'medium', assignee: 'Anna', status: 'doing', createdAt: Date.now() },
+                    { id: '3', title: 'Initial prototype', description: 'Create the basic layout and drag-and-drop system.', priority: 'low', assignee: 'John', status: 'done', createdAt: Date.now() }
+                ];
+            });
+
+            const [searchTerm, setSearchTerm] = useState('');
+            const [isAddingTask, setIsAddingTask] = useState(false);
+            const [newTask, setNewTask] = useState({ title: '', description: '', priority: 'medium', assignee: 'Steve' });
+
+            useEffect(() => {
+                localStorage.setItem('tiny-kanban-tasks', JSON.stringify(tasks));
+            }, [tasks]);
+
+            const addTask = (e) => {
+                e.preventDefault();
+                if (!newTask.title.trim()) return;
+                const task = {
+                    ...newTask,
+                    id: Math.random().toString(36).substr(2, 9),
+                    status: 'todo',
+                    createdAt: Date.now()
+                };
+                setTasks([...tasks, task]);
+                setNewTask({ title: '', description: '', priority: 'medium', assignee: 'Steve' });
+                setIsAddingTask(false);
+            };
+
+            const deleteTask = (id) => {
+                setTasks(tasks.filter(t => t.id !== id));
+            };
+
+            const updateTaskStatus = (taskId, newStatus) => {
+                setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
+            };
+
+            const filteredTasks = tasks.filter(t => 
+                t.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                t.assignee.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+
+            return (
+                <div className="h-screen flex flex-col">
+                    {/* Header */}
+                    <header className="bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between shadow-sm z-10">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-indigo-600 p-2 rounded-lg text-white">
+                                <i data-lucide="layout-kanban" className="w-6 h-6"></i>
+                            </div>
+                            <h1 className="text-2xl font-bold tracking-tight text-slate-800">Tiny Kanban</h1>
+                        </div>
+
+                        <div className="flex items-center gap-4 flex-1 max-w-2xl mx-12">
+                            <div className="relative w-full">
+                                <i data-lucide="search" className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400"></i>
+                                <input 
+                                    type="text" 
+                                    placeholder="Search tasks or people..." 
+                                    className="w-full pl-10 pr-4 py-2.5 bg-slate-100 border-transparent focus:bg-white focus:ring-2 focus:ring-indigo-500 rounded-xl transition-all outline-none text-lg"
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                />
+                            </div>
+                        </div>
+
+                        <button 
+                            onClick={() => setIsAddingTask(true)}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-xl font-semibold flex items-center gap-2 transition-colors shadow-lg shadow-indigo-200"
+                        >
+                            <i data-lucide="plus" className="w-5 h-5"></i>
+                            New Task
+                        </button>
+                    </header>
+
+                    {/* Board */}
+                    <main className="flex-1 overflow-x-auto p-8 bg-[#F8FAFC]">
+                        <div className="flex gap-8 h-full min-w-max">
+                            {INITIAL_COLUMNS.map(column => (
+                                <Column 
+                                    key={column.id}
+                                    column={column}
+                                    tasks={filteredTasks.filter(t => t.status === column.id)}
+                                    onStatusChange={updateTaskStatus}
+                                    onDelete={deleteTask}
+                                />
+                            ))}
+                        </div>
+                    </main>
+
+                    {/* Add Task Modal */}
+                    {isAddingTask && (
+                        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                            <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl animate-fade-in overflow-hidden">
+                                <div className="p-8">
+                                    <div className="flex justify-between items-center mb-6">
+                                        <h2 className="text-2xl font-bold text-slate-800">Create New Task</h2>
+                                        <button onClick={() => setIsAddingTask(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                                            <i data-lucide="x" className="w-6 h-6"></i>
+                                        </button>
+                                    </div>
+                                    <form onSubmit={addTask} className="space-y-6">
+                                        <div>
+                                            <label className="block text-sm font-semibold text-slate-700 mb-2">Title</label>
+                                            <input 
+                                                autoFocus
+                                                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-lg"
+                                                placeholder="What needs to be done?"
+                                                value={newTask.title}
+                                                onChange={e => setNewTask({...newTask, title: e.target.value})}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-semibold text-slate-700 mb-2">Description</label>
+                                            <textarea 
+                                                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all min-h-[100px]"
+                                                placeholder="Add more details..."
+                                                value={newTask.description}
+                                                onChange={e => setNewTask({...newTask, description: e.target.value})}
+                                            ></textarea>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-sm font-semibold text-slate-700 mb-2">Priority</label>
+                                                <select 
+                                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                    value={newTask.priority}
+                                                    onChange={e => setNewTask({...newTask, priority: e.target.value})}
+                                                >
+                                                    <option value="low">Low</option>
+                                                    <option value="medium">Medium</option>
+                                                    <option value="high">High</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-semibold text-slate-700 mb-2">Assignee</label>
+                                                <select 
+                                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                    value={newTask.assignee}
+                                                    onChange={e => setNewTask({...newTask, assignee: e.target.value})}
+                                                >
+                                                    {AVATARS.map(a => <option key={a.name} value={a.name}>{a.name}</option>)}
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-3 pt-4">
+                                            <button 
+                                                type="button"
+                                                onClick={() => setIsAddingTask(false)}
+                                                className="flex-1 px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-semibold transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button 
+                                                type="submit"
+                                                className="flex-1 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold transition-colors shadow-lg shadow-indigo-100"
+                                            >
+                                                Create Task
+                                            </button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const Column = ({ column, tasks, onStatusChange, onDelete }) => {
+            const listRef = useRef(null);
+            const sortableRef = useRef(null);
+
+            useEffect(() => {
+                if (listRef.current) {
+                    sortableRef.current = Sortable.create(listRef.current, {
+                        group: 'tasks',
+                        animation: 150,
+                        ghostClass: 'sortable-ghost',
+                        dragClass: 'sortable-drag',
+                        onEnd: (evt) => {
+                            const taskId = evt.item.getAttribute('data-id');
+                            const newStatus = evt.to.getAttribute('data-status');
+                            onStatusChange(taskId, newStatus);
+                        }
+                    });
+                }
+                return () => {
+                    if (sortableRef.current) sortableRef.current.destroy();
+                };
+            }, [onStatusChange]);
+
+            useEffect(() => {
+                lucide.createIcons();
+            }, [tasks]);
+
+            const isOverLimit = column.limit > 0 && tasks.length > column.limit;
+
+            return (
+                <div className="w-[400px] flex flex-col">
+                    <div className="flex items-center justify-between mb-4 px-2">
+                        <div className="flex items-center gap-3">
+                            <div className={`w-3 h-8 rounded-full ${column.color}`}></div>
+                            <h2 className="text-xl font-bold text-slate-700 uppercase tracking-wider">{column.title}</h2>
+                            <span className={`px-3 py-1 rounded-full text-sm font-bold ${isOverLimit ? 'bg-rose-100 text-rose-600 animate-pulse' : 'bg-slate-200 text-slate-600'}`}>
+                                {tasks.length}{column.limit > 0 ? ` / ${column.limit}` : ''}
+                            </span>
+                        </div>
+                        {isOverLimit && (
+                            <div className="text-rose-500" title="WIP Limit Exceeded">
+                                <i data-lucide="alert-triangle" className="w-5 h-5"></i>
+                            </div>
+                        )}
+                    </div>
+                    
+                    <div 
+                        ref={listRef}
+                        data-status={column.id}
+                        className={`kanban-column flex-1 bg-slate-200/50 rounded-2xl p-4 custom-scrollbar overflow-y-auto transition-colors duration-300 ${isOverLimit ? 'ring-2 ring-rose-200 bg-rose-50/30' : ''}`}
+                    >
+                        {tasks.map(task => (
+                            <TaskCard key={task.id} task={task} onDelete={onDelete} />
+                        ))}
+                        {tasks.length === 0 && (
+                            <div className="h-32 flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-xl text-slate-400">
+                                <i data-lucide="inbox" className="w-8 h-8 mb-2 opacity-20"></i>
+                                <span className="text-sm font-medium opacity-50">Empty Column</span>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const TaskCard = ({ task, onDelete }) => {
+            const priority = PRIORITIES[task.priority];
+            const assignee = AVATARS.find(a => a.name === task.assignee) || AVATARS[0];
+
+            return (
+                <div 
+                    data-id={task.id}
+                    className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 mb-4 cursor-grab active:cursor-grabbing hover:shadow-md hover:border-indigo-200 transition-all group relative animate-fade-in"
+                >
+                    <button 
+                        onClick={() => onDelete(task.id)}
+                        className="absolute top-4 right-4 text-slate-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"
+                    >
+                        <i data-lucide="trash-2" className="w-4 h-4"></i>
+                    </button>
+
+                    <div className="flex items-center gap-2 mb-3">
+                        <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md border ${priority.color}`}>
+                            {priority.label}
+                        </span>
+                    </div>
+
+                    <h3 className="text-lg font-bold text-slate-800 leading-tight mb-2 group-hover:text-indigo-600 transition-colors">
+                        {task.title}
+                    </h3>
+                    
+                    {task.description && (
+                        <p className="text-slate-500 text-sm line-clamp-2 mb-4 leading-relaxed">
+                            {task.description}
+                        </p>
+                    )}
+
+                    <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                        <div className="flex items-center gap-2">
+                            <div className={`${assignee.color} w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm ring-2 ring-white`}>
+                                {assignee.name.charAt(0)}
+                            </div>
+                            <span className="text-sm font-semibold text-slate-600">{assignee.name}</span>
+                        </div>
+                        <div className="text-[11px] font-medium text-slate-400 flex items-center gap-1">
+                            <i data-lucide="clock" className="w-3 h-3"></i>
+                            {new Date(task.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+
+        // Initial icon render
+        setTimeout(() => lucide.createIcons(), 100);
+    </script>
+</body>
+</html>

@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webcam Filter Playground</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a; /* Slate 900 */
+            overflow: hidden; /* Prevent scrolling on full screen app */
+        }
+        
+        /* Custom Scrollbar for Gallery */
+        .gallery-scroll::-webkit-scrollbar {
+            height: 8px;
+        }
+        .gallery-scroll::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        .gallery-scroll::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+        .gallery-scroll::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+
+        /* Filter Button Active State Animation */
+        .filter-btn {
+            transition: all 0.2s ease;
+        }
+        .filter-btn.active {
+            box-shadow: 0 0 0 2px #3b82f6; /* Blue ring */
+            transform: translateY(-2px);
+        }
+
+        /* Pulse animation for recording/live indicator */
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .live-indicator {
+            animation: pulse-red 2s infinite;
+        }
+
+        canvas {
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Toast Notification */
+        #toast {
+            visibility: hidden;
+            min-width: 250px; 
+            background-color: #333; 
+            color: #fff; 
+            text-align: center; 
+            border-radius: 8px; 
+            padding: 16px; 
+            position: fixed; 
+            z-index: 50; 
+            left: 50%; 
+            bottom: 30px; 
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.3s, bottom 0.3s;
+        }
+        #toast.show {
+            visibility: visible;
+            opacity: 1;
+            bottom: 50px;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col text-white">
+
+    <!-- Header -->
+    <header class="flex items-center justify-between px-6 py-4 bg-slate-900 border-b border-slate-800 z-10 shadow-md h-16 shrink-0">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                <i class="fas fa-camera text-white text-sm"></i>
+            </div>
+            <h1 class="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400">
+                FilterPlayground
+            </h1>
+        </div>
+        <div class="flex items-center gap-4">
+            <div class="flex items-center gap-2 text-xs font-medium text-slate-400 bg-slate-800 px-3 py-1 rounded-full">
+                <div id="status-dot" class="w-2 h-2 rounded-full bg-red-500"></div>
+                <span id="status-text">Offline</span>
+            </div>
+            <a href="https://github.com/google/gemini" target="_blank" class="text-slate-400 hover:text-white transition-colors">
+                <i class="fab fa-github text-lg"></i>
+            </a>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 flex overflow-hidden">
+        
+        <!-- Sidebar: Filters -->
+        <aside class="w-72 bg-slate-900 border-r border-slate-800 flex flex-col z-10 shrink-0 transition-all duration-300 transform" id="sidebar">
+            <div class="p-4 border-b border-slate-800">
+                <h2 class="text-sm font-semibold text-slate-400 uppercase tracking-wider">Filters</h2>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 space-y-3" id="filter-list">
+                <!-- Filter buttons injected by JS -->
+            </div>
+            <div class="p-4 border-t border-slate-800 text-xs text-slate-500 text-center">
+                Select a filter to apply real-time effects
+            </div>
+        </aside>
+
+        <!-- Viewport -->
+        <section class="flex-1 relative bg-slate-950 flex flex-col items-center justify-center p-4 overflow-hidden">
+            
+            <!-- Video Container -->
+            <div class="relative w-full h-full max-w-5xl max-h-[80vh] flex items-center justify-center rounded-2xl overflow-hidden bg-black ring-1 ring-slate-800 shadow-2xl group">
+                
+                <!-- Hidden Source Video -->
+                <video id="webcamVideo" class="absolute opacity-0 pointer-events-none" playsinline autoplay muted></video>
+                
+                <!-- Output Canvas -->
+                <canvas id="outputCanvas" class="w-full h-full object-contain"></canvas>
+
+                <!-- Overlay Controls (Hover) -->
+                <div class="absolute bottom-6 left-1/2 transform -translate-x-1/2 flex items-center gap-4 px-6 py-3 bg-slate-900/80 backdrop-blur-md rounded-full border border-slate-700 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 translate-y-4 group-hover:translate-y-0">
+                    
+                    <button id="btn-toggle-cam" class="w-12 h-12 rounded-full bg-slate-700 hover:bg-slate-600 text-white flex items-center justify-center transition-all hover:scale-105" title="Start/Stop Camera">
+                        <i class="fas fa-video-slash" id="icon-cam"></i>
+                    </button>
+
+                    <button id="btn-snap" class="w-16 h-16 rounded-full bg-white hover:bg-slate-200 text-slate-900 flex items-center justify-center shadow-lg transition-all hover:scale-105 active:scale-95 border-4 border-slate-300/50" title="Take Snapshot">
+                        <i class="fas fa-camera text-2xl"></i>
+                    </button>
+
+                    <button id="btn-download-latest" class="w-12 h-12 rounded-full bg-slate-700 hover:bg-slate-600 text-white flex items-center justify-center transition-all hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed" disabled title="Download Last Snapshot">
+                        <i class="fas fa-download"></i>
+                    </button>
+                </div>
+
+                <!-- Permission Message -->
+                <div id="permission-message" class="absolute inset-0 flex flex-col items-center justify-center text-center p-8 bg-slate-900 z-20">
+                    <div class="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mb-6 text-slate-500">
+                        <i class="fas fa-video text-3xl"></i>
+                    </div>
+                    <h3 class="text-2xl font-bold text-white mb-2">Camera Access Required</h3>
+                    <p class="text-slate-400 max-w-md mb-8">Please allow camera access to use the filters. Your video is processed locally in your browser and is never sent to a server.</p>
+                    <button id="btn-request-access" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-lg shadow-lg transition-all hover:-translate-y-1">
+                        Enable Camera
+                    </button>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- Right Sidebar: Gallery (Collapsible? No, let's keep it simple at the bottom) -->
+    </main>
+    
+    <!-- Bottom Gallery Strip -->
+    <div class="h-32 bg-slate-900 border-t border-slate-800 shrink-0 flex flex-col">
+        <div class="px-4 py-2 border-b border-slate-800 flex justify-between items-center">
+            <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Snapshot Gallery</span>
+            <button id="btn-clear-gallery" class="text-xs text-red-400 hover:text-red-300 hover:underline">Clear All</button>
+        </div>
+        <div class="flex-1 overflow-x-auto overflow-y-hidden p-3 flex gap-3 gallery-scroll" id="gallery-strip">
+            <!-- Snapshots injected here -->
+            <div id="gallery-placeholder" class="w-full flex items-center justify-center text-slate-600 text-sm italic">
+                No snapshots taken yet.
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast">Snapshot Saved!</div>
+
+    <!-- Logic -->
+    <script>
+        /**
+         * WebCam Filter Playground Logic
+         */
+        
+        // --- Configuration & State ---
+        const config = {
+            width: 1280,
+            height: 720,
+            frameRate: 30
+        };
+
+        const state = {
+            stream: null,
+            isStreaming: false,
+            currentFilter: 'normal',
+            animationId: null,
+            snapshots: [],
+            lastSnapshotBlob: null,
+            asciiChars: " .:-=+*#%@"
+        };
+
+        // --- DOM Elements ---
+        const video = document.getElementById('webcamVideo');
+        const canvas = document.getElementById('outputCanvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        
+        const btnToggleCam = document.getElementById('btn-toggle-cam');
+        const iconCam = document.getElementById('icon-cam');
+        const btnSnap = document.getElementById('btn-snap');
+        const btnDownload = document.getElementById('btn-download-latest');
+        const btnRequestAccess = document.getElementById('btn-request-access');
+        const permissionOverlay = document.getElementById('permission-message');
+        
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        
+        const filterList = document.getElementById('filter-list');
+        const galleryStrip = document.getElementById('gallery-strip');
+        const galleryPlaceholder = document.getElementById('gallery-placeholder');
+        const btnClearGallery = document.getElementById('btn-clear-gallery');
+        const toast = document.getElementById('toast');
+
+        // --- Filters Definitions ---
+        const filters = [
+            { id: 'normal', name: 'Normal', icon: 'fa-ban', color: 'bg-slate-700' },
+            { id: 'grayscale', name: 'Grayscale', icon: 'fa-adjust', color: 'bg-gray-600' },
+            { id: 'sepia', name: 'Sepia', icon: 'fa-coffee', color: 'bg-amber-700' },
+            { id: 'invert', name: 'Invert', icon: 'fa-retweet', color: 'bg-indigo-600' },
+            { id: 'pixelate', name: 'Pixelate', icon: 'fa-th', color: 'bg-pink-600' },
+            { id: 'rgbSplit', name: 'Glitch / RGB', icon: 'fa-bolt', color: 'bg-red-600' },
+            { id: 'mirror', name: 'Mirror', icon: 'fa-columns', color: 'bg-blue-600' },
+            { id: 'kaleidoscope', name: 'Kaleidoscope', icon: 'fa-snowflake', color: 'bg-purple-600' },
+            { id: 'ghost', name: 'Ghost Trails', icon: 'fa-ghost', color: 'bg-teal-600' },
+            { id: 'sobel', name: 'Edge Detect', icon: 'fa-vector-square', color: 'bg-green-600' },
+            { id: 'ascii', name: 'ASCII Mode', icon: 'fa-terminal', color: 'bg-emerald-800' },
+        ];
+
+        // --- Initialization ---
+        function init() {
+            renderFilterButtons();
+            
+            // Event Listeners
+            btnRequestAccess.addEventListener('click', startCamera);
+            btnToggleCam.addEventListener('click', toggleCamera);
+            btnSnap.addEventListener('click', takeSnapshot);
+            btnDownload.addEventListener('click', downloadLastSnapshot);
+            btnClearGallery.addEventListener('click', clearGallery);
+            
+            // Handle window resize for canvas responsive behavior
+            window.addEventListener('resize', resizeCanvas);
+            
+            // Initial UI state
+            updateStatus('offline');
+        }
+
+        // --- Camera Handling ---
+        async function startCamera() {
+            try {
+                const constraints = {
+                    audio: false,
+                    video: {
+                        width: { ideal: config.width },
+                        height: { ideal: config.height },
+                        facingMode: "user"
+                    }
+                };
+                
+                state.stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = state.stream;
+                
+                video.onloadedmetadata = () => {
+                    state.isStreaming = true;
+                    video.play();
+                    permissionOverlay.classList.add('hidden');
+                    updateStatus('live');
+                    
+                    // Reset toggle button
+                    iconCam.classList.remove('fa-video-slash');
+                    iconCam.classList.add('fa-video');
+                    btnToggleCam.classList.remove('bg-slate-700');
+                    btnToggleCam.classList.add('bg-red-600');
+                    
+                    resizeCanvas();
+                    requestAnimationFrame(renderLoop);
+                };
+            } catch (err) {
+                console.error("Camera Error:", err);
+                alert("Could not access webcam. Please ensure you have granted permission.");
+                updateStatus('error');
+            }
+        }
+
+        function stopCamera() {
+            if (state.stream) {
+                state.stream.getTracks().forEach(track => track.stop());
+                state.stream = null;
+            }
+            state.isStreaming = false;
+            cancelAnimationFrame(state.animationId);
+            
+            // UI Update
+            permissionOverlay.classList.remove('hidden');
+            updateStatus('offline');
+            
+            iconCam.classList.remove('fa-video');
+            iconCam.classList.add('fa-video-slash');
+            btnToggleCam.classList.remove('bg-red-600');
+            btnToggleCam.classList.add('bg-slate-700');
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function toggleCamera() {
+            if (state.isStreaming) {
+                stopCamera();
+            } else {
+                startCamera();
+            }
+        }
+
+        function updateStatus(status) {
+            statusDot.classList.remove('bg-red-500', 'bg-green-500', 'bg-gray-500', 'live-indicator');
+            
+            if (status === 'live') {
+                statusDot.classList.add('bg-green-500', 'live-indicator');
+                statusText.textContent = "LIVE";
+                statusText.classList.add('text-green-400');
+                statusText.classList.remove('text-slate-400');
+            } else if (status === 'offline') {
+                statusDot.classList.add('bg-gray-500');
+                statusText.textContent = "Offline";
+                statusText.classList.remove('text-green-400');
+                statusText.classList.add('text-slate-400');
+            } else {
+                statusDot.classList.add('bg-red-500');
+                statusText.textContent = "Error";
+            }
+        }
+
+        function resizeCanvas() {
+            if (!state.isStreaming) return;
+            
+            // Match internal resolution to video source for quality
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            // CSS handles the display size (object-contain)
+        }
+
+        // --- Render Loop ---
+        function renderLoop() {
+            if (!state.isStreaming) return;
+            
+            const w = canvas.width;
+            const h = canvas.height;
+            
+            // 1. Draw original frame to canvas first (base)
+            // Note: For some filters we might overwrite this completely
+            if (state.currentFilter !== 'ascii') {
+                ctx.drawImage(video, 0, 0, w, h);
+            }
+
+            // 2. Apply Filters
+            applyFilter(state.currentFilter, w, h);
+            
+            // 3. Loop
+            state.animationId = requestAnimationFrame(renderLoop);
+        }
+
+        // --- Filter Logic ---
+        function applyFilter(type, w, h) {
+            
+            // Prepare ImageData for pixel manipulation filters
+            let imageData;
+            
+            switch (type) {
+                case 'grayscale':
+                    imageData = ctx.getImageData(0, 0, w, h);
+                    const dataGray = imageData.data;
+                    for (let i = 0; i < dataGray.length; i += 4) {
+                        const avg = (dataGray[i] + dataGray[i + 1] + dataGray[i + 2]) / 3;
+                        dataGray[i] = avg;     // R
+                        dataGray[i + 1] = avg; // G
+                        dataGray[i + 2] = avg; // B
+                    }
+                    ctx.putImageData(imageData, 0, 0);
+                    break;
+
+                case 'sepia':
+                    imageData = ctx.getImageData(0, 0, w, h);
+                    const dataSepia = imageData.data;
+                    for (let i = 0; i < dataSepia.length; i += 4) {
+                        const r = dataSepia[i];
+                        const g = dataSepia[i + 1];
+                        const b = dataSepia[i + 2];
+                        dataSepia[i] = (r * 0.393) + (g * 0.769) + (b * 0.189);
+                        dataSepia[i + 1] = (r * 0.349) + (g * 0.686) + (b * 0.168);
+                        dataSepia[i + 2] = (r * 0.272) + (g * 0.534) + (b * 0.131);
+                    }
+                    ctx.putImageData(imageData, 0, 0);
+                    break;
+
+                case 'invert':
+                    imageData = ctx.getImageData(0, 0, w, h);
+                    const dataInv = imageData.data;
+                    for (let i = 0; i < dataInv.length; i += 4) {
+                        dataInv[i] = 255 - dataInv[i];
+                        dataInv[i + 1] = 255 - dataInv[i + 1];
+                        dataInv[i + 2] = 255 - dataInv[i + 2];
+                    }
+                    ctx.putImageData(imageData, 0, 0);
+                    break;
+
+                case 'pixelate':
+                    const size = 10; // block size
+                    // Turn off smoothing for pixel art look
+                    ctx.imageSmoothingEnabled = false;
+                    
+                    // Draw small
+                    ctx.drawImage(canvas, 0, 0, w, h, 0, 0, w / size, h / size);
+                    
+                    // Draw big back over
+                    ctx.drawImage(canvas, 0, 0, w / size, h / size, 0, 0, w, h);
+                    
+                    // Reset
+                    ctx.imageSmoothingEnabled = true;
+                    break;
+
+                case 'rgbSplit':
+                    // We need to draw the channels offset
+                    // Draw Red channel with offset
+                    // Composite operation 'screen' or 'lighter' allows adding colors
+                    
+                    // Clear and redraw video to ensure we have a clean slate if we want pure effect
+                    // But here we'll just manipulate the composite
+                    
+                    // 1. Draw Blue Channel slightly to the left
+                    ctx.globalCompositeOperation = 'screen';
+                    
+                    // Offset Red
+                    ctx.save();
+                    ctx.translate(10, 0); // Shift right
+                    ctx.drawImage(video, 0, 0, w, h);
+                    ctx.globalCompositeOperation = 'multiply';
+                    ctx.fillStyle = '#FF0000'; // Keep only red
+                    ctx.fillRect(0,0,w,h); 
+                    // This is the naive way and slow/wrong for single pass.
+                    
+                    // Faster way for Glitch: Manipulate imageData or simply draw multiple times with opacity
+                    // Let's go with the "draw 3 times" approach which is easier to understand, though heavy.
+                    // Actually, a better "Glitch" is to take random horizontal slices and offset them.
+                    
+                    // Optimized RGB Split via composite:
+                    ctx.globalCompositeOperation = 'source-over';
+                    ctx.drawImage(video, 0, 0, w, h); // Base
+
+                    const offset = 10 * Math.sin(Date.now() / 100);
+                    
+                    // Red Channel Only
+                    ctx.globalCompositeOperation = 'screen'; 
+                    // To do true RGB split properly in 2D canvas without shaders is tricky.
+                    // Let's simulate it by drawing the image again with a color filter.
+                    
+                    ctx.save();
+                    ctx.translate(offset, 0);
+                    ctx.globalAlpha = 0.5;
+                    ctx.drawImage(video, 0, 0, w, h);
+                    ctx.fillStyle = "rgba(255, 0, 0, 0.5)";
+                    ctx.globalCompositeOperation = 'multiply';
+                    ctx.fillRect(0,0,w,h);
+                    ctx.restore();
+                    
+                    ctx.save();
+                    ctx.translate(-offset, 0);
+                    ctx.globalAlpha = 0.5;
+                    ctx.drawImage(video, 0, 0, w, h);
+                    ctx.fillStyle = "rgba(0, 0, 255, 0.5)";
+                    ctx.globalCompositeOperation = 'multiply';
+                    ctx.fillRect(0,0,w,h);
+                    ctx.restore();
+
+                    ctx.globalAlpha = 1.0;
+                    ctx.globalCompositeOperation = 'source-over';
+                    break;
+
+                case 'mirror':
+                    // Left half normal
+                    // Right half flipped
+                    ctx.save();
+                    ctx.translate(w, 0);
+                    ctx.scale(-1, 1);
+                    ctx.drawImage(video, 0, 0, w/2, h, 0, 0, w/2, h);
+                    ctx.restore();
+                    break;
+                    
+                case 'kaleidoscope':
+                    // Simple 4-way symmetry
+                    // Top-Left is source
+                    ctx.drawImage(video, 0, 0, w/2, h/2, 0, 0, w/2, h/2); // TL
+                    
+                    ctx.save();
+                    ctx.translate(w, 0);
+                    ctx.scale(-1, 1);
+                    ctx.drawImage(video, 0, 0, w/2, h/2, 0, 0, w/2, h/2); // TR
+                    ctx.restore();
+                    
+                    ctx.save();
+                    ctx.translate(0, h);
+                    ctx.scale(1, -1);
+                    ctx.drawImage(video, 0, 0, w/2, h/2, 0, 0, w/2, h/2); // BL
+                    ctx.restore();
+                    
+                    ctx.save();
+                    ctx.translate(w, h);
+                    ctx.scale(-1, -1);
+                    ctx.drawImage(video, 0, 0, w/2, h/2, 0, 0, w/2, h/2); // BR
+                    ctx.restore();
+                    break;
+
+                case 'ghost':
+                    // Ghosting is achieved by drawing a black rectangle with low opacity
+                    // over the PREVIOUS frame instead of clearing it.
+                    // Since we draw video at start of loop, we need to change that behavior.
+                    // This implementation in 'applyFilter' implies we already drew the video.
+                    // To make ghost work, we shouldn't fully clear/draw video every frame.
+                    
+                    // Workaround: We draw the video with low opacity on top of existing canvas
+                    ctx.globalAlpha = 0.1;
+                    ctx.drawImage(video, 0, 0, w, h);
+                    ctx.globalAlpha = 1.0;
+                    // This creates a trail effect because the old frames stay
+                    break;
+                
+                case 'sobel':
+                    // Edge detection kernel
+                    imageData = ctx.getImageData(0, 0, w, h);
+                    const gray = new Uint8ClampedArray(w * h);
+                    const dataSobel = imageData.data;
+                    
+                    // Grayscale pass first
+                    for (let i = 0, j = 0; i < dataSobel.length; i += 4, j++) {
+                        gray[j] = (dataSobel[i] + dataSobel[i + 1] + dataSobel[i + 2]) / 3;
+                    }
+                    
+                    // Sobel Kernel
+                    const outputData = ctx.createImageData(w, h);
+                    const outData = outputData.data;
+                    
+                    for (let y = 1; y < h - 1; y++) {
+                        for (let x = 1; x < w - 1; x++) {
+                            const i = (y * w + x);
+                            
+                            // Horizontal
+                            const gh = 
+                                -gray[i - w - 1] - 2 * gray[i - 1] - gray[i + w - 1] +
+                                gray[i - w + 1] + 2 * gray[i + 1] + gray[i + w + 1];
+                                
+                            // Vertical
+                            const gv = 
+                                -gray[i - w - 1] - 2 * gray[i - w] - gray[i - w + 1] +
+                                gray[i + w - 1] + 2 * gray[i + w] + gray[i + w + 1];
+                            
+                            const val = Math.sqrt(gh * gh + gv * gv);
+                            const idx = i * 4;
+                            
+                            outData[idx] = val;     // R
+                            outData[idx+1] = val;   // G
+                            outData[idx+2] = val;   // B
+                            outData[idx+3] = 255;   // A
+                        }
+                    }
+                    ctx.putImageData(outputData, 0, 0);
+                    break;
+
+                case 'ascii':
+                    // Clear background
+                    ctx.fillStyle = '#000000';
+                    ctx.fillRect(0, 0, w, h);
+                    
+                    // Small analysis canvas
+                    const scaleFactor = 8; // Font size roughly
+                    const smallW = Math.floor(w / scaleFactor);
+                    const smallH = Math.floor(h / scaleFactor);
+                    
+                    // Create offscreen canvas for resizing
+                    const osc = document.createElement('canvas');
+                    osc.width = smallW;
+                    osc.height = smallH;
+                    const osCtx = osc.getContext('2d');
+                    osCtx.drawImage(video, 0, 0, smallW, smallH);
+                    
+                    const smallData = osCtx.getImageData(0, 0, smallW, smallH).data;
+                    
+                    ctx.font = `${scaleFactor}px monospace`;
+                    ctx.fillStyle = '#00ff00'; // Matrix green
+                    ctx.textAlign = 'left';
+                    ctx.textBaseline = 'top';
+                    
+                    for (let y = 0; y < smallH; y++) {
+                        for (let x = 0; x < smallW; x++) {
+                            const i = (y * smallW + x) * 4;
+                            const r = smallData[i];
+                            const g = smallData[i+1];
+                            const b = smallData[i+2];
+                            const brightness = (r + g + b) / 3;
+                            
+                            const charIdx = Math.floor((brightness / 255) * (state.asciiChars.length - 1));
+                            const char = state.asciiChars[charIdx];
+                            
+                            ctx.fillText(char, x * scaleFactor, y * scaleFactor);
+                        }
+                    }
+                    break;
+
+                default:
+                    // Normal - nothing to do
+                    break;
+            }
+        }
+
+        // --- UI Logic ---
+        function renderFilterButtons() {
+            filterList.innerHTML = '';
+            filters.forEach(filter => {
+                const btn = document.createElement('button');
+                btn.className = `filter-btn w-full text-left px-4 py-3 rounded-xl mb-2 flex items-center gap-3 bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors border border-transparent`;
+                if (filter.id === state.currentFilter) {
+                    btn.classList.add('active', 'border-blue-500', 'bg-slate-700', 'text-white');
+                }
+                
+                btn.innerHTML = `
+                    <div class="w-8 h-8 rounded-lg ${filter.color} flex items-center justify-center shadow-sm">
+                        <i class="fas ${filter.icon} text-white text-xs"></i>
+                    </div>
+                    <span class="font-medium">${filter.name}</span>
+                `;
+                
+                btn.onclick = () => setFilter(filter.id);
+                filterList.appendChild(btn);
+            });
+        }
+
+        function setFilter(id) {
+            state.currentFilter = id;
+            renderFilterButtons(); // Re-render to update active state
+        }
+
+        function showToast() {
+            toast.classList.add("show");
+            setTimeout(function(){ toast.classList.remove("show"); }, 3000);
+        }
+
+        function takeSnapshot() {
+            if (!state.isStreaming) return;
+            
+            // Create a temporary high-res canvas for the snapshot
+            // We capture exactly what's on the visible canvas
+            const snapCanvas = document.createElement('canvas');
+            snapCanvas.width = canvas.width;
+            snapCanvas.height = canvas.height;
+            const snapCtx = snapCanvas.getContext('2d');
+            
+            // Draw current canvas state
+            snapCtx.drawImage(canvas, 0, 0);
+            
+            // Flash Effect
+            const flash = document.createElement('div');
+            flash.className = 'fixed inset-0 bg-white z-50 transition-opacity duration-300 pointer-events-none';
+            document.body.appendChild(flash);
+            requestAnimationFrame(() => {
+                flash.classList.add('opacity-0');
+                setTimeout(() => flash.remove(), 300);
+            });
+
+            // Convert to blob
+            snapCanvas.toBlob(blob => {
+                state.lastSnapshotBlob = blob;
+                const url = URL.createObjectURL(blob);
+                
+                // Add to gallery state
+                state.snapshots.unshift({ url, blob });
+                
+                // Update UI
+                renderGallery();
+                btnDownload.disabled = false;
+                showToast();
+            }, 'image/png');
+        }
+
+        function renderGallery() {
+            if (state.snapshots.length === 0) {
+                galleryStrip.innerHTML = '';
+                galleryStrip.appendChild(galleryPlaceholder);
+                return;
+            }
+
+            galleryStrip.innerHTML = '';
+            
+            state.snapshots.forEach((snap, index) => {
+                const div = document.createElement('div');
+                div.className = 'relative h-full aspect-video rounded-lg overflow-hidden shrink-0 group border border-slate-700 cursor-pointer';
+                
+                const img = document.createElement('img');
+                img.src = snap.url;
+                img.className = 'w-full h-full object-cover transition-transform group-hover:scale-110';
+                
+                const overlay = document.createElement('div');
+                overlay.className = 'absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 transition-opacity';
+                
+                const downBtn = document.createElement('button');
+                downBtn.className = 'p-2 bg-white rounded-full text-slate-900 hover:bg-blue-100';
+                downBtn.innerHTML = '<i class="fas fa-download text-xs"></i>';
+                downBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    downloadBlob(snap.blob, `snapshot-${index}.png`);
+                };
+                
+                overlay.appendChild(downBtn);
+                div.appendChild(img);
+                div.appendChild(overlay);
+                
+                galleryStrip.appendChild(div);
+            });
+        }
+
+        function clearGallery() {
+            state.snapshots = [];
+            state.lastSnapshotBlob = null;
+            btnDownload.disabled = true;
+            renderGallery();
+        }
+
+        function downloadLastSnapshot() {
+            if (state.lastSnapshotBlob) {
+                downloadBlob(state.lastSnapshotBlob, 'webcam-snapshot-latest.png');
+            }
+        }
+
+        function downloadBlob(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // Start
+        init();
+
+    </script>
+</body>
+</html>

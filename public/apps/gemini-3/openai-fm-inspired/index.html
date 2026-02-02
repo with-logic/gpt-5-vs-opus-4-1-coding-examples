@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenAI.fm Inspired | Generative Radio</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Space Grotesk"', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'monospace'],
+                    },
+                    colors: {
+                        'ai-black': '#050505',
+                        'ai-accent': '#10a37f',
+                        'glass': 'rgba(255, 255, 255, 0.03)',
+                        'glass-border': 'rgba(255, 255, 255, 0.1)',
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            color: #fff;
+        }
+        
+        #canvas-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        #root {
+            position: relative;
+            z-index: 10;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .glass-panel {
+            background: rgba(10, 10, 10, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .visualizer-overlay {
+            background: radial-gradient(circle at center, transparent 0%, #000 120%);
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+
+        .track-item:hover .play-icon {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        // --- AUDIO ENGINE (Generative) ---
+        class AudioEngine {
+            constructor() {
+                this.ctx = null;
+                this.oscillators = [];
+                this.gainNodes = [];
+                this.analyser = null;
+                this.isPlaying = false;
+                this.timer = null;
+                this.currentStation = 'focus'; 
+            }
+
+            init() {
+                if (this.ctx) return;
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                this.ctx = new AudioContext();
+                this.analyser = this.ctx.createAnalyser();
+                this.analyser.fftSize = 256;
+                this.analyser.smoothingTimeConstant = 0.8;
+                
+                const compressor = this.ctx.createDynamicsCompressor();
+                compressor.threshold.setValueAtTime(-24, this.ctx.currentTime);
+                compressor.knee.setValueAtTime(30, this.ctx.currentTime);
+                compressor.ratio.setValueAtTime(12, this.ctx.currentTime);
+                compressor.attack.setValueAtTime(0.003, this.ctx.currentTime);
+                compressor.release.setValueAtTime(0.25, this.ctx.currentTime);
+
+                compressor.connect(this.analyser);
+                this.analyser.connect(this.ctx.destination);
+                this.masterOutput = compressor;
+            }
+
+            play(station) {
+                if (!this.ctx) this.init();
+                if (this.ctx.state === 'suspended') this.ctx.resume();
+                
+                this.currentStation = station;
+                this.stop(); 
+                this.isPlaying = true;
+                
+                this.startGenerativeLoop();
+            }
+
+            stop() {
+                this.isPlaying = false;
+                clearTimeout(this.timer);
+                this.oscillators.forEach(osc => {
+                    try { osc.stop(); osc.disconnect(); } catch(e){}
+                });
+                this.gainNodes.forEach(g => {
+                    try { g.disconnect(); } catch(e){}
+                });
+                this.oscillators = [];
+                this.gainNodes = [];
+            }
+
+            startGenerativeLoop() {
+                if (!this.isPlaying) return;
+
+                const now = this.ctx.currentTime;
+                
+                if (this.currentStation === 'focus') {
+                    this.createDrone(now);
+                    this.timer = setTimeout(() => this.startGenerativeLoop(), 4000);
+                } else if (this.currentStation === 'dream') {
+                    this.createBell(now);
+                    this.timer = setTimeout(() => this.startGenerativeLoop(), Math.random() * 500 + 200);
+                } else if (this.currentStation === 'chaos') {
+                    this.createGlitch(now);
+                    this.timer = setTimeout(() => this.startGenerativeLoop(), Math.random() * 200 + 50);
+                } else if (this.currentStation === 'retro') {
+                    this.createBass(now);
+                    this.timer = setTimeout(() => this.startGenerativeLoop(), 500);
+                }
+            }
+
+            createDrone(time) {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                const freq = 55 * (Math.floor(Math.random() * 4) + 1); 
+                osc.frequency.setValueAtTime(freq, time);
+                osc.type = Math.random() > 0.5 ? 'sine' : 'triangle';
+                gain.gain.setValueAtTime(0, time);
+                gain.gain.linearRampToValueAtTime(0.05, time + 2); 
+                gain.gain.exponentialRampToValueAtTime(0.001, time + 8); 
+                osc.connect(gain);
+                gain.connect(this.masterOutput);
+                osc.start(time);
+                osc.stop(time + 8);
+                this.oscillators.push(osc);
+                this.gainNodes.push(gain);
+                this.cleanup(osc, gain, 8000);
+            }
+
+            createBell(time) {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                const base = 220;
+                const ratios = [1, 1.125, 1.25, 1.5, 1.66]; 
+                const freq = base * ratios[Math.floor(Math.random() * ratios.length)] * (Math.random() > 0.5 ? 2 : 4);
+                osc.frequency.setValueAtTime(freq, time);
+                osc.type = 'sine';
+                gain.gain.setValueAtTime(0, time);
+                gain.gain.linearRampToValueAtTime(0.1, time + 0.05);
+                gain.gain.exponentialRampToValueAtTime(0.001, time + 2);
+                osc.connect(gain);
+                gain.connect(this.masterOutput);
+                osc.start(time);
+                osc.stop(time + 2);
+                this.oscillators.push(osc);
+                this.gainNodes.push(gain);
+                this.cleanup(osc, gain, 2000);
+            }
+
+            createGlitch(time) {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.frequency.setValueAtTime(Math.random() * 2000 + 100, time);
+                osc.type = Math.random() > 0.5 ? 'sawtooth' : 'square';
+                if (Math.random() > 0.5) osc.frequency.linearRampToValueAtTime(Math.random() * 100, time + 0.1);
+                gain.gain.setValueAtTime(0.05, time);
+                gain.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
+                osc.connect(gain);
+                gain.connect(this.masterOutput);
+                osc.start(time);
+                osc.stop(time + 0.1);
+                this.oscillators.push(osc);
+                this.gainNodes.push(gain);
+                this.cleanup(osc, gain, 100);
+            }
+            
+            createBass(time) {
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                const freq = 55; 
+                osc.frequency.setValueAtTime(freq, time);
+                osc.type = 'sawtooth';
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.setValueAtTime(400, time);
+                filter.frequency.exponentialRampToValueAtTime(100, time + 0.2);
+                gain.gain.setValueAtTime(0.1, time);
+                gain.gain.exponentialRampToValueAtTime(0.001, time + 0.4);
+                osc.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.masterOutput);
+                osc.start(time);
+                osc.stop(time + 0.5);
+                this.oscillators.push(osc);
+                this.gainNodes.push(gain);
+                this.cleanup(osc, gain, 500);
+            }
+
+            cleanup(osc, gain, delay) {
+                setTimeout(() => {
+                    const i = this.oscillators.indexOf(osc);
+                    if (i > -1) this.oscillators.splice(i, 1);
+                    const j = this.gainNodes.indexOf(gain);
+                    if (j > -1) this.gainNodes.splice(j, 1);
+                }, delay + 100);
+            }
+
+            getByteFrequencyData() {
+                if (!this.analyser) return new Uint8Array(0);
+                const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+                this.analyser.getByteFrequencyData(dataArray);
+                return dataArray;
+            }
+        }
+
+        const audio = new AudioEngine();
+
+        // --- COMPONENTS ---
+
+        const StationCard = ({ station, active, onClick }) => {
+            return (
+                <div 
+                    onClick={() => onClick(station)}
+                    className={`
+                        p-4 rounded-xl cursor-pointer transition-all duration-300 border
+                        flex items-center justify-between group
+                        ${active 
+                            ? 'bg-white/10 border-white/40 shadow-[0_0_15px_rgba(255,255,255,0.1)]' 
+                            : 'bg-transparent border-transparent hover:bg-white/5 hover:border-white/10'
+                        }
+                    `}
+                >
+                    <div className="flex items-center gap-4">
+                        <div className={`
+                            w-10 h-10 rounded-full flex items-center justify-center transition-colors duration-300
+                            ${active ? 'bg-white text-black' : 'bg-white/10 text-white'}
+                        `}>
+                            {active ? 
+                                <i data-lucide="bar-chart-2" className="animate-pulse w-5 h-5"></i> : 
+                                <span className="text-xs font-bold">{station.id}</span>
+                            }
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-sm tracking-wide uppercase">{station.name}</h3>
+                            <p className="text-xs text-gray-400 font-mono">{station.desc}</p>
+                        </div>
+                    </div>
+                    {active && <div className="w-2 h-2 rounded-full bg-current shadow-[0_0_8px_currentColor] text-green-400"></div>}
+                </div>
+            )
+        }
+
+        const ThreeVisualizer = ({ isPlaying, activeStation }) => {
+            const mountRef = useRef(null);
+
+            useEffect(() => {
+                const scene = new THREE.Scene();
+                scene.fog = new THREE.FogExp2(0x000000, 0.02);
+
+                const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+                const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+                
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(window.devicePixelRatio);
+                mountRef.current.innerHTML = ''; // Clear previous
+                mountRef.current.appendChild(renderer.domElement);
+
+                // --- CONFIG BASED ON STATION ---
+                let color1, color2;
+                switch(activeStation) {
+                    case 'focus': 
+                        color1 = new THREE.Color(0x10a37f); // OpenAI Green
+                        color2 = new THREE.Color(0x3b82f6); // Blue
+                        break;
+                    case 'dream':
+                        color1 = new THREE.Color(0x8b5cf6); // Purple
+                        color2 = new THREE.Color(0xec4899); // Pink
+                        break;
+                    case 'retro':
+                        color1 = new THREE.Color(0xf97316); // Orange
+                        color2 = new THREE.Color(0x06b6d4); // Cyan
+                        break;
+                    case 'chaos':
+                        color1 = new THREE.Color(0xef4444); // Red
+                        color2 = new THREE.Color(0xffffff); // White
+                        break;
+                    default:
+                        color1 = new THREE.Color(0x10a37f);
+                        color2 = new THREE.Color(0x3b82f6);
+                }
+
+                // Particles
+                const geometry = new THREE.BufferGeometry();
+                const count = 5000;
+                const positions = new Float32Array(count * 3);
+                const colors = new Float32Array(count * 3);
+                const originalPositions = new Float32Array(count * 3);
+                const randoms = new Float32Array(count); // For individual particle variation
+
+                const color3 = new THREE.Color(0xffffff);
+
+                for(let i = 0; i < count; i++) {
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.acos((Math.random() * 2) - 1);
+                    const r = 12 + (Math.random() * 0.5);
+
+                    const x = r * Math.sin(phi) * Math.cos(theta);
+                    const y = r * Math.sin(phi) * Math.sin(theta);
+                    const z = r * Math.cos(phi);
+
+                    positions[i * 3] = x;
+                    positions[i * 3 + 1] = y;
+                    positions[i * 3 + 2] = z;
+
+                    originalPositions[i * 3] = x;
+                    originalPositions[i * 3 + 1] = y;
+                    originalPositions[i * 3 + 2] = z;
+
+                    randoms[i] = Math.random();
+
+                    // Coloring
+                    const rand = Math.random();
+                    let c = color3;
+                    if(rand < 0.35) c = color1;
+                    else if(rand < 0.6) c = color2;
+
+                    colors[i * 3] = c.r;
+                    colors[i * 3 + 1] = c.g;
+                    colors[i * 3 + 2] = c.b;
+                }
+
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+                const material = new THREE.PointsMaterial({
+                    size: 0.12,
+                    vertexColors: true,
+                    blending: THREE.AdditiveBlending,
+                    transparent: true,
+                    opacity: 0.8
+                });
+
+                const particles = new THREE.Points(geometry, material);
+                scene.add(particles);
+
+                camera.position.z = 30;
+
+                // Animation
+                let frameId;
+                let t = 0;
+
+                const animate = () => {
+                    frameId = requestAnimationFrame(animate);
+                    t += 0.003;
+
+                    // Rotate entire system
+                    particles.rotation.y = t * 0.3;
+                    particles.rotation.z = Math.sin(t * 0.5) * 0.1;
+
+                    let freqData = new Uint8Array(0);
+                    if (audio && isPlaying) {
+                        freqData = audio.getByteFrequencyData();
+                    }
+
+                    const positions = particles.geometry.attributes.position.array;
+                    
+                    const bass = freqData.length > 0 ? freqData[4] / 255 : 0;
+                    const treble = freqData.length > 0 ? freqData[32] / 255 : 0;
+
+                    // Breathing effect
+                    const scale = 1 + bass * 0.15;
+                    particles.scale.set(scale, scale, scale);
+
+                    for(let i = 0; i < count; i++) {
+                        const px = originalPositions[i * 3];
+                        const py = originalPositions[i * 3 + 1];
+                        const pz = originalPositions[i * 3 + 2];
+
+                        // Organic wave movement
+                        const noise = Math.sin(px * 0.2 + t * 3 + randoms[i] * 6) * Math.cos(py * 0.2 + t);
+                        
+                        let displacement = 0;
+                        if (isPlaying && freqData.length > 0) {
+                            // Map frequency to position
+                            const bin = i % 128;
+                            const val = freqData[bin] / 255;
+                            displacement = val * 3;
+                            
+                            // High energy scatter
+                            if (activeStation === 'chaos' && val > 0.8) {
+                                displacement += Math.random() * 1;
+                            }
+                        }
+
+                        const dist = Math.sqrt(px*px + py*py + pz*pz);
+                        const normX = px / dist;
+                        const normY = py / dist;
+                        const normZ = pz / dist;
+
+                        const finalR = 12 + noise * 0.5 + displacement;
+
+                        positions[i * 3] = normX * finalR;
+                        positions[i * 3 + 1] = normY * finalR;
+                        positions[i * 3 + 2] = normZ * finalR;
+                    }
+                    
+                    particles.geometry.attributes.position.needsUpdate = true;
+                    renderer.render(scene, camera);
+                };
+
+                animate();
+
+                const handleResize = () => {
+                    camera.aspect = window.innerWidth / window.innerHeight;
+                    camera.updateProjectionMatrix();
+                    renderer.setSize(window.innerWidth, window.innerHeight);
+                };
+                window.addEventListener('resize', handleResize);
+
+                return () => {
+                    cancelAnimationFrame(frameId);
+                    window.removeEventListener('resize', handleResize);
+                    if (mountRef.current && renderer.domElement) {
+                        mountRef.current.removeChild(renderer.domElement);
+                    }
+                };
+            }, [isPlaying, activeStation]); // Re-init on station change to update colors
+
+            return <div ref={mountRef} id="canvas-container" />;
+        };
+
+        const App = () => {
+            const [isPlaying, setIsPlaying] = useState(false);
+            const [activeStation, setActiveStation] = useState('focus');
+            const [volume, setVolume] = useState(0.8);
+
+            const stations = [
+                { id: '01', key: 'focus', name: 'Deep Focus', desc: 'Minimal ambient sine waves' },
+                { id: '02', key: 'dream', name: 'Lucid Dream', desc: 'Pentatonic generative bells' },
+                { id: '03', key: 'retro', name: 'Night Drive', desc: 'Analog synth bass pulses' },
+                { id: '04', key: 'chaos', name: 'Neural Glitch', desc: 'Randomized square data streams' },
+            ];
+
+            useEffect(() => {
+                lucide.createIcons();
+            }); // Runs on every render to catch new icons
+
+            const togglePlay = () => {
+                if (!isPlaying) {
+                    audio.play(activeStation);
+                    setIsPlaying(true);
+                } else {
+                    audio.stop();
+                    setIsPlaying(false);
+                }
+            };
+
+            const changeStation = (station) => {
+                setActiveStation(station.key);
+                if (isPlaying) {
+                    audio.play(station.key);
+                }
+            };
+
+            return (
+                <>
+                    <ThreeVisualizer isPlaying={isPlaying} activeStation={activeStation} />
+                    <div className="visualizer-overlay"></div>
+
+                    {/* Navbar */}
+                    <nav className="flex justify-between items-center p-6 md:p-8 z-20">
+                        <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 bg-white text-black flex items-center justify-center rounded-full font-bold text-lg tracking-tighter">
+                                Ai
+                            </div>
+                            <span className="font-sans font-bold text-xl tracking-tight">OpenAI.fm</span>
+                        </div>
+                        <div className="flex gap-4">
+                            <a href="#" className="text-sm text-gray-400 hover:text-white transition-colors">About</a>
+                        </div>
+                    </nav>
+
+                    {/* Main Content */}
+                    <main className="flex-1 flex flex-col items-center justify-center z-20 px-4 pointer-events-none">
+                        <div className="text-center mb-12 pointer-events-auto">
+                            <h1 className="text-5xl md:text-7xl font-bold mb-4 tracking-tighter bg-clip-text text-transparent bg-gradient-to-b from-white to-gray-500">
+                                {isPlaying ? 'Broadcasting' : 'Signal Lost'}
+                            </h1>
+                            <p className="text-gray-400 font-mono text-sm md:text-base tracking-widest uppercase">
+                                {isPlaying ? `Connected to ${stations.find(s => s.key === activeStation).name}` : 'Initialize Audio Context'}
+                            </p>
+                        </div>
+
+                        {/* Play Button */}
+                        <button 
+                            onClick={togglePlay}
+                            className={`
+                                pointer-events-auto
+                                w-24 h-24 md:w-32 md:h-32 rounded-full flex items-center justify-center
+                                transition-all duration-500 group relative
+                                ${isPlaying ? 'bg-white text-black hover:scale-105' : 'bg-transparent border-2 border-white/20 hover:border-white text-white hover:scale-105'}
+                            `}
+                        >
+                            {isPlaying && <div className="absolute inset-0 rounded-full bg-white opacity-20 animate-pulse-slow scale-150"></div>}
+                            
+                            {isPlaying ? 
+                                <i data-lucide="pause" className="w-10 h-10 md:w-12 md:h-12 fill-current"></i> : 
+                                <i data-lucide="play" className="w-10 h-10 md:w-12 md:h-12 ml-2 fill-current"></i>
+                            }
+                        </button>
+                    </main>
+
+                    {/* Bottom Panel */}
+                    <div className="z-20 p-4 md:p-8 w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        
+                        {/* Current Track Info */}
+                        <div className="glass-panel rounded-2xl p-6 flex flex-col justify-between h-48 lg:col-span-1">
+                            <div>
+                                <span className="text-xs font-mono text-ai-accent uppercase tracking-wider mb-2 block">Live Generation</span>
+                                <h2 className="text-2xl font-bold leading-tight">
+                                    {stations.find(s => s.key === activeStation).name}
+                                </h2>
+                                <p className="text-sm text-gray-400 mt-1">
+                                    {stations.find(s => s.key === activeStation).desc}
+                                </p>
+                            </div>
+                            
+                            <div className="space-y-2">
+                                <div className="flex justify-between text-xs font-mono text-gray-500">
+                                    <span>FREQ: {Math.floor(Math.random() * 800) + 20}Hz</span>
+                                    <span>STATUS: {isPlaying ? 'ONLINE' : 'OFFLINE'}</span>
+                                </div>
+                                <div className="h-1 bg-white/10 rounded-full overflow-hidden">
+                                    {isPlaying && <div className="h-full bg-white/80 animate-[width_2s_ease-in-out_infinite]" style={{width: '60%'}}></div>}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Stations List */}
+                        <div className="glass-panel rounded-2xl p-4 lg:col-span-2 overflow-y-auto h-48 custom-scrollbar">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                {stations.map(station => (
+                                    <StationCard 
+                                        key={station.id} 
+                                        station={station} 
+                                        active={activeStation === station.key}
+                                        onClick={() => changeStation(station)}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

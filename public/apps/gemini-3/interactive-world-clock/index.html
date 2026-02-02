@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive World Clock</title>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    animation: {
+                        'float': 'float 6s ease-in-out infinite',
+                        'fade-in': 'fadeIn 0.5s ease-out forwards',
+                        'slide-up': 'slideUp 0.5s ease-out forwards',
+                    },
+                    keyframes: {
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0)' },
+                            '50%': { transform: 'translateY(-10px)' },
+                        },
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { opacity: '0', transform: 'translateY(20px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        body {
+            background-color: #0f172a;
+            color: white;
+            overflow-x: hidden;
+        }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569; 
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        /* Time of day gradients */
+        .bg-morning { background: linear-gradient(135deg, #f6d365 0%, #fda085 100%); }
+        .bg-day { background: linear-gradient(135deg, #2980b9 0%, #6dd5fa 100%); }
+        .bg-evening { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .bg-night { background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%); }
+
+        .card-morning { background: rgba(253, 160, 133, 0.15); border-color: rgba(253, 160, 133, 0.3); }
+        .card-day { background: rgba(41, 128, 185, 0.15); border-color: rgba(41, 128, 185, 0.3); }
+        .card-evening { background: rgba(118, 75, 162, 0.15); border-color: rgba(118, 75, 162, 0.3); }
+        .card-night { background: rgba(44, 83, 100, 0.2); border-color: rgba(44, 83, 100, 0.3); }
+        
+        /* Analog Clock Hands */
+        .clock-face {
+            transition: all 0.5s ease;
+        }
+        .hand {
+            position: absolute;
+            bottom: 50%;
+            left: 50%;
+            transform-origin: bottom center;
+            border-radius: 999px;
+            z-index: 10;
+        }
+        .hour-hand { width: 4px; background: white; height: 25%; }
+        .minute-hand { width: 3px; background: rgba(255,255,255,0.8); height: 35%; }
+        .second-hand { width: 2px; background: #ef4444; height: 40%; }
+        .center-dot {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 8px;
+            height: 8px;
+            background: white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 20;
+        }
+
+        .switch-checkbox {
+            height: 0;
+            width: 0;
+            visibility: hidden;
+        }
+
+        .switch-label {
+            cursor: pointer;
+            text-indent: -9999px;
+            width: 50px;
+            height: 25px;
+            background: grey;
+            display: block;
+            border-radius: 100px;
+            position: relative;
+        }
+
+        .switch-label:after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 21px;
+            height: 21px;
+            background: #fff;
+            border-radius: 90px;
+            transition: 0.3s;
+        }
+
+        .switch-checkbox:checked + .switch-label {
+            background: #4f46e5;
+        }
+
+        .switch-checkbox:checked + .switch-label:after {
+            left: calc(100% - 2px);
+            transform: translateX(-100%);
+        }
+
+        .switch-label:active:after {
+            width: 30px;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // --- Data: Cities & Timezones ---
+        const ALL_CITIES = [
+            { name: "New York", zone: "America/New_York", country: "USA" },
+            { name: "London", zone: "Europe/London", country: "UK" },
+            { name: "Paris", zone: "Europe/Paris", country: "France" },
+            { name: "Tokyo", zone: "Asia/Tokyo", country: "Japan" },
+            { name: "Sydney", zone: "Australia/Sydney", country: "Australia" },
+            { name: "Dubai", zone: "Asia/Dubai", country: "UAE" },
+            { name: "Singapore", zone: "Asia/Singapore", country: "Singapore" },
+            { name: "Los Angeles", zone: "America/Los_Angeles", country: "USA" },
+            { name: "Berlin", zone: "Europe/Berlin", country: "Germany" },
+            { name: "Moscow", zone: "Europe/Moscow", country: "Russia" },
+            { name: "Beijing", zone: "Asia/Shanghai", country: "China" }, // Beijing uses Shanghai time
+            { name: "Mumbai", zone: "Asia/Kolkata", country: "India" },
+            { name: "São Paulo", zone: "America/Sao_Paulo", country: "Brazil" },
+            { name: "Toronto", zone: "America/Toronto", country: "Canada" },
+            { name: "Chicago", zone: "America/Chicago", country: "USA" },
+            { name: "Hong Kong", zone: "Asia/Hong_Kong", country: "China" },
+            { name: "Seoul", zone: "Asia/Seoul", country: "South Korea" },
+            { name: "Istanbul", zone: "Europe/Istanbul", country: "Turkey" },
+            { name: "Mexico City", zone: "America/Mexico_City", country: "Mexico" },
+            { name: "Cairo", zone: "Africa/Cairo", country: "Egypt" },
+            { name: "Bangkok", zone: "Asia/Bangkok", country: "Thailand" },
+            { name: "Johannesburg", zone: "Africa/Johannesburg", country: "South Africa" },
+            { name: "Buenos Aires", zone: "America/Argentina/Buenos_Aires", country: "Argentina" },
+            { name: "Auckland", zone: "Pacific/Auckland", country: "New Zealand" },
+            { name: "Honolulu", zone: "Pacific/Honolulu", country: "USA" },
+            { name: "Anchorage", zone: "America/Anchorage", country: "USA" },
+            { name: "Denver", zone: "America/Denver", country: "USA" },
+            { name: "Phoenix", zone: "America/Phoenix", country: "USA" },
+            { name: "Zurich", zone: "Europe/Zurich", country: "Switzerland" },
+            { name: "Rome", zone: "Europe/Rome", country: "Italy" },
+        ].sort((a, b) => a.name.localeCompare(b.name));
+
+        const INITIAL_CITIES = [
+            ALL_CITIES.find(c => c.name === "New York"),
+            ALL_CITIES.find(c => c.name === "London"),
+            ALL_CITIES.find(c => c.name === "Tokyo"),
+        ];
+
+        // --- Helper: Time of Day Calculation ---
+        const getTimeOfDay = (date) => {
+            const hour = date.getHours();
+            if (hour >= 5 && hour < 12) return 'morning';
+            if (hour >= 12 && hour < 17) return 'day';
+            if (hour >= 17 && hour < 21) return 'evening';
+            return 'night';
+        };
+
+        const getThemeForTime = (timeOfDay) => {
+            switch(timeOfDay) {
+                case 'morning': return {
+                    bgClass: 'bg-morning',
+                    cardClass: 'card-morning',
+                    icon: 'fa-sun',
+                    label: 'Morning',
+                    textColor: 'text-orange-100'
+                };
+                case 'day': return {
+                    bgClass: 'bg-day',
+                    cardClass: 'card-day',
+                    icon: 'fa-cloud-sun',
+                    label: 'Afternoon',
+                    textColor: 'text-blue-100'
+                };
+                case 'evening': return {
+                    bgClass: 'bg-evening',
+                    cardClass: 'card-evening',
+                    icon: 'fa-cloud-moon',
+                    label: 'Evening',
+                    textColor: 'text-purple-100'
+                };
+                case 'night': return {
+                    bgClass: 'bg-night',
+                    cardClass: 'card-night',
+                    icon: 'fa-moon',
+                    label: 'Night',
+                    textColor: 'text-indigo-100'
+                };
+                default: return { bgClass: '', cardClass: '', icon: '', label: '' };
+            }
+        };
+
+        // --- Component: Analog Clock ---
+        const AnalogClock = ({ date, timeOfDay }) => {
+            const seconds = date.getSeconds();
+            const minutes = date.getMinutes();
+            const hours = date.getHours();
+
+            const secondDegrees = ((seconds / 60) * 360);
+            const minuteDegrees = ((minutes / 60) * 360) + ((seconds/60)*6);
+            const hourDegrees = ((hours / 12) * 360) + ((minutes/60)*30);
+
+            return (
+                <div className={`relative w-24 h-24 rounded-full border-2 border-white/20 shadow-inner flex items-center justify-center clock-face glass-panel`}>
+                    {/* Hour Markers */}
+                    {[...Array(12)].map((_, i) => (
+                        <div 
+                            key={i} 
+                            className="absolute w-[1px] h-[3px] bg-white/40"
+                            style={{ 
+                                transform: `rotate(${i * 30}deg) translateY(-42px)` 
+                            }}
+                        />
+                    ))}
+                    
+                    <div className="hand hour-hand shadow-sm" style={{ transform: `rotate(${hourDegrees}deg)` }}></div>
+                    <div className="hand minute-hand shadow-sm" style={{ transform: `rotate(${minuteDegrees}deg)` }}></div>
+                    <div className="hand second-hand shadow-sm" style={{ transform: `rotate(${secondDegrees}deg)`, transition: seconds === 0 ? 'none' : 'all 0.05s cubic-bezier(0.1, 2.7, 0.58, 1)' }}></div>
+                    <div className="center-dot shadow-sm"></div>
+                </div>
+            );
+        };
+
+        // --- Component: Clock Card ---
+        const ClockCard = ({ city, zone, country, onDelete, is24Hour }) => {
+            // Calculate local time for this zone
+            const getLocalTime = () => {
+                const now = new Date();
+                const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+                // We need to fetch the offset. But Date.toLocaleString can give us the string.
+                // To get a Date object for the timezone, we do a trick string parsing
+                const s = now.toLocaleString('en-US', { timeZone: zone });
+                return new Date(s);
+            };
+
+            const [localDate, setLocalDate] = useState(getLocalTime());
+
+            useEffect(() => {
+                const timer = setInterval(() => {
+                    setLocalDate(getLocalTime());
+                }, 1000);
+                return () => clearInterval(timer);
+            }, [zone]);
+
+            const timeOfDay = getTimeOfDay(localDate);
+            const theme = getThemeForTime(timeOfDay);
+
+            // Format Time String
+            const timeString = localDate.toLocaleTimeString('en-US', {
+                hour: 'numeric',
+                minute: '2-digit',
+                hour12: !is24Hour
+            });
+            
+            // Format Date String
+            const dateString = localDate.toLocaleDateString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric'
+            });
+            
+            // Calculate offset relative to UTC (Display only)
+            // Simplified approach for display
+            const timeZoneName = localDate.toLocaleTimeString('en-us', {timeZoneName:'short'}).split(' ')[2] || '';
+
+            return (
+                <div className={`relative p-6 rounded-2xl border transition-all duration-500 hover:scale-[1.02] ${theme.cardClass} flex flex-col items-center justify-between gap-4 animate-slide-up group overflow-hidden`}>
+                    
+                    {/* Background decoration */}
+                    <div className="absolute top-0 right-0 -mt-8 -mr-8 w-32 h-32 bg-white opacity-5 rounded-full blur-2xl group-hover:opacity-10 transition-opacity"></div>
+                    
+                    <div className="w-full flex justify-between items-start z-10">
+                        <div className="text-left">
+                            <h2 className="text-2xl font-bold tracking-tight text-white">{city}</h2>
+                            <p className="text-xs font-medium text-white/60 uppercase tracking-widest mt-1">{country}</p>
+                        </div>
+                        <button 
+                            onClick={onDelete}
+                            className="text-white/30 hover:text-red-400 transition-colors p-1"
+                            title="Remove clock"
+                        >
+                            <i className="fa-solid fa-times"></i>
+                        </button>
+                    </div>
+
+                    <div className="flex items-center gap-6 w-full justify-center py-2 z-10">
+                        <AnalogClock date={localDate} timeOfDay={timeOfDay} />
+                        <div className="flex flex-col items-start min-w-[100px]">
+                            <span className="text-4xl font-mono font-bold text-white drop-shadow-sm">
+                                {timeString}
+                            </span>
+                            <span className="text-sm font-medium text-white/70 mt-1">
+                                {dateString}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className="w-full flex justify-between items-center text-sm border-t border-white/10 pt-4 mt-2 z-10">
+                        <div className={`flex items-center gap-2 ${theme.textColor}`}>
+                            <i className={`fa-solid ${theme.icon}`}></i>
+                            <span className="font-medium">{theme.label}</span>
+                        </div>
+                        <div className="text-white/40 text-xs font-mono">
+                           {zone}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Component: Add City Modal/Search ---
+        const AddCity = ({ existingCities, onAdd, onClose }) => {
+            const [query, setQuery] = useState("");
+            
+            const filtered = useMemo(() => {
+                if (!query) return ALL_CITIES.filter(c => !existingCities.some(ec => ec.zone === c.zone));
+                return ALL_CITIES.filter(c => 
+                    (c.name.toLowerCase().includes(query.toLowerCase()) || 
+                     c.country.toLowerCase().includes(query.toLowerCase())) &&
+                    !existingCities.some(ec => ec.zone === c.zone)
+                );
+            }, [query, existingCities]);
+
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+                    <div className="w-full max-w-md bg-[#1e293b] border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
+                        <div className="p-4 border-b border-white/10 bg-[#0f172a]">
+                            <div className="relative">
+                                <i className="fa-solid fa-search absolute left-4 top-1/2 -translate-y-1/2 text-white/40"></i>
+                                <input 
+                                    autoFocus
+                                    type="text" 
+                                    placeholder="Search for a city..." 
+                                    className="w-full bg-[#1e293b] border border-white/10 rounded-xl py-3 pl-12 pr-4 text-white placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                                    value={query}
+                                    onChange={e => setQuery(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                        <div className="overflow-y-auto flex-1 p-2 space-y-1 custom-scrollbar">
+                            {filtered.length === 0 ? (
+                                <div className="p-8 text-center text-white/30">
+                                    <i className="fa-regular fa-map mb-2 text-2xl"></i>
+                                    <p>No cities found</p>
+                                </div>
+                            ) : (
+                                filtered.map(city => (
+                                    <button 
+                                        key={city.zone}
+                                        onClick={() => onAdd(city)}
+                                        className="w-full flex items-center justify-between p-3 rounded-lg hover:bg-indigo-600/20 hover:text-indigo-200 text-white/80 transition-all group"
+                                    >
+                                        <div className="flex flex-col items-start">
+                                            <span className="font-semibold text-white group-hover:text-white">{city.name}</span>
+                                            <span className="text-xs text-white/40 group-hover:text-white/60">{city.country}</span>
+                                        </div>
+                                        <i className="fa-solid fa-plus text-white/20 group-hover:text-indigo-400"></i>
+                                    </button>
+                                ))
+                            )}
+                        </div>
+                        <div className="p-3 border-t border-white/10 bg-[#0f172a] text-right">
+                             <button onClick={onClose} className="text-sm text-white/50 hover:text-white px-4 py-2">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Main App Component ---
+        const App = () => {
+            const [cities, setCities] = useState(() => {
+                const saved = localStorage.getItem('worldclock_cities');
+                return saved ? JSON.parse(saved) : INITIAL_CITIES;
+            });
+            const [is24Hour, setIs24Hour] = useState(() => {
+                const saved = localStorage.getItem('worldclock_24h');
+                return saved ? JSON.parse(saved) : false;
+            });
+            const [isAdding, setIsAdding] = useState(false);
+
+            // Persist state
+            useEffect(() => {
+                localStorage.setItem('worldclock_cities', JSON.stringify(cities));
+            }, [cities]);
+
+            useEffect(() => {
+                localStorage.setItem('worldclock_24h', JSON.stringify(is24Hour));
+            }, [is24Hour]);
+
+            const addCity = (city) => {
+                setCities([...cities, city]);
+                setIsAdding(false);
+            };
+
+            const removeCity = (zone) => {
+                setCities(cities.filter(c => c.zone !== zone));
+            };
+
+            return (
+                <div className="min-h-screen bg-slate-900 text-white relative overflow-hidden">
+                    {/* Background Gradients */}
+                    <div className="fixed top-0 left-0 w-screen h-screen overflow-hidden -z-10 pointer-events-none">
+                        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-600/20 rounded-full blur-[120px] animate-float"></div>
+                        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-600/10 rounded-full blur-[120px] animate-float" style={{animationDelay: '-2s'}}></div>
+                         <div className="absolute top-[20%] right-[20%] w-[30%] h-[30%] bg-purple-600/10 rounded-full blur-[100px] animate-float" style={{animationDelay: '-4s'}}></div>
+                    </div>
+
+                    <div className="container mx-auto px-4 py-8 md:py-12 max-w-7xl">
+                        {/* Header */}
+                        <header className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6 animate-fade-in">
+                            <div>
+                                <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-indigo-200 via-white to-blue-200 mb-2">
+                                    World Clock
+                                </h1>
+                                <p className="text-white/50 text-lg max-w-md">
+                                    Track time across the globe with visual day/night cycles.
+                                </p>
+                            </div>
+
+                            <div className="flex items-center gap-6 glass-panel p-3 rounded-2xl">
+                                {/* 12/24 Toggle */}
+                                <div className="flex items-center gap-3 px-2">
+                                    <span className={`text-sm font-semibold transition-colors ${!is24Hour ? 'text-white' : 'text-white/40'}`}>12H</span>
+                                    <div className="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
+                                        <input 
+                                            type="checkbox" 
+                                            name="toggle" 
+                                            id="toggle" 
+                                            className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 border-[#1e293b] appearance-none cursor-pointer transition-transform duration-300 ease-in-out"
+                                            style={{ transform: is24Hour ? 'translateX(100%)' : 'translateX(0)' }}
+                                            checked={is24Hour}
+                                            onChange={() => setIs24Hour(!is24Hour)}
+                                        />
+                                        <label 
+                                            htmlFor="toggle" 
+                                            className={`toggle-label block overflow-hidden h-6 rounded-full cursor-pointer transition-colors duration-300 ${is24Hour ? 'bg-indigo-600' : 'bg-slate-600'}`}
+                                        ></label>
+                                    </div>
+                                    <span className={`text-sm font-semibold transition-colors ${is24Hour ? 'text-white' : 'text-white/40'}`}>24H</span>
+                                </div>
+
+                                <div className="w-[1px] h-8 bg-white/10"></div>
+
+                                <button 
+                                    onClick={() => setIsAdding(true)}
+                                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-xl font-medium transition-all shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 flex items-center gap-2 whitespace-nowrap"
+                                >
+                                    <i className="fa-solid fa-plus"></i> Add City
+                                </button>
+                            </div>
+                        </header>
+
+                        {/* Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
+                            {cities.map((city) => (
+                                <ClockCard 
+                                    key={city.zone} 
+                                    city={city.name}
+                                    zone={city.zone}
+                                    country={city.country}
+                                    onDelete={() => removeCity(city.zone)}
+                                    is24Hour={is24Hour}
+                                />
+                            ))}
+                            
+                            {/* Empty State placeholder if needed, though we start with cities */}
+                            {cities.length === 0 && (
+                                <div className="col-span-full py-20 text-center border-2 border-dashed border-white/10 rounded-3xl text-white/30 flex flex-col items-center justify-center gap-4">
+                                    <i className="fa-regular fa-clock text-6xl mb-2"></i>
+                                    <h3 className="text-xl font-semibold">No clocks added</h3>
+                                    <p>Add a city to get started</p>
+                                    <button 
+                                        onClick={() => setIsAdding(true)}
+                                        className="mt-4 text-indigo-400 hover:text-indigo-300 font-medium"
+                                    >
+                                        Add your first city
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {isAdding && (
+                        <AddCity 
+                            existingCities={cities} 
+                            onAdd={addCity} 
+                            onClose={() => setIsAdding(false)} 
+                        />
+                    )}
+                    
+                    {/* Footer */}
+                    <footer className="text-center py-8 text-white/20 text-sm">
+                        <p>&copy; {new Date().getFullYear()} Interactive World Clock</p>
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

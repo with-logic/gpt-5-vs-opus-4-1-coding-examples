@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tiny Kanban</title>
+  <meta name="description" content="Tiny Kanban – Todo → Doing → Done with drag, WIP limits, priorities, assignees, search, and delete in a single self‑contained HTML file." />
+  <style>
+    :root{
+      --scale:1;
+      --bg:#f7f7fb;
+      --panel:#ffffff;
+      --text:#16202a;
+      --muted:#6b7280;
+      --border:#e5e7eb;
+      --primary:#2563eb;
+      --accent:#10b981;
+      --danger:#ef4444;
+      --warn:#f59e0b;
+      --low:#22c55e;    /* Low priority */
+      --med:#f59e0b;    /* Medium priority */
+      --high:#ef4444;   /* High priority */
+      --shadow:0 8px 24px rgba(0,0,0,.06);
+      --card-shadow:0 3px 10px rgba(0,0,0,.07);
+      --drop:#a78bfa;   /* Drop indicator */
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      background:var(--bg);
+      color:var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      font-size: calc(16px * var(--scale));
+      line-height:1.35;
+    }
+
+    /* Header */
+    .app-header{
+      position:sticky; top:0; z-index:50;
+      background: linear-gradient(180deg,#ffffff 0%,#ffffff 70%, rgba(255,255,255,.92) 100%);
+      border-bottom:1px solid var(--border);
+      box-shadow:0 2px 10px rgba(0,0,0,.04);
+    }
+    .header-inner{ max-width:1200px; margin:0 auto; padding:12px 16px; display:flex; gap:14px; align-items:center; flex-wrap:wrap }
+    .title{ font-weight:800; letter-spacing:.2px; font-size: clamp(20px, 22px + 0.4vw, 28px); display:flex; align-items:center; gap:10px }
+    .title .badge{ font-weight:700; color:#fff; background:var(--primary); padding:2px 8px; border-radius:999px; font-size:.75em }
+
+    .controls{ display:flex; gap:10px; align-items:center; flex:1; flex-wrap:wrap }
+    .controls .group{ display:flex; gap:8px; align-items:center }
+
+    input[type="text"], input[type="number"], select, .btn{
+      font: inherit; padding:8px 10px; border:1px solid var(--border); background:#fff; border-radius:8px; outline:none; transition:.15s border, .15s box-shadow; height:38px;
+    }
+    input[type="text"]:focus, input[type="number"]:focus, select:focus{ border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,.15) }
+
+    .btn{ cursor:pointer; background: #111827; color:#fff; border:none; display:inline-flex; align-items:center; gap:8px; padding:8px 12px }
+    .btn.secondary{ background:#fff; color:#111827; border:1px solid var(--border) }
+    .btn.warn{ background: var(--warn); color:#111 }
+    .btn.ghost{ background:transparent; color:#111827; border:1px dashed var(--border) }
+    .btn:disabled{ opacity:.6; cursor:not-allowed }
+
+    .chip{ padding:6px 10px; border-radius:999px; border:1px solid var(--border); background:#fff; cursor:pointer; user-select:none }
+    .chip.active{ border-color:var(--primary); box-shadow: inset 0 0 0 2px rgba(37,99,235,.2) }
+
+    .spacer{ flex:1 }
+
+    /* Board */
+    .board-wrap{ max-width:1200px; margin:18px auto; padding:0 16px; }
+    .board{ display:grid; grid-template-columns: repeat(3, 1fr); gap:14px }
+
+    .column{ background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:10px; box-shadow:var(--shadow); display:flex; flex-direction:column; min-height:60vh }
+    .col-head{ display:flex; align-items:center; gap:10px; padding:6px 8px 10px 8px; position:relative }
+    .col-title{ font-weight:800; font-size:1.05em; letter-spacing:.3px }
+    .wip{ margin-left:auto; display:flex; align-items:center; gap:6px; color:var(--muted); font-weight:600 }
+    .wip input{ width:64px; height:34px; text-align:center }
+    .wip-ind{ padding:2px 8px; border-radius:6px; background:#f3f4f6; color:#111827; font-weight:700 }
+    .wip-over .wip-ind{ background: rgba(239,68,68,.12); color:#991b1b }
+
+    .cards{ display:flex; flex-direction:column; gap:10px; padding:4px; min-height: 30px; flex:1 }
+
+    .card{ background:#fff; border:1px solid var(--border); border-radius:12px; box-shadow: var(--card-shadow); padding:10px 10px 10px 12px; display:flex; gap:10px; align-items:flex-start; cursor:grab; user-select:none; position:relative }
+    .card:active{ cursor:grabbing }
+    .card.dragging{ opacity:.5 }
+    .stripe{ width:6px; border-radius:6px; align-self:stretch }
+    .stripe.low{ background:var(--low) }
+    .stripe.med{ background:var(--med) }
+    .stripe.high{ background:var(--high) }
+
+    .card-main{ flex:1; min-width:0 }
+    .card-title{ font-weight:800; font-size:1.02em; word-break: break-word }
+    .card-desc{ color:var(--muted); margin-top:3px; font-size:.95em; white-space: pre-wrap }
+
+    .card-meta{ display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap }
+    .avatar{ width:24px; height:24px; border-radius:999px; display:inline-grid; place-items:center; font-size:.8em; color:#fff; font-weight:800 }
+    .tag{ font-size:.78em; padding:3px 8px; border-radius:999px; background:#f3f4f6; color:#111827; border:1px solid var(--border); font-weight:700 }
+
+    .card-actions{ display:flex; align-items:center; gap:6px }
+    .icon-btn{ width:34px; height:34px; border:none; border-radius:8px; display:grid; place-items:center; cursor:pointer; background:#f9fafb; border:1px solid var(--border) }
+    .icon-btn:hover{ background:#eef2ff; border-color:#c7d2fe }
+    .icon-danger:hover{ background:#ffe4e6; border-color:#fecdd3 }
+
+    /* Drop placeholder */
+    .placeholder{ height:44px; border:2px dashed var(--drop); border-radius:12px; background:rgba(167,139,250,.08) }
+
+    /* Footer add */
+    .add-quick{ margin-top:auto; padding:8px 6px 4px 6px; display:flex; gap:8px }
+    .add-quick input{ flex:1 }
+
+    /* Dialog */
+    dialog{ border:none; border-radius:16px; padding:0; width:min(560px, 92vw); box-shadow:0 24px 60px rgba(0,0,0,.25) }
+    .dlg{ padding:14px }
+    .dlg h3{ margin:2px 0 8px; font-size:1.1em }
+    .grid{ display:grid; grid-template-columns: 1fr 1fr; gap:10px }
+    .grid .row{ display:flex; flex-direction:column; gap:6px }
+    .row label{ color:var(--muted); font-weight:700; font-size:.9em }
+    textarea{ font: inherit; border:1px solid var(--border); border-radius:8px; min-height:86px; padding:8px; resize:vertical }
+    .dlg-actions{ display:flex; justify-content:flex-end; gap:8px; padding:10px 14px 16px }
+
+    /* People bar */
+    .people{ display:flex; align-items:center; gap:6px; flex-wrap:wrap }
+    .person{ display:flex; align-items:center; gap:8px; padding:5px 8px; border:1px solid var(--border); border-radius:999px; background:#fff; cursor:pointer }
+
+    /* Toast */
+    .toast{ position:fixed; left:50%; transform:translateX(-50%); top:10px; z-index:60; background:#111827; color:#fff; padding:10px 14px; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.28); display:none }
+    .toast.show{ display:block; animation: fadeSlide .2s ease-out }
+    @keyframes fadeSlide{ from{ opacity:0; transform:translate(-50%,-6px)} to{opacity:1; transform:translate(-50%,0)} }
+
+    /* Standup mode scales UI bigger */
+    body.standup{ --scale:1.28 }
+
+    /* Responsive */
+    @media (max-width: 980px){ .board{ grid-template-columns:1fr } .wip input{ width:56px } }
+  </style>
+</head>
+<body>
+  <div class="app-header" role="banner">
+    <div class="header-inner">
+      <div class="title" aria-label="Tiny Kanban">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 4h6v16H4zM14 4h6v10h-6z" fill="#2563eb"/></svg>
+        Tiny Kanban <span class="badge">Todo → Doing → Done</span>
+      </div>
+
+      <div class="controls">
+        <div class="group" title="Search (press f)">
+          <input id="search" type="text" placeholder="Search title, desc, assignee…" aria-label="Search" />
+        </div>
+        <div class="group" aria-label="Priority filter">
+          <span class="chip" data-priority="all" id="pf-all">All</span>
+          <span class="chip" data-priority="high" id="pf-high" style="border-color:var(--high)">High</span>
+          <span class="chip" data-priority="med" id="pf-med" style="border-color:var(--med)">Med</span>
+          <span class="chip" data-priority="low" id="pf-low" style="border-color:var(--low)">Low</span>
+        </div>
+        <div class="group people" id="people-bar" title="Assign quicker by clicking a person">
+          <!-- People chips injected -->
+        </div>
+        <div class="spacer"></div>
+        <div class="group">
+          <button class="btn secondary" id="standupToggle" title="Standup Mode (press s)">Standup Mode</button>
+          <button class="btn" id="addCardBtn" title="Add a new card (press n)">+ New</button>
+          <button class="btn secondary" id="exportBtn" title="Export board JSON">Export</button>
+          <button class="btn secondary" id="importBtn" title="Import board JSON">Import</button>
+          <button class="btn warn" id="clearDoneBtn" title="Delete all in Done">Clear Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="board-wrap">
+    <div id="board" class="board" role="main" aria-label="Kanban Board">
+      <!-- Columns render here -->
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <!-- Dialog for Add / Edit -->
+  <dialog id="cardDialog">
+    <form method="dialog" class="dlg" id="cardForm">
+      <h3 id="dlgTitle">Add Card</h3>
+      <div class="grid">
+        <div class="row">
+          <label for="fTitle">Title</label>
+          <input id="fTitle" type="text" placeholder="e.g., Fix login bug" required />
+        </div>
+        <div class="row">
+          <label for="fAssignee">Assignee</label>
+          <input id="fAssignee" type="text" list="assignees" placeholder="e.g., Alice" />
+          <datalist id="assignees"></datalist>
+        </div>
+        <div class="row" style="grid-column:1/-1">
+          <label for="fDesc">Description</label>
+          <textarea id="fDesc" placeholder="Optional details, acceptance criteria, links…"></textarea>
+        </div>
+        <div class="row">
+          <label for="fPriority">Priority</label>
+          <select id="fPriority">
+            <option value="high">High 🔴</option>
+            <option value="med" selected>Medium 🟠</option>
+            <option value="low">Low 🟢</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="fColumn">Column</label>
+          <select id="fColumn">
+            <option value="todo">Todo</option>
+            <option value="doing">Doing</option>
+            <option value="done">Done</option>
+          </select>
+        </div>
+      </div>
+      <div class="dlg-actions">
+        <button class="btn secondary" value="cancel">Cancel</button>
+        <button class="btn" id="saveCardBtn" value="default">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+  (function(){
+    'use strict';
+
+    const $ = (sel, el=document) => el.querySelector(sel);
+    const $$ = (sel, el=document) => Array.from(el.querySelectorAll(sel));
+
+    const STORAGE_KEY = 'tiny-kanban-v1';
+
+    const PEOPLE = ['Alice','Bob','Carol','Dave','Eve','Frank'];
+
+    const state = {
+      columns: [
+        { id:'todo', name:'Todo', wipLimit:0, cards:[] },
+        { id:'doing', name:'Doing', wipLimit:3, cards:[] },
+        { id:'done', name:'Done', wipLimit:0, cards:[] }
+      ],
+      filters: { text:'', priority:'all', person:'' }
+    };
+
+    // Utilities
+    const uid = () => 'c' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const esc = (s='') => s.replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
+    const fromLS = () => { try{ const raw = localStorage.getItem(STORAGE_KEY); return raw? JSON.parse(raw): null }catch(e){ return null } };
+    const toLS = () => { try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)) }catch(e){} };
+    const hashColor = (name) => {
+      let h=0; for(let i=0;i<name.length;i++){ h = (h*31 + name.charCodeAt(i))>>>0 }
+      const hue = h % 360; return `hsl(${hue} 70% 45%)`;
+    };
+
+    // Toast
+    let toastTimer; const toast = (msg, ms=1800) => {
+      const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+      clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.remove('show'), ms);
+    };
+
+    // Initial data (if empty)
+    function seed(){
+      const sample = [
+        { title:'Set up CI pipeline', desc:'GitHub Actions for test & lint', priority:'med', assignee:'Alice' },
+        { title:'Fix login redirect bug', desc:'Repro on Safari only', priority:'high', assignee:'Bob' },
+        { title:'Spec: Reporting module', desc:'Draft outline for v2', priority:'low', assignee:'Carol' },
+        { title:'Prepare demo slides', desc:'Team demo Friday', priority:'med', assignee:'Dave' },
+        { title:'Refactor utils/date.ts', desc:'Replace moment with Intl', priority:'low', assignee:'Eve' },
+        { title:'Staging deploy', desc:'Tag release and notify QA', priority:'med', assignee:'Frank' },
+      ];
+      for (let i=0;i<sample.length;i++){
+        const c = { id:uid(), ...sample[i], created: Date.now() };
+        if (i<2) state.columns[1].cards.push(c); // Doing
+        else if (i===sample.length-1) state.columns[2].cards.push(c); // Done
+        else state.columns[0].cards.push(c); // Todo
+      }
+    }
+
+    // Load or seed
+    (function initLoad(){
+      const saved = fromLS();
+      if (saved && saved.columns){ Object.assign(state, saved); }
+      else { seed(); toLS(); }
+    })();
+
+    // People bar
+    function renderPeopleBar(){
+      const bar = $('#people-bar');
+      bar.innerHTML = '<span style="color:var(--muted); font-weight:700">People:</span>' + PEOPLE.map(p=>{
+        const col = hashColor(p);
+        return `<span class="person" data-person="${esc(p)}" title="Filter: ${esc(p)}">
+          <span class="avatar" style="background:${col}">${esc(p[0]||'?')}</span>
+          <span>${esc(p)}</span>
+        </span>`
+      }).join('') + `<span class="chip" id="clearPerson">All</span>`;
+      // datalist for form
+      const dl = $('#assignees'); dl.innerHTML = PEOPLE.map(p=>`<option value="${esc(p)}"></option>`).join('');
+    }
+
+    // Column helpers
+    const getCol = id => state.columns.find(c=>c.id===id);
+    const countCol = id => getCol(id).cards.length;
+
+    function wipBadge(col){
+      const n = col.cards.length, w = col.wipLimit||0; const warn = w>0 && n>=w;
+      return `<span class="wip-ind" title="Items / WIP limit">${n} / ${w>0? w:'∞'}</span>`;
+    }
+
+    // Board rendering
+    function render(){
+      const { text, priority, person } = state.filters;
+      const filt = (card)=>{
+        if (priority!=='all' && card.priority!==priority) return false;
+        if (person && (card.assignee||'').toLowerCase()!==person.toLowerCase()) return false;
+        if (text){
+          const t = text.toLowerCase();
+          return [card.title, card.desc, card.assignee].some(v=> (v||'').toLowerCase().includes(t));
+        }
+        return true;
+      };
+
+      const html = state.columns.map(col=>{
+        const over = (col.wipLimit>0 && col.cards.length>col.wipLimit) ? ' wip-over' : '';
+        return `<section class="column${over}" data-col="${col.id}" aria-label="${esc(col.name)} column">
+          <div class="col-head">
+            <div class="col-title">${esc(col.name)}</div>
+            <div class="wip">WIP
+              <input type="number" min="0" step="1" value="${col.wipLimit}" data-wip="${col.id}" title="0 means unlimited"/>
+              ${wipBadge(col)}
+            </div>
+          </div>
+          <div class="cards" data-list="${col.id}" aria-label="${esc(col.name)} list" tabindex="0">
+            ${col.cards.map(card=> cardHTML(card, filt(card))).join('')}
+          </div>
+          <div class="add-quick">
+            <input type="text" placeholder="Quick add to ${esc(col.name)}…" data-quick="${col.id}" />
+            <button class="btn ghost" data-quick-btn="${col.id}">Add</button>
+          </div>
+        </section>`;
+      }).join('');
+
+      $('#board').innerHTML = html;
+    }
+
+    function cardHTML(card, visible=true){
+      const pr = card.priority||'med';
+      const av = (card.assignee||'').trim(); const avBg = av? hashColor(av): '#9ca3af';
+      const wrap = (s) => s && state.filters.text ? highlight(s, state.filters.text) : esc(s||'');
+      const style = visible? '' : 'style="display:none"';
+      return `<article class="card" draggable="true" data-id="${card.id}" ${style}>
+        <div class="stripe ${pr}"></div>
+        <div class="card-main">
+          <div class="card-title">${wrap(card.title)}</div>
+          ${card.desc? `<div class="card-desc">${wrap(card.desc)}</div>`: ''}
+          <div class="card-meta">
+            <span class="avatar" style="background:${avBg}" title="${av? 'Assignee: '+esc(av): 'Unassigned'}">${esc((av||'?')[0])}</span>
+            <span class="tag">${pr==='high'?'High':pr==='med'?'Med':'Low'}</span>
+          </div>
+        </div>
+        <div class="card-actions">
+          <button class="icon-btn" title="Edit" data-edit="${card.id}" aria-label="Edit card">
+            ${icons.pencil}
+          </button>
+          <button class="icon-btn icon-danger" title="Delete" data-del="${card.id}" aria-label="Delete card">
+            ${icons.trash}
+          </button>
+        </div>
+      </article>`;
+    }
+
+    function highlight(text, term){
+      const t = term.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+      return esc(text).replace(new RegExp(t,'gi'), m=>`<mark>${m}</mark>`);
+    }
+
+    // Icons
+    const icons = {
+      pencil: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 16.5V20h3.5L18.6 8.9l-3.5-3.5L4 16.5zM20.7 7.8c.4-.4.4-1 0-1.4l-3.1-3.1c-.4-.4-1-.4-1.4 0l-1.8 1.8 4.5 4.5 1.8-1.8z" fill="#111827"/></svg>',
+      trash: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v9h-2V9zm4 0h2v9h-2V9zM7 9h2v9H7V9z" fill="#b91c1c"/></svg>'
+    };
+
+    // Drag & Drop
+    let drag = { id:null, from:null, placeholder:null };
+
+    function ensurePlaceholder(listEl){
+      if (!drag.placeholder){
+        const ph = document.createElement('div'); ph.className='placeholder'; drag.placeholder = ph;
+      }
+      if (!listEl.contains(drag.placeholder)){
+        listEl.appendChild(drag.placeholder);
+      }
+    }
+
+    function getDropIndex(listEl, evt){
+      const cards = $$('.card', listEl).filter(el=> el.style.display!=="none");
+      const y = evt.clientY;
+      for (let i=0;i<cards.length;i++){
+        const r = cards[i].getBoundingClientRect();
+        if (y < r.top + r.height/2) return i;
+      }
+      return cards.length;
+    }
+
+    function onDragStart(e){
+      const card = e.target.closest('.card'); if (!card) return;
+      drag.id = card.dataset.id;
+      drag.from = card.closest('[data-list]')?.dataset.list;
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', drag.id);
+    }
+    function onDragEnd(e){
+      $$('.card.dragging').forEach(el=> el.classList.remove('dragging'));
+      if (drag.placeholder?.parentElement) drag.placeholder.parentElement.removeChild(drag.placeholder);
+      drag.id=null; drag.from=null; drag.placeholder=null;
+    }
+    function onDragOver(e){
+      const list = e.target.closest('[data-list]'); if (!list) return;
+      e.preventDefault(); e.dataTransfer.dropEffect='move';
+      ensurePlaceholder(list);
+      const idx = getDropIndex(list, e);
+      const cards = $$('.card', list).filter(el=> el.style.display!=="none");
+      if (idx>=cards.length) list.appendChild(drag.placeholder); else list.insertBefore(drag.placeholder, cards[idx]);
+    }
+    function onDrop(e){
+      const list = e.target.closest('[data-list]'); if (!list) return;
+      e.preventDefault();
+      const toCol = list.dataset.list; const fromCol = drag.from; if (!drag.id || !fromCol) return onDragEnd(e);
+      const cardId = drag.id;
+      const targetIndex = Array.prototype.indexOf.call(list.children, drag.placeholder);
+
+      if (fromCol !== toCol){
+        const col = getCol(toCol);
+        const limit = col.wipLimit||0;
+        const count = col.cards.length;
+        if (limit>0 && count >= limit){ toast(`WIP limit reached in ${col.name}`); return onDragEnd(e); }
+      }
+      // Move in state
+      const src = getCol(fromCol); const dst = getCol(toCol);
+      const i = src.cards.findIndex(c=>c.id===cardId); if (i<0) return onDragEnd(e);
+      const [card] = src.cards.splice(i,1);
+      const filtered = dst.cards; // we insert respecting current visible order
+      const insertAt = Math.max(0, Math.min(targetIndex, filtered.length));
+      filtered.splice(insertAt,0,card);
+      toLS(); render();
+      onDragEnd(e);
+    }
+
+    // Events delegation
+    function bindGlobalEvents(){
+      const root = document;
+      root.addEventListener('dragstart', onDragStart);
+      root.addEventListener('dragend', onDragEnd);
+      root.addEventListener('dragover', onDragOver);
+      root.addEventListener('drop', onDrop);
+
+      root.addEventListener('click', (e)=>{
+        const del = e.target.closest('[data-del]'); if (del){
+          const id = del.dataset.del; removeCard(id); return;
+        }
+        const ed = e.target.closest('[data-edit]'); if (ed){ openEdit(ed.dataset.edit); return; }
+
+        const qb = e.target.closest('[data-quick-btn]'); if (qb){
+          const col = qb.dataset.quickBtn; const inp = `[data-quick="${col}"]`; const t = $(inp);
+          if (t && t.value.trim()) { quickAdd(col, t.value.trim()); t.value=''; }
+          return;
+        }
+
+        const person = e.target.closest('[data-person]'); if (person){
+          const p = person.dataset.person; state.filters.person = p; applyFilterUI(); render(); return;
+        }
+        if (e.target.id==='clearPerson'){ state.filters.person=''; applyFilterUI(); render(); return; }
+
+        const chip = e.target.closest('.chip[data-priority]'); if (chip){ state.filters.priority = chip.dataset.priority; applyFilterUI(); render(); return; }
+
+        if (e.target.id==='standupToggle'){ document.body.classList.toggle('standup'); return; }
+        if (e.target.id==='addCardBtn'){ openAdd(); return; }
+        if (e.target.id==='exportBtn'){ doExport(); return; }
+        if (e.target.id==='importBtn'){ doImport(); return; }
+        if (e.target.id==='clearDoneBtn'){ clearDone(); return; }
+      });
+
+      root.addEventListener('change', (e)=>{
+        const wip = e.target.closest('input[data-wip]'); if (wip){
+          const col = getCol(wip.dataset.wip); const v = Math.max(0, parseInt(wip.value||'0',10)||0); col.wipLimit = v; toLS(); render(); return;
+        }
+      });
+
+      // Search
+      $('#search').addEventListener('input', (e)=>{ state.filters.text = e.target.value; render(); });
+
+      // Keyboard shortcuts
+      root.addEventListener('keydown', (e)=>{
+        if (e.key==='f' && !e.metaKey && !e.ctrlKey){ e.preventDefault(); $('#search').focus(); $('#search').select(); }
+        if (e.key==='n' && !e.metaKey && !e.ctrlKey){ e.preventDefault(); openAdd(); }
+        if (e.key==='s' && !e.metaKey && !e.ctrlKey){ e.preventDefault(); document.body.classList.toggle('standup'); }
+      });
+
+      // Quick add enter
+      root.addEventListener('keydown', (e)=>{
+        const quick = e.target.closest('input[data-quick]');
+        if (quick && e.key==='Enter'){ const col = quick.dataset.quick; if (quick.value.trim()){ quickAdd(col, quick.value.trim()); quick.value=''; } }
+      });
+    }
+
+    function applyFilterUI(){
+      $$('.chip[data-priority]').forEach(c=> c.classList.toggle('active', c.dataset.priority===state.filters.priority));
+      $('#pf-all').classList.toggle('active', state.filters.priority==='all');
+    }
+
+    // Card ops
+    function removeCard(id){
+      for (const col of state.columns){
+        const i = col.cards.findIndex(c=>c.id===id);
+        if (i>=0){ if (confirm('Delete this card?')){ col.cards.splice(i,1); toLS(); render(); toast('Card deleted'); } return; }
+      }
+    }
+
+    function quickAdd(colId, title){
+      const col = getCol(colId); if (!col) return;
+      if (col.wipLimit>0 && col.cards.length >= col.wipLimit){ toast(`WIP limit reached in ${col.name}`); return; }
+      col.cards.unshift({ id:uid(), title, desc:'', priority:'med', assignee:'', created:Date.now() });
+      toLS(); render();
+    }
+
+    // Dialog
+    let editing = null;
+    const dlg = $('#cardDialog');
+    const fTitle = $('#fTitle'), fAssignee=$('#fAssignee'), fDesc=$('#fDesc'), fPriority=$('#fPriority'), fColumn=$('#fColumn');
+
+    function openAdd(){ editing=null; $('#dlgTitle').textContent='Add Card'; fTitle.value=''; fAssignee.value=''; fDesc.value=''; fPriority.value='med'; fColumn.value='todo'; dlg.showModal(); }
+    function openEdit(id){
+      const {col, idx} = findCard(id) || {}; if (!col) return;
+      editing = { colId: col.id, idx };
+      const card = col.cards[idx];
+      $('#dlgTitle').textContent='Edit Card';
+      fTitle.value = card.title||''; fAssignee.value=card.assignee||''; fDesc.value=card.desc||''; fPriority.value=card.priority||'med'; fColumn.value=col.id;
+      dlg.showModal();
+    }
+
+    function findCard(id){
+      for (const col of state.columns){
+        const idx = col.cards.findIndex(c=>c.id===id); if (idx>=0) return { col, idx };
+      }
+      return null;
+    }
+
+    $('#cardForm').addEventListener('submit', (e)=>{
+      e.preventDefault();
+      const data = { title: fTitle.value.trim(), assignee:fAssignee.value.trim(), desc:fDesc.value.trim(), priority:fPriority.value, created: Date.now() };
+      const targetCol = getCol(fColumn.value);
+      if (!data.title){ toast('Title is required'); return; }
+
+      if (editing){
+        // move/update
+        const srcCol = getCol(editing.colId);
+        const card = srcCol.cards[editing.idx];
+        if (srcCol.id!==targetCol.id){
+          if (targetCol.wipLimit>0 && targetCol.cards.length >= targetCol.wipLimit){ toast(`WIP limit reached in ${targetCol.name}`); return; }
+          srcCol.cards.splice(editing.idx,1);
+          Object.assign(card, data);
+          targetCol.cards.unshift(card);
+        } else {
+          Object.assign(card, data);
+        }
+      } else {
+        if (targetCol.wipLimit>0 && targetCol.cards.length >= targetCol.wipLimit){ toast(`WIP limit reached in ${targetCol.name}`); return; }
+        targetCol.cards.unshift({ id:uid(), ...data });
+      }
+      toLS(); render(); dlg.close(); editing=null;
+    });
+
+    dlg.addEventListener('close', ()=>{ editing=null; });
+
+    // Export / Import / Clear Done
+    function doExport(){
+      const blob = new Blob([JSON.stringify(state,null,2)], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href=url; a.download='tiny-kanban.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    }
+    function doImport(){
+      const json = prompt('Paste board JSON'); if (!json) return;
+      try{ const obj = JSON.parse(json); if (!obj.columns) throw new Error('Invalid');
+        state.columns = obj.columns; state.filters = obj.filters||state.filters; toLS(); render(); toast('Imported board');
+      }catch(e){ alert('Invalid JSON'); }
+    }
+    function clearDone(){
+      const done = getCol('done'); if (!done) return; if (!done.cards.length){ toast('Done is empty'); return; }
+      if (confirm(`Delete all ${done.cards.length} card(s) in Done?`)){
+        done.cards = []; toLS(); render(); toast('Cleared Done');
+      }
+    }
+
+    // Boot
+    renderPeopleBar();
+    applyFilterUI();
+    render();
+    bindGlobalEvents();
+  })();
+  </script>
+</body>
+</html>
