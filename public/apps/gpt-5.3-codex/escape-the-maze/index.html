@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Escape the Maze</title>
+  <style>
+    :root {
+      --bg-a: #0b1220;
+      --bg-b: #111a2e;
+      --panel: rgba(11, 18, 32, 0.72);
+      --panel-border: rgba(148, 163, 184, 0.25);
+      --text: #e6edf7;
+      --muted: #9db0cb;
+      --accent: #29d3a7;
+      --accent-2: #2aa6ff;
+      --wall: #f3f7ff;
+      --path: #22324f;
+      --goal: #ffd166;
+      --danger: #ff6b6b;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: "Avenir Next", "Segoe UI", "Trebuchet MS", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 10% 15%, rgba(42, 166, 255, 0.18), transparent 35%),
+        radial-gradient(circle at 85% 80%, rgba(41, 211, 167, 0.18), transparent 33%),
+        linear-gradient(160deg, var(--bg-a), var(--bg-b));
+      overflow: hidden;
+    }
+
+    .app {
+      width: min(92vw, 960px);
+      border-radius: 22px;
+      border: 1px solid var(--panel-border);
+      background: var(--panel);
+      backdrop-filter: blur(7px);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+      padding: 18px;
+      animation: rise 650ms ease;
+    }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(10px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .top {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .title-wrap h1 {
+      margin: 0;
+      font-size: clamp(1.3rem, 2.8vw, 2rem);
+      letter-spacing: 0.02em;
+    }
+
+    .title-wrap p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .hud {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .stat {
+      border: 1px solid rgba(157, 176, 203, 0.3);
+      background: rgba(19, 30, 49, 0.85);
+      border-radius: 10px;
+      padding: 8px 12px;
+      min-width: 120px;
+    }
+
+    .stat .label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 3px;
+    }
+
+    .stat .value {
+      font-size: 1.02rem;
+      font-weight: 700;
+      line-height: 1.1;
+    }
+
+    .board-wrap {
+      position: relative;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid rgba(157, 176, 203, 0.27);
+      background: linear-gradient(180deg, #16253d, #121d31);
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      touch-action: none;
+    }
+
+    .footer {
+      margin-top: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .controls {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    button {
+      appearance: none;
+      border: none;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #06111f;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      padding: 10px 16px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: transform 120ms ease, filter 120ms ease;
+      box-shadow: 0 8px 20px rgba(42, 166, 255, 0.28);
+    }
+
+    button:hover { filter: brightness(1.05); }
+    button:active { transform: translateY(1px) scale(0.985); }
+
+    .toast {
+      position: absolute;
+      inset: auto 12px 12px auto;
+      max-width: min(76vw, 360px);
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(6, 13, 24, 0.8);
+      backdrop-filter: blur(4px);
+      color: #fff;
+      font-size: 0.92rem;
+      opacity: 0;
+      transform: translateY(8px);
+      pointer-events: none;
+      transition: opacity 200ms ease, transform 200ms ease;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .status-good { color: var(--accent); }
+    .status-warn { color: var(--goal); }
+    .status-bad { color: var(--danger); }
+
+    @media (max-width: 620px) {
+      .stat { min-width: 104px; padding: 7px 10px; }
+      .controls { font-size: 0.86rem; }
+      .app { padding: 13px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <div class="top">
+      <div class="title-wrap">
+        <h1>Escape the Maze</h1>
+        <p>Reach the golden finish as fast as possible.</p>
+      </div>
+      <div class="hud">
+        <div class="stat"><div class="label">Time</div><div class="value" id="time">0.00s</div></div>
+        <div class="stat"><div class="label">Steps</div><div class="value" id="steps">0</div></div>
+        <div class="stat"><div class="label">Shortest Path</div><div class="value" id="shortest">-</div></div>
+      </div>
+    </div>
+
+    <div class="board-wrap">
+      <canvas id="maze" width="900" height="900" aria-label="Maze board"></canvas>
+      <div class="toast" id="toast"></div>
+    </div>
+
+    <div class="footer">
+      <div class="controls">Use <strong>Arrow Keys</strong> to move. Start: top-left. Goal: bottom-right.</div>
+      <button id="replay" type="button">Replay</button>
+    </div>
+  </main>
+
+  <script>
+    (() => {
+      const canvas = document.getElementById('maze');
+      const ctx = canvas.getContext('2d');
+      const timeEl = document.getElementById('time');
+      const stepsEl = document.getElementById('steps');
+      const shortestEl = document.getElementById('shortest');
+      const replayBtn = document.getElementById('replay');
+      const toast = document.getElementById('toast');
+
+      const rows = 19;
+      const cols = 19;
+      const wallThickness = 4;
+
+      let grid = [];
+      let player = { r: 0, c: 0 };
+      let steps = 0;
+      let shortestPath = 0;
+      let gameOver = false;
+      let startTime = 0;
+      let elapsed = 0;
+      let rafId = null;
+      let animPulse = 0;
+
+      const dirDefs = [
+        { dr: -1, dc: 0, key: 'ArrowUp', bit: 1, opposite: 4 },
+        { dr: 0, dc: 1, key: 'ArrowRight', bit: 2, opposite: 8 },
+        { dr: 1, dc: 0, key: 'ArrowDown', bit: 4, opposite: 1 },
+        { dr: 0, dc: -1, key: 'ArrowLeft', bit: 8, opposite: 2 }
+      ];
+
+      function newCell() {
+        return { walls: 1 | 2 | 4 | 8, visited: false };
+      }
+
+      function makeGrid() {
+        grid = Array.from({ length: rows }, () => Array.from({ length: cols }, newCell));
+      }
+
+      function inBounds(r, c) {
+        return r >= 0 && c >= 0 && r < rows && c < cols;
+      }
+
+      function carveMaze() {
+        makeGrid();
+        const stack = [{ r: 0, c: 0 }];
+        grid[0][0].visited = true;
+
+        while (stack.length) {
+          const cur = stack[stack.length - 1];
+          const choices = [];
+
+          for (const d of dirDefs) {
+            const nr = cur.r + d.dr;
+            const nc = cur.c + d.dc;
+            if (inBounds(nr, nc) && !grid[nr][nc].visited) choices.push({ ...d, nr, nc });
+          }
+
+          if (!choices.length) {
+            stack.pop();
+            continue;
+          }
+
+          const pick = choices[Math.floor(Math.random() * choices.length)];
+          grid[cur.r][cur.c].walls &= ~pick.bit;
+          grid[pick.nr][pick.nc].walls &= ~pick.opposite;
+          grid[pick.nr][pick.nc].visited = true;
+          stack.push({ r: pick.nr, c: pick.nc });
+        }
+
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            grid[r][c].visited = false;
+          }
+        }
+      }
+
+      function shortestDistance() {
+        const q = [{ r: 0, c: 0, d: 0 }];
+        const seen = Array.from({ length: rows }, () => Array(cols).fill(false));
+        seen[0][0] = true;
+
+        while (q.length) {
+          const cur = q.shift();
+          if (cur.r === rows - 1 && cur.c === cols - 1) return cur.d;
+
+          for (const d of dirDefs) {
+            const nr = cur.r + d.dr;
+            const nc = cur.c + d.dc;
+            if (!inBounds(nr, nc) || seen[nr][nc]) continue;
+            if (grid[cur.r][cur.c].walls & d.bit) continue;
+            seen[nr][nc] = true;
+            q.push({ r: nr, c: nc, d: cur.d + 1 });
+          }
+        }
+        return 0;
+      }
+
+      function fitCanvas() {
+        const wrap = canvas.parentElement;
+        const size = Math.max(300, Math.min(wrap.clientWidth, 900));
+        canvas.width = size;
+        canvas.height = size;
+      }
+
+      function formatTime(sec) {
+        return sec.toFixed(2) + 's';
+      }
+
+      function showToast(message, hold = 2600) {
+        toast.textContent = message;
+        toast.classList.add('show');
+        clearTimeout(showToast.t);
+        showToast.t = setTimeout(() => toast.classList.remove('show'), hold);
+      }
+
+      function draw() {
+        const w = canvas.width;
+        const h = canvas.height;
+        const cw = w / cols;
+        const ch = h / rows;
+
+        ctx.clearRect(0, 0, w, h);
+
+        const bg = ctx.createLinearGradient(0, 0, 0, h);
+        bg.addColorStop(0, '#162742');
+        bg.addColorStop(1, '#0c1729');
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, w, h);
+
+        ctx.fillStyle = 'rgba(255,255,255,0.03)';
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            if ((r + c) % 2 === 0) ctx.fillRect(c * cw, r * ch, cw, ch);
+          }
+        }
+
+        const gx = (cols - 1) * cw;
+        const gy = (rows - 1) * ch;
+        const grd = ctx.createRadialGradient(gx + cw / 2, gy + ch / 2, cw * 0.05, gx + cw / 2, gy + ch / 2, cw * 0.72);
+        grd.addColorStop(0, 'rgba(255,209,102,0.95)');
+        grd.addColorStop(1, 'rgba(255,209,102,0.15)');
+        ctx.fillStyle = grd;
+        ctx.fillRect(gx, gy, cw, ch);
+
+        ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--wall').trim() || '#f3f7ff';
+        ctx.lineWidth = wallThickness;
+        ctx.lineCap = 'round';
+
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            const cell = grid[r][c];
+            const x = c * cw;
+            const y = r * ch;
+
+            if (cell.walls & 1) {
+              ctx.beginPath();
+              ctx.moveTo(x, y);
+              ctx.lineTo(x + cw, y);
+              ctx.stroke();
+            }
+            if (cell.walls & 2) {
+              ctx.beginPath();
+              ctx.moveTo(x + cw, y);
+              ctx.lineTo(x + cw, y + ch);
+              ctx.stroke();
+            }
+            if (cell.walls & 4) {
+              ctx.beginPath();
+              ctx.moveTo(x, y + ch);
+              ctx.lineTo(x + cw, y + ch);
+              ctx.stroke();
+            }
+            if (cell.walls & 8) {
+              ctx.beginPath();
+              ctx.moveTo(x, y);
+              ctx.lineTo(x, y + ch);
+              ctx.stroke();
+            }
+          }
+        }
+
+        const px = player.c * cw + cw / 2;
+        const py = player.r * ch + ch / 2;
+        const radius = Math.min(cw, ch) * (0.26 + 0.03 * Math.sin(animPulse));
+
+        ctx.beginPath();
+        ctx.arc(px, py, radius * 1.75, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(41, 211, 167, 0.18)';
+        ctx.fill();
+
+        const avatar = ctx.createRadialGradient(px - radius * 0.35, py - radius * 0.35, radius * 0.15, px, py, radius * 1.1);
+        avatar.addColorStop(0, '#a6ffe7');
+        avatar.addColorStop(1, '#29d3a7');
+        ctx.beginPath();
+        ctx.arc(px, py, radius, 0, Math.PI * 2);
+        ctx.fillStyle = avatar;
+        ctx.fill();
+      }
+
+      function updateHUD() {
+        timeEl.textContent = formatTime(elapsed);
+        stepsEl.textContent = String(steps);
+        shortestEl.textContent = String(shortestPath);
+      }
+
+      function classifyRun() {
+        if (steps === shortestPath) return { label: 'Perfect route bonus +500', cls: 'status-good', bonus: 500 };
+        if (steps <= Math.ceil(shortestPath * 1.2)) return { label: 'Efficient path bonus +200', cls: 'status-warn', bonus: 200 };
+        return { label: 'No path bonus', cls: 'status-bad', bonus: 0 };
+      }
+
+      function finishGame() {
+        gameOver = true;
+        cancelAnimationFrame(rafId);
+
+        const speedScore = Math.max(0, Math.round(1200 - elapsed * 22));
+        const route = classifyRun();
+        const finalScore = speedScore + route.bonus;
+
+        showToast(`Finished in ${formatTime(elapsed)} | Steps: ${steps}/${shortestPath} | ${route.label} | Score: ${finalScore}`);
+
+        shortestEl.innerHTML = `${shortestPath} <span class="${route.cls}">(${route.label.replace(' bonus', '')})</span>`;
+      }
+
+      function canMove(direction) {
+        const cell = grid[player.r][player.c];
+        if (cell.walls & direction.bit) return false;
+        const nr = player.r + direction.dr;
+        const nc = player.c + direction.dc;
+        return inBounds(nr, nc);
+      }
+
+      function movePlayer(key) {
+        if (gameOver) return;
+        const direction = dirDefs.find(d => d.key === key);
+        if (!direction || !canMove(direction)) return;
+
+        player.r += direction.dr;
+        player.c += direction.dc;
+        steps += 1;
+        updateHUD();
+
+        if (player.r === rows - 1 && player.c === cols - 1) finishGame();
+      }
+
+      function loop(now) {
+        if (!gameOver) {
+          elapsed = (now - startTime) / 1000;
+          animPulse += 0.12;
+          updateHUD();
+        }
+        draw();
+        rafId = requestAnimationFrame(loop);
+      }
+
+      function setupGame() {
+        cancelAnimationFrame(rafId);
+        carveMaze();
+        shortestPath = shortestDistance();
+        player = { r: 0, c: 0 };
+        steps = 0;
+        elapsed = 0;
+        gameOver = false;
+        startTime = performance.now();
+        shortestEl.textContent = String(shortestPath);
+        showToast('Maze generated. Escape to the golden cell!', 1800);
+        rafId = requestAnimationFrame(loop);
+      }
+
+      window.addEventListener('keydown', (e) => {
+        if (!e.key.startsWith('Arrow')) return;
+        e.preventDefault();
+        movePlayer(e.key);
+      }, { passive: false });
+
+      replayBtn.addEventListener('click', setupGame);
+
+      window.addEventListener('resize', () => {
+        fitCanvas();
+        draw();
+      });
+
+      fitCanvas();
+      setupGame();
+    })();
+  </script>
+</body>
+</html>

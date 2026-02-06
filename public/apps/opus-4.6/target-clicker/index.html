@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Target Clicker</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+  :root {
+    --bg: #f0f2f5;
+    --card: #ffffff;
+    --accent: #6c5ce7;
+    --accent2: #00cec9;
+    --accent3: #fd79a8;
+    --text: #2d3436;
+    --text-muted: #636e72;
+    --shadow: 0 8px 32px rgba(0,0,0,.12);
+  }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: crosshair;
+  }
+
+  /* ── Background grid pattern ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(108,92,231,.07) 1px, transparent 0);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── HUD (top bar) ── */
+  #hud {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 28px;
+    z-index: 100;
+    background: rgba(255,255,255,.72);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(108,92,231,.12);
+  }
+
+  #hud .logo {
+    font-weight: 800;
+    font-size: 1.15rem;
+    letter-spacing: -.02em;
+    background: linear-gradient(135deg, var(--accent), var(--accent3));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .hud-stats {
+    display: flex;
+    gap: 28px;
+    align-items: center;
+  }
+
+  .stat {
+    text-align: center;
+  }
+  .stat-label {
+    font-size: .65rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .stat-value {
+    font-size: 1.5rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+  .stat-value.score-val {
+    color: var(--accent);
+  }
+
+  /* Timer bar */
+  #timer-bar-wrap {
+    position: fixed;
+    top: 68px; left: 0; right: 0;
+    height: 4px;
+    background: rgba(108,92,231,.1);
+    z-index: 99;
+  }
+  #timer-bar {
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent3));
+    transform-origin: left;
+    transition: none;
+    border-radius: 0 2px 2px 0;
+  }
+
+  /* ── Game area ── */
+  #game-area {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+  }
+
+  /* ── Target ── */
+  .target {
+    position: absolute;
+    border-radius: 50%;
+    cursor: pointer;
+    pointer-events: auto;
+    transform: scale(0);
+    animation: targetIn .2s cubic-bezier(.34,1.56,.64,1) forwards;
+    z-index: 20;
+    will-change: transform, opacity;
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,.18));
+  }
+  .target.dying {
+    animation: targetOut .18s ease-in forwards;
+    pointer-events: none;
+  }
+
+  @keyframes targetIn {
+    to { transform: scale(1); }
+  }
+  @keyframes targetOut {
+    to { transform: scale(0); opacity: 0; }
+  }
+
+  /* Ripple on click */
+  .target-hit {
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 15;
+    animation: hitRipple .5s ease-out forwards;
+  }
+  @keyframes hitRipple {
+    0% { transform: scale(.3); opacity: .7; }
+    100% { transform: scale(2.5); opacity: 0; }
+  }
+
+  /* Float score on hit */
+  .float-score {
+    position: absolute;
+    font-weight: 800;
+    font-size: 1.3rem;
+    pointer-events: none;
+    z-index: 25;
+    animation: floatUp .7s ease-out forwards;
+    text-shadow: 0 1px 4px rgba(0,0,0,.18);
+    font-variant-numeric: tabular-nums;
+  }
+  @keyframes floatUp {
+    0% { transform: translateY(0) scale(1); opacity: 1; }
+    100% { transform: translateY(-60px) scale(.7); opacity: 0; }
+  }
+
+  /* Miss indicator */
+  .miss-x {
+    position: absolute;
+    font-weight: 900;
+    font-size: 1rem;
+    color: #d63031;
+    pointer-events: none;
+    z-index: 25;
+    animation: missAnim .45s ease-out forwards;
+  }
+  @keyframes missAnim {
+    0% { transform: scale(1); opacity: .8; }
+    100% { transform: scale(.5) translateY(-30px); opacity: 0; }
+  }
+
+  /* ── Combo indicator ── */
+  #combo {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-weight: 800;
+    font-size: 1.2rem;
+    color: var(--accent);
+    z-index: 100;
+    opacity: 0;
+    transition: opacity .25s, transform .25s;
+    pointer-events: none;
+  }
+  #combo.show {
+    opacity: 1;
+  }
+
+  /* ── Overlays (start / end) ── */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 200;
+    background: rgba(240,242,245,.88);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    opacity: 1;
+    transition: opacity .35s ease;
+  }
+  .overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .card {
+    background: var(--card);
+    border-radius: 24px;
+    padding: 48px 52px;
+    box-shadow: var(--shadow);
+    text-align: center;
+    max-width: 420px;
+    width: 90%;
+    position: relative;
+    overflow: hidden;
+  }
+  .card::before {
+    content:'';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2), var(--accent3));
+  }
+
+  .card h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    margin-bottom: 8px;
+    letter-spacing: -.03em;
+  }
+  .card p {
+    color: var(--text-muted);
+    margin-bottom: 24px;
+    line-height: 1.5;
+    font-size: .95rem;
+  }
+
+  .btn {
+    display: inline-block;
+    padding: 14px 44px;
+    border: none;
+    border-radius: 14px;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent), #a29bfe);
+    cursor: pointer;
+    transition: transform .15s, box-shadow .15s;
+    box-shadow: 0 4px 18px rgba(108,92,231,.35);
+    letter-spacing: .01em;
+  }
+  .btn:hover {
+    transform: translateY(-2px) scale(1.03);
+    box-shadow: 0 6px 24px rgba(108,92,231,.45);
+  }
+  .btn:active {
+    transform: scale(.97);
+  }
+
+  /* Results */
+  .results-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+  .result-box {
+    background: var(--bg);
+    border-radius: 14px;
+    padding: 16px 10px;
+  }
+  .result-box .r-label {
+    font-size: .65rem;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .result-box .r-value {
+    font-size: 1.6rem;
+    font-weight: 800;
+    line-height: 1.1;
+  }
+  .result-box.highlight {
+    background: linear-gradient(135deg, rgba(108,92,231,.1), rgba(253,121,168,.1));
+  }
+  .result-box.highlight .r-value {
+    background: linear-gradient(135deg, var(--accent), var(--accent3));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .rank-badge {
+    display: inline-block;
+    padding: 6px 18px;
+    border-radius: 30px;
+    font-weight: 700;
+    font-size: .85rem;
+    margin-bottom: 20px;
+  }
+
+  /* Countdown overlay */
+  #countdown-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 300;
+    background: rgba(240,242,245,.7);
+    backdrop-filter: blur(10px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s;
+  }
+  #countdown-overlay.show {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  #countdown-num {
+    font-size: 6rem;
+    font-weight: 900;
+    background: linear-gradient(135deg, var(--accent), var(--accent3));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: countPulse .5s ease-out;
+  }
+  @keyframes countPulse {
+    0% { transform: scale(1.5); opacity: 0; }
+    50% { opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  /* Particles */
+  .particle {
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 14;
+  }
+
+  /* Pulsing ring on targets */
+  .target-ring {
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,.4);
+    animation: ringPulse 1s ease-in-out infinite;
+  }
+  @keyframes ringPulse {
+    0%, 100% { transform: scale(1); opacity: .5; }
+    50% { transform: scale(1.12); opacity: 0; }
+  }
+
+  /* Target inner design */
+  .target-inner {
+    position: absolute;
+    border-radius: 50%;
+    background: rgba(255,255,255,.35);
+  }
+  .target-dot {
+    position: absolute;
+    border-radius: 50%;
+    background: rgba(255,255,255,.7);
+  }
+
+  /* Streak fire glow */
+  .streak-glow {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: 120px;
+    background: linear-gradient(to top, rgba(253,121,168,.15), transparent);
+    pointer-events: none;
+    z-index: 5;
+    opacity: 0;
+    transition: opacity .4s;
+  }
+  .streak-glow.active { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- HUD -->
+<div id="hud" style="display:none;">
+  <div class="logo">TARGET CLICKER</div>
+  <div class="hud-stats">
+    <div class="stat">
+      <div class="stat-label">Score</div>
+      <div class="stat-value score-val" id="hud-score">0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Time</div>
+      <div class="stat-value" id="hud-time">20.0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Streak</div>
+      <div class="stat-value" id="hud-streak">0</div>
+    </div>
+  </div>
+</div>
+<div id="timer-bar-wrap" style="display:none;">
+  <div id="timer-bar"></div>
+</div>
+
+<!-- Combo -->
+<div id="combo"></div>
+
+<!-- Streak glow -->
+<div class="streak-glow" id="streak-glow"></div>
+
+<!-- Game area -->
+<div id="game-area"></div>
+
+<!-- Start overlay -->
+<div class="overlay" id="start-overlay">
+  <div class="card">
+    <h1>Target Clicker</h1>
+    <p>Click the targets as fast as you can! You have <strong>20 seconds</strong>. Bigger combos = bigger points.</p>
+    <button class="btn" id="start-btn">Start Game</button>
+  </div>
+</div>
+
+<!-- Countdown -->
+<div id="countdown-overlay">
+  <div id="countdown-num">3</div>
+</div>
+
+<!-- End overlay -->
+<div class="overlay hidden" id="end-overlay">
+  <div class="card" id="end-card">
+    <!-- filled dynamically -->
+  </div>
+</div>
+
+<script>
+(() => {
+  // ── Config ──
+  const GAME_DURATION   = 20;       // seconds
+  const TARGET_INTERVAL_MIN = 420;  // ms between spawns (gets faster)
+  const TARGET_INTERVAL_MAX = 900;
+  const TARGET_LIFE_MIN = 800;      // ms target stays alive
+  const TARGET_LIFE_MAX = 2200;
+  const TARGET_SIZE_MIN = 38;
+  const TARGET_SIZE_MAX = 72;
+  const HUD_PAD_TOP     = 76;       // px reserved for HUD
+
+  // ── Palette ──
+  const PALETTE = [
+    ['#6c5ce7','#a29bfe'],
+    ['#00cec9','#81ecec'],
+    ['#fd79a8','#fab1a0'],
+    ['#e17055','#fdcb6e'],
+    ['#0984e3','#74b9ff'],
+    ['#00b894','#55efc4'],
+    ['#e84393','#fd79a8'],
+    ['#6c5ce7','#fd79a8'],
+  ];
+
+  // ── DOM refs ──
+  const gameArea       = document.getElementById('game-area');
+  const hudEl          = document.getElementById('hud');
+  const hudScore       = document.getElementById('hud-score');
+  const hudTime        = document.getElementById('hud-time');
+  const hudStreak      = document.getElementById('hud-streak');
+  const timerBarWrap   = document.getElementById('timer-bar-wrap');
+  const timerBar       = document.getElementById('timer-bar');
+  const startOverlay   = document.getElementById('start-overlay');
+  const endOverlay     = document.getElementById('end-overlay');
+  const endCard        = document.getElementById('end-card');
+  const startBtn       = document.getElementById('start-btn');
+  const comboEl        = document.getElementById('combo');
+  const countdownOvl   = document.getElementById('countdown-overlay');
+  const countdownNum   = document.getElementById('countdown-num');
+  const streakGlow     = document.getElementById('streak-glow');
+
+  // ── State ──
+  let score = 0;
+  let hits = 0;
+  let misses = 0;
+  let totalClicks = 0;
+  let totalTargets = 0;
+  let streak = 0;
+  let bestStreak = 0;
+  let gameRunning = false;
+  let gameStartTime = 0;
+  let spawnTimer = null;
+  let rafId = null;
+  let targets = [];
+
+  // ── Helpers ──
+  const rand = (a,b) => Math.random()*(b-a)+a;
+  const randInt = (a,b) => Math.floor(rand(a,b+1));
+  const pick = arr => arr[randInt(0,arr.length-1)];
+  const clamp = (v,lo,hi) => Math.max(lo,Math.min(hi,v));
+  const lerp = (a,b,t) => a+(b-a)*t;
+
+  // ── Audio (tiny synthesized sounds via Web Audio) ──
+  let audioCtx;
+  function ensureAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  function playHit() {
+    ensureAudio();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(880 + streak * 60, audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(1400 + streak * 80, audioCtx.currentTime + .06);
+    g.gain.setValueAtTime(.13, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001, audioCtx.currentTime + .15);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + .15);
+  }
+  function playMiss() {
+    ensureAudio();
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(220, audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(120, audioCtx.currentTime + .12);
+    g.gain.setValueAtTime(.08, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001, audioCtx.currentTime + .12);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + .12);
+  }
+  function playEnd() {
+    ensureAudio();
+    [523.25, 659.25, 783.99, 1046.50].forEach((f,i) => {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = 'sine';
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0, audioCtx.currentTime + i*.12);
+      g.gain.linearRampToValueAtTime(.09, audioCtx.currentTime + i*.12 + .03);
+      g.gain.exponentialRampToValueAtTime(.001, audioCtx.currentTime + i*.12 + .35);
+      o.connect(g).connect(audioCtx.destination);
+      o.start(audioCtx.currentTime + i*.12);
+      o.stop(audioCtx.currentTime + i*.12 + .35);
+    });
+  }
+
+  // ── Particles ──
+  function spawnParticles(x, y, colors, count) {
+    for (let i = 0; i < count; i++) {
+      const el = document.createElement('div');
+      el.className = 'particle';
+      const size = rand(4,10);
+      const angle = rand(0, Math.PI*2);
+      const dist = rand(30,90);
+      const dx = Math.cos(angle)*dist;
+      const dy = Math.sin(angle)*dist;
+      el.style.cssText = `
+        left:${x}px;top:${y}px;width:${size}px;height:${size}px;
+        background:${pick(colors)};
+        opacity:1;
+        transition: transform .4s cubic-bezier(.25,.46,.45,.94), opacity .4s ease-out;
+      `;
+      gameArea.appendChild(el);
+      requestAnimationFrame(() => {
+        el.style.transform = `translate(${dx}px,${dy}px) scale(0)`;
+        el.style.opacity = '0';
+      });
+      setTimeout(() => el.remove(), 450);
+    }
+  }
+
+  // ── Target spawning ──
+  function spawnTarget() {
+    if (!gameRunning) return;
+
+    const elapsed = (performance.now() - gameStartTime) / 1000;
+    const progress = elapsed / GAME_DURATION; // 0..1
+
+    // Difficulty ramp
+    const size = Math.round(lerp(TARGET_SIZE_MAX, TARGET_SIZE_MIN, progress * .7));
+    const life = lerp(TARGET_LIFE_MAX, TARGET_LIFE_MIN, progress * .8);
+
+    const margin = 20;
+    const x = rand(margin, window.innerWidth - size - margin);
+    const y = rand(HUD_PAD_TOP + margin, window.innerHeight - size - margin);
+
+    const colors = pick(PALETTE);
+
+    const el = document.createElement('div');
+    el.className = 'target';
+    el.style.cssText = `
+      left:${x}px;top:${y}px;width:${size}px;height:${size}px;
+      background: radial-gradient(circle at 35% 35%, ${colors[1]}, ${colors[0]});
+    `;
+
+    // Inner rings for bullseye look
+    const ring = document.createElement('div');
+    ring.className = 'target-ring';
+    el.appendChild(ring);
+
+    const innerSize = size * .52;
+    const inner = document.createElement('div');
+    inner.className = 'target-inner';
+    inner.style.cssText = `
+      width:${innerSize}px;height:${innerSize}px;
+      left:${(size-innerSize)/2}px;top:${(size-innerSize)/2}px;
+    `;
+    el.appendChild(inner);
+
+    const dotSize = size * .2;
+    const dot = document.createElement('div');
+    dot.className = 'target-dot';
+    dot.style.cssText = `
+      width:${dotSize}px;height:${dotSize}px;
+      left:${(size-dotSize)/2}px;top:${(size-dotSize)/2}px;
+    `;
+    el.appendChild(dot);
+
+    totalTargets++;
+
+    const targetObj = {
+      el,
+      x: x + size/2,
+      y: y + size/2,
+      size,
+      colors,
+      alive: true,
+      spawnTime: performance.now(),
+      lifespan: life,
+    };
+    targets.push(targetObj);
+
+    // Handle click
+    el.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      if (!targetObj.alive || !gameRunning) return;
+      targetObj.alive = false;
+      totalClicks++;
+      hits++;
+      streak++;
+      if (streak > bestStreak) bestStreak = streak;
+
+      // Score: base 10 + streak bonus + speed bonus
+      const reactionTime = performance.now() - targetObj.spawnTime;
+      const speedBonus = Math.max(0, Math.round((1 - reactionTime / life) * 15));
+      const streakBonus = Math.min(streak - 1, 10) * 2;
+      const sizeBonus = Math.round((1 - (size - TARGET_SIZE_MIN) / (TARGET_SIZE_MAX - TARGET_SIZE_MIN)) * 5);
+      const pts = 10 + speedBonus + streakBonus + sizeBonus;
+      score += pts;
+
+      updateHUD();
+
+      // Visual feedback
+      playHit();
+      el.classList.add('dying');
+      spawnParticles(targetObj.x, targetObj.y, colors, 10);
+
+      // Ripple
+      const ripple = document.createElement('div');
+      ripple.className = 'target-hit';
+      ripple.style.cssText = `
+        left:${targetObj.x - size/2}px;top:${targetObj.y - size/2}px;
+        width:${size}px;height:${size}px;
+        background:${colors[0]};opacity:.4;
+      `;
+      gameArea.appendChild(ripple);
+      setTimeout(() => ripple.remove(), 500);
+
+      // Float score
+      const flt = document.createElement('div');
+      flt.className = 'float-score';
+      flt.textContent = `+${pts}`;
+      flt.style.cssText = `left:${targetObj.x}px;top:${targetObj.y - 10}px;color:${colors[0]};`;
+      gameArea.appendChild(flt);
+      setTimeout(() => flt.remove(), 700);
+
+      // Combo text
+      if (streak >= 3) {
+        comboEl.textContent = `🔥 ${streak}x Combo!`;
+        comboEl.classList.add('show');
+        streakGlow.classList.add('active');
+      }
+
+      setTimeout(() => el.remove(), 200);
+    });
+
+    gameArea.appendChild(el);
+
+    // Auto-remove after lifespan (missed)
+    setTimeout(() => {
+      if (!targetObj.alive) return;
+      targetObj.alive = false;
+      el.classList.add('dying');
+      misses++;
+      streak = 0;
+      comboEl.classList.remove('show');
+      streakGlow.classList.remove('active');
+      updateHUD();
+      setTimeout(() => el.remove(), 200);
+    }, life);
+
+    // Schedule next
+    const interval = lerp(TARGET_INTERVAL_MAX, TARGET_INTERVAL_MIN, progress);
+    // Occasionally spawn two targets at once later in game
+    if (progress > .4 && Math.random() < progress * .35) {
+      setTimeout(() => { if (gameRunning) spawnTarget(); }, rand(80, 200));
+    }
+    spawnTimer = setTimeout(spawnTarget, interval);
+  }
+
+  // Miss click on background
+  gameArea.addEventListener('pointerdown', (e) => {
+    if (!gameRunning) return;
+    totalClicks++;
+    streak = 0;
+    comboEl.classList.remove('show');
+    streakGlow.classList.remove('active');
+    updateHUD();
+    playMiss();
+
+    const mx = document.createElement('div');
+    mx.className = 'miss-x';
+    mx.textContent = '✕';
+    mx.style.cssText = `left:${e.clientX}px;top:${e.clientY}px;`;
+    gameArea.appendChild(mx);
+    setTimeout(() => mx.remove(), 450);
+  });
+
+  function updateHUD() {
+    hudScore.textContent = score;
+    hudStreak.textContent = streak;
+  }
+
+  // ── Game loop (timer) ──
+  function tick() {
+    if (!gameRunning) return;
+    const elapsed = (performance.now() - gameStartTime) / 1000;
+    const remaining = Math.max(0, GAME_DURATION - elapsed);
+    hudTime.textContent = remaining.toFixed(1);
+
+    // Timer bar
+    timerBar.style.transform = `scaleX(${remaining / GAME_DURATION})`;
+
+    // Color shift when low
+    if (remaining < 5) {
+      timerBar.style.background = `linear-gradient(90deg, #d63031, #e17055)`;
+      hudTime.style.color = '#d63031';
+    }
+
+    if (remaining <= 0) {
+      endGame();
+      return;
+    }
+    rafId = requestAnimationFrame(tick);
+  }
+
+  // ── Countdown ──
+  function startCountdown() {
+    startOverlay.classList.add('hidden');
+    countdownOvl.classList.add('show');
+    let count = 3;
+    countdownNum.textContent = count;
+    countdownNum.style.animation = 'none';
+    void countdownNum.offsetWidth;
+    countdownNum.style.animation = 'countPulse .5s ease-out';
+
+    const iv = setInterval(() => {
+      count--;
+      if (count <= 0) {
+        clearInterval(iv);
+        countdownOvl.classList.remove('show');
+        startGame();
+        return;
+      }
+      countdownNum.textContent = count;
+      countdownNum.style.animation = 'none';
+      void countdownNum.offsetWidth;
+      countdownNum.style.animation = 'countPulse .5s ease-out';
+    }, 700);
+  }
+
+  // ── Start ──
+  function startGame() {
+    score = 0; hits = 0; misses = 0; totalClicks = 0; totalTargets = 0;
+    streak = 0; bestStreak = 0; targets = [];
+    gameRunning = true;
+    gameStartTime = performance.now();
+
+    hudEl.style.display = 'flex';
+    timerBarWrap.style.display = 'block';
+    timerBar.style.transform = 'scaleX(1)';
+    timerBar.style.background = 'linear-gradient(90deg, var(--accent), var(--accent3))';
+    hudTime.style.color = '';
+    endOverlay.classList.add('hidden');
+    comboEl.classList.remove('show');
+    streakGlow.classList.remove('active');
+
+    updateHUD();
+    spawnTarget();
+    rafId = requestAnimationFrame(tick);
+  }
+
+  // ── End ──
+  function endGame() {
+    gameRunning = false;
+    clearTimeout(spawnTimer);
+    cancelAnimationFrame(rafId);
+    comboEl.classList.remove('show');
+    streakGlow.classList.remove('active');
+
+    // Clean remaining targets
+    document.querySelectorAll('.target').forEach(t => {
+      t.classList.add('dying');
+      setTimeout(() => t.remove(), 200);
+    });
+
+    playEnd();
+
+    const accuracy = totalClicks > 0 ? Math.round((hits / totalClicks) * 100) : 0;
+    const hitRate = totalTargets > 0 ? Math.round((hits / totalTargets) * 100) : 0;
+
+    // Rank
+    let rank, rankColor, rankBg;
+    if (score >= 800) { rank = 'S — Legendary'; rankColor = '#6c5ce7'; rankBg = 'rgba(108,92,231,.12)'; }
+    else if (score >= 500) { rank = 'A — Expert'; rankColor = '#00b894'; rankBg = 'rgba(0,184,148,.12)'; }
+    else if (score >= 300) { rank = 'B — Skilled'; rankColor = '#0984e3'; rankBg = 'rgba(9,132,227,.12)'; }
+    else if (score >= 150) { rank = 'C — Decent'; rankColor = '#fdcb6e'; rankBg = 'rgba(253,203,110,.2)'; }
+    else { rank = 'D — Novice'; rankColor = '#d63031'; rankBg = 'rgba(214,48,49,.1)'; }
+
+    endCard.innerHTML = `
+      <div class="card-inner">
+        <h1>Time's Up!</h1>
+        <div class="rank-badge" style="color:${rankColor};background:${rankBg}">${rank}</div>
+        <div class="results-grid">
+          <div class="result-box highlight">
+            <div class="r-label">Final Score</div>
+            <div class="r-value">${score}</div>
+          </div>
+          <div class="result-box">
+            <div class="r-label">Accuracy</div>
+            <div class="r-value">${accuracy}%</div>
+          </div>
+          <div class="result-box">
+            <div class="r-label">Targets Hit</div>
+            <div class="r-value">${hits}/${totalTargets}</div>
+          </div>
+          <div class="result-box">
+            <div class="r-label">Best Streak</div>
+            <div class="r-value">${bestStreak}</div>
+          </div>
+        </div>
+        <button class="btn" onclick="document.getElementById('end-overlay').classList.add('hidden');document.querySelector('.overlay.hidden')|| 0;(${(() => startCountdown).toString()})()">Play Again</button>
+      </div>
+    `;
+
+    // Wire up play again
+    endCard.querySelector('.btn').onclick = () => {
+      endOverlay.classList.add('hidden');
+      startCountdown();
+    };
+
+    setTimeout(() => endOverlay.classList.remove('hidden'), 400);
+  }
+
+  // ── Init ──
+  startBtn.addEventListener('click', () => {
+    ensureAudio();
+    startCountdown();
+  });
+})();
+</script>
+</body>
+</html>

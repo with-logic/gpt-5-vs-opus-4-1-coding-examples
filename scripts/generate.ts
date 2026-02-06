@@ -99,7 +99,7 @@ function appFileExists(modelId: string, appId: string): boolean {
   return fs.existsSync(outputPath);
 }
 
-async function appExistsAndValid(modelId: string, appId: string): Promise<boolean> {
+async function appExistsAndValid(modelId: string, appId: string, logPrefix: string): Promise<boolean> {
   const outputPath = path.join(REPO_ROOT, getAppOutputPath(modelId, appId));
 
   if (!fs.existsSync(outputPath)) {
@@ -109,8 +109,8 @@ async function appExistsAndValid(modelId: string, appId: string): Promise<boolea
   // Validate the HTML doesn't have errors
   const validation = await validateHtml(outputPath);
   if (!validation.success) {
-    console.log(`    ⚠️  Existing file has ${validation.errors.length} error(s), will regenerate`);
-    validation.errors.slice(0, 3).forEach((e) => console.log(`      - ${e}`));
+    console.log(`${logPrefix} ⚠️  Existing file has ${validation.errors.length} error(s), will regenerate`);
+    validation.errors.slice(0, 3).forEach((e) => console.log(`${logPrefix}   - ${e}`));
   }
 
   return validation.success;
@@ -162,14 +162,13 @@ function buildCliCommand(
           "-p",
           "--model",
           model.model,
+          "--max-turns",
+          "50",
           "--dangerously-skip-permissions",
           "--permission-mode",
           "bypassPermissions",
           prompt,
         ],
-        env: {
-          CLAUDE_CODE_MAX_OUTPUT_TOKENS: "128000",
-        },
       };
 
     case "codex":
@@ -305,18 +304,26 @@ Do not rewrite the entire file from scratch - just fix the errors.`;
 async function runCliOnce(
   model: ModelConfig,
   prompt: string,
-  tempDir: string
+  tempDir: string,
+  logPrefix: string
 ): Promise<void> {
   const { cmd, args, env } = buildCliCommand(model, prompt);
 
+  const spawnEnv = {
+    ...process.env,
+    ...env,
+    // Ensure Claude max tokens is always set for claude CLI
+    CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(MAX_OUTPUT_TOKENS.claude),
+  };
+
   await new Promise<void>((resolve, reject) => {
-    console.log(`    Running in sandbox: ${tempDir}`);
-    console.log(`    Command: ${cmd} ${args[0]} ...`);
+    console.log(`${logPrefix} Running in sandbox: ${tempDir}`);
+    console.log(`${logPrefix} Command: ${cmd} ${args[0]} ...`);
 
     const proc = spawn(cmd, args, {
       stdio: "inherit",
       cwd: tempDir,
-      env: { ...process.env, ...env },
+      env: spawnEnv,
     });
 
     proc.on("close", (code) => {
@@ -338,6 +345,7 @@ async function runCliInSandbox(
   prompt: string,
   destPath: string,
   spec: ExampleSpec,
+  logPrefix: string,
   maxRetries: number = 2
 ): Promise<void> {
   const tempDir = createTempDir();
@@ -349,7 +357,7 @@ async function runCliInSandbox(
 
   try {
     // Initial generation
-    await runCliOnce(model, prompt, tempDir);
+    await runCliOnce(model, prompt, tempDir, logPrefix);
 
     if (!fs.existsSync(tempOutputFile)) {
       throw new Error(`CLI completed but output/index.html was not created in sandbox`);
@@ -363,24 +371,24 @@ async function runCliInSandbox(
         break;
       }
 
-      console.log(`    ⚠️  Validation found ${validation.errors.length} error(s), attempting fix (${attempt + 1}/${maxRetries})...`);
-      validation.errors.slice(0, 5).forEach((e) => console.log(`      - ${e}`));
+      console.log(`${logPrefix} ⚠️  Validation found ${validation.errors.length} error(s), attempting fix (${attempt + 1}/${maxRetries})...`);
+      validation.errors.slice(0, 5).forEach((e) => console.log(`${logPrefix}   - ${e}`));
 
       // Run CLI again with fix prompt
       const fixPrompt = buildFixPrompt(spec, validation.errors);
-      await runCliOnce(model, fixPrompt, tempDir);
+      await runCliOnce(model, fixPrompt, tempDir, logPrefix);
     }
 
     // Final validation (just for logging)
     const finalValidation = await validateHtml(tempOutputFile);
     if (!finalValidation.success) {
-      console.log(`    ⚠️  Still has ${finalValidation.errors.length} error(s) after ${maxRetries} fix attempts`);
+      console.log(`${logPrefix} ⚠️  Still has ${finalValidation.errors.length} error(s) after ${maxRetries} fix attempts`);
     }
 
     // Copy the output file to the final destination
     ensureDir(destPath);
     fs.copyFileSync(tempOutputFile, destPath);
-    console.log(`    Copied output to: ${destPath}`);
+    console.log(`${logPrefix} Copied output to: ${destPath}`);
   } finally {
     cleanupTempDir(tempDir);
   }
@@ -397,10 +405,11 @@ async function generateApp(
 ): Promise<"skipped" | "generated" | "failed"> {
   const outputPath = getAppOutputPath(model.id, spec.id);
   const absoluteOutputPath = path.join(REPO_ROOT, outputPath);
+  const logPrefix = `[${model.id}/${spec.id}]`;
 
   // Check if app exists and should be skipped
   const forceRegenerate = options.forceAll || options.force.includes(spec.id);
-  if (!forceRegenerate && await appExistsAndValid(model.id, spec.id)) {
+  if (!forceRegenerate && await appExistsAndValid(model.id, spec.id, logPrefix)) {
     return "skipped";
   }
 
@@ -409,19 +418,19 @@ async function generateApp(
 
   try {
     // Run CLI in isolated temp directory, then copy result to final location
-    await runCliInSandbox(model, prompt, absoluteOutputPath, spec);
+    await runCliInSandbox(model, prompt, absoluteOutputPath, spec, logPrefix);
 
     // Verify the file was created
     if (fs.existsSync(absoluteOutputPath)) {
       return "generated";
     } else {
       console.error(
-        `    WARNING: CLI completed but ${outputPath} was not created`
+        `${logPrefix} WARNING: CLI completed but ${outputPath} was not created`
       );
       return "failed";
     }
   } catch (error) {
-    console.error(`    ERROR: ${error}`);
+    console.error(`${logPrefix} ERROR: ${error}`);
     return "failed";
   }
 }
@@ -461,12 +470,15 @@ async function main(): Promise<void> {
     }
   }
 
-  // Parse positional args as model IDs (before any flags)
+  // Parse positional args as model IDs (matches on id or model field)
   for (const arg of args) {
     if (arg.startsWith("--")) break;
-    const model = models.find(m => m.id === arg);
+    const model = models.find(m => m.id === arg || m.model === arg);
     if (model) {
-      options.modelFilter.push(arg);
+      options.modelFilter.push(model.id);
+    } else {
+      console.error(`Unknown model: "${arg}". Available models: ${models.map(m => m.id).join(", ")}`);
+      process.exit(1);
     }
   }
 
@@ -477,26 +489,28 @@ async function main(): Promise<void> {
 
   // Load all examples
   const examples = loadExamples();
+  const targetExampleCount = options.force.length > 0 ? options.force.length : examples.length;
+
   console.log(`Found ${examples.length} examples`);
-  console.log(`Found ${models.length} models`);
+  console.log(`Found ${targetModels.length} model(s) to generate for (${models.length} total)`);
 
   if (options.modelFilter.length > 0) {
-    console.log(`Generating for: ${options.modelFilter.join(", ")}`);
+    console.log(`Models: ${options.modelFilter.join(", ")}`);
   } else {
-    console.log(`Generating for: all models`);
+    console.log(`Models: all`);
   }
 
-  console.log(`Total combinations: ${examples.length * targetModels.length}`);
+  if (options.force.length > 0) {
+    console.log(`Apps: ${options.force.join(", ")} (forced)`);
+  } else if (options.forceAll) {
+    console.log(`Apps: all (forced)`);
+  } else {
+    console.log(`Apps: all (skipping existing)`);
+  }
+
+  console.log(`Total tasks: ${targetExampleCount * targetModels.length}`);
   console.log(`Concurrency: ${options.concurrency}`);
   console.log();
-
-  if (options.forceAll) {
-    console.log(`Force regenerating: ALL apps`);
-    console.log();
-  } else if (options.force.length > 0) {
-    console.log(`Force regenerating: ${options.force.join(", ")}`);
-    console.log();
-  }
 
   // Track stats
   const stats = {
@@ -505,10 +519,14 @@ async function main(): Promise<void> {
     failed: 0,
   };
 
-  // Build list of all tasks
+  // Build list of tasks (filtered by --force if specified)
   const tasks: Array<{ model: ModelConfig; spec: ExampleSpec }> = [];
+  const targetExamples = options.force.length > 0
+    ? examples.filter(e => options.force.includes(e.id))
+    : examples;
+
   for (const model of targetModels) {
-    for (const spec of examples) {
+    for (const spec of targetExamples) {
       tasks.push({ model, spec });
     }
   }
@@ -516,20 +534,21 @@ async function main(): Promise<void> {
   // Process tasks with concurrency limit
   const runTask = async (task: { model: ModelConfig; spec: ExampleSpec }) => {
     const { model, spec } = task;
-    console.log(`\n  [${model.id}/${spec.id}] ${spec.title}`);
+    const logPrefix = `[${model.id}/${spec.id}]`;
+    console.log(`\n${logPrefix} ${spec.title}`);
 
     const result = await generateApp(model, spec, options);
     stats[result]++;
 
     switch (result) {
       case "skipped":
-        console.log(`    Skipped (already exists)`);
+        console.log(`${logPrefix} Skipped (already exists)`);
         break;
       case "generated":
-        console.log(`    Generated successfully`);
+        console.log(`${logPrefix} ✓ Generated successfully`);
         break;
       case "failed":
-        console.log(`    FAILED`);
+        console.log(`${logPrefix} ✗ FAILED`);
         break;
     }
   };
