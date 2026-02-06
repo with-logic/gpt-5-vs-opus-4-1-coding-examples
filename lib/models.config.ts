@@ -38,6 +38,13 @@ export const models: ModelConfig[] = [
     color: "bg-cyan-500",
   },
   {
+    id: "gpt-5.3-codex",
+    name: "GPT-5.3 Codex",
+    cli: "codex",
+    model: "gpt-5.3-codex",
+    color: "bg-lime-500",
+  },
+  {
     id: "opus-4.1",
     name: "Opus 4.1",
     cli: "claude",
@@ -50,6 +57,13 @@ export const models: ModelConfig[] = [
     cli: "claude",
     model: "claude-opus-4-5",
     color: "bg-orange-500",
+  },
+  {
+    id: "opus-4.6",
+    name: "Opus 4.6",
+    cli: "claude",
+    model: "claude-opus-4-6",
+    color: "bg-red-500",
   },
   {
     id: "sonnet-4.5",
