@@ -167,13 +167,8 @@ function buildCliCommand(
           "--dangerously-skip-permissions",
           "--permission-mode",
           "bypassPermissions",
-          "--settings",
-          JSON.stringify({ maxOutputTokens: MAX_OUTPUT_TOKENS.claude }),
           prompt,
         ],
-        env: {
-          CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(MAX_OUTPUT_TOKENS.claude),
-        },
       };
 
     case "codex":
@@ -314,6 +309,13 @@ async function runCliOnce(
 ): Promise<void> {
   const { cmd, args, env } = buildCliCommand(model, prompt);
 
+  const spawnEnv = {
+    ...process.env,
+    ...env,
+    // Ensure Claude max tokens is always set for claude CLI
+    CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(MAX_OUTPUT_TOKENS.claude),
+  };
+
   await new Promise<void>((resolve, reject) => {
     console.log(`${logPrefix} Running in sandbox: ${tempDir}`);
     console.log(`${logPrefix} Command: ${cmd} ${args[0]} ...`);
@@ -321,7 +323,7 @@ async function runCliOnce(
     const proc = spawn(cmd, args, {
       stdio: "inherit",
       cwd: tempDir,
-      env: { ...process.env, ...env },
+      env: spawnEnv,
     });
 
     proc.on("close", (code) => {
@@ -487,26 +489,28 @@ async function main(): Promise<void> {
 
   // Load all examples
   const examples = loadExamples();
+  const targetExampleCount = options.force.length > 0 ? options.force.length : examples.length;
+
   console.log(`Found ${examples.length} examples`);
   console.log(`Found ${targetModels.length} model(s) to generate for (${models.length} total)`);
 
   if (options.modelFilter.length > 0) {
-    console.log(`Generating for: ${options.modelFilter.join(", ")}`);
+    console.log(`Models: ${options.modelFilter.join(", ")}`);
   } else {
-    console.log(`Generating for: all models`);
+    console.log(`Models: all`);
   }
 
-  console.log(`Total combinations: ${examples.length * targetModels.length}`);
+  if (options.force.length > 0) {
+    console.log(`Apps: ${options.force.join(", ")} (forced)`);
+  } else if (options.forceAll) {
+    console.log(`Apps: all (forced)`);
+  } else {
+    console.log(`Apps: all (skipping existing)`);
+  }
+
+  console.log(`Total tasks: ${targetExampleCount * targetModels.length}`);
   console.log(`Concurrency: ${options.concurrency}`);
   console.log();
-
-  if (options.forceAll) {
-    console.log(`Force regenerating: ALL apps`);
-    console.log();
-  } else if (options.force.length > 0) {
-    console.log(`Force regenerating: ${options.force.join(", ")}`);
-    console.log();
-  }
 
   // Track stats
   const stats = {
@@ -515,10 +519,14 @@ async function main(): Promise<void> {
     failed: 0,
   };
 
-  // Build list of all tasks
+  // Build list of tasks (filtered by --force if specified)
   const tasks: Array<{ model: ModelConfig; spec: ExampleSpec }> = [];
+  const targetExamples = options.force.length > 0
+    ? examples.filter(e => options.force.includes(e.id))
+    : examples;
+
   for (const model of targetModels) {
-    for (const spec of examples) {
+    for (const spec of targetExamples) {
       tasks.push({ model, spec });
     }
   }
