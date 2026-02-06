@@ -1,0 +1,859 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Audio Step Sequencer</title>
+  <style>
+    :root {
+      --bg-1: #04050a;
+      --bg-2: #10182a;
+      --panel: rgba(13, 21, 39, 0.72);
+      --panel-border: rgba(110, 190, 255, 0.22);
+      --text: #e9f7ff;
+      --muted: #8fb2d8;
+      --cyan: #43e7ff;
+      --lime: #97ff6d;
+      --pink: #ff57b8;
+      --amber: #ffc14a;
+      --danger: #ff6e8f;
+      --shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 10% 15%, rgba(67, 231, 255, 0.18), transparent 30%),
+        radial-gradient(circle at 90% 20%, rgba(151, 255, 109, 0.14), transparent 32%),
+        radial-gradient(circle at 50% 100%, rgba(255, 87, 184, 0.2), transparent 40%),
+        linear-gradient(150deg, var(--bg-1), var(--bg-2));
+      overflow-x: hidden;
+    }
+
+    .scanlines::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, 0.02) 0,
+        rgba(255, 255, 255, 0.02) 1px,
+        rgba(0, 0, 0, 0) 2px,
+        rgba(0, 0, 0, 0) 4px
+      );
+      mix-blend-mode: screen;
+      opacity: 0.24;
+      z-index: 2;
+    }
+
+    .app {
+      width: min(1100px, 95vw);
+      margin: 28px auto;
+      padding: 22px;
+      border-radius: 24px;
+      background: linear-gradient(170deg, rgba(17, 26, 46, 0.78), rgba(4, 10, 24, 0.86));
+      border: 1px solid rgba(141, 220, 255, 0.28);
+      box-shadow: var(--shadow), inset 0 0 30px rgba(67, 231, 255, 0.07);
+      backdrop-filter: blur(8px);
+      position: relative;
+      z-index: 3;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .title {
+      margin: 0;
+      font-size: clamp(1.35rem, 2.6vw, 2.25rem);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      text-shadow: 0 0 16px rgba(67, 231, 255, 0.38);
+    }
+
+    .subtitle {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+      letter-spacing: 0.03em;
+    }
+
+    .status {
+      font-weight: 700;
+      font-size: 0.9rem;
+      letter-spacing: 0.08em;
+      color: #1e2e49;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: linear-gradient(120deg, #5ef3ff, #73ff9e);
+      box-shadow: 0 0 20px rgba(67, 231, 255, 0.35);
+      text-transform: uppercase;
+    }
+
+    .controls, .patterns {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 16px;
+      padding: 14px;
+      margin-bottom: 16px;
+      box-shadow: inset 0 0 24px rgba(67, 231, 255, 0.06);
+    }
+
+    .controls-grid {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 12px;
+      align-items: end;
+    }
+
+    .buttons {
+      grid-column: span 5;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .field {
+      grid-column: span 3;
+      display: grid;
+      gap: 6px;
+    }
+
+    .field label {
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .value {
+      font-weight: 700;
+      color: var(--cyan);
+      margin-left: 6px;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--cyan);
+    }
+
+    input[type="text"], select {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid rgba(136, 206, 255, 0.3);
+      background: rgba(8, 16, 30, 0.82);
+      color: var(--text);
+      padding: 10px;
+      outline: none;
+    }
+
+    button {
+      border: 0;
+      border-radius: 12px;
+      padding: 10px 14px;
+      color: #051022;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      cursor: pointer;
+      transition: transform 0.12s ease, box-shadow 0.2s ease, filter 0.2s ease;
+    }
+
+    button:hover { transform: translateY(-1px); }
+    button:active { transform: translateY(0); }
+
+    .btn-play { background: linear-gradient(135deg, #4bf6ff, #90ff5c); box-shadow: 0 6px 22px rgba(67, 231, 255, 0.38); }
+    .btn-stop { background: linear-gradient(135deg, #ffd95f, #ff7f5f); box-shadow: 0 6px 22px rgba(255, 193, 74, 0.3); }
+    .btn-secondary { background: linear-gradient(135deg, #c1ddff, #9cb8ff); }
+    .btn-danger { background: linear-gradient(135deg, #ff8fb2, #ff5c7e); }
+
+    .patterns-grid {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 10px;
+      align-items: end;
+    }
+
+    .patterns-grid .field { grid-column: span 4; }
+    .patterns-grid .buttons { grid-column: span 8; }
+
+    .sequencer {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 16px;
+      padding: 14px;
+      overflow-x: auto;
+      box-shadow: inset 0 0 24px rgba(67, 231, 255, 0.06);
+    }
+
+    .grid {
+      min-width: 860px;
+      display: grid;
+      grid-template-columns: 135px repeat(16, minmax(34px, 1fr));
+      gap: 8px;
+      align-items: center;
+    }
+
+    .track-label {
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-size: 0.82rem;
+      background: rgba(5, 14, 29, 0.75);
+      border: 1px solid rgba(139, 205, 255, 0.22);
+      position: sticky;
+      left: 0;
+      z-index: 1;
+    }
+
+    .step {
+      height: 42px;
+      border-radius: 10px;
+      border: 1px solid rgba(124, 204, 255, 0.18);
+      background: linear-gradient(145deg, rgba(17, 29, 53, 0.92), rgba(7, 15, 29, 0.94));
+      color: var(--text);
+      font-size: 0.72rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .step::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at center, rgba(255, 255, 255, 0.24), transparent 62%);
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    .step:hover::before { opacity: 0.25; }
+
+    .step.active.kick { background: linear-gradient(145deg, rgba(67, 231, 255, 0.32), rgba(8, 28, 48, 0.95)); box-shadow: 0 0 12px rgba(67, 231, 255, 0.5) inset, 0 0 14px rgba(67, 231, 255, 0.25); }
+    .step.active.snare { background: linear-gradient(145deg, rgba(255, 87, 184, 0.35), rgba(42, 10, 31, 0.96)); box-shadow: 0 0 12px rgba(255, 87, 184, 0.42) inset, 0 0 14px rgba(255, 87, 184, 0.2); }
+    .step.active.hat { background: linear-gradient(145deg, rgba(151, 255, 109, 0.34), rgba(18, 41, 16, 0.95)); box-shadow: 0 0 12px rgba(151, 255, 109, 0.44) inset, 0 0 14px rgba(151, 255, 109, 0.2); }
+    .step.active.clap { background: linear-gradient(145deg, rgba(255, 193, 74, 0.34), rgba(48, 31, 7, 0.95)); box-shadow: 0 0 12px rgba(255, 193, 74, 0.44) inset, 0 0 14px rgba(255, 193, 74, 0.2); }
+
+    .step.current {
+      outline: 2px solid rgba(255, 255, 255, 0.76);
+      transform: translateY(-1px);
+      filter: brightness(1.2);
+    }
+
+    .step.group {
+      border-right: 2px solid rgba(152, 219, 255, 0.46);
+    }
+
+    .legend {
+      margin-top: 12px;
+      color: var(--muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      font-size: 0.84rem;
+    }
+
+    .dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    .kick-dot { background: var(--cyan); }
+    .snare-dot { background: var(--pink); }
+    .hat-dot { background: var(--lime); }
+    .clap-dot { background: var(--amber); }
+
+    @media (max-width: 900px) {
+      .controls-grid .buttons,
+      .controls-grid .field,
+      .patterns-grid .field,
+      .patterns-grid .buttons {
+        grid-column: span 12;
+      }
+    }
+  </style>
+</head>
+<body class="scanlines">
+  <main class="app">
+    <section class="header">
+      <div>
+        <h1 class="title">Audio Step Sequencer</h1>
+        <p class="subtitle">16-step futuristic drum machine with swing and WAV bounce</p>
+      </div>
+      <div class="status" id="statusPill">Idle</div>
+    </section>
+
+    <section class="controls">
+      <div class="controls-grid">
+        <div class="buttons">
+          <button class="btn-play" id="playBtn">Play</button>
+          <button class="btn-stop" id="stopBtn">Stop</button>
+          <button class="btn-secondary" id="randomBtn">Randomize</button>
+          <button class="btn-danger" id="clearBtn">Clear</button>
+        </div>
+
+        <div class="field">
+          <label for="tempo">Tempo <span class="value" id="tempoVal">120 BPM</span></label>
+          <input id="tempo" type="range" min="60" max="180" value="120" />
+        </div>
+
+        <div class="field">
+          <label for="swing">Swing <span class="value" id="swingVal">0%</span></label>
+          <input id="swing" type="range" min="0" max="50" value="0" />
+        </div>
+      </div>
+    </section>
+
+    <section class="patterns">
+      <div class="patterns-grid">
+        <div class="field">
+          <label for="patternName">Pattern Name</label>
+          <input id="patternName" type="text" maxlength="28" placeholder="Neon Groove" />
+        </div>
+
+        <div class="field">
+          <label for="patternSelect">Saved Patterns</label>
+          <select id="patternSelect"></select>
+        </div>
+
+        <div class="buttons">
+          <button class="btn-secondary" id="savePatternBtn">Save Pattern</button>
+          <button class="btn-secondary" id="loadPatternBtn">Load Pattern</button>
+          <button class="btn-danger" id="deletePatternBtn">Delete Pattern</button>
+          <button class="btn-play" id="exportWavBtn">Export WAV</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="sequencer">
+      <div class="grid" id="grid"></div>
+      <div class="legend">
+        <span><i class="dot kick-dot"></i>Kick</span>
+        <span><i class="dot snare-dot"></i>Snare</span>
+        <span><i class="dot hat-dot"></i>Hi-hat</span>
+        <span><i class="dot clap-dot"></i>Clap</span>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const tracks = ["kick", "snare", "hat", "clap"];
+      const defaultPattern = {
+        kick: [1,0,0,0, 1,0,0,0, 1,0,0,0, 1,0,1,0],
+        snare:[0,0,0,0, 1,0,0,0, 0,0,0,0, 1,0,0,0],
+        hat:  [1,0,1,0, 1,0,1,0, 1,0,1,0, 1,0,1,0],
+        clap: [0,0,0,0, 0,0,1,0, 0,0,0,0, 0,0,1,0]
+      };
+
+      const state = {
+        pattern: structuredClone(defaultPattern),
+        tempo: 120,
+        swing: 0,
+        playing: false,
+        currentStep: 0,
+        nextNoteTime: 0,
+        timerId: null,
+        ctx: null,
+        master: null,
+        comp: null,
+        noiseBuffer: null,
+        pendingUiStep: 0,
+      };
+
+      const lsKey = "audio-step-sequencer-patterns-v1";
+
+      const els = {
+        grid: document.getElementById("grid"),
+        statusPill: document.getElementById("statusPill"),
+        tempo: document.getElementById("tempo"),
+        swing: document.getElementById("swing"),
+        tempoVal: document.getElementById("tempoVal"),
+        swingVal: document.getElementById("swingVal"),
+        playBtn: document.getElementById("playBtn"),
+        stopBtn: document.getElementById("stopBtn"),
+        randomBtn: document.getElementById("randomBtn"),
+        clearBtn: document.getElementById("clearBtn"),
+        patternName: document.getElementById("patternName"),
+        patternSelect: document.getElementById("patternSelect"),
+        savePatternBtn: document.getElementById("savePatternBtn"),
+        loadPatternBtn: document.getElementById("loadPatternBtn"),
+        deletePatternBtn: document.getElementById("deletePatternBtn"),
+        exportWavBtn: document.getElementById("exportWavBtn")
+      };
+
+      function clamp(v, lo, hi) {
+        return Math.max(lo, Math.min(hi, v));
+      }
+
+      function buildGrid() {
+        const frag = document.createDocumentFragment();
+        tracks.forEach(track => {
+          const label = document.createElement("div");
+          label.className = "track-label";
+          label.textContent = track === "hat" ? "hi-hat" : track;
+          frag.appendChild(label);
+
+          for (let step = 0; step < 16; step++) {
+            const btn = document.createElement("button");
+            btn.className = "step";
+            btn.dataset.track = track;
+            btn.dataset.step = String(step);
+            if (step % 4 === 3) btn.classList.add("group");
+            btn.addEventListener("click", () => {
+              state.pattern[track][step] = state.pattern[track][step] ? 0 : 1;
+              paintGrid();
+              if (state.ctx) {
+                triggerInstrument(track, state.ctx.currentTime, state.ctx, state.master, 0.85);
+              }
+            });
+            frag.appendChild(btn);
+          }
+        });
+        els.grid.appendChild(frag);
+      }
+
+      function paintGrid() {
+        const cells = els.grid.querySelectorAll(".step");
+        cells.forEach(cell => {
+          const track = cell.dataset.track;
+          const step = Number(cell.dataset.step);
+          const active = state.pattern[track][step] === 1;
+          cell.classList.toggle("active", active);
+          cell.classList.toggle("kick", active && track === "kick");
+          cell.classList.toggle("snare", active && track === "snare");
+          cell.classList.toggle("hat", active && track === "hat");
+          cell.classList.toggle("clap", active && track === "clap");
+        });
+      }
+
+      function highlightStep(step) {
+        const cells = els.grid.querySelectorAll(".step");
+        cells.forEach(cell => {
+          cell.classList.toggle("current", Number(cell.dataset.step) === step);
+        });
+      }
+
+      function loadStoredPatterns() {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(lsKey) || "{}");
+          return parsed && typeof parsed === "object" ? parsed : {};
+        } catch {
+          return {};
+        }
+      }
+
+      function saveStoredPatterns(store) {
+        localStorage.setItem(lsKey, JSON.stringify(store));
+      }
+
+      function refreshPatternList() {
+        const store = loadStoredPatterns();
+        els.patternSelect.innerHTML = "";
+        const keys = Object.keys(store).sort((a, b) => a.localeCompare(b));
+        if (!keys.length) {
+          const opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = "No saved patterns";
+          els.patternSelect.appendChild(opt);
+          return;
+        }
+        keys.forEach(name => {
+          const opt = document.createElement("option");
+          opt.value = name;
+          opt.textContent = name;
+          els.patternSelect.appendChild(opt);
+        });
+      }
+
+      function deepPatternCopy(source) {
+        return {
+          kick: source.kick.slice(0, 16),
+          snare: source.snare.slice(0, 16),
+          hat: source.hat.slice(0, 16),
+          clap: source.clap.slice(0, 16)
+        };
+      }
+
+      function ensureAudio() {
+        if (state.ctx) return;
+
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        state.ctx = new AudioCtx();
+
+        state.comp = state.ctx.createDynamicsCompressor();
+        state.comp.threshold.value = -12;
+        state.comp.knee.value = 12;
+        state.comp.ratio.value = 4;
+        state.comp.attack.value = 0.002;
+        state.comp.release.value = 0.15;
+
+        state.master = state.ctx.createGain();
+        state.master.gain.value = 0.86;
+
+        state.comp.connect(state.master);
+        state.master.connect(state.ctx.destination);
+
+        const noise = state.ctx.createBuffer(1, state.ctx.sampleRate, state.ctx.sampleRate);
+        const data = noise.getChannelData(0);
+        for (let i = 0; i < data.length; i++) {
+          data[i] = Math.random() * 2 - 1;
+        }
+        state.noiseBuffer = noise;
+      }
+
+      function createNoiseEnvelope(time, duration, destination, gainAmount) {
+        const source = state.ctx.createBufferSource();
+        source.buffer = state.noiseBuffer;
+
+        const hp = state.ctx.createBiquadFilter();
+        hp.type = "highpass";
+        hp.frequency.setValueAtTime(1200, time);
+
+        const gain = state.ctx.createGain();
+        gain.gain.setValueAtTime(gainAmount, time);
+        gain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+
+        source.connect(hp);
+        hp.connect(gain);
+        gain.connect(destination);
+        source.start(time);
+        source.stop(time + duration + 0.05);
+      }
+
+      function triggerInstrument(track, time, ctx, destination, velocity = 1) {
+        const out = destination || ctx.destination;
+
+        if (track === "kick") {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(165, time);
+          osc.frequency.exponentialRampToValueAtTime(47, time + 0.25);
+
+          gain.gain.setValueAtTime(0.0001, time);
+          gain.gain.exponentialRampToValueAtTime(1.0 * velocity, time + 0.003);
+          gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.46);
+
+          osc.connect(gain);
+          gain.connect(out);
+          osc.start(time);
+          osc.stop(time + 0.5);
+          return;
+        }
+
+        if (track === "snare") {
+          createNoiseEnvelope(time, 0.22, out, 0.64 * velocity);
+
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = "triangle";
+          osc.frequency.value = 180;
+          gain.gain.setValueAtTime(0.42 * velocity, time);
+          gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.18);
+          osc.connect(gain);
+          gain.connect(out);
+          osc.start(time);
+          osc.stop(time + 0.2);
+          return;
+        }
+
+        if (track === "hat") {
+          createNoiseEnvelope(time, 0.06, out, 0.28 * velocity);
+          return;
+        }
+
+        if (track === "clap") {
+          createNoiseEnvelope(time, 0.05, out, 0.35 * velocity);
+          createNoiseEnvelope(time + 0.014, 0.05, out, 0.28 * velocity);
+          createNoiseEnvelope(time + 0.03, 0.11, out, 0.24 * velocity);
+        }
+      }
+
+      function stepDuration() {
+        return 60 / state.tempo / 4;
+      }
+
+      function scheduleStep(step, time) {
+        const swingOffset = (step % 2 === 1) ? state.swing * stepDuration() : 0;
+        const when = time + swingOffset;
+        tracks.forEach(track => {
+          if (state.pattern[track][step]) {
+            triggerInstrument(track, when, state.ctx, state.comp);
+          }
+        });
+
+        const delayMs = Math.max(0, (when - state.ctx.currentTime) * 1000);
+        window.setTimeout(() => highlightStep(step), delayMs);
+      }
+
+      function scheduler() {
+        const lookAhead = 0.1;
+        while (state.nextNoteTime < state.ctx.currentTime + lookAhead) {
+          scheduleStep(state.currentStep, state.nextNoteTime);
+          state.nextNoteTime += stepDuration();
+          state.currentStep = (state.currentStep + 1) % 16;
+        }
+      }
+
+      function start() {
+        ensureAudio();
+        if (state.playing) return;
+
+        if (state.ctx.state === "suspended") {
+          state.ctx.resume();
+        }
+
+        state.playing = true;
+        state.currentStep = 0;
+        state.nextNoteTime = state.ctx.currentTime + 0.05;
+        state.timerId = setInterval(scheduler, 25);
+        els.statusPill.textContent = "Playing";
+      }
+
+      function stop() {
+        state.playing = false;
+        if (state.timerId) {
+          clearInterval(state.timerId);
+          state.timerId = null;
+        }
+        highlightStep(-1);
+        els.statusPill.textContent = "Idle";
+      }
+
+      function randomize() {
+        tracks.forEach(track => {
+          for (let i = 0; i < 16; i++) {
+            const chance = track === "kick" ? 0.34 : track === "snare" ? 0.22 : track === "hat" ? 0.58 : 0.19;
+            state.pattern[track][i] = Math.random() < chance ? 1 : 0;
+          }
+        });
+        paintGrid();
+      }
+
+      function clearPattern() {
+        tracks.forEach(track => state.pattern[track].fill(0));
+        paintGrid();
+      }
+
+      function savePattern() {
+        const name = els.patternName.value.trim();
+        if (!name) {
+          alert("Enter a pattern name.");
+          return;
+        }
+        const store = loadStoredPatterns();
+        store[name] = {
+          tempo: state.tempo,
+          swing: state.swing,
+          pattern: deepPatternCopy(state.pattern)
+        };
+        saveStoredPatterns(store);
+        refreshPatternList();
+        els.patternSelect.value = name;
+      }
+
+      function loadPattern() {
+        const selected = els.patternSelect.value;
+        if (!selected) return;
+        const store = loadStoredPatterns();
+        const item = store[selected];
+        if (!item) return;
+
+        if (item.pattern) state.pattern = deepPatternCopy(item.pattern);
+        if (typeof item.tempo === "number") {
+          state.tempo = clamp(item.tempo, 60, 180);
+          els.tempo.value = String(state.tempo);
+          els.tempoVal.textContent = `${state.tempo} BPM`;
+        }
+        if (typeof item.swing === "number") {
+          state.swing = clamp(item.swing, 0, 0.5);
+          els.swing.value = String(Math.round(state.swing * 100));
+          els.swingVal.textContent = `${Math.round(state.swing * 100)}%`;
+        }
+        paintGrid();
+      }
+
+      function deletePattern() {
+        const selected = els.patternSelect.value;
+        if (!selected) return;
+        const store = loadStoredPatterns();
+        delete store[selected];
+        saveStoredPatterns(store);
+        refreshPatternList();
+      }
+
+      function mixKick(sampleRate, out, startIdx, velocity) {
+        const len = Math.floor(sampleRate * 0.52);
+        for (let i = 0; i < len; i++) {
+          const t = i / sampleRate;
+          const env = Math.exp(-t * 9.4) * velocity;
+          const freq = 165 * Math.exp(-t * 6.5) + 47;
+          const s = Math.sin(2 * Math.PI * freq * t) * env;
+          const idx = startIdx + i;
+          if (idx < out.length) out[idx] += s;
+        }
+      }
+
+      function mixSnare(sampleRate, out, startIdx, velocity) {
+        const len = Math.floor(sampleRate * 0.24);
+        for (let i = 0; i < len; i++) {
+          const t = i / sampleRate;
+          const env = Math.exp(-t * 22);
+          const noise = (Math.random() * 2 - 1) * env;
+          const tone = Math.sin(2 * Math.PI * 180 * t) * Math.exp(-t * 14);
+          const idx = startIdx + i;
+          if (idx < out.length) out[idx] += (noise * 0.58 + tone * 0.3) * velocity;
+        }
+      }
+
+      function mixHat(sampleRate, out, startIdx, velocity) {
+        const len = Math.floor(sampleRate * 0.08);
+        for (let i = 0; i < len; i++) {
+          const t = i / sampleRate;
+          const env = Math.exp(-t * 65);
+          const n = (Math.random() * 2 - 1);
+          const metallic = Math.sin(2 * Math.PI * 8400 * t) * 0.3;
+          const idx = startIdx + i;
+          if (idx < out.length) out[idx] += (n * 0.65 + metallic) * env * velocity * 0.6;
+        }
+      }
+
+      function mixClap(sampleRate, out, startIdx, velocity) {
+        const bursts = [0, 0.014, 0.03];
+        bursts.forEach((offset, b) => {
+          const localStart = startIdx + Math.floor(offset * sampleRate);
+          const len = Math.floor(sampleRate * (b < 2 ? 0.05 : 0.12));
+          for (let i = 0; i < len; i++) {
+            const t = i / sampleRate;
+            const env = Math.exp(-t * (b < 2 ? 42 : 18));
+            const n = (Math.random() * 2 - 1) * env;
+            const idx = localStart + i;
+            if (idx < out.length) out[idx] += n * velocity * (b < 2 ? 0.38 : 0.28);
+          }
+        });
+      }
+
+      function floatTo16BitPCM(view, offset, input) {
+        for (let i = 0; i < input.length; i++, offset += 2) {
+          let s = Math.max(-1, Math.min(1, input[i]));
+          view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+        }
+      }
+
+      function writeString(view, offset, str) {
+        for (let i = 0; i < str.length; i++) {
+          view.setUint8(offset + i, str.charCodeAt(i));
+        }
+      }
+
+      function encodeWav(samples, sampleRate) {
+        const buffer = new ArrayBuffer(44 + samples.length * 2);
+        const view = new DataView(buffer);
+
+        writeString(view, 0, "RIFF");
+        view.setUint32(4, 36 + samples.length * 2, true);
+        writeString(view, 8, "WAVE");
+        writeString(view, 12, "fmt ");
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, 1, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * 2, true);
+        view.setUint16(32, 2, true);
+        view.setUint16(34, 16, true);
+        writeString(view, 36, "data");
+        view.setUint32(40, samples.length * 2, true);
+
+        floatTo16BitPCM(view, 44, samples);
+        return new Blob([view], { type: "audio/wav" });
+      }
+
+      function exportWav() {
+        const sampleRate = 44100;
+        const stepDur = 60 / state.tempo / 4;
+        const loopDur = 16 * stepDur;
+        const tail = 0.7;
+        const total = Math.ceil((loopDur + tail) * sampleRate);
+        const mix = new Float32Array(total);
+
+        for (let step = 0; step < 16; step++) {
+          const offsetSec = step * stepDur + (step % 2 ? state.swing * stepDur : 0);
+          const startIdx = Math.floor(offsetSec * sampleRate);
+
+          if (state.pattern.kick[step]) mixKick(sampleRate, mix, startIdx, 1.0);
+          if (state.pattern.snare[step]) mixSnare(sampleRate, mix, startIdx, 0.9);
+          if (state.pattern.hat[step]) mixHat(sampleRate, mix, startIdx, 0.8);
+          if (state.pattern.clap[step]) mixClap(sampleRate, mix, startIdx, 0.9);
+        }
+
+        let peak = 0;
+        for (let i = 0; i < mix.length; i++) {
+          const p = Math.abs(mix[i]);
+          if (p > peak) peak = p;
+        }
+        const norm = peak > 0.95 ? 0.95 / peak : 1;
+        for (let i = 0; i < mix.length; i++) mix[i] *= norm;
+
+        const blob = encodeWav(mix, sampleRate);
+        const a = document.createElement("a");
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+        a.href = URL.createObjectURL(blob);
+        a.download = `audio-step-sequencer-${stamp}.wav`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      }
+
+      function bindEvents() {
+        els.tempo.addEventListener("input", e => {
+          state.tempo = Number(e.target.value);
+          els.tempoVal.textContent = `${state.tempo} BPM`;
+        });
+
+        els.swing.addEventListener("input", e => {
+          state.swing = Number(e.target.value) / 100;
+          els.swingVal.textContent = `${Math.round(state.swing * 100)}%`;
+        });
+
+        els.playBtn.addEventListener("click", start);
+        els.stopBtn.addEventListener("click", stop);
+        els.randomBtn.addEventListener("click", randomize);
+        els.clearBtn.addEventListener("click", clearPattern);
+
+        els.savePatternBtn.addEventListener("click", savePattern);
+        els.loadPatternBtn.addEventListener("click", loadPattern);
+        els.deletePatternBtn.addEventListener("click", deletePattern);
+        els.exportWavBtn.addEventListener("click", exportWav);
+
+        document.addEventListener("visibilitychange", () => {
+          if (document.hidden && state.playing) stop();
+        });
+      }
+
+      function boot() {
+        buildGrid();
+        paintGrid();
+        refreshPatternList();
+        bindEvents();
+      }
+
+      boot();
+    })();
+  </script>
+</body>
+</html>
