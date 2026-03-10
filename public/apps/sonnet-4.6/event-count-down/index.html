@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Event Countdown</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&family=Bebas+Neue&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --glass: rgba(255,255,255,0.08);
+      --glass-border: rgba(255,255,255,0.15);
+      --accent: #7c3aed;
+      --accent2: #ec4899;
+      --text: #f8fafc;
+      --text-muted: rgba(248,250,252,0.6);
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'Inter', sans-serif;
+      overflow: hidden;
+    }
+
+    /* ── Parallax Background ── */
+    #bg-layer {
+      position: fixed; inset: 0; z-index: 0;
+      background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+      background-size: cover; background-position: center;
+      transition: background-image 0.6s ease;
+      will-change: transform;
+    }
+    #bg-overlay {
+      position: fixed; inset: 0; z-index: 1;
+      background: linear-gradient(to bottom,
+        rgba(0,0,0,0.35) 0%,
+        rgba(0,0,0,0.55) 50%,
+        rgba(0,0,0,0.75) 100%);
+      pointer-events: none;
+    }
+
+    /* ── Particles ── */
+    #particles-canvas {
+      position: fixed; inset: 0; z-index: 2;
+      pointer-events: none;
+    }
+
+    /* ── App Shell ── */
+    #app {
+      position: relative; z-index: 10;
+      height: 100vh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 1.5rem;
+    }
+
+    /* ── Setup Form ── */
+    #setup-view {
+      width: 100%; max-width: 520px;
+      animation: fadeUp 0.6s ease both;
+    }
+    #setup-view h1 {
+      font-size: 2rem; font-weight: 700; color: var(--text);
+      text-align: center; margin-bottom: 0.25rem;
+      letter-spacing: -0.5px;
+    }
+    #setup-view .subtitle {
+      text-align: center; color: var(--text-muted);
+      font-size: 0.9rem; margin-bottom: 1.75rem;
+    }
+
+    .glass-card {
+      background: var(--glass);
+      backdrop-filter: blur(20px) saturate(1.8);
+      -webkit-backdrop-filter: blur(20px) saturate(1.8);
+      border: 1px solid var(--glass-border);
+      border-radius: 20px;
+      padding: 2rem;
+      box-shadow: 0 25px 50px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
+    }
+
+    .form-group { margin-bottom: 1.1rem; }
+    .form-group label {
+      display: block; font-size: 0.78rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--text-muted); margin-bottom: 0.4rem;
+    }
+    .form-group input[type="text"],
+    .form-group input[type="datetime-local"] {
+      width: 100%;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px;
+      padding: 0.7rem 1rem;
+      color: var(--text);
+      font-family: inherit; font-size: 0.95rem;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      outline: none;
+    }
+    .form-group input:focus {
+      border-color: rgba(124,58,237,0.7);
+      box-shadow: 0 0 0 3px rgba(124,58,237,0.2);
+    }
+    .form-group input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+      filter: invert(1) opacity(0.5);
+      cursor: pointer;
+    }
+
+    /* File upload */
+    .upload-area {
+      border: 2px dashed rgba(255,255,255,0.2);
+      border-radius: 10px;
+      padding: 1.2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+    .upload-area:hover { border-color: rgba(124,58,237,0.6); background: rgba(124,58,237,0.05); }
+    .upload-area.has-image { border-style: solid; border-color: rgba(124,58,237,0.5); }
+    .upload-area input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .upload-area .upload-icon { font-size: 1.5rem; margin-bottom: 0.3rem; }
+    .upload-area .upload-text { font-size: 0.82rem; color: var(--text-muted); }
+    .upload-area .upload-preview {
+      width: 100%; height: 80px; object-fit: cover;
+      border-radius: 6px; display: none;
+    }
+
+    .btn-primary {
+      width: 100%; padding: 0.85rem;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border: none; border-radius: 12px;
+      color: #fff; font-family: inherit; font-size: 1rem; font-weight: 600;
+      cursor: pointer; margin-top: 1.5rem;
+      transition: transform 0.15s, box-shadow 0.15s;
+      box-shadow: 0 4px 20px rgba(124,58,237,0.4);
+      letter-spacing: 0.02em;
+    }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 28px rgba(124,58,237,0.5); }
+    .btn-primary:active { transform: translateY(0); }
+
+    /* ── Countdown View ── */
+    #countdown-view {
+      display: none; flex-direction: column;
+      align-items: center; text-align: center;
+      width: 100%; max-width: 900px;
+      animation: fadeUp 0.8s ease both;
+    }
+    #countdown-view.visible { display: flex; }
+
+    #event-title {
+      font-family: 'Bebas Neue', 'Inter', sans-serif;
+      font-size: clamp(2.5rem, 7vw, 5.5rem);
+      color: var(--text);
+      letter-spacing: 0.04em;
+      text-shadow: 0 4px 30px rgba(0,0,0,0.5);
+      line-height: 1;
+      margin-bottom: 0.15em;
+    }
+    #event-meta {
+      font-size: clamp(0.8rem, 2vw, 1rem);
+      color: var(--text-muted);
+      margin-bottom: 2.5rem;
+      display: flex; gap: 1.5rem; align-items: center; justify-content: center;
+      flex-wrap: wrap;
+    }
+    #event-meta span { display: flex; align-items: center; gap: 0.4rem; }
+
+    /* Countdown grid */
+    #countdown-grid {
+      display: flex; gap: clamp(0.6rem, 2vw, 1.5rem);
+      align-items: flex-start; justify-content: center;
+      margin-bottom: 2.5rem;
+      flex-wrap: wrap;
+    }
+
+    .countdown-unit {
+      display: flex; flex-direction: column; align-items: center;
+      min-width: clamp(70px, 14vw, 130px);
+    }
+
+    .countdown-number-wrap {
+      position: relative;
+      width: 100%;
+      background: var(--glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.1);
+    }
+
+    /* Flip card split line */
+    .countdown-number-wrap::after {
+      content: '';
+      position: absolute; left: 0; right: 0;
+      top: 50%; height: 1px;
+      background: rgba(0,0,0,0.4);
+      z-index: 5;
+    }
+
+    .countdown-number {
+      font-family: 'Bebas Neue', 'Inter', sans-serif;
+      font-size: clamp(2.8rem, 7vw, 6rem);
+      color: var(--text);
+      text-align: center;
+      padding: clamp(0.3rem, 1.5vw, 0.7rem) clamp(0.5rem, 2vw, 1rem);
+      line-height: 1;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      transition: none;
+    }
+
+    .countdown-label {
+      font-size: clamp(0.55rem, 1.5vw, 0.72rem);
+      font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.15em; color: var(--text-muted);
+      margin-top: 0.55rem;
+    }
+
+    /* Flip animation */
+    @keyframes flipDown {
+      0%   { transform: rotateX(0deg);   opacity: 1; }
+      50%  { transform: rotateX(-90deg); opacity: 0.3; }
+      100% { transform: rotateX(0deg);   opacity: 1; }
+    }
+    .flip-animate {
+      animation: flipDown 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* Glow pulse on numbers */
+    @keyframes glowPulse {
+      0%, 100% { text-shadow: 0 0 20px rgba(124,58,237,0.0), 0 2px 10px rgba(0,0,0,0.3); }
+      50%       { text-shadow: 0 0 30px rgba(124,58,237,0.6), 0 2px 10px rgba(0,0,0,0.3); }
+    }
+
+    /* Separator */
+    .countdown-sep {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(2.5rem, 6vw, 5rem);
+      color: rgba(255,255,255,0.3);
+      padding-bottom: 1.8rem;
+      align-self: center;
+      line-height: 1;
+      text-shadow: none;
+    }
+
+    /* Expired */
+    #expired-msg {
+      display: none;
+      font-size: clamp(1.5rem, 4vw, 3rem);
+      font-family: 'Bebas Neue', sans-serif;
+      color: var(--text);
+      letter-spacing: 0.1em;
+      animation: glowPulse 2s ease-in-out infinite;
+      margin-bottom: 2rem;
+    }
+
+    /* Action buttons */
+    #action-bar {
+      display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center;
+    }
+
+    .btn-action {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.7rem 1.5rem;
+      border-radius: 50px;
+      border: 1px solid var(--glass-border);
+      background: var(--glass);
+      backdrop-filter: blur(12px);
+      color: var(--text); font-family: inherit;
+      font-size: 0.88rem; font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+    .btn-action:hover { background: rgba(255,255,255,0.15); transform: translateY(-1px); }
+    .btn-action.primary-action {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-color: transparent;
+      box-shadow: 0 4px 20px rgba(124,58,237,0.4);
+    }
+    .btn-action.primary-action:hover { box-shadow: 0 8px 28px rgba(124,58,237,0.5); }
+
+    /* Edit button */
+    #btn-edit {
+      position: fixed; top: 1.2rem; right: 1.2rem; z-index: 20;
+      background: var(--glass); backdrop-filter: blur(12px);
+      border: 1px solid var(--glass-border);
+      color: var(--text-muted); font-size: 0.82rem;
+      padding: 0.5rem 1rem; border-radius: 50px;
+      cursor: pointer; font-family: inherit;
+      transition: all 0.2s; display: none;
+    }
+    #btn-edit:hover { color: var(--text); background: rgba(255,255,255,0.12); }
+
+    /* Animations */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Progress ring */
+    #progress-container {
+      position: relative; display: inline-flex;
+      align-items: center; justify-content: center;
+      margin-bottom: 1.5rem;
+    }
+    #progress-svg { transform: rotate(-90deg); }
+    #progress-track { fill: none; stroke: rgba(255,255,255,0.08); }
+    #progress-fill {
+      fill: none;
+      stroke: url(#progressGrad);
+      stroke-linecap: round;
+      transition: stroke-dashoffset 1s linear;
+    }
+    #progress-inner {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+    }
+    #progress-pct {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 2rem; color: var(--text); line-height: 1;
+    }
+    #progress-pct-label { font-size: 0.65rem; color: var(--text-muted); letter-spacing: 0.1em; text-transform: uppercase; }
+
+    /* Scrollable when on mobile */
+    @media (max-height: 600px) {
+      html, body { overflow: auto; }
+      #app { height: auto; padding: 2rem 1rem; }
+    }
+
+    /* Responsive: hide separators on small */
+    @media (max-width: 480px) {
+      .countdown-sep { display: none; }
+      #countdown-grid { gap: 0.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Background & canvas -->
+<div id="bg-layer"></div>
+<div id="bg-overlay"></div>
+<canvas id="particles-canvas"></canvas>
+
+<!-- Edit button (shown during countdown) -->
+<button id="btn-edit" onclick="showSetup()">&#9998; Edit</button>
+
+<div id="app">
+
+  <!-- ── SETUP VIEW ── -->
+  <div id="setup-view">
+    <h1>&#9200; Event Countdown</h1>
+    <p class="subtitle">Set up your event and share the excitement</p>
+
+    <div class="glass-card">
+      <div class="form-group">
+        <label>Event Name</label>
+        <input type="text" id="inp-name" placeholder="New Year's Eve Party" maxlength="60">
+      </div>
+      <div class="form-group">
+        <label>Date &amp; Time</label>
+        <input type="datetime-local" id="inp-datetime">
+      </div>
+      <div class="form-group">
+        <label>Location</label>
+        <input type="text" id="inp-location" placeholder="Times Square, New York" maxlength="80">
+      </div>
+      <div class="form-group">
+        <label>Background Image (optional)</label>
+        <div class="upload-area" id="upload-area">
+          <input type="file" id="inp-image" accept="image/*" onchange="handleImageUpload(event)">
+          <img class="upload-preview" id="upload-preview" alt="">
+          <div id="upload-placeholder">
+            <div class="upload-icon">&#128247;</div>
+            <div class="upload-text">Click to upload or drag &amp; drop<br><small>JPG, PNG, GIF, WEBP</small></div>
+          </div>
+        </div>
+      </div>
+      <button class="btn-primary" onclick="startCountdown()">Launch Countdown &#8594;</button>
+    </div>
+  </div>
+
+  <!-- ── COUNTDOWN VIEW ── -->
+  <div id="countdown-view">
+    <div id="event-title">Event Name</div>
+    <div id="event-meta">
+      <span id="meta-date">&#128197; Jan 1, 2025 12:00 AM</span>
+      <span id="meta-location" style="display:none">&#128205; Location</span>
+    </div>
+
+    <!-- Progress ring (visible when total duration known) -->
+    <div id="progress-container" style="display:none">
+      <svg id="progress-svg" width="110" height="110" viewBox="0 0 110 110">
+        <defs>
+          <linearGradient id="progressGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" style="stop-color:#7c3aed"/>
+            <stop offset="100%" style="stop-color:#ec4899"/>
+          </linearGradient>
+        </defs>
+        <circle id="progress-track" cx="55" cy="55" r="48" stroke-width="5"/>
+        <circle id="progress-fill" cx="55" cy="55" r="48" stroke-width="5" stroke-dasharray="301.6" stroke-dashoffset="0"/>
+      </svg>
+      <div id="progress-inner">
+        <div id="progress-pct">0%</div>
+        <div id="progress-pct-label">elapsed</div>
+      </div>
+    </div>
+
+    <!-- Countdown numbers -->
+    <div id="countdown-grid">
+      <div class="countdown-unit" id="unit-days">
+        <div class="countdown-number-wrap"><div class="countdown-number" id="num-days">00</div></div>
+        <div class="countdown-label">Days</div>
+      </div>
+      <div class="countdown-sep">:</div>
+      <div class="countdown-unit" id="unit-hours">
+        <div class="countdown-number-wrap"><div class="countdown-number" id="num-hours">00</div></div>
+        <div class="countdown-label">Hours</div>
+      </div>
+      <div class="countdown-sep">:</div>
+      <div class="countdown-unit" id="unit-mins">
+        <div class="countdown-number-wrap"><div class="countdown-number" id="num-mins">00</div></div>
+        <div class="countdown-label">Minutes</div>
+      </div>
+      <div class="countdown-sep">:</div>
+      <div class="countdown-unit" id="unit-secs">
+        <div class="countdown-number-wrap"><div class="countdown-number" id="num-secs">00</div></div>
+        <div class="countdown-label">Seconds</div>
+      </div>
+    </div>
+
+    <div id="expired-msg">&#127881; The Event Has Arrived! &#127881;</div>
+
+    <div id="action-bar">
+      <button class="btn-action primary-action" id="btn-cal" onclick="saveToCalendar()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        Save to Calendar
+      </button>
+      <button class="btn-action" onclick="shareEvent()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        Share
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────
+let eventData = { name: '', datetime: null, location: '', imageDataUrl: null };
+let countdownInterval = null;
+let prevValues = { d: -1, h: -1, m: -1, s: -1 };
+let totalDurationMs = 0;
+let startTimestamp = 0;
+
+// ── Particles ──────────────────────────────────────────────────────────
+const canvas = document.getElementById('particles-canvas');
+const ctx = canvas.getContext('2d');
+let particles = [];
+
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+
+function createParticle() {
+  return {
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    r: Math.random() * 1.8 + 0.4,
+    vx: (Math.random() - 0.5) * 0.3,
+    vy: -Math.random() * 0.4 - 0.1,
+    alpha: Math.random() * 0.5 + 0.1,
+    life: 1.0,
+    decay: Math.random() * 0.002 + 0.0005
+  };
+}
+
+function initParticles() {
+  particles = [];
+  for (let i = 0; i < 120; i++) particles.push(createParticle());
+}
+
+function animateParticles() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  particles.forEach((p, i) => {
+    p.x += p.vx; p.y += p.vy; p.life -= p.decay;
+    if (p.life <= 0 || p.y < -10) particles[i] = createParticle();
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,255,${p.alpha * p.life})`;
+    ctx.fill();
+  });
+  requestAnimationFrame(animateParticles);
+}
+
+resizeCanvas(); initParticles(); animateParticles();
+window.addEventListener('resize', () => { resizeCanvas(); initParticles(); });
+
+// ── Parallax ──────────────────────────────────────────────────────────
+const bgLayer = document.getElementById('bg-layer');
+document.addEventListener('mousemove', (e) => {
+  const xPct = (e.clientX / window.innerWidth  - 0.5) * 2;
+  const yPct = (e.clientY / window.innerHeight - 0.5) * 2;
+  bgLayer.style.transform = `scale(1.06) translate(${xPct * -12}px, ${yPct * -12}px)`;
+});
+
+// ── Image Upload ──────────────────────────────────────────────────────
+function handleImageUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const url = ev.target.result;
+    eventData.imageDataUrl = url;
+    const preview = document.getElementById('upload-preview');
+    preview.src = url; preview.style.display = 'block';
+    document.getElementById('upload-placeholder').style.display = 'none';
+    document.getElementById('upload-area').classList.add('has-image');
+    bgLayer.style.backgroundImage = `url(${url})`;
+    bgLayer.style.backgroundSize = 'cover';
+  };
+  reader.readAsDataURL(file);
+}
+
+// ── Drag-and-drop for image ───────────────────────────────────────────
+const uploadArea = document.getElementById('upload-area');
+['dragenter','dragover'].forEach(ev => uploadArea.addEventListener(ev, e => { e.preventDefault(); uploadArea.style.borderColor='rgba(124,58,237,0.8)'; }));
+['dragleave','drop'].forEach(ev => uploadArea.addEventListener(ev, e => { e.preventDefault(); uploadArea.style.borderColor=''; }));
+uploadArea.addEventListener('drop', e => {
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('image/')) {
+    document.getElementById('inp-image').files = e.dataTransfer.files;
+    handleImageUpload({ target: { files: [file] } });
+  }
+});
+
+// ── Setup ─────────────────────────────────────────────────────────────
+function pad(n) { return String(Math.floor(n)).padStart(2, '0'); }
+
+function showSetup() {
+  document.getElementById('setup-view').style.display = 'block';
+  document.getElementById('countdown-view').classList.remove('visible');
+  document.getElementById('btn-edit').style.display = 'none';
+  if (countdownInterval) { clearInterval(countdownInterval); countdownInterval = null; }
+  // pre-fill
+  document.getElementById('inp-name').value = eventData.name || '';
+  document.getElementById('inp-location').value = eventData.location || '';
+  if (eventData.datetime) {
+    const dt = new Date(eventData.datetime);
+    const local = new Date(dt.getTime() - dt.getTimezoneOffset() * 60000);
+    document.getElementById('inp-datetime').value = local.toISOString().slice(0, 16);
+  }
+}
+
+function startCountdown() {
+  const name = document.getElementById('inp-name').value.trim();
+  const datetimeVal = document.getElementById('inp-datetime').value;
+  const location = document.getElementById('inp-location').value.trim();
+
+  if (!name) { shakeInput('inp-name'); return; }
+  if (!datetimeVal) { shakeInput('inp-datetime'); return; }
+
+  const targetDate = new Date(datetimeVal);
+  if (isNaN(targetDate)) { shakeInput('inp-datetime'); return; }
+
+  eventData.name = name;
+  eventData.datetime = targetDate;
+  eventData.location = location;
+
+  // Set background if image selected
+  if (eventData.imageDataUrl) {
+    bgLayer.style.backgroundImage = `url(${eventData.imageDataUrl})`;
+  }
+
+  // Update display
+  document.getElementById('event-title').textContent = name;
+
+  const opts = { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' };
+  document.getElementById('meta-date').innerHTML = `&#128197; ${targetDate.toLocaleString('en-US', opts)}`;
+
+  const metaLoc = document.getElementById('meta-location');
+  if (location) {
+    metaLoc.innerHTML = `&#128205; ${location}`;
+    metaLoc.style.display = 'flex';
+  } else {
+    metaLoc.style.display = 'none';
+  }
+
+  // Progress ring: set start if not already
+  startTimestamp = Date.now();
+  totalDurationMs = targetDate - startTimestamp;
+
+  // Show countdown view
+  document.getElementById('setup-view').style.display = 'none';
+  document.getElementById('countdown-view').classList.add('visible');
+  document.getElementById('btn-edit').style.display = 'block';
+
+  prevValues = { d: -1, h: -1, m: -1, s: -1 };
+  tick();
+  countdownInterval = setInterval(tick, 1000);
+}
+
+function shakeInput(id) {
+  const el = document.getElementById(id);
+  el.style.animation = 'none';
+  el.offsetHeight; // reflow
+  el.style.borderColor = '#ef4444';
+  el.style.boxShadow = '0 0 0 3px rgba(239,68,68,0.25)';
+  setTimeout(() => { el.style.borderColor = ''; el.style.boxShadow = ''; }, 1500);
+}
+
+// ── Tick ──────────────────────────────────────────────────────────────
+function tick() {
+  const now = Date.now();
+  const diff = eventData.datetime - now;
+
+  if (diff <= 0) {
+    // Expired
+    setNum('num-days', '00');
+    setNum('num-hours', '00');
+    setNum('num-mins', '00');
+    setNum('num-secs', '00');
+    document.getElementById('countdown-grid').style.display = 'none';
+    document.getElementById('expired-msg').style.display = 'block';
+    document.getElementById('progress-container').style.display = 'none';
+    clearInterval(countdownInterval);
+    launchConfetti();
+    return;
+  }
+
+  const totalSecs = Math.floor(diff / 1000);
+  const d = Math.floor(totalSecs / 86400);
+  const h = Math.floor((totalSecs % 86400) / 3600);
+  const m = Math.floor((totalSecs % 3600) / 60);
+  const s = totalSecs % 60;
+
+  if (d !== prevValues.d) { setNum('num-days', pad(d)); prevValues.d = d; }
+  if (h !== prevValues.h) { setNum('num-hours', pad(h)); prevValues.h = h; }
+  if (m !== prevValues.m) { setNum('num-mins', pad(m)); prevValues.m = m; }
+  if (s !== prevValues.s) { setNum('num-secs', pad(s)); prevValues.s = s; }
+
+  // Progress ring
+  if (totalDurationMs > 0) {
+    const elapsed = now - startTimestamp;
+    const pct = Math.min(100, (elapsed / totalDurationMs) * 100);
+    const circumference = 301.6;
+    const offset = circumference - (pct / 100) * circumference;
+    document.getElementById('progress-fill').style.strokeDashoffset = offset;
+    document.getElementById('progress-pct').textContent = Math.round(pct) + '%';
+    document.getElementById('progress-container').style.display = 'inline-flex';
+  }
+}
+
+function setNum(id, val) {
+  const el = document.getElementById(id);
+  if (el.textContent === val) return;
+  el.classList.remove('flip-animate');
+  void el.offsetWidth; // reflow
+  el.textContent = val;
+  el.classList.add('flip-animate');
+}
+
+// ── Save to Calendar ──────────────────────────────────────────────────
+function saveToCalendar() {
+  const dt = eventData.datetime;
+  if (!dt) return;
+
+  function icalDate(d) {
+    return d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+  }
+  const end = new Date(dt.getTime() + 2 * 3600 * 1000);
+  const uid = 'event-' + Date.now() + '@countdown';
+  const ical = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//EventCountdown//EN',
+    'BEGIN:VEVENT',
+    'UID:' + uid,
+    'SUMMARY:' + (eventData.name || 'Event'),
+    'DTSTART:' + icalDate(dt),
+    'DTEND:'   + icalDate(end),
+    'LOCATION:' + (eventData.location || ''),
+    'DESCRIPTION:Created with Event Countdown',
+    'END:VEVENT', 'END:VCALENDAR'
+  ].join('\r\n');
+
+  const blob = new Blob([ical], { type: 'text/calendar' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = (eventData.name || 'event').replace(/\s+/g, '_') + '.ics';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ── Share ─────────────────────────────────────────────────────────────
+async function shareEvent() {
+  const text = `${eventData.name} — ${eventData.datetime ? eventData.datetime.toLocaleString() : ''}${eventData.location ? ' @ ' + eventData.location : ''}`;
+  if (navigator.share) {
+    try { await navigator.share({ title: eventData.name, text }); return; } catch (e) {}
+  }
+  // Fallback: copy to clipboard
+  try {
+    await navigator.clipboard.writeText(text);
+    const btn = document.querySelector('#action-bar .btn-action:nth-child(2)');
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Copied!';
+    setTimeout(() => btn.innerHTML = orig, 2000);
+  } catch {}
+}
+
+// ── Confetti ──────────────────────────────────────────────────────────
+function launchConfetti() {
+  const colors = ['#7c3aed','#ec4899','#f59e0b','#10b981','#3b82f6','#ef4444','#fff'];
+  const pieces = [];
+  for (let i = 0; i < 140; i++) {
+    pieces.push({
+      x: Math.random() * canvas.width,
+      y: -20,
+      vx: (Math.random() - 0.5) * 6,
+      vy: Math.random() * 4 + 2,
+      rot: Math.random() * 360,
+      rotV: (Math.random() - 0.5) * 8,
+      w: Math.random() * 10 + 5,
+      h: Math.random() * 5 + 3,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      life: 1.0,
+      decay: Math.random() * 0.005 + 0.002
+    });
+  }
+  function drawConfetti() {
+    let alive = false;
+    pieces.forEach(p => {
+      if (p.life <= 0) return;
+      alive = true;
+      p.x += p.vx; p.y += p.vy; p.rot += p.rotV; p.life -= p.decay;
+      ctx.save();
+      ctx.globalAlpha = p.life;
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot * Math.PI / 180);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.w/2, -p.h/2, p.w, p.h);
+      ctx.restore();
+    });
+    if (alive) requestAnimationFrame(drawConfetti);
+  }
+  drawConfetti();
+}
+
+// ── Init ──────────────────────────────────────────────────────────────
+// Set default datetime to tomorrow
+(function() {
+  const tomorrow = new Date(Date.now() + 86400000);
+  tomorrow.setHours(20, 0, 0, 0);
+  const local = new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60000);
+  document.getElementById('inp-datetime').value = local.toISOString().slice(0, 16);
+})();
+</script>
+</body>
+</html>

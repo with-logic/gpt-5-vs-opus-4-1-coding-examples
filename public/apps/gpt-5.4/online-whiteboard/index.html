@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Online Whiteboard</title>
+  <style>
+    :root {
+      --bg: #f5f6f2;
+      --panel: rgba(255, 255, 255, 0.82);
+      --panel-border: rgba(22, 26, 22, 0.08);
+      --ink: #101513;
+      --muted: #66706a;
+      --accent: #0b8b61;
+      --accent-strong: #066246;
+      --shadow: 0 24px 48px rgba(15, 23, 18, 0.12);
+      --radius: 22px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      font-family: Inter, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(11, 139, 97, 0.14), transparent 28%),
+        radial-gradient(circle at bottom right, rgba(239, 195, 87, 0.18), transparent 24%),
+        linear-gradient(180deg, #fbfcf8 0%, #eef1eb 100%);
+      color: var(--ink);
+    }
+
+    body {
+      position: relative;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+
+    .board-shell {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .board-shell::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(16, 21, 19, 0.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(16, 21, 19, 0.045) 1px, transparent 1px);
+      background-size: 28px 28px;
+      mask-image: radial-gradient(circle at center, black 68%, transparent 100%);
+      pointer-events: none;
+    }
+
+    #board {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+      touch-action: none;
+    }
+
+    .topbar {
+      position: absolute;
+      top: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(1100px, calc(100% - 24px));
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid var(--panel-border);
+      border-radius: calc(var(--radius) + 4px);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      z-index: 5;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      background:
+        linear-gradient(135deg, rgba(11, 139, 97, 1), rgba(239, 195, 87, 0.92));
+      box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.45);
+      position: relative;
+      flex: 0 0 auto;
+    }
+
+    .brand-mark::before,
+    .brand-mark::after {
+      content: "";
+      position: absolute;
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 999px;
+      transform-origin: center;
+    }
+
+    .brand-mark::before {
+      width: 22px;
+      height: 5px;
+      top: 13px;
+      left: 10px;
+      transform: rotate(35deg);
+    }
+
+    .brand-mark::after {
+      width: 16px;
+      height: 5px;
+      top: 24px;
+      left: 16px;
+      transform: rotate(-32deg);
+    }
+
+    .brand-copy {
+      min-width: 0;
+    }
+
+    .brand-copy h1 {
+      margin: 0;
+      font-size: 1rem;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-copy p {
+      margin: 2px 0 0;
+      color: var(--muted);
+      font-size: 0.84rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .tool-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px;
+      border-radius: 18px;
+      background: rgba(245, 247, 243, 0.82);
+      border: 1px solid rgba(16, 21, 19, 0.06);
+    }
+
+    .tool-button,
+    .color-chip,
+    .action-button {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      transition: transform 140ms ease, background-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+    }
+
+    .tool-button,
+    .action-button {
+      min-height: 42px;
+      padding: 0 14px;
+      border-radius: 14px;
+      font-weight: 600;
+      font-size: 0.92rem;
+      white-space: nowrap;
+    }
+
+    .tool-button:hover,
+    .action-button:hover,
+    .color-chip:hover {
+      transform: translateY(-1px);
+    }
+
+    .tool-button.active {
+      background: var(--ink);
+      color: white;
+      box-shadow: 0 10px 18px rgba(16, 21, 19, 0.16);
+    }
+
+    .color-chip {
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      border: 2px solid rgba(255, 255, 255, 0.9);
+      box-shadow: 0 0 0 1px rgba(16, 21, 19, 0.15);
+      flex: 0 0 auto;
+    }
+
+    .color-chip.active {
+      transform: scale(1.08);
+      box-shadow: 0 0 0 2px rgba(16, 21, 19, 0.4);
+    }
+
+    .size-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 8px 0 4px;
+    }
+
+    .size-badge {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      background: rgba(11, 139, 97, 0.12);
+      color: var(--accent-strong);
+      font-weight: 700;
+      font-size: 0.84rem;
+      flex: 0 0 auto;
+    }
+
+    input[type="range"] {
+      width: 140px;
+      accent-color: var(--accent);
+      cursor: ew-resize;
+    }
+
+    .action-button.primary {
+      background: var(--accent);
+      color: white;
+      box-shadow: 0 10px 20px rgba(11, 139, 97, 0.22);
+    }
+
+    .action-button.secondary {
+      background: rgba(16, 21, 19, 0.06);
+    }
+
+    .status-card {
+      position: absolute;
+      left: 18px;
+      bottom: 18px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(16, 21, 19, 0.82);
+      color: white;
+      box-shadow: 0 18px 38px rgba(8, 11, 9, 0.24);
+      z-index: 4;
+      max-width: min(420px, calc(100% - 36px));
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .status-card strong {
+      display: block;
+      font-size: 0.9rem;
+      margin-bottom: 5px;
+      letter-spacing: 0.01em;
+    }
+
+    .status-card span {
+      display: block;
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 0.8rem;
+      line-height: 1.4;
+    }
+
+    .toast {
+      position: absolute;
+      right: 18px;
+      bottom: 18px;
+      padding: 12px 16px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid rgba(16, 21, 19, 0.08);
+      box-shadow: var(--shadow);
+      color: var(--ink);
+      font-size: 0.88rem;
+      z-index: 6;
+      opacity: 0;
+      transform: translateY(14px);
+      pointer-events: none;
+      transition: opacity 180ms ease, transform 180ms ease;
+    }
+
+    .toast.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (max-width: 900px) {
+      .topbar {
+        top: 12px;
+        width: calc(100% - 16px);
+        padding: 12px;
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .toolbar {
+        width: 100%;
+        justify-content: flex-start;
+      }
+
+      .brand-copy p {
+        white-space: normal;
+      }
+    }
+
+    @media (max-width: 620px) {
+      .topbar {
+        border-radius: 20px;
+      }
+
+      .tool-group {
+        width: 100%;
+        justify-content: flex-start;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+
+      .tool-group::-webkit-scrollbar {
+        display: none;
+      }
+
+      input[type="range"] {
+        width: 120px;
+      }
+
+      .status-card {
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        max-width: none;
+      }
+
+      .toast {
+        left: 12px;
+        right: 12px;
+        bottom: 104px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="board-shell">
+    <canvas id="board" aria-label="Drawing canvas"></canvas>
+
+    <div class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div class="brand-copy">
+          <h1>Online Whiteboard</h1>
+          <p>Sketch ideas fast with pen, eraser, undo, redo, clear, and PNG export.</p>
+        </div>
+      </div>
+
+      <div class="toolbar" role="toolbar" aria-label="Whiteboard controls">
+        <div class="tool-group" aria-label="Tool selection">
+          <button class="tool-button active" data-tool="pen" type="button">Draw</button>
+          <button class="tool-button" data-tool="eraser" type="button">Erase</button>
+        </div>
+
+        <div class="tool-group" aria-label="Brush colors">
+          <button class="color-chip active" data-color="#101513" style="background:#101513" aria-label="Black"></button>
+          <button class="color-chip" data-color="#0b8b61" style="background:#0b8b61" aria-label="Green"></button>
+          <button class="color-chip" data-color="#1774ff" style="background:#1774ff" aria-label="Blue"></button>
+          <button class="color-chip" data-color="#e05b2f" style="background:#e05b2f" aria-label="Orange"></button>
+          <button class="color-chip" data-color="#b83280" style="background:#b83280" aria-label="Magenta"></button>
+        </div>
+
+        <div class="tool-group size-group" aria-label="Brush size">
+          <div class="size-badge" id="sizeBadge">6px</div>
+          <input id="sizeSlider" type="range" min="2" max="36" step="1" value="6" aria-label="Brush size">
+        </div>
+
+        <div class="tool-group" aria-label="Actions">
+          <button class="action-button secondary" id="undoButton" type="button">Undo</button>
+          <button class="action-button secondary" id="redoButton" type="button">Redo</button>
+          <button class="action-button secondary" id="clearButton" type="button">Clear</button>
+          <button class="action-button primary" id="saveButton" type="button">Save PNG</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="status-card">
+      <strong id="statusTitle">Draw mode</strong>
+      <span id="statusMeta">Click or touch and drag to sketch. Keyboard: B pen, E eraser, [ and ] resize.</span>
+    </div>
+
+    <div class="toast" id="toast" aria-live="polite"></div>
+  </div>
+
+  <script>
+    (() => {
+      const canvas = document.getElementById("board");
+      const ctx = canvas.getContext("2d");
+      const toolButtons = Array.from(document.querySelectorAll(".tool-button"));
+      const colorButtons = Array.from(document.querySelectorAll(".color-chip"));
+      const sizeSlider = document.getElementById("sizeSlider");
+      const sizeBadge = document.getElementById("sizeBadge");
+      const undoButton = document.getElementById("undoButton");
+      const redoButton = document.getElementById("redoButton");
+      const clearButton = document.getElementById("clearButton");
+      const saveButton = document.getElementById("saveButton");
+      const statusTitle = document.getElementById("statusTitle");
+      const statusMeta = document.getElementById("statusMeta");
+      const toast = document.getElementById("toast");
+
+      const state = {
+        tool: "pen",
+        color: "#101513",
+        size: Number(sizeSlider.value),
+        drawing: false,
+        lastPoint: null,
+        snapshotBeforeStroke: null,
+        dpr: Math.max(window.devicePixelRatio || 1, 1),
+        history: [],
+        historyIndex: -1,
+        maxHistory: 40
+      };
+
+      let toastTimer = 0;
+
+      function getCssSize() {
+        const rect = canvas.getBoundingClientRect();
+        return { width: Math.max(1, Math.round(rect.width)), height: Math.max(1, Math.round(rect.height)) };
+      }
+
+      function setCanvasSize(preserve = true) {
+        const { width, height } = getCssSize();
+        const previous = preserve ? captureCurrentCanvas() : null;
+        state.dpr = Math.max(window.devicePixelRatio || 1, 1);
+        canvas.width = Math.floor(width * state.dpr);
+        canvas.height = Math.floor(height * state.dpr);
+        ctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.imageSmoothingEnabled = true;
+
+        if (previous) {
+          ctx.drawImage(previous, 0, 0, previous.width, previous.height, 0, 0, width, height);
+          replaceCurrentHistoryEntry();
+        } else {
+          ctx.clearRect(0, 0, width, height);
+        }
+      }
+
+      function captureCurrentCanvas() {
+        const { width, height } = getCssSize();
+        if (!width || !height) {
+          return null;
+        }
+        const temp = document.createElement("canvas");
+        temp.width = width;
+        temp.height = height;
+        const tempCtx = temp.getContext("2d");
+        tempCtx.drawImage(canvas, 0, 0, width, height);
+        return temp;
+      }
+
+      function snapshotCanvas() {
+        const temp = captureCurrentCanvas();
+        return temp ? temp.toDataURL("image/png") : null;
+      }
+
+      function loadSnapshot(dataUrl) {
+        return new Promise((resolve) => {
+          const { width, height } = getCssSize();
+          ctx.clearRect(0, 0, width, height);
+
+          if (!dataUrl) {
+            resolve();
+            return;
+          }
+
+          const image = new Image();
+          image.onload = () => {
+            ctx.clearRect(0, 0, width, height);
+            ctx.drawImage(image, 0, 0, width, height);
+            resolve();
+          };
+          image.src = dataUrl;
+        });
+      }
+
+      function replaceCurrentHistoryEntry() {
+        const snapshot = snapshotCanvas();
+        if (!snapshot || state.historyIndex < 0) {
+          return;
+        }
+        state.history[state.historyIndex] = snapshot;
+      }
+
+      function pushHistory(snapshot) {
+        if (!snapshot) {
+          return;
+        }
+
+        if (state.historyIndex >= 0 && state.history[state.historyIndex] === snapshot) {
+          return;
+        }
+
+        state.history = state.history.slice(0, state.historyIndex + 1);
+        state.history.push(snapshot);
+
+        if (state.history.length > state.maxHistory) {
+          state.history.shift();
+        }
+
+        state.historyIndex = state.history.length - 1;
+        syncActionButtons();
+      }
+
+      function syncActionButtons() {
+        undoButton.disabled = state.historyIndex <= 0;
+        redoButton.disabled = state.historyIndex >= state.history.length - 1;
+        undoButton.style.opacity = undoButton.disabled ? "0.45" : "1";
+        redoButton.style.opacity = redoButton.disabled ? "0.45" : "1";
+      }
+
+      function setTool(tool) {
+        state.tool = tool;
+        toolButtons.forEach((button) => {
+          button.classList.toggle("active", button.dataset.tool === tool);
+        });
+        canvas.style.cursor = tool === "eraser" ? "cell" : "crosshair";
+        updateStatus();
+      }
+
+      function setColor(color) {
+        state.color = color;
+        colorButtons.forEach((button) => {
+          button.classList.toggle("active", button.dataset.color === color);
+        });
+        updateStatus();
+      }
+
+      function setSize(size) {
+        state.size = Math.max(2, Math.min(36, Number(size)));
+        sizeSlider.value = String(state.size);
+        sizeBadge.textContent = state.size + "px";
+        updateStatus();
+      }
+
+      function updateStatus() {
+        if (state.tool === "eraser") {
+          statusTitle.textContent = "Eraser mode";
+          statusMeta.textContent = "Removing strokes with a soft round eraser. Adjust size with the slider or [ and ].";
+        } else {
+          statusTitle.textContent = "Draw mode";
+          statusMeta.textContent = "Brush " + state.size + "px in " + state.color.toUpperCase() + ". Click or touch and drag to sketch.";
+        }
+      }
+
+      function showToast(message) {
+        toast.textContent = message;
+        toast.classList.add("visible");
+        window.clearTimeout(toastTimer);
+        toastTimer = window.setTimeout(() => {
+          toast.classList.remove("visible");
+        }, 1700);
+      }
+
+      function getPoint(event) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+          x: event.clientX - rect.left,
+          y: event.clientY - rect.top
+        };
+      }
+
+      function drawSegment(from, to) {
+        ctx.save();
+        ctx.lineWidth = state.size;
+        if (state.tool === "eraser") {
+          ctx.globalCompositeOperation = "destination-out";
+          ctx.strokeStyle = "rgba(0,0,0,1)";
+          ctx.shadowBlur = 0;
+        } else {
+          ctx.globalCompositeOperation = "source-over";
+          ctx.strokeStyle = state.color;
+          ctx.shadowColor = state.color;
+          ctx.shadowBlur = Math.max(0, state.size * 0.16);
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawDot(point) {
+        ctx.save();
+        if (state.tool === "eraser") {
+          ctx.globalCompositeOperation = "destination-out";
+          ctx.fillStyle = "rgba(0,0,0,1)";
+        } else {
+          ctx.globalCompositeOperation = "source-over";
+          ctx.fillStyle = state.color;
+          ctx.shadowColor = state.color;
+          ctx.shadowBlur = Math.max(0, state.size * 0.16);
+        }
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, state.size / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      function startStroke(event) {
+        if (event.button !== undefined && event.button !== 0) {
+          return;
+        }
+        event.preventDefault();
+        state.drawing = true;
+        state.lastPoint = getPoint(event);
+        state.snapshotBeforeStroke = snapshotCanvas();
+        drawDot(state.lastPoint);
+      }
+
+      function moveStroke(event) {
+        if (!state.drawing) {
+          return;
+        }
+        event.preventDefault();
+        const nextPoint = getPoint(event);
+        drawSegment(state.lastPoint, nextPoint);
+        state.lastPoint = nextPoint;
+      }
+
+      function endStroke() {
+        if (!state.drawing) {
+          return;
+        }
+        state.drawing = false;
+        state.lastPoint = null;
+        const after = snapshotCanvas();
+        if (after && after !== state.snapshotBeforeStroke) {
+          pushHistory(after);
+        }
+        state.snapshotBeforeStroke = null;
+      }
+
+      async function restoreHistory(index) {
+        state.historyIndex = index;
+        await loadSnapshot(state.history[state.historyIndex] || null);
+        syncActionButtons();
+      }
+
+      async function undo() {
+        if (state.historyIndex <= 0) {
+          return;
+        }
+        await restoreHistory(state.historyIndex - 1);
+        showToast("Undid last stroke");
+      }
+
+      async function redo() {
+        if (state.historyIndex >= state.history.length - 1) {
+          return;
+        }
+        await restoreHistory(state.historyIndex + 1);
+        showToast("Restored stroke");
+      }
+
+      function clearBoard() {
+        const { width, height } = getCssSize();
+        ctx.clearRect(0, 0, width, height);
+        pushHistory(snapshotCanvas());
+        showToast("Board cleared");
+      }
+
+      function saveImage() {
+        const exportCanvas = document.createElement("canvas");
+        const { width, height } = getCssSize();
+        exportCanvas.width = width;
+        exportCanvas.height = height;
+        const exportCtx = exportCanvas.getContext("2d");
+        exportCtx.fillStyle = "#fbfcf8";
+        exportCtx.fillRect(0, 0, width, height);
+        exportCtx.drawImage(canvas, 0, 0, width, height);
+
+        const link = document.createElement("a");
+        link.href = exportCanvas.toDataURL("image/png");
+        link.download = "online-whiteboard.png";
+        link.click();
+        showToast("Saved PNG image");
+      }
+
+      function handleKeydown(event) {
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+          event.preventDefault();
+          if (event.shiftKey) {
+            redo();
+          } else {
+            undo();
+          }
+          return;
+        }
+
+        switch (event.key.toLowerCase()) {
+          case "b":
+            setTool("pen");
+            break;
+          case "e":
+            setTool("eraser");
+            break;
+          case "[":
+            setSize(state.size - 1);
+            break;
+          case "]":
+            setSize(state.size + 1);
+            break;
+          case "s":
+            if (event.metaKey || event.ctrlKey) {
+              event.preventDefault();
+              saveImage();
+            }
+            break;
+          default:
+            break;
+        }
+      }
+
+      toolButtons.forEach((button) => {
+        button.addEventListener("click", () => setTool(button.dataset.tool));
+      });
+
+      colorButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          setTool("pen");
+          setColor(button.dataset.color);
+        });
+      });
+
+      sizeSlider.addEventListener("input", (event) => {
+        setSize(event.target.value);
+      });
+
+      undoButton.addEventListener("click", undo);
+      redoButton.addEventListener("click", redo);
+      clearButton.addEventListener("click", clearBoard);
+      saveButton.addEventListener("click", saveImage);
+
+      canvas.addEventListener("pointerdown", (event) => {
+        canvas.setPointerCapture(event.pointerId);
+        startStroke(event);
+      });
+      canvas.addEventListener("pointermove", moveStroke);
+      canvas.addEventListener("pointerup", endStroke);
+      canvas.addEventListener("pointerleave", endStroke);
+      canvas.addEventListener("pointercancel", endStroke);
+
+      window.addEventListener("keydown", handleKeydown);
+      window.addEventListener("resize", () => setCanvasSize(true));
+
+      setCanvasSize(false);
+      pushHistory(snapshotCanvas());
+      setTool("pen");
+      setColor(state.color);
+      setSize(state.size);
+      syncActionButtons();
+    })();
+  </script>
+</body>
+</html>

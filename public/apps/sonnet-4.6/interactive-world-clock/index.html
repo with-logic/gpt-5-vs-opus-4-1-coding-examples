@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Interactive World Clock</title>
+  <style>
+    :root {
+      --bg: #0f0f1a;
+      --card-bg: #1a1a2e;
+      --border: rgba(255,255,255,0.08);
+      --text: #e8e8f0;
+      --muted: #8888aa;
+      --accent: #6c63ff;
+      --accent2: #ff6584;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Animated starfield background */
+    #stars-canvas {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .app-wrapper {
+      position: relative;
+      z-index: 1;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px 20px 60px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 36px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #6c63ff, #ff6584);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      box-shadow: 0 0 20px rgba(108,99,255,0.4);
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #c8c0ff, #ff9ab0);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .toggle-btn {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 50px;
+      padding: 8px 20px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .toggle-btn:hover {
+      background: rgba(108,99,255,0.2);
+      border-color: var(--accent);
+      color: #c8c0ff;
+    }
+
+    .toggle-btn.active {
+      background: rgba(108,99,255,0.3);
+      border-color: var(--accent);
+      color: #c8c0ff;
+    }
+
+    /* Add city section */
+    .add-section {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 32px;
+      flex-wrap: wrap;
+    }
+
+    .search-wrap {
+      position: relative;
+      flex: 1;
+      min-width: 220px;
+    }
+
+    .search-wrap .icon {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 16px;
+      pointer-events: none;
+    }
+
+    .city-input {
+      width: 100%;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 12px 14px 12px 42px;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .city-input:focus {
+      border-color: var(--accent);
+    }
+
+    .city-input::placeholder { color: var(--muted); }
+
+    .suggestions {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 0; right: 0;
+      background: #1e1e35;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      z-index: 100;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+      max-height: 240px;
+      overflow-y: auto;
+    }
+
+    .suggestion-item {
+      padding: 10px 16px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: background 0.15s;
+    }
+
+    .suggestion-item:hover, .suggestion-item.focused {
+      background: rgba(108,99,255,0.2);
+    }
+
+    .suggestion-flag { font-size: 1.2em; }
+
+    .suggestion-info { display: flex; flex-direction: column; }
+    .suggestion-name { font-weight: 600; }
+    .suggestion-tz { font-size: 0.75rem; color: var(--muted); }
+
+    .add-btn {
+      background: linear-gradient(135deg, #6c63ff, #9c63ff);
+      border: none;
+      color: #fff;
+      border-radius: 12px;
+      padding: 12px 24px;
+      cursor: pointer;
+      font-size: 0.95rem;
+      font-weight: 600;
+      transition: all 0.2s;
+      white-space: nowrap;
+      box-shadow: 0 4px 15px rgba(108,99,255,0.3);
+    }
+
+    .add-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(108,99,255,0.5);
+    }
+
+    /* Clocks grid */
+    .clocks-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 20px;
+    }
+
+    /* Clock card */
+    .clock-card {
+      border-radius: 20px;
+      padding: 24px;
+      border: 1px solid var(--border);
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.2s, box-shadow 0.2s;
+      animation: cardIn 0.4s ease both;
+    }
+
+    @keyframes cardIn {
+      from { opacity: 0; transform: translateY(20px) scale(0.96); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .clock-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+    }
+
+    /* Time-of-day themes */
+    .clock-card.night {
+      background: linear-gradient(145deg, #0d0d1f, #1a1530);
+      border-color: rgba(80,60,160,0.3);
+    }
+    .clock-card.dawn {
+      background: linear-gradient(145deg, #1a0e2e, #2d1445);
+      border-color: rgba(180,80,220,0.3);
+    }
+    .clock-card.morning {
+      background: linear-gradient(145deg, #0e2030, #1a3050);
+      border-color: rgba(60,140,220,0.3);
+    }
+    .clock-card.afternoon {
+      background: linear-gradient(145deg, #0e2818, #1a4028);
+      border-color: rgba(60,200,120,0.3);
+    }
+    .clock-card.golden {
+      background: linear-gradient(145deg, #2a1a08, #3d2810);
+      border-color: rgba(230,160,40,0.3);
+    }
+    .clock-card.evening {
+      background: linear-gradient(145deg, #2a0e0e, #3d1520);
+      border-color: rgba(220,80,80,0.3);
+    }
+    .clock-card.dusk {
+      background: linear-gradient(145deg, #1a0e20, #2d1535);
+      border-color: rgba(160,80,200,0.3);
+    }
+
+    /* Glow overlay */
+    .clock-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 20px;
+      opacity: 0.06;
+      pointer-events: none;
+    }
+    .clock-card.night::before    { background: radial-gradient(ellipse at 30% 20%, #6060ff, transparent 60%); }
+    .clock-card.dawn::before     { background: radial-gradient(ellipse at 30% 20%, #cc66ff, transparent 60%); }
+    .clock-card.morning::before  { background: radial-gradient(ellipse at 30% 20%, #44aaff, transparent 60%); }
+    .clock-card.afternoon::before{ background: radial-gradient(ellipse at 30% 20%, #44ffaa, transparent 60%); }
+    .clock-card.golden::before   { background: radial-gradient(ellipse at 30% 20%, #ffcc44, transparent 60%); }
+    .clock-card.evening::before  { background: radial-gradient(ellipse at 30% 20%, #ff6644, transparent 60%); }
+    .clock-card.dusk::before     { background: radial-gradient(ellipse at 30% 20%, #cc44aa, transparent 60%); }
+
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+
+    .city-info { flex: 1; }
+
+    .city-period {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 3px 10px;
+      border-radius: 50px;
+      margin-bottom: 6px;
+    }
+
+    .night    .city-period { background: rgba(80,60,180,0.25); color: #9090ff; }
+    .dawn     .city-period { background: rgba(180,60,220,0.25); color: #dd88ff; }
+    .morning  .city-period { background: rgba(40,120,220,0.25); color: #66bbff; }
+    .afternoon.city-period { background: rgba(40,180,100,0.25); color: #55ee99; }
+    .golden   .city-period { background: rgba(220,150,30,0.25); color: #ffcc55; }
+    .evening  .city-period { background: rgba(220,70,70,0.25); color: #ff8866; }
+    .dusk     .city-period { background: rgba(160,60,200,0.25); color: #cc77ee; }
+
+    .afternoon .city-period { background: rgba(40,180,100,0.25); color: #55ee99; }
+
+    .city-name {
+      font-size: 1.25rem;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .city-country {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 2px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .remove-btn {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: var(--muted);
+      border-radius: 8px;
+      width: 30px;
+      height: 30px;
+      cursor: pointer;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      flex-shrink: 0;
+    }
+
+    .remove-btn:hover {
+      background: rgba(255,80,80,0.15);
+      border-color: rgba(255,80,80,0.3);
+      color: #ff8080;
+    }
+
+    /* Analog clock */
+    .analog-wrap {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 16px;
+    }
+
+    .analog-clock {
+      width: 110px;
+      height: 110px;
+    }
+
+    /* Digital time */
+    .digital-time {
+      text-align: center;
+      font-size: 2.4rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1;
+      margin-bottom: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .night    .digital-time { color: #c0c0ff; }
+    .dawn     .digital-time { color: #e0aaff; }
+    .morning  .digital-time { color: #aaddff; }
+    .afternoon .digital-time{ color: #aaffcc; }
+    .golden   .digital-time { color: #ffd980; }
+    .evening  .digital-time { color: #ffaa88; }
+    .dusk     .digital-time { color: #dd99ff; }
+
+    .digital-ampm {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-left: 6px;
+      opacity: 0.7;
+    }
+
+    .digital-date {
+      text-align: center;
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-bottom: 14px;
+    }
+
+    /* UTC offset */
+    .utc-offset {
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--muted);
+      padding-top: 12px;
+      border-top: 1px solid rgba(255,255,255,0.05);
+    }
+
+    /* Progress bar (time in day) */
+    .day-progress {
+      margin: 10px 0 14px;
+      height: 4px;
+      background: rgba(255,255,255,0.07);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .day-progress-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 1s linear;
+    }
+
+    .night    .day-progress-fill { background: linear-gradient(90deg, #4040cc, #6060ff); }
+    .dawn     .day-progress-fill { background: linear-gradient(90deg, #9933cc, #cc66ff); }
+    .morning  .day-progress-fill { background: linear-gradient(90deg, #1166bb, #44aaff); }
+    .afternoon .day-progress-fill{ background: linear-gradient(90deg, #118844, #44cc88); }
+    .golden   .day-progress-fill { background: linear-gradient(90deg, #cc8800, #ffcc44); }
+    .evening  .day-progress-fill { background: linear-gradient(90deg, #cc3300, #ff7755); }
+    .dusk     .day-progress-fill { background: linear-gradient(90deg, #882299, #cc55dd); }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 80px 20px;
+      color: var(--muted);
+    }
+
+    .empty-state .empty-icon {
+      font-size: 56px;
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
+
+    .empty-state h2 {
+      font-size: 1.2rem;
+      color: #aaaacc;
+      margin-bottom: 8px;
+    }
+
+    .empty-state p {
+      font-size: 0.9rem;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+
+    @media (max-width: 600px) {
+      h1 { font-size: 1.3rem; }
+      .clocks-grid { grid-template-columns: 1fr; }
+      .digital-time { font-size: 2rem; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="stars-canvas"></canvas>
+
+  <div class="app-wrapper">
+    <header>
+      <div class="logo">
+        <div class="logo-icon">🌍</div>
+        <h1>World Clock</h1>
+      </div>
+      <div class="header-controls">
+        <button class="toggle-btn" id="format-btn">
+          <span id="format-icon">🕐</span>
+          <span id="format-label">12h</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="add-section">
+      <div class="search-wrap">
+        <span class="icon">🔍</span>
+        <input
+          class="city-input"
+          id="city-input"
+          type="text"
+          placeholder="Search city or timezone..."
+          autocomplete="off"
+        />
+        <div class="suggestions" id="suggestions" style="display:none"></div>
+      </div>
+      <button class="add-btn" id="add-btn">+ Add City</button>
+    </div>
+
+    <div class="clocks-grid" id="clocks-grid"></div>
+  </div>
+
+  <script>
+  // ── City database ─────────────────────────────────────────────────────────
+  const CITIES = [
+    { name:"New York",      country:"USA",          flag:"🇺🇸", tz:"America/New_York" },
+    { name:"Los Angeles",   country:"USA",          flag:"🇺🇸", tz:"America/Los_Angeles" },
+    { name:"Chicago",       country:"USA",          flag:"🇺🇸", tz:"America/Chicago" },
+    { name:"Toronto",       country:"Canada",       flag:"🇨🇦", tz:"America/Toronto" },
+    { name:"Vancouver",     country:"Canada",       flag:"🇨🇦", tz:"America/Vancouver" },
+    { name:"Mexico City",   country:"Mexico",       flag:"🇲🇽", tz:"America/Mexico_City" },
+    { name:"São Paulo",     country:"Brazil",       flag:"🇧🇷", tz:"America/Sao_Paulo" },
+    { name:"Buenos Aires",  country:"Argentina",    flag:"🇦🇷", tz:"America/Argentina/Buenos_Aires" },
+    { name:"Santiago",      country:"Chile",        flag:"🇨🇱", tz:"America/Santiago" },
+    { name:"Bogotá",        country:"Colombia",     flag:"🇨🇴", tz:"America/Bogota" },
+    { name:"Lima",          country:"Peru",         flag:"🇵🇪", tz:"America/Lima" },
+    { name:"London",        country:"UK",           flag:"🇬🇧", tz:"Europe/London" },
+    { name:"Paris",         country:"France",       flag:"🇫🇷", tz:"Europe/Paris" },
+    { name:"Berlin",        country:"Germany",      flag:"🇩🇪", tz:"Europe/Berlin" },
+    { name:"Madrid",        country:"Spain",        flag:"🇪🇸", tz:"Europe/Madrid" },
+    { name:"Rome",          country:"Italy",        flag:"🇮🇹", tz:"Europe/Rome" },
+    { name:"Amsterdam",     country:"Netherlands",  flag:"🇳🇱", tz:"Europe/Amsterdam" },
+    { name:"Zurich",        country:"Switzerland",  flag:"🇨🇭", tz:"Europe/Zurich" },
+    { name:"Vienna",        country:"Austria",      flag:"🇦🇹", tz:"Europe/Vienna" },
+    { name:"Warsaw",        country:"Poland",       flag:"🇵🇱", tz:"Europe/Warsaw" },
+    { name:"Stockholm",     country:"Sweden",       flag:"🇸🇪", tz:"Europe/Stockholm" },
+    { name:"Oslo",          country:"Norway",       flag:"🇳🇴", tz:"Europe/Oslo" },
+    { name:"Helsinki",      country:"Finland",      flag:"🇫🇮", tz:"Europe/Helsinki" },
+    { name:"Athens",        country:"Greece",       flag:"🇬🇷", tz:"Europe/Athens" },
+    { name:"Istanbul",      country:"Turkey",       flag:"🇹🇷", tz:"Europe/Istanbul" },
+    { name:"Moscow",        country:"Russia",       flag:"🇷🇺", tz:"Europe/Moscow" },
+    { name:"Kiev",          country:"Ukraine",      flag:"🇺🇦", tz:"Europe/Kiev" },
+    { name:"Dubai",         country:"UAE",          flag:"🇦🇪", tz:"Asia/Dubai" },
+    { name:"Riyadh",        country:"Saudi Arabia", flag:"🇸🇦", tz:"Asia/Riyadh" },
+    { name:"Tehran",        country:"Iran",         flag:"🇮🇷", tz:"Asia/Tehran" },
+    { name:"Karachi",       country:"Pakistan",     flag:"🇵🇰", tz:"Asia/Karachi" },
+    { name:"Mumbai",        country:"India",        flag:"🇮🇳", tz:"Asia/Kolkata" },
+    { name:"New Delhi",     country:"India",        flag:"🇮🇳", tz:"Asia/Kolkata" },
+    { name:"Colombo",       country:"Sri Lanka",    flag:"🇱🇰", tz:"Asia/Colombo" },
+    { name:"Dhaka",         country:"Bangladesh",   flag:"🇧🇩", tz:"Asia/Dhaka" },
+    { name:"Kathmandu",     country:"Nepal",        flag:"🇳🇵", tz:"Asia/Kathmandu" },
+    { name:"Yangon",        country:"Myanmar",      flag:"🇲🇲", tz:"Asia/Rangoon" },
+    { name:"Bangkok",       country:"Thailand",     flag:"🇹🇭", tz:"Asia/Bangkok" },
+    { name:"Jakarta",       country:"Indonesia",    flag:"🇮🇩", tz:"Asia/Jakarta" },
+    { name:"Singapore",     country:"Singapore",    flag:"🇸🇬", tz:"Asia/Singapore" },
+    { name:"Kuala Lumpur",  country:"Malaysia",     flag:"🇲🇾", tz:"Asia/Kuala_Lumpur" },
+    { name:"Hong Kong",     country:"China",        flag:"🇭🇰", tz:"Asia/Hong_Kong" },
+    { name:"Shanghai",      country:"China",        flag:"🇨🇳", tz:"Asia/Shanghai" },
+    { name:"Beijing",       country:"China",        flag:"🇨🇳", tz:"Asia/Shanghai" },
+    { name:"Seoul",         country:"South Korea",  flag:"🇰🇷", tz:"Asia/Seoul" },
+    { name:"Tokyo",         country:"Japan",        flag:"🇯🇵", tz:"Asia/Tokyo" },
+    { name:"Taipei",        country:"Taiwan",       flag:"🇹🇼", tz:"Asia/Taipei" },
+    { name:"Manila",        country:"Philippines",  flag:"🇵🇭", tz:"Asia/Manila" },
+    { name:"Ho Chi Minh",   country:"Vietnam",      flag:"🇻🇳", tz:"Asia/Ho_Chi_Minh" },
+    { name:"Phnom Penh",    country:"Cambodia",     flag:"🇰🇭", tz:"Asia/Phnom_Penh" },
+    { name:"Ulaanbaatar",   country:"Mongolia",     flag:"🇲🇳", tz:"Asia/Ulaanbaatar" },
+    { name:"Almaty",        country:"Kazakhstan",   flag:"🇰🇿", tz:"Asia/Almaty" },
+    { name:"Tashkent",      country:"Uzbekistan",   flag:"🇺🇿", tz:"Asia/Tashkent" },
+    { name:"Baku",          country:"Azerbaijan",   flag:"🇦🇿", tz:"Asia/Baku" },
+    { name:"Tbilisi",       country:"Georgia",      flag:"🇬🇪", tz:"Asia/Tbilisi" },
+    { name:"Cairo",         country:"Egypt",        flag:"🇪🇬", tz:"Africa/Cairo" },
+    { name:"Lagos",         country:"Nigeria",      flag:"🇳🇬", tz:"Africa/Lagos" },
+    { name:"Nairobi",       country:"Kenya",        flag:"🇰🇪", tz:"Africa/Nairobi" },
+    { name:"Johannesburg",  country:"South Africa", flag:"🇿🇦", tz:"Africa/Johannesburg" },
+    { name:"Casablanca",    country:"Morocco",      flag:"🇲🇦", tz:"Africa/Casablanca" },
+    { name:"Accra",         country:"Ghana",        flag:"🇬🇭", tz:"Africa/Accra" },
+    { name:"Addis Ababa",   country:"Ethiopia",     flag:"🇪🇹", tz:"Africa/Addis_Ababa" },
+    { name:"Dar es Salaam", country:"Tanzania",     flag:"🇹🇿", tz:"Africa/Dar_es_Salaam" },
+    { name:"Sydney",        country:"Australia",    flag:"🇦🇺", tz:"Australia/Sydney" },
+    { name:"Melbourne",     country:"Australia",    flag:"🇦🇺", tz:"Australia/Melbourne" },
+    { name:"Brisbane",      country:"Australia",    flag:"🇦🇺", tz:"Australia/Brisbane" },
+    { name:"Perth",         country:"Australia",    flag:"🇦🇺", tz:"Australia/Perth" },
+    { name:"Auckland",      country:"New Zealand",  flag:"🇳🇿", tz:"Pacific/Auckland" },
+    { name:"Honolulu",      country:"USA",          flag:"🇺🇸", tz:"Pacific/Honolulu" },
+    { name:"Anchorage",     country:"USA",          flag:"🇺🇸", tz:"America/Anchorage" },
+    { name:"Denver",        country:"USA",          flag:"🇺🇸", tz:"America/Denver" },
+    { name:"Phoenix",       country:"USA",          flag:"🇺🇸", tz:"America/Phoenix" },
+    { name:"Miami",         country:"USA",          flag:"🇺🇸", tz:"America/New_York" },
+  ];
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  let use24h = false;
+  let selectedCities = [];
+  let suggestionFocus = -1;
+  let filteredSuggestions = [];
+  let pendingCity = null;
+
+  const DEFAULT_CITIES = ["New York","London","Tokyo","Sydney","Dubai"];
+
+  function loadState() {
+    try {
+      const saved = localStorage.getItem('worldclock_v2');
+      if (saved) {
+        const d = JSON.parse(saved);
+        selectedCities = d.cities || [];
+        use24h = !!d.use24h;
+      }
+    } catch(e) {}
+    if (selectedCities.length === 0) {
+      selectedCities = DEFAULT_CITIES.map(n => CITIES.find(c => c.name === n)).filter(Boolean);
+    }
+  }
+
+  function saveState() {
+    localStorage.setItem('worldclock_v2', JSON.stringify({ cities: selectedCities, use24h }));
+  }
+
+  // ── Time utilities ────────────────────────────────────────────────────────
+  function getTimeInTz(tz) {
+    try {
+      const now = new Date();
+      const str = now.toLocaleString('en-US', { timeZone: tz, hour12: false,
+        year:'numeric', month:'2-digit', day:'2-digit',
+        hour:'2-digit', minute:'2-digit', second:'2-digit'
+      });
+      // str: "MM/DD/YYYY, HH:MM:SS"
+      const [datePart, timePart] = str.split(', ');
+      const [mo, da, yr] = datePart.split('/').map(Number);
+      const [hh, mm, ss] = timePart.split(':').map(Number);
+      return { h: hh % 24, m: mm, s: ss, yr, mo, da };
+    } catch(e) {
+      const now = new Date();
+      return { h: now.getHours(), m: now.getMinutes(), s: now.getSeconds(),
+        yr: now.getFullYear(), mo: now.getMonth()+1, da: now.getDate() };
+    }
+  }
+
+  function getPeriod(h) {
+    if (h >= 5 && h < 7)  return { name:'Dawn',      cls:'dawn',      icon:'🌅' };
+    if (h >= 7 && h < 12) return { name:'Morning',   cls:'morning',   icon:'🌤' };
+    if (h >= 12 && h < 17)return { name:'Afternoon', cls:'afternoon', icon:'☀️' };
+    if (h >= 17 && h < 19)return { name:'Golden Hour',cls:'golden',   icon:'🌇' };
+    if (h >= 19 && h < 21)return { name:'Evening',   cls:'evening',   icon:'🌆' };
+    if (h >= 21 || h < 1) return { name:'Night',     cls:'night',     icon:'🌙' };
+    if (h >= 1 && h < 5)  return { name:'Night',     cls:'night',     icon:'🌃' };
+    return { name:'Night', cls:'night', icon:'🌙' };
+  }
+
+  function formatDigital(h, m, s) {
+    if (use24h) {
+      return { time: `${pad(h)}:${pad(m)}:${pad(s)}`, ampm: '' };
+    } else {
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      const h12 = h % 12 || 12;
+      return { time: `${h12}:${pad(m)}:${pad(s)}`, ampm };
+    }
+  }
+
+  function pad(n) { return String(n).padStart(2,'0'); }
+
+  function formatDate(yr, mo, da, tz) {
+    try {
+      const d = new Date(yr, mo-1, da);
+      return d.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' });
+    } catch(e) { return ''; }
+  }
+
+  function getUTCOffset(tz) {
+    try {
+      const now = new Date();
+      const utc = new Date(now.toLocaleString('en-US', { timeZone:'UTC' }));
+      const local = new Date(now.toLocaleString('en-US', { timeZone: tz }));
+      const diff = (local - utc) / 60000;
+      const sign = diff >= 0 ? '+' : '-';
+      const abs = Math.abs(diff);
+      const oh = Math.floor(abs / 60);
+      const om = abs % 60;
+      return `UTC${sign}${pad(oh)}:${pad(om)}`;
+    } catch(e) { return 'UTC'; }
+  }
+
+  function dayProgress(h, m, s) {
+    return ((h * 3600 + m * 60 + s) / 86400) * 100;
+  }
+
+  // ── Analog clock SVG ──────────────────────────────────────────────────────
+  function buildAnalogSVG(h, m, s, period) {
+    const cx = 55, cy = 55, r = 50;
+    const secAngle  = (s / 60) * 360 - 90;
+    const minAngle  = ((m + s/60) / 60) * 360 - 90;
+    const hrAngle   = (((h % 12) + m/60) / 12) * 360 - 90;
+
+    function polar(angle, len) {
+      const rad = angle * Math.PI / 180;
+      return [cx + Math.cos(rad) * len, cy + Math.sin(rad) * len];
+    }
+
+    const [hx, hy] = polar(hrAngle, 28);
+    const [mx, my] = polar(minAngle, 38);
+    const [sx, sy] = polar(secAngle, 42);
+
+    // Colors by period
+    const colors = {
+      night:     { face:'rgba(40,35,80,0.6)',  ring:'#5050cc', hr:'#9090ff', min:'#7070dd', sec:'#ff6680', tick:'rgba(150,140,255,0.5)' },
+      dawn:      { face:'rgba(60,20,80,0.6)',  ring:'#9933cc', hr:'#cc88ff', min:'#aa66dd', sec:'#ffaa33', tick:'rgba(200,130,255,0.5)' },
+      morning:   { face:'rgba(10,30,60,0.6)',  ring:'#2266cc', hr:'#66aaff', min:'#4488ee', sec:'#ffcc33', tick:'rgba(100,180,255,0.5)' },
+      afternoon: { face:'rgba(10,40,25,0.6)',  ring:'#228844', hr:'#55cc88', min:'#44aa66', sec:'#ffee44', tick:'rgba(80,210,140,0.5)' },
+      golden:    { face:'rgba(50,30,5,0.6)',   ring:'#cc8800', hr:'#ffcc44', min:'#ddaa33', sec:'#ff6644', tick:'rgba(255,200,80,0.5)' },
+      evening:   { face:'rgba(50,10,10,0.6)',  ring:'#cc3300', hr:'#ff8866', min:'#dd6644', sec:'#ffee44', tick:'rgba(255,130,100,0.5)' },
+      dusk:      { face:'rgba(40,10,50,0.6)',  ring:'#882299', hr:'#cc55dd', min:'#aa33bb', sec:'#ff88aa', tick:'rgba(200,100,220,0.5)' },
+    };
+    const c = colors[period.cls] || colors.night;
+
+    // Hour ticks
+    let ticks = '';
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * 360 - 90;
+      const [x1, y1] = polar(a, 44);
+      const [x2, y2] = polar(a, 48);
+      ticks += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${c.tick}" stroke-width="${i%3===0?2:1}" />`;
+    }
+
+    return `<svg viewBox="0 0 110 110" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="${c.face}" stroke="${c.ring}" stroke-width="2.5"/>
+      ${ticks}
+      <line x1="${cx}" y1="${cy}" x2="${hx.toFixed(1)}" y2="${hy.toFixed(1)}" stroke="${c.hr}" stroke-width="4" stroke-linecap="round"/>
+      <line x1="${cx}" y1="${cy}" x2="${mx.toFixed(1)}" y2="${my.toFixed(1)}" stroke="${c.min}" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="${cx}" y1="${cy}" x2="${sx.toFixed(1)}" y2="${sy.toFixed(1)}" stroke="${c.sec}" stroke-width="1.5" stroke-linecap="round"/>
+      <circle cx="${cx}" cy="${cy}" r="3.5" fill="${c.sec}"/>
+    </svg>`;
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  function renderClocks() {
+    const grid = document.getElementById('clocks-grid');
+
+    if (selectedCities.length === 0) {
+      grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
+        <div class="empty-icon">🌐</div>
+        <h2>No cities added yet</h2>
+        <p>Search for a city above to get started</p>
+      </div>`;
+      return;
+    }
+
+    // Build or update cards
+    // Track existing cards
+    const existingCards = {};
+    grid.querySelectorAll('.clock-card').forEach(el => {
+      existingCards[el.dataset.tz + '_' + el.dataset.city] = el;
+    });
+
+    // Remove cards not in selectedCities
+    const currentKeys = new Set(selectedCities.map(c => c.tz+'_'+c.name));
+    Object.keys(existingCards).forEach(k => {
+      if (!currentKeys.has(k)) existingCards[k].remove();
+    });
+
+    // Add/update cards
+    selectedCities.forEach((city, idx) => {
+      const key = city.tz+'_'+city.name;
+      const t = getTimeInTz(city.tz);
+      const period = getPeriod(t.h);
+      const { time, ampm } = formatDigital(t.h, t.m, t.s);
+      const dateStr = formatDate(t.yr, t.mo, t.da);
+      const utcOff = getUTCOffset(city.tz);
+      const prog = dayProgress(t.h, t.m, t.s);
+      const analogSVG = buildAnalogSVG(t.h, t.m, t.s, period);
+
+      let card = existingCards[key];
+
+      if (!card) {
+        // Create new card
+        card = document.createElement('div');
+        card.className = `clock-card ${period.cls}`;
+        card.dataset.tz = city.tz;
+        card.dataset.city = city.name;
+        card.innerHTML = buildCardHTML(city, period, time, ampm, dateStr, utcOff, prog, analogSVG);
+        // Insert at correct position
+        const children = Array.from(grid.children).filter(el => el.classList.contains('clock-card'));
+        if (idx >= children.length) {
+          grid.appendChild(card);
+        } else {
+          grid.insertBefore(card, children[idx]);
+        }
+      } else {
+        // Update existing card
+        card.className = `clock-card ${period.cls}`;
+        card.querySelector('.city-period').textContent = `${period.icon} ${period.name}`;
+        card.querySelector('.digital-time-val').textContent = time;
+        const ampEl = card.querySelector('.digital-ampm');
+        if (ampEl) ampEl.textContent = ampm;
+        card.querySelector('.digital-date').textContent = dateStr;
+        card.querySelector('.day-progress-fill').style.width = prog.toFixed(2)+'%';
+        card.querySelector('.analog-clock').innerHTML = analogSVG;
+      }
+    });
+  }
+
+  function buildCardHTML(city, period, time, ampm, dateStr, utcOff, prog, analogSVG) {
+    return `
+      <div class="card-header">
+        <div class="city-info">
+          <div class="city-period">${period.icon} ${period.name}</div>
+          <div class="city-name">${city.name}</div>
+          <div class="city-country">${city.flag} ${city.country}</div>
+        </div>
+        <button class="remove-btn" onclick="removeCity('${city.name}','${city.tz}')" title="Remove">✕</button>
+      </div>
+      <div class="analog-wrap">
+        <div class="analog-clock">${analogSVG}</div>
+      </div>
+      <div class="digital-time">
+        <span class="digital-time-val">${time}</span><span class="digital-ampm">${ampm}</span>
+      </div>
+      <div class="digital-date">${dateStr}</div>
+      <div class="day-progress"><div class="day-progress-fill" style="width:${prog.toFixed(2)}%"></div></div>
+      <div class="utc-offset">${utcOff}</div>
+    `;
+  }
+
+  window.removeCity = function(name, tz) {
+    selectedCities = selectedCities.filter(c => !(c.name === name && c.tz === tz));
+    saveState();
+    renderClocks();
+  };
+
+  // ── Format toggle ─────────────────────────────────────────────────────────
+  document.getElementById('format-btn').addEventListener('click', () => {
+    use24h = !use24h;
+    document.getElementById('format-label').textContent = use24h ? '24h' : '12h';
+    document.getElementById('format-icon').textContent = use24h ? '🕛' : '🕐';
+    document.getElementById('format-btn').classList.toggle('active', use24h);
+    saveState();
+    renderClocks();
+  });
+
+  // ── Search / suggestions ──────────────────────────────────────────────────
+  const cityInput = document.getElementById('city-input');
+  const suggestionsEl = document.getElementById('suggestions');
+
+  function getSuggestions(query) {
+    if (!query.trim()) return [];
+    const q = query.toLowerCase();
+    return CITIES.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      c.country.toLowerCase().includes(q) ||
+      c.tz.toLowerCase().includes(q)
+    ).slice(0, 8);
+  }
+
+  function renderSuggestions(items) {
+    filteredSuggestions = items;
+    suggestionFocus = -1;
+    if (items.length === 0) {
+      suggestionsEl.style.display = 'none';
+      return;
+    }
+    suggestionsEl.innerHTML = items.map((c, i) => `
+      <div class="suggestion-item" data-idx="${i}">
+        <span class="suggestion-flag">${c.flag}</span>
+        <div class="suggestion-info">
+          <span class="suggestion-name">${c.name}</span>
+          <span class="suggestion-tz">${c.country} · ${c.tz}</span>
+        </div>
+      </div>
+    `).join('');
+    suggestionsEl.style.display = 'block';
+
+    suggestionsEl.querySelectorAll('.suggestion-item').forEach(el => {
+      el.addEventListener('click', () => {
+        const city = filteredSuggestions[+el.dataset.idx];
+        addCity(city);
+        cityInput.value = '';
+        suggestionsEl.style.display = 'none';
+      });
+    });
+  }
+
+  cityInput.addEventListener('input', () => {
+    renderSuggestions(getSuggestions(cityInput.value));
+  });
+
+  cityInput.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      suggestionFocus = Math.min(suggestionFocus + 1, filteredSuggestions.length - 1);
+      updateFocus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      suggestionFocus = Math.max(suggestionFocus - 1, 0);
+      updateFocus();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (suggestionFocus >= 0 && filteredSuggestions[suggestionFocus]) {
+        addCity(filteredSuggestions[suggestionFocus]);
+      } else if (filteredSuggestions.length > 0) {
+        addCity(filteredSuggestions[0]);
+      }
+      cityInput.value = '';
+      suggestionsEl.style.display = 'none';
+    } else if (e.key === 'Escape') {
+      suggestionsEl.style.display = 'none';
+    }
+  });
+
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.search-wrap')) {
+      suggestionsEl.style.display = 'none';
+    }
+  });
+
+  function updateFocus() {
+    suggestionsEl.querySelectorAll('.suggestion-item').forEach((el, i) => {
+      el.classList.toggle('focused', i === suggestionFocus);
+    });
+  }
+
+  function addCity(city) {
+    if (selectedCities.find(c => c.name === city.name && c.tz === city.tz)) return;
+    selectedCities.push(city);
+    saveState();
+    renderClocks();
+  }
+
+  document.getElementById('add-btn').addEventListener('click', () => {
+    if (filteredSuggestions.length > 0) {
+      addCity(filteredSuggestions[suggestionFocus >= 0 ? suggestionFocus : 0]);
+      cityInput.value = '';
+      suggestionsEl.style.display = 'none';
+    } else if (cityInput.value.trim()) {
+      const found = CITIES.find(c => c.name.toLowerCase() === cityInput.value.toLowerCase().trim());
+      if (found) { addCity(found); cityInput.value = ''; }
+    }
+  });
+
+  // ── Starfield canvas ──────────────────────────────────────────────────────
+  (function() {
+    const canvas = document.getElementById('stars-canvas');
+    const ctx = canvas.getContext('2d');
+    let stars = [];
+    let W, H;
+
+    function resize() {
+      W = canvas.width = window.innerWidth;
+      H = canvas.height = window.innerHeight;
+    }
+
+    function initStars() {
+      stars = [];
+      const count = Math.floor((W * H) / 3500);
+      for (let i = 0; i < count; i++) {
+        stars.push({
+          x: Math.random() * W,
+          y: Math.random() * H,
+          r: Math.random() * 1.2 + 0.2,
+          a: Math.random(),
+          speed: Math.random() * 0.003 + 0.001,
+          phase: Math.random() * Math.PI * 2
+        });
+      }
+    }
+
+    let frame = 0;
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+      frame++;
+      for (const s of stars) {
+        const alpha = s.a * (0.4 + 0.6 * Math.sin(frame * s.speed + s.phase));
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(200,200,255,${alpha.toFixed(3)})`;
+        ctx.fill();
+      }
+      requestAnimationFrame(draw);
+    }
+
+    window.addEventListener('resize', () => { resize(); initStars(); });
+    resize();
+    initStars();
+    draw();
+  })();
+
+  // ── Main loop ─────────────────────────────────────────────────────────────
+  loadState();
+  renderClocks();
+
+  // Update every second
+  setInterval(renderClocks, 1000);
+
+  // Restore format btn state
+  if (use24h) {
+    document.getElementById('format-label').textContent = '24h';
+    document.getElementById('format-icon').textContent = '🕛';
+    document.getElementById('format-btn').classList.add('active');
+  }
+  </script>
+</body>
+</html>

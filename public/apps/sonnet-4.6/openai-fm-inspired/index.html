@@ -1,0 +1,1432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AudioGen — AI Voice Synthesis</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0a;
+      --surface: #111111;
+      --surface2: #1a1a1a;
+      --border: #222222;
+      --border2: #2a2a2a;
+      --text: #f5f5f5;
+      --text-muted: #888888;
+      --text-dim: #555555;
+      --accent: #10a37f;
+      --accent-glow: rgba(16, 163, 127, 0.15);
+      --accent2: #7b5ea7;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      overflow-x: hidden;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+    /* ── Layout ── */
+    .app {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 32px;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: rgba(10,10,10,0.92);
+      backdrop-filter: blur(12px);
+      z-index: 100;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+    }
+
+    .logo-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .logo-icon svg { width: 16px; height: 16px; fill: #fff; }
+
+    .header-nav {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-btn {
+      background: none;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .nav-btn:hover { color: var(--text); background: var(--surface2); border-color: var(--border2); }
+    .nav-btn.active { color: var(--text); background: var(--surface2); border-color: var(--border2); }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 7px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: inherit;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-primary:hover { filter: brightness(1.1); }
+
+    /* ── Main ── */
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      height: calc(100vh - 61px);
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .sidebar-section {
+      padding: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+
+    /* Voice cards */
+    .voice-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .voice-card {
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 10px;
+      padding: 10px;
+      cursor: pointer;
+      transition: all 0.15s;
+      position: relative;
+      overflow: hidden;
+    }
+    .voice-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: var(--accent-glow);
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .voice-card:hover { border-color: var(--border); }
+    .voice-card:hover::before { opacity: 0.5; }
+    .voice-card.selected { border-color: var(--accent); }
+    .voice-card.selected::before { opacity: 1; }
+
+    .voice-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .voice-name {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text);
+      line-height: 1.3;
+    }
+
+    .voice-tag {
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    /* Sliders */
+    .slider-row {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .slider-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .slider-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .slider-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .slider-value {
+      font-size: 12px;
+      color: var(--text);
+      font-weight: 500;
+      min-width: 28px;
+      text-align: right;
+    }
+
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--border2);
+      outline: none;
+      cursor: pointer;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 0 0 3px rgba(16,163,127,0.2);
+      transition: box-shadow 0.15s;
+    }
+    input[type=range]:hover::-webkit-slider-thumb {
+      box-shadow: 0 0 0 5px rgba(16,163,127,0.3);
+    }
+
+    /* Emotion tags */
+    .tag-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .tag {
+      padding: 4px 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 20px;
+      font-size: 11px;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: inherit;
+    }
+    .tag:hover { color: var(--text); border-color: var(--border); }
+    .tag.active { background: var(--accent-glow); border-color: var(--accent); color: var(--accent); }
+
+    /* Format selector */
+    .format-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+    }
+
+    .format-btn {
+      padding: 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 7px;
+      font-size: 11px;
+      color: var(--text-muted);
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s;
+      font-family: inherit;
+    }
+    .format-btn:hover { color: var(--text); border-color: var(--border); }
+    .format-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+
+    /* ── Main Panel ── */
+    .panel {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Text area section */
+    .text-section {
+      flex: 1;
+      padding: 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      overflow-y: auto;
+    }
+
+    .text-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .text-title {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+    }
+
+    .char-count {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    .char-count.warn { color: var(--yellow); }
+    .char-count.error { color: var(--red); }
+
+    .textarea-wrap {
+      position: relative;
+      flex: 1;
+    }
+
+    textarea {
+      width: 100%;
+      height: 100%;
+      min-height: 200px;
+      background: var(--surface);
+      border: 1px solid var(--border2);
+      border-radius: 12px;
+      padding: 18px 20px;
+      color: var(--text);
+      font-size: 15px;
+      font-family: 'Inter', sans-serif;
+      line-height: 1.7;
+      resize: none;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+    textarea::placeholder { color: var(--text-dim); }
+
+    .quick-prompts {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .prompt-chip {
+      padding: 6px 12px;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 20px;
+      font-size: 12px;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: inherit;
+    }
+    .prompt-chip:hover { color: var(--text); border-color: var(--accent); background: var(--accent-glow); }
+
+    /* ── Generate Bar ── */
+    .generate-bar {
+      border-top: 1px solid var(--border);
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: rgba(10,10,10,0.8);
+      backdrop-filter: blur(8px);
+    }
+
+    .generate-btn {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 11px 22px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+    .generate-btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to right, transparent, rgba(255,255,255,0.08), transparent);
+      transform: translateX(-100%);
+      transition: transform 0.6s;
+    }
+    .generate-btn:hover { filter: brightness(1.1); transform: translateY(-1px); box-shadow: 0 8px 24px rgba(16,163,127,0.3); }
+    .generate-btn:hover::after { transform: translateX(100%); }
+    .generate-btn:active { transform: translateY(0); }
+    .generate-btn.loading { pointer-events: none; }
+    .generate-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+    .model-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 12px;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .model-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .credits {
+      margin-left: auto;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    .credits span { color: var(--text-muted); }
+
+    /* ── Audio Player ── */
+    .audio-section {
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+      transition: all 0.3s ease;
+      overflow: hidden;
+      max-height: 0;
+    }
+    .audio-section.visible { max-height: 200px; }
+
+    .audio-inner {
+      padding: 24px 32px;
+    }
+
+    .player-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .play-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: all 0.15s;
+      color: #fff;
+    }
+    .play-btn:hover { filter: brightness(1.15); transform: scale(1.05); }
+    .play-btn svg { width: 16px; height: 16px; }
+
+    .waveform-container {
+      flex: 1;
+      height: 42px;
+      position: relative;
+      cursor: pointer;
+    }
+
+    #waveformCanvas {
+      width: 100%;
+      height: 100%;
+      border-radius: 4px;
+    }
+
+    .time-display {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+      min-width: 64px;
+      text-align: right;
+    }
+
+    .audio-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .icon-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 7px;
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+    .icon-btn:hover { color: var(--text); border-color: var(--border); }
+    .icon-btn svg { width: 14px; height: 14px; }
+
+    /* ── History ── */
+    .history-section {
+      padding: 20px;
+      border-top: 1px solid var(--border);
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .history-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.1s;
+      margin-bottom: 4px;
+    }
+    .history-item:hover { background: var(--surface2); }
+
+    .history-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: var(--border2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      color: var(--text-muted);
+    }
+    .history-icon svg { width: 12px; height: 12px; }
+
+    .history-text {
+      font-size: 12px;
+      color: var(--text-muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      line-height: 1.6;
+    }
+
+    .history-meta {
+      font-size: 10px;
+      color: var(--text-dim);
+      margin-top: 2px;
+    }
+
+    /* ── Waveform animation ── */
+    .spinner-ring {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--surface2);
+      border: 1px solid var(--border2);
+      color: var(--text);
+      padding: 10px 18px;
+      border-radius: 10px;
+      font-size: 13px;
+      z-index: 999;
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+    .toast-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+
+    /* ── Shimmer ── */
+    @keyframes shimmer {
+      0% { background-position: -400px 0; }
+      100% { background-position: 400px 0; }
+    }
+    .shimmer {
+      background: linear-gradient(90deg, var(--surface2) 25%, var(--border2) 50%, var(--surface2) 75%);
+      background-size: 400px 100%;
+      animation: shimmer 1.4s infinite;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      main { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      header { padding: 14px 20px; }
+      .text-section { padding: 20px; }
+      .generate-bar { padding: 16px 20px; }
+    }
+
+    /* ── Visualizer bars ── */
+    .bars-container {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      height: 28px;
+    }
+
+    .bar {
+      width: 3px;
+      border-radius: 2px;
+      background: var(--accent);
+      transform-origin: center bottom;
+    }
+
+    /* Selection state glow */
+    .voice-card.selected .voice-name { color: var(--accent); }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 16 16"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 2a1.5 1.5 0 110 3 1.5 1.5 0 010-3zm0 10.5c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08s5.97 1.09 6 3.08c-1.29 1.94-3.5 3.22-6 3.22z"/></svg>
+      </div>
+      AudioGen
+    </div>
+    <nav class="header-nav">
+      <button class="nav-btn active">Synthesize</button>
+      <button class="nav-btn">API</button>
+      <button class="nav-btn">Docs</button>
+      <button class="btn-primary">Sign in</button>
+    </nav>
+  </header>
+
+  <!-- Main -->
+  <main>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+
+      <!-- Voice selection -->
+      <div class="sidebar-section">
+        <div class="section-label">Voice</div>
+        <div class="voice-grid" id="voiceGrid">
+          <!-- populated by JS -->
+        </div>
+      </div>
+
+      <!-- Tone/Emotion -->
+      <div class="sidebar-section">
+        <div class="section-label">Tone</div>
+        <div class="tag-grid" id="toneGrid">
+          <!-- populated by JS -->
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="sidebar-section">
+        <div class="section-label">Controls</div>
+        <div class="slider-row">
+          <div class="slider-item">
+            <div class="slider-header">
+              <span class="slider-label">Speed</span>
+              <span class="slider-value" id="speedVal">1.0x</span>
+            </div>
+            <input type="range" id="speedSlider" min="50" max="200" value="100">
+          </div>
+          <div class="slider-item">
+            <div class="slider-header">
+              <span class="slider-label">Pitch</span>
+              <span class="slider-value" id="pitchVal">0</span>
+            </div>
+            <input type="range" id="pitchSlider" min="-12" max="12" value="0">
+          </div>
+          <div class="slider-item">
+            <div class="slider-header">
+              <span class="slider-label">Stability</span>
+              <span class="slider-value" id="stabVal">75%</span>
+            </div>
+            <input type="range" id="stabSlider" min="0" max="100" value="75">
+          </div>
+        </div>
+      </div>
+
+      <!-- Format -->
+      <div class="sidebar-section">
+        <div class="section-label">Output Format</div>
+        <div class="format-row" id="formatRow">
+          <button class="format-btn active" data-fmt="mp3">MP3</button>
+          <button class="format-btn" data-fmt="wav">WAV</button>
+          <button class="format-btn" data-fmt="opus">Opus</button>
+          <button class="format-btn" data-fmt="aac">AAC</button>
+          <button class="format-btn" data-fmt="flac">FLAC</button>
+          <button class="format-btn" data-fmt="pcm">PCM</button>
+        </div>
+      </div>
+
+      <!-- History -->
+      <div class="history-section">
+        <div class="section-label">Recent</div>
+        <div id="historyList">
+          <!-- populated by JS -->
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- Main Panel -->
+    <div class="panel">
+
+      <!-- Text Input Area -->
+      <div class="text-section">
+        <div class="text-header">
+          <div class="text-title">Text to Speech</div>
+          <div class="char-count" id="charCount">0 / 4096</div>
+        </div>
+
+        <div class="textarea-wrap">
+          <textarea
+            id="textInput"
+            placeholder="Type or paste text here to generate speech…"
+            maxlength="4096"
+            spellcheck="true"
+          ></textarea>
+        </div>
+
+        <div>
+          <div class="section-label" style="margin-bottom:10px">Quick Prompts</div>
+          <div class="quick-prompts" id="promptChips">
+            <!-- populated by JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Audio Player (hidden until generated) -->
+      <div class="audio-section" id="audioSection">
+        <div class="audio-inner">
+          <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;font-weight:600;" id="audioLabel">Latest Generation</div>
+          <div class="player-row">
+            <button class="play-btn" id="playBtn">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <div class="waveform-container" id="waveformContainer">
+              <canvas id="waveformCanvas"></canvas>
+            </div>
+            <div class="time-display" id="timeDisplay">0:00 / 0:00</div>
+            <div class="audio-actions">
+              <button class="icon-btn" title="Download" id="downloadBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+              </button>
+              <button class="icon-btn" title="Copy link" id="copyBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+              </button>
+              <button class="icon-btn" title="Regenerate" id="regenBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Generate Bar -->
+      <div class="generate-bar">
+        <button class="generate-btn" id="generateBtn">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 110 20A10 10 0 0112 2zm-2 14.5l6.5-4.5-6.5-4.5v9z"/></svg>
+          Generate Speech
+        </button>
+        <div class="model-badge">
+          <div class="model-dot"></div>
+          tts-1-hd
+        </div>
+        <div class="credits">Credits: <span>∞</span></div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast">
+  <div class="toast-dot"></div>
+  <span id="toastMsg">Copied to clipboard</span>
+</div>
+
+<script>
+// ── Data ──────────────────────────────────────────────────────────────────────
+
+const VOICES = [
+  { id: 'alloy',   name: 'Alloy',   tag: 'Neutral',     color: '#6366f1', emoji: 'A' },
+  { id: 'echo',    name: 'Echo',    tag: 'Warm',        color: '#f59e0b', emoji: 'E' },
+  { id: 'fable',   name: 'Fable',   tag: 'Expressive',  color: '#ec4899', emoji: 'F' },
+  { id: 'onyx',    name: 'Onyx',    tag: 'Deep',        color: '#3b82f6', emoji: 'O' },
+  { id: 'nova',    name: 'Nova',    tag: 'Bright',      color: '#10b981', emoji: 'N' },
+  { id: 'shimmer', name: 'Shimmer', tag: 'Clear',       color: '#8b5cf6', emoji: 'S' },
+];
+
+const TONES = ['Friendly','Professional','Excited','Calm','Serious','Playful','Authoritative','Conversational'];
+
+const QUICK_PROMPTS = [
+  'The quick brown fox jumps over the lazy dog.',
+  'Welcome to our platform. We\'re excited to have you here.',
+  'Breaking news: Scientists discover new species in the Amazon rainforest.',
+  'Once upon a time, in a land far away, there lived a curious inventor.',
+  'Your package has shipped and will arrive in 2-3 business days.',
+  'In today\'s tutorial, we\'ll learn how to build a neural network from scratch.',
+];
+
+const HISTORY_SAMPLES = [
+  { text: 'The quick brown fox jumps...', voice: 'Alloy', time: '2m ago' },
+  { text: 'Welcome to our platform...', voice: 'Nova',  time: '14m ago' },
+  { text: 'Breaking news: Scientists...', voice: 'Onyx', time: '1h ago' },
+];
+
+// ── State ─────────────────────────────────────────────────────────────────────
+
+let selectedVoice = 'alloy';
+let selectedTone  = 'Friendly';
+let selectedFmt   = 'mp3';
+let audioCtx      = null;
+let audioBuffer   = null;
+let sourceNode    = null;
+let isPlaying     = false;
+let playStart     = 0;
+let playOffset    = 0;
+let animFrame     = null;
+
+// ── Init UI ───────────────────────────────────────────────────────────────────
+
+function initVoices() {
+  const grid = document.getElementById('voiceGrid');
+  VOICES.forEach(v => {
+    const card = document.createElement('div');
+    card.className = 'voice-card' + (v.id === selectedVoice ? ' selected' : '');
+    card.dataset.id = v.id;
+    card.innerHTML = `
+      <div class="voice-avatar" style="background:${v.color}">${v.emoji}</div>
+      <div class="voice-name">${v.name}</div>
+      <div class="voice-tag">${v.tag}</div>
+    `;
+    card.addEventListener('click', () => selectVoice(v.id));
+    grid.appendChild(card);
+  });
+}
+
+function selectVoice(id) {
+  selectedVoice = id;
+  document.querySelectorAll('.voice-card').forEach(c => {
+    c.classList.toggle('selected', c.dataset.id === id);
+  });
+}
+
+function initTones() {
+  const grid = document.getElementById('toneGrid');
+  TONES.forEach(t => {
+    const btn = document.createElement('button');
+    btn.className = 'tag' + (t === selectedTone ? ' active' : '');
+    btn.textContent = t;
+    btn.addEventListener('click', () => {
+      selectedTone = t;
+      document.querySelectorAll('#toneGrid .tag').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+    grid.appendChild(btn);
+  });
+}
+
+function initSliders() {
+  const speed = document.getElementById('speedSlider');
+  const pitch  = document.getElementById('pitchSlider');
+  const stab   = document.getElementById('stabSlider');
+
+  speed.addEventListener('input', () => {
+    document.getElementById('speedVal').textContent = (speed.value / 100).toFixed(1) + 'x';
+    updateSliderTrack(speed);
+  });
+  pitch.addEventListener('input', () => {
+    const v = parseInt(pitch.value);
+    document.getElementById('pitchVal').textContent = (v > 0 ? '+' : '') + v;
+    updateSliderTrack(pitch);
+  });
+  stab.addEventListener('input', () => {
+    document.getElementById('stabVal').textContent = stab.value + '%';
+    updateSliderTrack(stab);
+  });
+
+  [speed, pitch, stab].forEach(updateSliderTrack);
+}
+
+function updateSliderTrack(input) {
+  const min = parseFloat(input.min);
+  const max = parseFloat(input.max);
+  const val = parseFloat(input.value);
+  const pct = ((val - min) / (max - min)) * 100;
+  input.style.background = `linear-gradient(to right, var(--accent) ${pct}%, var(--border2) ${pct}%)`;
+}
+
+function initFormats() {
+  document.querySelectorAll('.format-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectedFmt = btn.dataset.fmt;
+      document.querySelectorAll('.format-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+}
+
+function initPromptChips() {
+  const container = document.getElementById('promptChips');
+  QUICK_PROMPTS.forEach(p => {
+    const chip = document.createElement('button');
+    chip.className = 'prompt-chip';
+    chip.textContent = p.length > 42 ? p.slice(0, 42) + '…' : p;
+    chip.title = p;
+    chip.addEventListener('click', () => {
+      document.getElementById('textInput').value = p;
+      updateCharCount();
+    });
+    container.appendChild(chip);
+  });
+}
+
+function initHistory() {
+  const list = document.getElementById('historyList');
+  HISTORY_SAMPLES.forEach(item => {
+    const el = document.createElement('div');
+    el.className = 'history-item';
+    el.innerHTML = `
+      <div class="history-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></div>
+      <div>
+        <div class="history-text">${item.text}</div>
+        <div class="history-meta">${item.voice} · ${item.time}</div>
+      </div>
+    `;
+    el.addEventListener('click', () => {
+      document.getElementById('textInput').value = item.text.replace(/…$/, '');
+      selectVoice(item.voice.toLowerCase());
+      updateCharCount();
+      showToast('Loaded from history');
+    });
+    list.appendChild(el);
+  });
+}
+
+function updateCharCount() {
+  const text = document.getElementById('textInput').value;
+  const el = document.getElementById('charCount');
+  el.textContent = `${text.length} / 4096`;
+  el.className = 'char-count' + (text.length > 3800 ? ' warn' : '') + (text.length > 4000 ? ' error' : '');
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+
+let toastTimeout;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  document.getElementById('toastMsg').textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ── Audio Engine ──────────────────────────────────────────────────────────────
+
+function getOrCreateAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+// Generate a rich, voice-like audio buffer using oscillators and modulation
+async function generateSyntheticAudio(text, voiceId) {
+  const ctx = getOrCreateAudioCtx();
+  const voice = VOICES.find(v => v.id === voiceId) || VOICES[0];
+
+  // Voice frequency map
+  const freqMap = { alloy: 180, echo: 210, fable: 250, onyx: 110, nova: 280, shimmer: 320 };
+  const baseFreq = freqMap[voiceId] || 180;
+  const speed = parseFloat(document.getElementById('speedSlider').value) / 100;
+
+  // Calculate duration based on text length and speed
+  const wordsPerSecond = 2.5 * speed;
+  const words = text.trim().split(/\s+/).length;
+  const duration = Math.max(1.5, Math.min(30, words / wordsPerSecond));
+
+  const sampleRate = ctx.sampleRate;
+  const frameCount = Math.floor(sampleRate * duration);
+  const buffer = ctx.createBuffer(1, frameCount, sampleRate);
+  const data = buffer.getChannelData(0);
+
+  // Simulate speech with phoneme-like patterns
+  const sentences = text.split(/[.!?]+/).filter(s => s.trim());
+  const numSentences = Math.max(1, sentences.length);
+
+  for (let i = 0; i < frameCount; i++) {
+    const t = i / sampleRate;
+    const progress = t / duration;
+
+    // Sentence-level pitch curve (intonation)
+    const sentenceIdx = Math.floor(progress * numSentences);
+    const sentenceProgress = (progress * numSentences) % 1;
+    const intonation = sentenceIdx < numSentences - 1
+      ? Math.sin(sentenceProgress * Math.PI) * 0.15
+      : sentenceProgress < 0.7 ? sentenceProgress * 0.2 : (1 - sentenceProgress) * 0.6;
+
+    const freq = baseFreq * (1 + intonation);
+
+    // Word-level amplitude (simulates syllable rhythm)
+    const syllableRate = 4.5 * speed;
+    const syllableAmp = 0.5 + 0.5 * Math.abs(Math.sin(t * syllableRate * Math.PI));
+
+    // Voiced sound: mix of fundamental + harmonics
+    let sample = 0;
+    sample += Math.sin(2 * Math.PI * freq * t) * 0.4;
+    sample += Math.sin(2 * Math.PI * freq * 2 * t) * 0.2;
+    sample += Math.sin(2 * Math.PI * freq * 3 * t) * 0.12;
+    sample += Math.sin(2 * Math.PI * freq * 4 * t) * 0.06;
+    sample += Math.sin(2 * Math.PI * freq * 5 * t) * 0.03;
+
+    // Add subtle breathiness/noise
+    sample += (Math.random() * 2 - 1) * 0.04;
+
+    // Formant-like filtering (vocal tract resonance)
+    const f1 = 700 + 300 * Math.sin(t * 1.7);
+    const f2 = 1200 + 400 * Math.cos(t * 2.3);
+    sample += Math.sin(2 * Math.PI * f1 * t) * 0.05 * syllableAmp;
+    sample += Math.sin(2 * Math.PI * f2 * t) * 0.03 * syllableAmp;
+
+    // Pauses between "words"
+    const wordPause = Math.sin(t * syllableRate * Math.PI * 1.3);
+    const pauseFactor = wordPause < -0.85 ? 0.1 : 1.0;
+
+    // Envelope: fade in/out
+    const envelope = Math.min(1, t * 12) * Math.min(1, (duration - t) * 8);
+
+    data[i] = sample * syllableAmp * pauseFactor * envelope * 0.35;
+  }
+
+  return { buffer, duration };
+}
+
+// ── Canvas Waveform Renderer ──────────────────────────────────────────────────
+
+function drawWaveform(buffer, progress = 0) {
+  const canvas = document.getElementById('waveformCanvas');
+  const container = document.getElementById('waveformContainer');
+  const dpr = window.devicePixelRatio || 1;
+  const w = container.offsetWidth;
+  const h = container.offsetHeight;
+
+  canvas.width  = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width  = w + 'px';
+  canvas.style.height = h + 'px';
+
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const data = buffer.getChannelData(0);
+  const step = Math.ceil(data.length / w);
+  const mid = h / 2;
+  const barW = 2;
+  const gap = 1;
+
+  ctx.clearRect(0, 0, w, h);
+
+  const numBars = Math.floor(w / (barW + gap));
+
+  for (let i = 0; i < numBars; i++) {
+    const x = i * (barW + gap);
+    const dataIdx = Math.floor((i / numBars) * data.length);
+    let max = 0;
+    for (let j = 0; j < step; j++) {
+      const abs = Math.abs(data[Math.min(dataIdx + j, data.length - 1)]);
+      if (abs > max) max = abs;
+    }
+    const barH = Math.max(2, max * h * 1.8);
+    const played = (i / numBars) <= progress;
+
+    ctx.fillStyle = played ? '#10a37f' : '#2a2a2a';
+    ctx.beginPath();
+    ctx.roundRect(x, mid - barH / 2, barW, barH, 1);
+    ctx.fill();
+  }
+}
+
+function drawLoadingWave() {
+  const canvas = document.getElementById('waveformCanvas');
+  const container = document.getElementById('waveformContainer');
+  const dpr = window.devicePixelRatio || 1;
+  const w = container.offsetWidth;
+  const h = container.offsetHeight;
+
+  canvas.width  = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width  = w + 'px';
+  canvas.style.height = h + 'px';
+
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  let frame = 0;
+  function animate() {
+    ctx.clearRect(0, 0, w, h);
+    const numBars = Math.floor(w / 3);
+    const mid = h / 2;
+    for (let i = 0; i < numBars; i++) {
+      const x = i * 3;
+      const amp = 0.15 + 0.35 * Math.abs(Math.sin((i * 0.15) + frame * 0.08));
+      const barH = Math.max(2, amp * h);
+      ctx.fillStyle = `rgba(16,163,127,${0.3 + amp * 0.7})`;
+      ctx.beginPath();
+      ctx.roundRect(x, mid - barH / 2, 2, barH, 1);
+      ctx.fill();
+    }
+    frame++;
+    animFrame = requestAnimationFrame(animate);
+  }
+  cancelAnimationFrame(animFrame);
+  animate();
+}
+
+// ── Playback ──────────────────────────────────────────────────────────────────
+
+function formatTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function startPlayback() {
+  if (!audioBuffer) return;
+  const ctx = getOrCreateAudioCtx();
+  if (ctx.state === 'suspended') ctx.resume();
+
+  stopPlayback();
+
+  sourceNode = ctx.createBufferSource();
+  sourceNode.buffer = audioBuffer;
+
+  // Apply pitch shift
+  const pitch = parseInt(document.getElementById('pitchSlider').value);
+  sourceNode.playbackRate.value = Math.pow(2, pitch / 12);
+
+  sourceNode.connect(ctx.destination);
+  playOffset = 0;
+  playStart  = ctx.currentTime;
+  sourceNode.start(0, playOffset);
+  isPlaying  = true;
+
+  // Update play button
+  document.getElementById('playBtn').innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+
+  sourceNode.onended = () => {
+    if (isPlaying) {
+      isPlaying  = false;
+      playOffset = 0;
+      document.getElementById('playBtn').innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`;
+      drawWaveform(audioBuffer, 0);
+      document.getElementById('timeDisplay').textContent = `0:00 / ${formatTime(audioBuffer.duration)}`;
+    }
+  };
+
+  // Animation loop
+  function tick() {
+    if (!isPlaying || !audioBuffer) return;
+    const ctx2 = getOrCreateAudioCtx();
+    const elapsed = ctx2.currentTime - playStart + playOffset;
+    const prog = Math.min(elapsed / audioBuffer.duration, 1);
+    drawWaveform(audioBuffer, prog);
+    document.getElementById('timeDisplay').textContent =
+      `${formatTime(elapsed)} / ${formatTime(audioBuffer.duration)}`;
+    if (prog < 1) animFrame = requestAnimationFrame(tick);
+  }
+  cancelAnimationFrame(animFrame);
+  tick();
+}
+
+function stopPlayback() {
+  if (sourceNode) {
+    try { sourceNode.stop(); } catch(e) {}
+    sourceNode = null;
+  }
+  isPlaying = false;
+  document.getElementById('playBtn').innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`;
+}
+
+function togglePlayback() {
+  if (isPlaying) {
+    const ctx = getOrCreateAudioCtx();
+    playOffset += ctx.currentTime - playStart;
+    stopPlayback();
+  } else {
+    startPlayback();
+  }
+}
+
+// Waveform click-to-seek
+document.getElementById('waveformContainer').addEventListener('click', e => {
+  if (!audioBuffer) return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  const pct = (e.clientX - rect.left) / rect.width;
+  const seekTime = pct * audioBuffer.duration;
+
+  if (isPlaying) stopPlayback();
+  playOffset = seekTime;
+  const ctx = getOrCreateAudioCtx();
+  if (ctx.state === 'suspended') ctx.resume();
+  sourceNode = ctx.createBufferSource();
+  sourceNode.buffer = audioBuffer;
+  const pitch = parseInt(document.getElementById('pitchSlider').value);
+  sourceNode.playbackRate.value = Math.pow(2, pitch / 12);
+  sourceNode.connect(ctx.destination);
+  playStart  = ctx.currentTime;
+  sourceNode.start(0, seekTime);
+  isPlaying  = true;
+  document.getElementById('playBtn').innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+
+  sourceNode.onended = () => {
+    if (isPlaying) {
+      isPlaying  = false;
+      playOffset = 0;
+      document.getElementById('playBtn').innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`;
+      drawWaveform(audioBuffer, 0);
+    }
+  };
+
+  function tick2() {
+    if (!isPlaying || !audioBuffer) return;
+    const ctx2 = getOrCreateAudioCtx();
+    const elapsed = ctx2.currentTime - playStart + playOffset;
+    const prog = Math.min(elapsed / audioBuffer.duration, 1);
+    drawWaveform(audioBuffer, prog);
+    document.getElementById('timeDisplay').textContent =
+      `${formatTime(elapsed)} / ${formatTime(audioBuffer.duration)}`;
+    if (prog < 1) animFrame = requestAnimationFrame(tick2);
+  }
+  cancelAnimationFrame(animFrame);
+  tick2();
+});
+
+document.getElementById('playBtn').addEventListener('click', togglePlayback);
+
+// ── Generate ──────────────────────────────────────────────────────────────────
+
+async function generate() {
+  const text = document.getElementById('textInput').value.trim();
+  if (!text) {
+    showToast('Please enter some text first');
+    document.getElementById('textInput').focus();
+    return;
+  }
+
+  const btn = document.getElementById('generateBtn');
+  btn.classList.add('loading');
+  btn.innerHTML = `<span class="spinner-ring"></span> Generating…`;
+
+  // Show audio section with loading animation
+  const section = document.getElementById('audioSection');
+  section.classList.add('visible');
+  stopPlayback();
+  drawLoadingWave();
+
+  try {
+    await new Promise(r => setTimeout(r, 800 + Math.random() * 600)); // Simulate API
+    const result = await generateSyntheticAudio(text, selectedVoice);
+    audioBuffer = result.buffer;
+
+    cancelAnimationFrame(animFrame);
+    drawWaveform(audioBuffer, 0);
+
+    const voice = VOICES.find(v => v.id === selectedVoice);
+    document.getElementById('audioLabel').textContent =
+      `${voice ? voice.name : 'Voice'} · ${selectedTone} · ${selectedFmt.toUpperCase()}`;
+    document.getElementById('timeDisplay').textContent =
+      `0:00 / ${formatTime(result.duration)}`;
+
+    // Add to history
+    addToHistory(text, voice ? voice.name : 'Voice');
+
+    showToast('Speech generated successfully');
+    startPlayback();
+  } catch (err) {
+    showToast('Generation failed — please try again');
+    console.error(err);
+  } finally {
+    btn.classList.remove('loading');
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 110 20A10 10 0 0112 2zm-2 14.5l6.5-4.5-6.5-4.5v9z"/></svg> Generate Speech`;
+  }
+}
+
+function addToHistory(text, voiceName) {
+  const list = document.getElementById('historyList');
+  const el = document.createElement('div');
+  el.className = 'history-item';
+  const short = text.length > 38 ? text.slice(0, 38) + '…' : text;
+  el.innerHTML = `
+    <div class="history-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></div>
+    <div>
+      <div class="history-text">${short}</div>
+      <div class="history-meta">${voiceName} · just now</div>
+    </div>
+  `;
+  el.addEventListener('click', () => {
+    document.getElementById('textInput').value = text;
+    updateCharCount();
+  });
+  list.insertBefore(el, list.firstChild);
+}
+
+// ── Download ──────────────────────────────────────────────────────────────────
+
+document.getElementById('downloadBtn').addEventListener('click', () => {
+  if (!audioBuffer) return;
+  const ctx = getOrCreateAudioCtx();
+  const offlineCtx = new OfflineAudioContext(1, audioBuffer.length, audioBuffer.sampleRate);
+  const src = offlineCtx.createBufferSource();
+  src.buffer = audioBuffer;
+  src.connect(offlineCtx.destination);
+  src.start();
+  offlineCtx.startRendering().then(rendered => {
+    const pcm = rendered.getChannelData(0);
+    const wav = encodeWAV(pcm, rendered.sampleRate);
+    const blob = new Blob([wav], { type: 'audio/wav' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `audiogen-${selectedVoice}-${Date.now()}.wav`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Download started');
+  });
+});
+
+function encodeWAV(samples, sampleRate) {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+  const writeString = (o, s) => { for (let i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeString(36, 'data');
+  view.setUint32(40, samples.length * 2, true);
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+  }
+  return buffer;
+}
+
+document.getElementById('copyBtn').addEventListener('click', () => {
+  const text = document.getElementById('textInput').value;
+  navigator.clipboard.writeText(text).then(() => showToast('Text copied to clipboard'));
+});
+
+document.getElementById('regenBtn').addEventListener('click', generate);
+document.getElementById('generateBtn').addEventListener('click', generate);
+
+// Keyboard shortcut
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    e.preventDefault();
+    generate();
+  }
+});
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+
+document.getElementById('textInput').addEventListener('input', updateCharCount);
+
+initVoices();
+initTones();
+initSliders();
+initFormats();
+initPromptChips();
+initHistory();
+updateCharCount();
+
+// Set a default example text
+document.getElementById('textInput').value = 'Welcome to AudioGen, your AI-powered text-to-speech synthesis platform. Choose a voice, adjust the tone and controls, then click Generate Speech to bring your words to life.';
+updateCharCount();
+</script>
+</body>
+</html>
