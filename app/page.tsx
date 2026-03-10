@@ -1,7 +1,7 @@
 export const dynamic = "force-static";
 import { loadApps } from "@/lib/code-examples";
 import { AppGridWithRouting } from "@/components/app-grid-with-routing";
-import { MODELS } from "@/lib/models";
+import { MODELS, MODELS_BY_PROVIDER } from "@/lib/models";
 import Link from "next/link";
 
 export default async function Home() {
@@ -48,15 +48,22 @@ export default async function Home() {
           </p>
 
           {/* Models */}
-          <div className="mt-8 mb-10 flex flex-wrap gap-2">
-            {MODELS.map((model) => (
-              <span
-                key={model.name}
-                className="inline-flex items-center gap-2 px-3 py-1.5 bg-neutral-100 rounded-full text-sm text-neutral-700"
-              >
-                <span className={`w-2 h-2 rounded-full ${model.color}`} />
-                {model.name}
-              </span>
+          <div className="mt-8 mb-10 flex flex-col gap-2">
+            {MODELS_BY_PROVIDER.map((group) => (
+              <div key={group.id} className="flex items-center gap-2">
+                <span className="text-xs text-neutral-400 w-20 shrink-0">{group.name}</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {group.models.map((model) => (
+                    <span
+                      key={model.id}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 bg-neutral-100 rounded-full text-sm text-neutral-700"
+                    >
+                      <span className={`w-2 h-2 rounded-full ${model.color}`} />
+                      {model.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
 
