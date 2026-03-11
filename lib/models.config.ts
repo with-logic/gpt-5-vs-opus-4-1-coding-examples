@@ -1,3 +1,16 @@
+export type Provider = "openai" | "anthropic" | "google";
+
+export interface ProviderConfig {
+  id: Provider;
+  name: string;
+}
+
+export const providers: ProviderConfig[] = [
+  { id: "openai", name: "OpenAI" },
+  { id: "anthropic", name: "Anthropic" },
+  { id: "google", name: "Google" },
+];
+
 export interface ModelConfig {
   /** Unique identifier used in URLs and file paths (e.g., "gpt-5.1") */
   id: string;
@@ -13,6 +26,9 @@ export interface ModelConfig {
 
   /** Tailwind CSS class for the model's color indicator */
   color: string;
+
+  /** Provider that owns this model */
+  provider: Provider;
 }
 
 export const models: ModelConfig[] = [
@@ -22,6 +38,7 @@ export const models: ModelConfig[] = [
     cli: "codex",
     model: "gpt-5",
     color: "bg-emerald-500",
+    provider: "openai",
   },
   {
     id: "gpt-5.1",
@@ -29,6 +46,7 @@ export const models: ModelConfig[] = [
     cli: "codex",
     model: "gpt-5.1",
     color: "bg-teal-500",
+    provider: "openai",
   },
     {
     id: "gpt-5.2",
@@ -36,13 +54,23 @@ export const models: ModelConfig[] = [
     cli: "codex",
     model: "gpt-5.2",
     color: "bg-cyan-500",
+    provider: "openai",
   },
   {
     id: "gpt-5.3-codex",
     name: "GPT-5.3 Codex",
     cli: "codex",
     model: "gpt-5.3-codex",
-    color: "bg-lime-500",
+    color: "bg-indigo-500",
+    provider: "openai",
+  },
+  {
+    id: "gpt-5.4",
+    name: "GPT-5.4",
+    cli: "codex",
+    model: "gpt-5.4",
+    color: "bg-sky-500",
+    provider: "openai",
   },
   {
     id: "opus-4.1",
@@ -50,6 +78,7 @@ export const models: ModelConfig[] = [
     cli: "claude",
     model: "claude-opus-4-1",
     color: "bg-amber-500",
+    provider: "anthropic",
   },
   {
     id: "opus-4.5",
@@ -57,6 +86,7 @@ export const models: ModelConfig[] = [
     cli: "claude",
     model: "claude-opus-4-5",
     color: "bg-orange-500",
+    provider: "anthropic",
   },
   {
     id: "opus-4.6",
@@ -64,6 +94,7 @@ export const models: ModelConfig[] = [
     cli: "claude",
     model: "claude-opus-4-6",
     color: "bg-red-500",
+    provider: "anthropic",
   },
   {
     id: "sonnet-4.5",
@@ -71,6 +102,23 @@ export const models: ModelConfig[] = [
     cli: "claude",
     model: "claude-sonnet-4-5",
     color: "bg-purple-500",
+    provider: "anthropic",
+  },
+  {
+    id: "sonnet-4.6",
+    name: "Sonnet 4.6",
+    cli: "claude",
+    model: "claude-sonnet-4-6",
+    color: "bg-violet-500",
+    provider: "anthropic",
+  },
+  {
+    id: "haiku-4.5",
+    name: "Haiku 4.5",
+    cli: "claude",
+    model: "claude-haiku-4-5",
+    color: "bg-rose-500",
+    provider: "anthropic",
   },
   {
     id: "gemini-3",
@@ -78,6 +126,7 @@ export const models: ModelConfig[] = [
     cli: "gemini",
     model: "gemini-3-pro-preview",
     color: "bg-blue-500",
+    provider: "google",
   },
   {
     id: "gemini-3-flash",
@@ -85,6 +134,7 @@ export const models: ModelConfig[] = [
     cli: "gemini",
     model: "gemini-3-flash-preview",
     color: "bg-yellow-500",
+    provider: "google",
   },
 ];
 

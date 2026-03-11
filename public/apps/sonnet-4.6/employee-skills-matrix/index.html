@@ -1,0 +1,1353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Employee Skills Matrix</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --primary: #4f46e5;
+      --primary-light: #818cf8;
+      --primary-dark: #3730a3;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --info: #3b82f6;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: #f1f5f9;
+      min-height: 100vh;
+    }
+
+    .glass {
+      background: rgba(255,255,255,0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.6);
+    }
+
+    .header-gradient {
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 50%, #a855f7 100%);
+    }
+
+    /* Proficiency badges */
+    .prof-0 { background: #f1f5f9; color: #94a3b8; border: 2px dashed #cbd5e1; }
+    .prof-1 { background: #fef3c7; color: #92400e; border: 2px solid #fcd34d; }
+    .prof-2 { background: #d1fae5; color: #065f46; border: 2px solid #34d399; }
+    .prof-3 { background: #dbeafe; color: #1e40af; border: 2px solid #60a5fa; }
+    .prof-4 { background: #ede9fe; color: #4c1d95; border: 2px solid #a78bfa; }
+
+    .skill-cell {
+      transition: all 0.15s ease;
+      cursor: pointer;
+      user-select: none;
+    }
+    .skill-cell:hover {
+      transform: scale(1.08);
+      z-index: 10;
+      position: relative;
+      box-shadow: 0 4px 16px rgba(79,70,229,0.2);
+    }
+
+    .matrix-table {
+      border-collapse: separate;
+      border-spacing: 0;
+    }
+
+    .matrix-table th,
+    .matrix-table td {
+      padding: 0;
+    }
+
+    .sticky-col {
+      position: sticky;
+      left: 0;
+      z-index: 5;
+      background: white;
+    }
+
+    .sticky-header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+
+    .sticky-corner {
+      position: sticky;
+      top: 0;
+      left: 0;
+      z-index: 25;
+    }
+
+    .progress-ring {
+      transition: stroke-dashoffset 0.5s ease;
+    }
+
+    .modal-overlay {
+      animation: fadeIn 0.15s ease;
+    }
+    .modal-content {
+      animation: slideUp 0.2s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(20px) scale(0.97); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .tab-active {
+      background: var(--primary);
+      color: white;
+    }
+
+    .sortable:hover { cursor: pointer; background: #f8fafc; }
+    .sortable:hover .sort-icon { opacity: 1; }
+    .sort-icon { opacity: 0.3; transition: opacity 0.15s; }
+
+    .coverage-bar {
+      transition: width 0.6s cubic-bezier(.4,0,.2,1);
+    }
+
+    .tooltip {
+      pointer-events: none;
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      height: 6px;
+      border-radius: 3px;
+      background: #e2e8f0;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #4f46e5;
+      cursor: pointer;
+      border: 2px solid white;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    }
+
+    .fade-in { animation: fadeIn 0.3s ease; }
+
+    @media (max-width: 768px) {
+      .hide-mobile { display: none !important; }
+    }
+
+    .dept-badge {
+      font-size: 0.7rem;
+      padding: 1px 7px;
+      border-radius: 999px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .skill-category-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  </style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<script>
+// ============================
+// DATA
+// ============================
+
+const DEPARTMENTS = {
+  eng: { label: 'Engineering', color: '#6366f1', bg: '#eef2ff' },
+  design: { label: 'Design', color: '#ec4899', bg: '#fdf2f8' },
+  product: { label: 'Product', color: '#f59e0b', bg: '#fffbeb' },
+  data: { label: 'Data', color: '#10b981', bg: '#ecfdf5' },
+  ops: { label: 'Operations', color: '#3b82f6', bg: '#eff6ff' },
+};
+
+const SKILL_CATEGORIES = {
+  frontend: { label: 'Frontend', color: '#6366f1' },
+  backend: { label: 'Backend', color: '#10b981' },
+  data: { label: 'Data & Analytics', color: '#f59e0b' },
+  design: { label: 'Design', color: '#ec4899' },
+  ops: { label: 'DevOps & Infra', color: '#3b82f6' },
+  soft: { label: 'Soft Skills', color: '#8b5cf6' },
+  product: { label: 'Product', color: '#ef4444' },
+};
+
+const PROFICIENCY_LEVELS = [
+  { level: 0, label: 'None', icon: '—', desc: 'No experience' },
+  { level: 1, label: 'Beginner', icon: '●○○○', desc: 'Basic awareness' },
+  { level: 2, label: 'Intermediate', icon: '●●○○', desc: 'Can work independently' },
+  { level: 3, label: 'Advanced', icon: '●●●○', desc: 'Deep expertise' },
+  { level: 4, label: 'Expert', icon: '●●●●', desc: 'Can mentor others' },
+];
+
+const initialEmployees = [
+  { id: 1, name: 'Alex Chen', role: 'Senior Frontend Engineer', dept: 'eng', avatar: 'AC' },
+  { id: 2, name: 'Maria Santos', role: 'Full-Stack Developer', dept: 'eng', avatar: 'MS' },
+  { id: 3, name: 'James Wright', role: 'Backend Engineer', dept: 'eng', avatar: 'JW' },
+  { id: 4, name: 'Priya Patel', role: 'Data Scientist', dept: 'data', avatar: 'PP' },
+  { id: 5, name: 'Tom Nielsen', role: 'DevOps Engineer', dept: 'ops', avatar: 'TN' },
+  { id: 6, name: 'Sarah Kim', role: 'UX Designer', dept: 'design', avatar: 'SK' },
+  { id: 7, name: 'Luis Rivera', role: 'Product Manager', dept: 'product', avatar: 'LR' },
+  { id: 8, name: 'Fatima Al-Hassan', role: 'ML Engineer', dept: 'data', avatar: 'FA' },
+];
+
+const initialSkills = [
+  { id: 1, name: 'React', category: 'frontend', required: 3 },
+  { id: 2, name: 'TypeScript', category: 'frontend', required: 2 },
+  { id: 3, name: 'Vue.js', category: 'frontend', required: 2 },
+  { id: 4, name: 'Node.js', category: 'backend', required: 3 },
+  { id: 5, name: 'Python', category: 'backend', required: 2 },
+  { id: 6, name: 'PostgreSQL', category: 'backend', required: 2 },
+  { id: 7, name: 'Machine Learning', category: 'data', required: 3 },
+  { id: 8, name: 'Data Visualization', category: 'data', required: 2 },
+  { id: 9, name: 'SQL', category: 'data', required: 2 },
+  { id: 10, name: 'Figma', category: 'design', required: 3 },
+  { id: 11, name: 'UI/UX Research', category: 'design', required: 2 },
+  { id: 12, name: 'Docker', category: 'ops', required: 2 },
+  { id: 13, name: 'Kubernetes', category: 'ops', required: 2 },
+  { id: 14, name: 'CI/CD', category: 'ops', required: 2 },
+  { id: 15, name: 'Agile / Scrum', category: 'product', required: 3 },
+  { id: 16, name: 'Roadmapping', category: 'product', required: 2 },
+  { id: 17, name: 'Communication', category: 'soft', required: 3 },
+  { id: 18, name: 'Leadership', category: 'soft', required: 2 },
+];
+
+// proficiency[employeeId][skillId] = level (0-4)
+const initialProficiency = {
+  1: { 1:4, 2:4, 3:3, 4:2, 5:1, 6:1, 7:0, 8:1, 9:2, 10:2, 11:1, 12:2, 13:1, 14:2, 15:3, 16:2, 17:4, 18:3 },
+  2: { 1:3, 2:3, 3:2, 4:4, 5:3, 6:3, 7:1, 8:2, 9:3, 10:1, 11:1, 12:3, 13:2, 14:3, 15:3, 16:2, 17:3, 18:2 },
+  3: { 1:1, 2:2, 3:1, 4:4, 5:4, 6:4, 7:2, 8:1, 9:4, 10:0, 11:0, 12:3, 13:3, 14:4, 15:2, 16:1, 17:3, 18:2 },
+  4: { 1:1, 2:2, 3:0, 4:2, 5:4, 6:2, 7:4, 8:4, 9:4, 10:1, 11:1, 12:1, 13:1, 14:1, 15:2, 16:2, 17:3, 18:2 },
+  5: { 1:1, 2:2, 3:1, 4:3, 5:3, 6:3, 7:1, 8:2, 9:3, 10:0, 11:0, 12:4, 13:4, 14:4, 15:2, 16:1, 17:3, 18:2 },
+  6: { 1:2, 2:1, 3:1, 4:1, 5:1, 6:0, 7:0, 8:3, 9:1, 10:4, 11:4, 12:0, 13:0, 14:1, 15:3, 16:2, 17:4, 18:2 },
+  7: { 1:1, 2:1, 3:1, 4:1, 5:1, 6:1, 7:1, 8:2, 9:2, 10:2, 11:3, 12:1, 13:1, 14:1, 15:4, 16:4, 17:4, 18:4 },
+  8: { 1:2, 2:3, 3:1, 4:3, 5:4, 6:2, 7:4, 8:3, 9:3, 10:1, 11:1, 12:2, 13:2, 14:2, 15:2, 16:2, 17:3, 18:2 },
+};
+
+// ============================
+// STATE
+// ============================
+
+let state = {
+  employees: JSON.parse(JSON.stringify(initialEmployees)),
+  skills: JSON.parse(JSON.stringify(initialSkills)),
+  proficiency: JSON.parse(JSON.stringify(initialProficiency)),
+  view: 'matrix', // 'matrix' | 'coverage' | 'employees'
+  filterDept: 'all',
+  filterCategory: 'all',
+  searchEmployee: '',
+  searchSkill: '',
+  selectedCell: null, // { empId, skillId }
+  modal: null, // 'addEmployee' | 'addSkill' | 'editEmployee' | 'editSkill' | 'cellDetail'
+  modalData: null,
+  sortEmployees: { key: 'name', dir: 1 },
+  highlightGaps: false,
+  nextEmpId: 9,
+  nextSkillId: 19,
+};
+
+// ============================
+// HELPERS
+// ============================
+
+function getProf(empId, skillId) {
+  return (state.proficiency[empId] || {})[skillId] || 0;
+}
+
+function setProf(empId, skillId, level) {
+  if (!state.proficiency[empId]) state.proficiency[empId] = {};
+  state.proficiency[empId][skillId] = level;
+}
+
+function getFilteredEmployees() {
+  return state.employees
+    .filter(e => state.filterDept === 'all' || e.dept === state.filterDept)
+    .filter(e => !state.searchEmployee || e.name.toLowerCase().includes(state.searchEmployee.toLowerCase()) || e.role.toLowerCase().includes(state.searchEmployee.toLowerCase()))
+    .sort((a, b) => {
+      const { key, dir } = state.sortEmployees;
+      if (key === 'name') return dir * a.name.localeCompare(b.name);
+      if (key === 'dept') return dir * a.dept.localeCompare(b.dept);
+      if (key === 'score') return dir * (getEmployeeScore(b.id) - getEmployeeScore(a.id));
+      return 0;
+    });
+}
+
+function getFilteredSkills() {
+  return state.skills
+    .filter(s => state.filterCategory === 'all' || s.category === state.filterCategory)
+    .filter(s => !state.searchSkill || s.name.toLowerCase().includes(state.searchSkill.toLowerCase()));
+}
+
+function getEmployeeScore(empId) {
+  const skills = state.skills;
+  if (!skills.length) return 0;
+  const total = skills.reduce((sum, s) => sum + getProf(empId, s.id), 0);
+  return Math.round((total / (skills.length * 4)) * 100);
+}
+
+function getSkillCoverage(skillId) {
+  const skill = state.skills.find(s => s.id === skillId);
+  if (!skill) return { count: 0, pct: 0, qualified: 0 };
+  const emps = state.employees;
+  const hasSkill = emps.filter(e => getProf(e.id, skillId) >= 1).length;
+  const qualified = emps.filter(e => getProf(e.id, skillId) >= skill.required).length;
+  return {
+    count: hasSkill,
+    qualified,
+    pct: emps.length ? Math.round((hasSkill / emps.length) * 100) : 0,
+    qualifiedPct: emps.length ? Math.round((qualified / emps.length) * 100) : 0,
+  };
+}
+
+function getAvatarColor(id) {
+  const colors = ['#6366f1','#10b981','#f59e0b','#ec4899','#3b82f6','#8b5cf6','#ef4444','#06b6d4'];
+  return colors[id % colors.length];
+}
+
+function profClass(level) {
+  return `prof-${level}`;
+}
+
+function profLabel(level) {
+  return PROFICIENCY_LEVELS[level]?.label || 'None';
+}
+
+function profIcon(level) {
+  const icons = ['—', '▪', '▪▪', '▪▪▪', '★'];
+  return icons[level] || '—';
+}
+
+// ============================
+// RENDER
+// ============================
+
+function render() {
+  const app = document.getElementById('app');
+  app.innerHTML = renderApp();
+  attachEvents();
+}
+
+function renderApp() {
+  return `
+    <div class="min-h-screen flex flex-col">
+      ${renderHeader()}
+      ${renderNav()}
+      <main class="flex-1 p-4 md:p-6 max-w-screen-2xl mx-auto w-full">
+        ${renderContent()}
+      </main>
+      ${state.modal ? renderModal() : ''}
+    </div>
+  `;
+}
+
+function renderHeader() {
+  const emps = state.employees.length;
+  const skills = state.skills.length;
+  const totalCells = emps * skills;
+  const filledCells = state.employees.reduce((sum, e) =>
+    sum + state.skills.filter(s => getProf(e.id, s.id) >= 1).length, 0);
+  const coverage = totalCells ? Math.round((filledCells / totalCells) * 100) : 0;
+
+  // avg team score
+  const avgScore = emps ? Math.round(state.employees.reduce((s, e) => s + getEmployeeScore(e.id), 0) / emps) : 0;
+
+  // gap count
+  const gaps = state.employees.reduce((sum, e) =>
+    sum + state.skills.filter(s => getProf(e.id, s.id) < s.required).length, 0);
+
+  return `
+    <header class="header-gradient text-white shadow-lg">
+      <div class="max-w-screen-2xl mx-auto px-4 md:px-6 py-4">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center text-xl">📊</div>
+            <div>
+              <h1 class="text-xl font-bold tracking-tight">Skills Matrix</h1>
+              <p class="text-purple-200 text-xs">Team competency tracker</p>
+            </div>
+          </div>
+          <div class="flex flex-wrap gap-3">
+            <div class="bg-white/15 rounded-xl px-4 py-2 text-center min-w-[70px]">
+              <div class="text-2xl font-bold">${emps}</div>
+              <div class="text-purple-200 text-xs">Employees</div>
+            </div>
+            <div class="bg-white/15 rounded-xl px-4 py-2 text-center min-w-[70px]">
+              <div class="text-2xl font-bold">${skills}</div>
+              <div class="text-purple-200 text-xs">Skills</div>
+            </div>
+            <div class="bg-white/15 rounded-xl px-4 py-2 text-center min-w-[70px]">
+              <div class="text-2xl font-bold">${coverage}%</div>
+              <div class="text-purple-200 text-xs">Coverage</div>
+            </div>
+            <div class="bg-white/15 rounded-xl px-4 py-2 text-center min-w-[70px]">
+              <div class="text-2xl font-bold">${avgScore}%</div>
+              <div class="text-purple-200 text-xs">Avg Score</div>
+            </div>
+            <div class="bg-white/15 rounded-xl px-4 py-2 text-center min-w-[70px]">
+              <div class="text-2xl font-bold text-red-200">${gaps}</div>
+              <div class="text-purple-200 text-xs">Skill Gaps</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+  `;
+}
+
+function renderNav() {
+  const tabs = [
+    { id: 'matrix', label: '⊞ Matrix', desc: 'Skill grid' },
+    { id: 'coverage', label: '📈 Coverage', desc: 'Skill analysis' },
+    { id: 'employees', label: '👥 Employees', desc: 'Team roster' },
+  ];
+  return `
+    <div class="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-30">
+      <div class="max-w-screen-2xl mx-auto px-4 md:px-6">
+        <div class="flex items-center gap-1 overflow-x-auto py-2">
+          ${tabs.map(t => `
+            <button data-action="setView" data-view="${t.id}"
+              class="px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all
+              ${state.view === t.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}">
+              ${t.label}
+            </button>
+          `).join('')}
+          <div class="flex-1"></div>
+          <button data-action="toggleGaps"
+            class="px-3 py-2 rounded-lg text-sm font-medium transition-all border whitespace-nowrap
+            ${state.highlightGaps ? 'bg-red-50 border-red-300 text-red-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}">
+            ${state.highlightGaps ? '✓' : ''} Highlight Gaps
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderContent() {
+  if (state.view === 'matrix') return renderMatrix();
+  if (state.view === 'coverage') return renderCoverage();
+  if (state.view === 'employees') return renderEmployees();
+  return '';
+}
+
+// ============================
+// MATRIX VIEW
+// ============================
+
+function renderMatrix() {
+  const employees = getFilteredEmployees();
+  const skills = getFilteredSkills();
+
+  return `
+    <div class="fade-in">
+      <!-- Toolbar -->
+      <div class="flex flex-wrap gap-3 mb-4 items-center">
+        <div class="flex-1 min-w-[200px]">
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
+            <input type="text" id="searchEmployee" placeholder="Search employees..."
+              class="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+              value="${state.searchEmployee}" />
+          </div>
+        </div>
+        <div class="flex-1 min-w-[200px]">
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
+            <input type="text" id="searchSkill" placeholder="Search skills..."
+              class="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+              value="${state.searchSkill}" />
+          </div>
+        </div>
+        <select id="filterDept"
+          class="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white">
+          <option value="all">All Departments</option>
+          ${Object.entries(DEPARTMENTS).map(([k,v]) => `
+            <option value="${k}" ${state.filterDept===k?'selected':''}>${v.label}</option>
+          `).join('')}
+        </select>
+        <select id="filterCategory"
+          class="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white">
+          <option value="all">All Categories</option>
+          ${Object.entries(SKILL_CATEGORIES).map(([k,v]) => `
+            <option value="${k}" ${state.filterCategory===k?'selected':''}>${v.label}</option>
+          `).join('')}
+        </select>
+        <button data-action="openModal" data-modal="addEmployee"
+          class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors whitespace-nowrap flex items-center gap-1">
+          + Employee
+        </button>
+        <button data-action="openModal" data-modal="addSkill"
+          class="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors whitespace-nowrap flex items-center gap-1">
+          + Skill
+        </button>
+      </div>
+
+      <!-- Legend -->
+      <div class="flex flex-wrap gap-2 mb-4 items-center text-xs text-slate-500">
+        <span class="font-medium text-slate-700">Proficiency:</span>
+        ${PROFICIENCY_LEVELS.map(p => `
+          <span class="inline-flex items-center gap-1 px-2 py-1 rounded-md ${profClass(p.level)} text-xs font-medium">
+            ${p.level === 0 ? '—' : '●'.repeat(p.level) + '○'.repeat(4-p.level)} ${p.label}
+          </span>
+        `).join('')}
+        <span class="ml-2 text-slate-400">Click a cell to set proficiency</span>
+      </div>
+
+      <!-- Matrix -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="overflow-auto max-h-[calc(100vh-320px)]" id="matrixScroll">
+          <table class="matrix-table w-full text-sm">
+            <thead>
+              <tr>
+                <th class="sticky-corner bg-slate-50 border-b border-r border-slate-200 p-0" style="min-width:220px">
+                  <div class="px-4 py-3 flex items-center justify-between">
+                    <span class="text-slate-500 text-xs font-semibold uppercase tracking-wider">Employee / Skill</span>
+                    <span class="text-slate-400 text-xs">${employees.length} × ${skills.length}</span>
+                  </div>
+                </th>
+                ${skills.map(skill => {
+                  const cat = SKILL_CATEGORIES[skill.category];
+                  const cov = getSkillCoverage(skill.id);
+                  return `
+                    <th class="sticky-header bg-slate-50 border-b border-r border-slate-100 p-0"
+                        style="min-width:90px; max-width:110px"
+                        title="${skill.name} — Required: ${profLabel(skill.required)} — ${cov.qualifiedPct}% qualified">
+                      <div class="px-2 py-3 flex flex-col items-center gap-1">
+                        <span class="skill-category-dot" style="background:${cat?.color}"></span>
+                        <span class="font-medium text-slate-700 text-center leading-tight" style="font-size:0.7rem;writing-mode:vertical-rl;text-orientation:mixed;transform:rotate(180deg);max-height:80px">${skill.name}</span>
+                        <div class="flex flex-col items-center gap-0.5 mt-1">
+                          <div class="text-xs text-slate-400">${cov.qualifiedPct}%</div>
+                          <div class="w-8 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                            <div class="h-full rounded-full coverage-bar" style="width:${cov.qualifiedPct}%;background:${cov.qualifiedPct>=75?'#10b981':cov.qualifiedPct>=40?'#f59e0b':'#ef4444'}"></div>
+                          </div>
+                        </div>
+                        <button data-action="editSkill" data-skillid="${skill.id}"
+                          class="text-slate-300 hover:text-slate-500 transition-colors mt-0.5" style="font-size:0.65rem" title="Edit skill">✎</button>
+                      </div>
+                    </th>
+                  `;
+                }).join('')}
+                <th class="sticky-header bg-slate-50 border-b border-l border-slate-200 p-0" style="min-width:80px">
+                  <div class="px-3 py-3 text-center">
+                    <span class="text-slate-500 text-xs font-semibold uppercase tracking-wider">Score</span>
+                  </div>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              ${employees.map((emp, ei) => {
+                const dept = DEPARTMENTS[emp.dept];
+                const score = getEmployeeScore(emp.id);
+                return `
+                  <tr class="${ei % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-indigo-50/30 transition-colors group">
+                    <td class="sticky-col border-r border-slate-200 p-0" style="${ei%2===0?'background:white':'background:#f9fafb'}">
+                      <div class="px-4 py-2.5 flex items-center gap-3 group-hover:bg-indigo-50/40">
+                        <div class="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+                          style="background:${getAvatarColor(emp.id)}">${emp.avatar}</div>
+                        <div class="min-w-0">
+                          <div class="font-semibold text-slate-800 text-sm truncate">${emp.name}</div>
+                          <div class="text-xs text-slate-400 truncate">${emp.role}</div>
+                          <span class="dept-badge" style="background:${dept?.bg};color:${dept?.color}">${dept?.label}</span>
+                        </div>
+                        <button data-action="editEmployee" data-empid="${emp.id}"
+                          class="ml-auto text-slate-300 hover:text-slate-500 transition-colors flex-shrink-0 opacity-0 group-hover:opacity-100" title="Edit">✎</button>
+                      </div>
+                    </td>
+                    ${skills.map(skill => {
+                      const level = getProf(emp.id, skill.id);
+                      const isGap = state.highlightGaps && level < skill.required;
+                      const icons = ['—','▪','▪▪','▪▪▪','★'];
+                      return `
+                        <td class="border-r border-slate-100 p-1.5 text-center" title="Click to change">
+                          <button data-action="cycleProf" data-empid="${emp.id}" data-skillid="${skill.id}"
+                            class="skill-cell w-full min-w-[60px] py-1.5 px-1 rounded-lg text-xs font-bold ${profClass(level)}
+                            ${isGap ? 'ring-2 ring-red-400 ring-offset-1' : ''}"
+                            title="${emp.name} — ${skill.name}: ${profLabel(level)}${isGap?' (GAP: needs '+profLabel(skill.required)+')':''}">
+                            ${icons[level]}
+                          </button>
+                        </td>
+                      `;
+                    }).join('')}
+                    <td class="border-l border-slate-200 p-2 text-center">
+                      <div class="flex flex-col items-center gap-1">
+                        <span class="text-sm font-bold ${score>=80?'text-emerald-600':score>=50?'text-amber-600':'text-red-500'}">${score}%</span>
+                        <div class="w-12 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                          <div class="h-full rounded-full" style="width:${score}%;background:${score>=80?'#10b981':score>=50?'#f59e0b':'#ef4444'}"></div>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+          ${employees.length === 0 ? `
+            <div class="text-center py-16 text-slate-400">
+              <div class="text-4xl mb-2">🔍</div>
+              <div class="font-medium">No employees match your filter</div>
+            </div>
+          ` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ============================
+// COVERAGE VIEW
+// ============================
+
+function renderCoverage() {
+  const cats = Object.entries(SKILL_CATEGORIES);
+  return `
+    <div class="fade-in space-y-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        ${cats.map(([catId, cat]) => {
+          const catSkills = state.skills.filter(s => s.category === catId);
+          if (!catSkills.length) return '';
+          const avgQualified = catSkills.length
+            ? Math.round(catSkills.reduce((sum, s) => sum + getSkillCoverage(s.id).qualifiedPct, 0) / catSkills.length)
+            : 0;
+          return `
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="skill-category-dot w-3 h-3" style="background:${cat.color}"></span>
+                  <h3 class="font-semibold text-slate-800">${cat.label}</h3>
+                  <span class="text-xs text-slate-400">${catSkills.length} skills</span>
+                </div>
+                <span class="text-lg font-bold" style="color:${avgQualified>=75?'#10b981':avgQualified>=40?'#f59e0b':'#ef4444'}">${avgQualified}%</span>
+              </div>
+              <div class="px-5 py-3 space-y-3">
+                ${catSkills.map(skill => {
+                  const cov = getSkillCoverage(skill.id);
+                  return `
+                    <div>
+                      <div class="flex items-center justify-between mb-1">
+                        <div class="text-sm font-medium text-slate-700 flex items-center gap-2">
+                          ${skill.name}
+                          <span class="text-xs text-slate-400 font-normal">req: ${profLabel(skill.required)}</span>
+                        </div>
+                        <div class="text-sm font-semibold ${cov.qualifiedPct>=75?'text-emerald-600':cov.qualifiedPct>=40?'text-amber-600':'text-red-500'}">
+                          ${cov.qualified}/${state.employees.length}
+                        </div>
+                      </div>
+                      <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div class="h-full rounded-full coverage-bar transition-all"
+                          style="width:${cov.qualifiedPct}%;background:${cov.qualifiedPct>=75?'#10b981':cov.qualifiedPct>=40?'#f59e0b':'#ef4444'}"></div>
+                      </div>
+                      <div class="flex justify-between text-xs text-slate-400 mt-0.5">
+                        <span>${cov.qualifiedPct}% qualified</span>
+                        <span>${cov.count} have some proficiency</span>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+
+      <!-- Dept breakdown -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-5 py-4 border-b border-slate-100">
+          <h3 class="font-semibold text-slate-800">Department Scores</h3>
+          <p class="text-xs text-slate-400 mt-0.5">Average skill score per department</p>
+        </div>
+        <div class="p-5 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
+          ${Object.entries(DEPARTMENTS).map(([deptId, dept]) => {
+            const deptEmps = state.employees.filter(e => e.dept === deptId);
+            const avg = deptEmps.length
+              ? Math.round(deptEmps.reduce((s, e) => s + getEmployeeScore(e.id), 0) / deptEmps.length)
+              : 0;
+            const r = 28;
+            const circ = 2 * Math.PI * r;
+            const offset = circ - (avg / 100) * circ;
+            return `
+              <div class="flex flex-col items-center gap-2 p-3 rounded-xl border border-slate-100 hover:border-slate-200 transition-colors">
+                <div class="relative w-20 h-20">
+                  <svg width="80" height="80" viewBox="0 0 80 80">
+                    <circle cx="40" cy="40" r="${r}" fill="none" stroke="#f1f5f9" stroke-width="7"/>
+                    <circle cx="40" cy="40" r="${r}" fill="none" stroke="${dept.color}" stroke-width="7"
+                      stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
+                      stroke-linecap="round"
+                      transform="rotate(-90 40 40)"
+                      class="progress-ring"/>
+                    <text x="40" y="44" text-anchor="middle" font-size="14" font-weight="bold" fill="${dept.color}">${avg}%</text>
+                  </svg>
+                </div>
+                <div class="text-center">
+                  <div class="text-xs font-semibold text-slate-700">${dept.label}</div>
+                  <div class="text-xs text-slate-400">${deptEmps.length} member${deptEmps.length!==1?'s':''}</div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+
+      <!-- Top gaps table -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        <div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h3 class="font-semibold text-slate-800">Critical Skill Gaps</h3>
+            <p class="text-xs text-slate-400 mt-0.5">Skills below required proficiency threshold</p>
+          </div>
+          <span class="px-2 py-1 bg-red-50 text-red-600 text-xs font-semibold rounded-lg">
+            ${state.skills.filter(s => getSkillCoverage(s.id).qualifiedPct < 50).length} critical
+          </span>
+        </div>
+        <div class="overflow-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="bg-slate-50 text-xs text-slate-500 uppercase tracking-wider">
+                <th class="text-left px-5 py-3 font-semibold">Skill</th>
+                <th class="text-left px-3 py-3 font-semibold">Category</th>
+                <th class="text-left px-3 py-3 font-semibold">Required Level</th>
+                <th class="text-left px-3 py-3 font-semibold">Qualified Employees</th>
+                <th class="text-left px-3 py-3 font-semibold">Coverage</th>
+                <th class="text-left px-3 py-3 font-semibold">Gap Employees</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${state.skills
+                .map(s => ({ ...s, cov: getSkillCoverage(s.id) }))
+                .sort((a, b) => a.cov.qualifiedPct - b.cov.qualifiedPct)
+                .map((skill, i) => {
+                  const cat = SKILL_CATEGORIES[skill.category];
+                  const gapEmps = state.employees.filter(e => getProf(e.id, skill.id) < skill.required);
+                  return `
+                    <tr class="${i%2===0?'bg-white':'bg-slate-50/50'} border-t border-slate-100">
+                      <td class="px-5 py-3 font-medium text-slate-800">${skill.name}</td>
+                      <td class="px-3 py-3">
+                        <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium"
+                          style="background:${cat?.color}18;color:${cat?.color}">
+                          <span class="skill-category-dot" style="background:${cat?.color}"></span>
+                          ${cat?.label}
+                        </span>
+                      </td>
+                      <td class="px-3 py-3">
+                        <span class="px-2 py-0.5 rounded-full text-xs font-medium ${profClass(skill.required)}">${profLabel(skill.required)}</span>
+                      </td>
+                      <td class="px-3 py-3">
+                        <span class="font-semibold ${skill.cov.qualifiedPct>=75?'text-emerald-600':skill.cov.qualifiedPct>=40?'text-amber-600':'text-red-500'}">
+                          ${skill.cov.qualified} / ${state.employees.length}
+                        </span>
+                      </td>
+                      <td class="px-3 py-3">
+                        <div class="flex items-center gap-2">
+                          <div class="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden" style="min-width:60px">
+                            <div class="h-full rounded-full" style="width:${skill.cov.qualifiedPct}%;background:${skill.cov.qualifiedPct>=75?'#10b981':skill.cov.qualifiedPct>=40?'#f59e0b':'#ef4444'}"></div>
+                          </div>
+                          <span class="text-xs font-medium ${skill.cov.qualifiedPct>=75?'text-emerald-600':skill.cov.qualifiedPct>=40?'text-amber-600':'text-red-500'} w-8">${skill.cov.qualifiedPct}%</span>
+                        </div>
+                      </td>
+                      <td class="px-3 py-3">
+                        <div class="flex flex-wrap gap-1">
+                          ${gapEmps.slice(0,4).map(e => `
+                            <span class="inline-flex items-center justify-center w-6 h-6 rounded-full text-white text-xs font-bold flex-shrink-0"
+                              style="background:${getAvatarColor(e.id)}" title="${e.name} (${profLabel(getProf(e.id,skill.id))})">${e.avatar}</span>
+                          `).join('')}
+                          ${gapEmps.length > 4 ? `<span class="text-xs text-slate-400 self-center">+${gapEmps.length-4}</span>` : ''}
+                        </div>
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ============================
+// EMPLOYEES VIEW
+// ============================
+
+function renderEmployees() {
+  const employees = getFilteredEmployees();
+  return `
+    <div class="fade-in">
+      <div class="flex flex-wrap gap-3 mb-4 items-center">
+        <div class="flex-1 min-w-[200px]">
+          <div class="relative">
+            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔍</span>
+            <input type="text" id="searchEmployee" placeholder="Search employees..."
+              class="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white"
+              value="${state.searchEmployee}" />
+          </div>
+        </div>
+        <select id="filterDept"
+          class="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white">
+          <option value="all">All Departments</option>
+          ${Object.entries(DEPARTMENTS).map(([k,v]) => `
+            <option value="${k}" ${state.filterDept===k?'selected':''}>${v.label}</option>
+          `).join('')}
+        </select>
+        <button data-action="openModal" data-modal="addEmployee"
+          class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors">
+          + Add Employee
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        ${employees.map(emp => {
+          const dept = DEPARTMENTS[emp.dept];
+          const score = getEmployeeScore(emp.id);
+          const topSkills = state.skills
+            .map(s => ({ skill: s, level: getProf(emp.id, s.id) }))
+            .filter(x => x.level >= 3)
+            .sort((a,b) => b.level - a.level)
+            .slice(0, 4);
+          const gaps = state.skills.filter(s => getProf(emp.id, s.id) < s.required).length;
+          const r = 24;
+          const circ = 2 * Math.PI * r;
+          const offset = circ - (score / 100) * circ;
+          return `
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 hover:shadow-md hover:border-indigo-200 transition-all overflow-hidden">
+              <div class="px-5 pt-5 pb-4">
+                <div class="flex items-start gap-4">
+                  <div class="w-12 h-12 rounded-2xl flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-sm"
+                    style="background:${getAvatarColor(emp.id)}">${emp.avatar}</div>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-start justify-between gap-2">
+                      <div>
+                        <h3 class="font-bold text-slate-800">${emp.name}</h3>
+                        <p class="text-xs text-slate-500">${emp.role}</p>
+                        <span class="dept-badge mt-1 inline-block" style="background:${dept?.bg};color:${dept?.color}">${dept?.label}</span>
+                      </div>
+                      <div class="flex-shrink-0">
+                        <svg width="60" height="60" viewBox="0 0 60 60">
+                          <circle cx="30" cy="30" r="${r}" fill="none" stroke="#f1f5f9" stroke-width="6"/>
+                          <circle cx="30" cy="30" r="${r}" fill="none" stroke="${score>=80?'#10b981':score>=50?'#f59e0b':'#ef4444'}" stroke-width="6"
+                            stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
+                            stroke-linecap="round" transform="rotate(-90 30 30)"/>
+                          <text x="30" y="34" text-anchor="middle" font-size="11" font-weight="bold"
+                            fill="${score>=80?'#10b981':score>=50?'#f59e0b':'#ef4444'}">${score}%</text>
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="px-5 pb-4 space-y-3">
+                ${topSkills.length ? `
+                  <div>
+                    <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Top Skills</div>
+                    <div class="flex flex-wrap gap-1">
+                      ${topSkills.map(x => {
+                        const cat = SKILL_CATEGORIES[x.skill.category];
+                        return `
+                          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                            style="background:${cat?.color}18;color:${cat?.color}">
+                            ${x.level === 4 ? '★' : '●'.repeat(x.level) + '○'.repeat(4-x.level)} ${x.skill.name}
+                          </span>
+                        `;
+                      }).join('')}
+                    </div>
+                  </div>
+                ` : ''}
+                <div class="flex items-center justify-between pt-2 border-t border-slate-100">
+                  <div class="flex gap-4 text-xs text-slate-500">
+                    <span><span class="font-semibold text-slate-700">${state.skills.filter(s => getProf(emp.id,s.id) >= 1).length}</span> skills</span>
+                    <span class="${gaps > 0 ? 'text-red-500' : 'text-emerald-600'}">
+                      <span class="font-semibold">${gaps}</span> gaps
+                    </span>
+                  </div>
+                  <button data-action="editEmployee" data-empid="${emp.id}"
+                    class="px-3 py-1.5 text-xs font-medium bg-slate-100 text-slate-600 rounded-lg hover:bg-indigo-50 hover:text-indigo-600 transition-colors">
+                    Edit
+                  </button>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('')}
+        ${employees.length === 0 ? `
+          <div class="col-span-3 text-center py-16 text-slate-400">
+            <div class="text-4xl mb-2">👤</div>
+            <div class="font-medium">No employees match your filter</div>
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `;
+}
+
+// ============================
+// MODALS
+// ============================
+
+function renderModal() {
+  const { modal, modalData } = state;
+  let content = '';
+
+  if (modal === 'addEmployee') {
+    content = renderAddEmployeeModal();
+  } else if (modal === 'editEmployee') {
+    content = renderEditEmployeeModal(modalData);
+  } else if (modal === 'addSkill') {
+    content = renderAddSkillModal();
+  } else if (modal === 'editSkill') {
+    content = renderEditSkillModal(modalData);
+  }
+
+  return `
+    <div class="modal-overlay fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+      id="modalOverlay" data-action="closeModal">
+      <div class="modal-content bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-auto"
+        onclick="event.stopPropagation()">
+        ${content}
+      </div>
+    </div>
+  `;
+}
+
+function renderAddEmployeeModal() {
+  return `
+    <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+      <h2 class="text-lg font-bold text-slate-800">Add Employee</h2>
+      <button data-action="closeModal" class="text-slate-400 hover:text-slate-600 text-xl font-light">✕</button>
+    </div>
+    <form id="empForm" class="px-6 py-5 space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Full Name *</label>
+        <input name="name" type="text" required placeholder="e.g. John Smith"
+          class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Job Title *</label>
+        <input name="role" type="text" required placeholder="e.g. Senior Developer"
+          class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Department *</label>
+        <select name="dept" required
+          class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          <option value="">Select department...</option>
+          ${Object.entries(DEPARTMENTS).map(([k,v]) => `<option value="${k}">${v.label}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Avatar Initials</label>
+        <input name="avatar" type="text" maxlength="2" placeholder="e.g. JS"
+          class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+        <p class="text-xs text-slate-400 mt-1">2 characters, leave blank to auto-generate</p>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="button" data-action="closeModal"
+          class="flex-1 px-4 py-2 border border-slate-200 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
+          Cancel
+        </button>
+        <button type="submit"
+          class="flex-1 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors">
+          Add Employee
+        </button>
+      </div>
+    </form>
+  `;
+}
+
+function renderEditEmployeeModal(emp) {
+  if (!emp) return '';
+  const dept = DEPARTMENTS[emp.dept];
+  return `
+    <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
+          style="background:${getAvatarColor(emp.id)}">${emp.avatar}</div>
+        <h2 class="text-lg font-bold text-slate-800">Edit Employee</h2>
+      </div>
+      <button data-action="closeModal" class="text-slate-400 hover:text-slate-600 text-xl font-light">✕</button>
+    </div>
+    <form id="editEmpForm" data-empid="${emp.id}" class="px-6 py-5 space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
+        <input name="name" type="text" value="${emp.name}"
+          class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Job Title</label>
+        <input name="role" type="text" value="${emp.role}"
+          class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Department</label>
+        <select name="dept"
+          class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          ${Object.entries(DEPARTMENTS).map(([k,v]) => `
+            <option value="${k}" ${emp.dept===k?'selected':''}>${v.label}</option>
+          `).join('')}
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-3">Skill Proficiencies</label>
+        <div class="space-y-2 max-h-60 overflow-y-auto pr-1">
+          ${state.skills.map(skill => {
+            const level = getProf(emp.id, skill.id);
+            const cat = SKILL_CATEGORIES[skill.category];
+            return `
+              <div class="flex items-center gap-3 py-1">
+                <div class="flex items-center gap-1.5 w-36 flex-shrink-0">
+                  <span class="skill-category-dot" style="background:${cat?.color}"></span>
+                  <span class="text-xs text-slate-600 font-medium truncate">${skill.name}</span>
+                </div>
+                <input type="range" min="0" max="4" step="1" value="${level}"
+                  class="flex-1" data-empid="${emp.id}" data-skillid="${skill.id}"
+                  oninput="this.nextElementSibling.textContent=(['None','Beginner','Intermediate','Advanced','Expert'])[this.value]" />
+                <span class="text-xs font-medium w-20 text-right ${profClass(level)} px-2 py-0.5 rounded-md text-center" style="min-width:80px">
+                  ${profLabel(level)}
+                </span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+
+      <div class="flex gap-3 pt-2">
+        <button type="button" data-action="deleteEmployee" data-empid="${emp.id}"
+          class="px-4 py-2 border border-red-200 text-red-500 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors">
+          Delete
+        </button>
+        <div class="flex-1"></div>
+        <button type="button" data-action="closeModal"
+          class="px-4 py-2 border border-slate-200 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
+          Cancel
+        </button>
+        <button type="submit"
+          class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors">
+          Save Changes
+        </button>
+      </div>
+    </form>
+  `;
+}
+
+function renderAddSkillModal() {
+  return `
+    <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+      <h2 class="text-lg font-bold text-slate-800">Add Skill</h2>
+      <button data-action="closeModal" class="text-slate-400 hover:text-slate-600 text-xl font-light">✕</button>
+    </div>
+    <form id="skillForm" class="px-6 py-5 space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Skill Name *</label>
+        <input name="name" type="text" required placeholder="e.g. GraphQL"
+          class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Category *</label>
+        <select name="category" required
+          class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          <option value="">Select category...</option>
+          ${Object.entries(SKILL_CATEGORIES).map(([k,v]) => `<option value="${k}">${v.label}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Required Proficiency Level</label>
+        <div class="flex gap-2 flex-wrap">
+          ${PROFICIENCY_LEVELS.slice(1).map(p => `
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" name="required" value="${p.level}" ${p.level===2?'checked':''} class="accent-indigo-600"/>
+              <span class="text-xs px-2 py-1 rounded-md ${profClass(p.level)}">${p.label}</span>
+            </label>
+          `).join('')}
+        </div>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="button" data-action="closeModal"
+          class="flex-1 px-4 py-2 border border-slate-200 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
+          Cancel
+        </button>
+        <button type="submit"
+          class="flex-1 px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors">
+          Add Skill
+        </button>
+      </div>
+    </form>
+  `;
+}
+
+function renderEditSkillModal(skill) {
+  if (!skill) return '';
+  return `
+    <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+      <h2 class="text-lg font-bold text-slate-800">Edit Skill</h2>
+      <button data-action="closeModal" class="text-slate-400 hover:text-slate-600 text-xl font-light">✕</button>
+    </div>
+    <form id="editSkillForm" data-skillid="${skill.id}" class="px-6 py-5 space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Skill Name</label>
+        <input name="name" type="text" value="${skill.name}"
+          class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Category</label>
+        <select name="category"
+          class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300">
+          ${Object.entries(SKILL_CATEGORIES).map(([k,v]) => `
+            <option value="${k}" ${skill.category===k?'selected':''}>${v.label}</option>
+          `).join('')}
+        </select>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Required Proficiency Level</label>
+        <div class="flex gap-2 flex-wrap">
+          ${PROFICIENCY_LEVELS.slice(1).map(p => `
+            <label class="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" name="required" value="${p.level}" ${skill.required===p.level?'checked':''} class="accent-indigo-600"/>
+              <span class="text-xs px-2 py-1 rounded-md ${profClass(p.level)}">${p.label}</span>
+            </label>
+          `).join('')}
+        </div>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button type="button" data-action="deleteSkill" data-skillid="${skill.id}"
+          class="px-4 py-2 border border-red-200 text-red-500 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors">
+          Delete
+        </button>
+        <div class="flex-1"></div>
+        <button type="button" data-action="closeModal"
+          class="px-4 py-2 border border-slate-200 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors">
+          Cancel
+        </button>
+        <button type="submit"
+          class="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors">
+          Save Changes
+        </button>
+      </div>
+    </form>
+  `;
+}
+
+// ============================
+// EVENT HANDLERS
+// ============================
+
+function attachEvents() {
+  // Data-action buttons
+  document.addEventListener('click', handleClick, { once: true });
+
+  // Search inputs
+  const searchEmp = document.getElementById('searchEmployee');
+  if (searchEmp) {
+    searchEmp.addEventListener('input', e => {
+      state.searchEmployee = e.target.value;
+      render();
+    });
+  }
+  const searchSkill = document.getElementById('searchSkill');
+  if (searchSkill) {
+    searchSkill.addEventListener('input', e => {
+      state.searchSkill = e.target.value;
+      render();
+    });
+  }
+
+  // Filter selects
+  const filterDept = document.getElementById('filterDept');
+  if (filterDept) {
+    filterDept.addEventListener('change', e => {
+      state.filterDept = e.target.value;
+      render();
+    });
+  }
+  const filterCat = document.getElementById('filterCategory');
+  if (filterCat) {
+    filterCat.addEventListener('change', e => {
+      state.filterCategory = e.target.value;
+      render();
+    });
+  }
+
+  // Forms
+  const empForm = document.getElementById('empForm');
+  if (empForm) empForm.addEventListener('submit', handleAddEmployee);
+
+  const editEmpForm = document.getElementById('editEmpForm');
+  if (editEmpForm) editEmpForm.addEventListener('submit', handleEditEmployee);
+
+  const skillForm = document.getElementById('skillForm');
+  if (skillForm) skillForm.addEventListener('submit', handleAddSkill);
+
+  const editSkillForm = document.getElementById('editSkillForm');
+  if (editSkillForm) editSkillForm.addEventListener('submit', handleEditSkill);
+
+  // Range inputs for proficiency in edit modal — real-time update label colors
+  document.querySelectorAll('input[type="range"][data-skillid]').forEach(input => {
+    input.addEventListener('input', e => {
+      const level = parseInt(e.target.value);
+      const span = e.target.nextElementSibling;
+      span.textContent = profLabel(level);
+      span.className = `text-xs font-medium w-20 text-right px-2 py-0.5 rounded-md text-center ${profClass(level)}`;
+      span.style.minWidth = '80px';
+    });
+  });
+}
+
+function handleClick(e) {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) {
+    document.addEventListener('click', handleClick, { once: true });
+    return;
+  }
+
+  const action = btn.dataset.action;
+
+  if (action === 'setView') {
+    state.view = btn.dataset.view;
+    render();
+  } else if (action === 'toggleGaps') {
+    state.highlightGaps = !state.highlightGaps;
+    render();
+  } else if (action === 'openModal') {
+    state.modal = btn.dataset.modal;
+    state.modalData = null;
+    render();
+  } else if (action === 'closeModal') {
+    state.modal = null;
+    state.modalData = null;
+    render();
+  } else if (action === 'cycleProf') {
+    const empId = parseInt(btn.dataset.empid);
+    const skillId = parseInt(btn.dataset.skillid);
+    const cur = getProf(empId, skillId);
+    setProf(empId, skillId, (cur + 1) % 5);
+    render();
+  } else if (action === 'editEmployee') {
+    const empId = parseInt(btn.dataset.empid);
+    const emp = state.employees.find(e => e.id === empId);
+    state.modal = 'editEmployee';
+    state.modalData = emp;
+    render();
+  } else if (action === 'editSkill') {
+    const skillId = parseInt(btn.dataset.skillid);
+    const skill = state.skills.find(s => s.id === skillId);
+    state.modal = 'editSkill';
+    state.modalData = skill;
+    render();
+  } else if (action === 'deleteEmployee') {
+    const empId = parseInt(btn.dataset.empid);
+    if (confirm('Delete this employee?')) {
+      state.employees = state.employees.filter(e => e.id !== empId);
+      delete state.proficiency[empId];
+      state.modal = null;
+      state.modalData = null;
+      render();
+    } else {
+      document.addEventListener('click', handleClick, { once: true });
+    }
+  } else if (action === 'deleteSkill') {
+    const skillId = parseInt(btn.dataset.skillid);
+    if (confirm('Delete this skill?')) {
+      state.skills = state.skills.filter(s => s.id !== skillId);
+      Object.values(state.proficiency).forEach(p => delete p[skillId]);
+      state.modal = null;
+      state.modalData = null;
+      render();
+    } else {
+      document.addEventListener('click', handleClick, { once: true });
+    }
+  } else {
+    document.addEventListener('click', handleClick, { once: true });
+  }
+}
+
+function handleAddEmployee(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const name = fd.get('name').trim();
+  const role = fd.get('role').trim();
+  const dept = fd.get('dept');
+  let avatar = (fd.get('avatar') || '').trim().toUpperCase().slice(0, 2);
+  if (!avatar) avatar = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const emp = { id: state.nextEmpId++, name, role, dept, avatar };
+  state.employees.push(emp);
+  state.modal = null;
+  state.modalData = null;
+  render();
+}
+
+function handleEditEmployee(e) {
+  e.preventDefault();
+  const empId = parseInt(e.target.dataset.empid);
+  const fd = new FormData(e.target);
+  const emp = state.employees.find(x => x.id === empId);
+  if (emp) {
+    emp.name = fd.get('name').trim() || emp.name;
+    emp.role = fd.get('role').trim() || emp.role;
+    emp.dept = fd.get('dept') || emp.dept;
+  }
+  // Save range values
+  const ranges = e.target.querySelectorAll('input[type="range"][data-skillid]');
+  ranges.forEach(r => {
+    setProf(empId, parseInt(r.dataset.skillid), parseInt(r.value));
+  });
+  state.modal = null;
+  state.modalData = null;
+  render();
+}
+
+function handleAddSkill(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const skill = {
+    id: state.nextSkillId++,
+    name: fd.get('name').trim(),
+    category: fd.get('category'),
+    required: parseInt(fd.get('required') || '2'),
+  };
+  state.skills.push(skill);
+  state.modal = null;
+  state.modalData = null;
+  render();
+}
+
+function handleEditSkill(e) {
+  e.preventDefault();
+  const skillId = parseInt(e.target.dataset.skillid);
+  const fd = new FormData(e.target);
+  const skill = state.skills.find(s => s.id === skillId);
+  if (skill) {
+    skill.name = fd.get('name').trim() || skill.name;
+    skill.category = fd.get('category') || skill.category;
+    skill.required = parseInt(fd.get('required') || '2');
+  }
+  state.modal = null;
+  state.modalData = null;
+  render();
+}
+
+// ============================
+// INIT
+// ============================
+render();
+</script>
+</body>
+</html>

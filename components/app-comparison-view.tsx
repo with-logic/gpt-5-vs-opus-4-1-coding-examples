@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { CodeExample } from "@/lib/code-examples";
-import { MODELS as BASE_MODELS } from "@/lib/models";
+import { MODELS as BASE_MODELS, MODELS_BY_PROVIDER } from "@/lib/models";
+import { StatsComparisonPanel } from "./stats-comparison-panel";
 
 const MODELS = BASE_MODELS.map(m => ({
   ...m,
@@ -19,6 +20,7 @@ interface AppComparisonViewProps {
   initialModels?: string[];
   initialView?: "side-by-side" | "tabs";
   initialTab?: string;
+  initialContentMode?: "demo" | "stats";
 }
 
 export function AppComparisonView({
@@ -26,9 +28,10 @@ export function AppComparisonView({
   apps = [],
   isOpen,
   onClose: _onClose,
-  initialModels = ["gpt-5", "opus-4.5"],
+  initialModels = ["gpt-5.4", "opus-4.6", "gemini-3"],
   initialView = "side-by-side",
-  initialTab = "gpt-5"
+  initialTab = "gpt-5.4",
+  initialContentMode = "demo",
 }: AppComparisonViewProps) {
   void _onClose; // Required prop for interface but handled via history.back()
   const [selectedModels, setSelectedModels] = useState<string[]>(initialModels);
@@ -37,21 +40,26 @@ export function AppComparisonView({
   const [copied, setCopied] = useState(false);
   const [hasPushedState, setHasPushedState] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isModelPickerOpen, setIsModelPickerOpen] = useState(false);
+  const [contentMode, setContentMode] = useState<"demo" | "stats">(initialContentMode);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const modelPickerRef = useRef<HTMLDivElement>(null);
 
   // Update state when initial props change (for URL navigation)
   useEffect(() => {
     setSelectedModels(initialModels);
     setViewMode(initialView);
     setActiveTab(initialTab);
-  }, [initialModels, initialView, initialTab]);
+    setContentMode(initialContentMode);
+  }, [initialModels, initialView, initialTab, initialContentMode]);
 
   // Build the comparison URL
-  const buildUrl = useCallback((appId: string, models: string[], mode: "side-by-side" | "tabs", tab: string) => {
+  const buildUrl = useCallback((appId: string, models: string[], mode: "side-by-side" | "tabs", tab: string, content: "demo" | "stats") => {
     const params = new URLSearchParams();
     params.set("models", models.join(","));
     params.set("view", mode);
     if (mode === "tabs") params.set("tab", tab);
+    if (content === "stats") params.set("content", "stats");
     return `/compare/${appId}?${params.toString()}`;
   }, []);
 
@@ -61,10 +69,10 @@ export function AppComparisonView({
   const nextApp = currentIndex < apps.length - 1 ? apps[currentIndex + 1] : null;
 
   const navigateToApp = useCallback((targetApp: CodeExample) => {
-    const newUrl = buildUrl(targetApp.id, selectedModels, viewMode, activeTab);
+    const newUrl = buildUrl(targetApp.id, selectedModels, viewMode, activeTab, contentMode);
     window.history.pushState({ app: targetApp.id }, "", newUrl);
     window.dispatchEvent(new PopStateEvent('popstate'));
-  }, [buildUrl, selectedModels, viewMode, activeTab]);
+  }, [buildUrl, selectedModels, viewMode, activeTab, contentMode]);
 
   // Push initial state when comparison opens (only once)
   useEffect(() => {
@@ -72,7 +80,7 @@ export function AppComparisonView({
       const currentPath = window.location.pathname;
       // Only push if we're not already on this comparison URL (i.e., we clicked to open it)
       if (!currentPath.startsWith(`/compare/${app.id}`)) {
-        const newUrl = buildUrl(app.id, selectedModels, viewMode, activeTab);
+        const newUrl = buildUrl(app.id, selectedModels, viewMode, activeTab, contentMode);
         window.history.pushState({ app: app.id }, "", newUrl);
       }
       setHasPushedState(true);
@@ -80,15 +88,15 @@ export function AppComparisonView({
     if (!isOpen) {
       setHasPushedState(false);
     }
-  }, [isOpen, hasPushedState, app.id, selectedModels, viewMode, activeTab, buildUrl]);
+  }, [isOpen, hasPushedState, app.id, selectedModels, viewMode, activeTab, contentMode, buildUrl]);
 
   // Update URL when state changes (after initial push)
   useEffect(() => {
     if (isOpen && hasPushedState) {
-      const newUrl = buildUrl(app.id, selectedModels, viewMode, activeTab);
+      const newUrl = buildUrl(app.id, selectedModels, viewMode, activeTab, contentMode);
       window.history.replaceState({ app: app.id }, "", newUrl);
     }
-  }, [isOpen, hasPushedState, selectedModels, viewMode, activeTab, app.id, buildUrl]);
+  }, [isOpen, hasPushedState, selectedModels, viewMode, activeTab, contentMode, app.id, buildUrl]);
 
   // Handle closing via escape key or X button
   const handleClose = useCallback(() => {
@@ -98,7 +106,9 @@ export function AppComparisonView({
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        if (isDropdownOpen) {
+        if (isModelPickerOpen) {
+          setIsModelPickerOpen(false);
+        } else if (isDropdownOpen) {
           setIsDropdownOpen(false);
         } else {
           handleClose();
@@ -113,7 +123,7 @@ export function AppComparisonView({
       document.removeEventListener("keydown", handleEscape);
       document.body.style.overflow = "";
     };
-  }, [isOpen, handleClose, isDropdownOpen]);
+  }, [isOpen, handleClose, isDropdownOpen, isModelPickerOpen]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -129,6 +139,21 @@ export function AppComparisonView({
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isDropdownOpen]);
+
+  // Close model picker when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (modelPickerRef.current && !modelPickerRef.current.contains(e.target as Node)) {
+        setIsModelPickerOpen(false);
+      }
+    };
+    if (isModelPickerOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isModelPickerOpen]);
 
   if (!isOpen) return null;
 
@@ -218,64 +243,163 @@ export function AppComparisonView({
           </div>
         </div>
 
-        {/* Center - model selection */}
+        {/* Center - selected model pills + add button with popover */}
         <div className="flex items-center gap-1.5">
-          {MODELS.map(model => (
-            <button
+          {/* Show selected/active models as pills */}
+          {(viewMode === "tabs"
+            ? MODELS.filter(m => m.id === activeTab)
+            : MODELS.filter(m => selectedModels.includes(m.id))
+          ).map(model => (
+            <span
               key={model.id}
-              onClick={() => viewMode === "tabs" ? setActiveTab(model.id) : toggleModel(model.id)}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
-                viewMode === "tabs"
-                  ? activeTab === model.id
-                    ? `${model.color} text-white`
-                    : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
-                  : selectedModels.includes(model.id)
-                    ? `${model.color} text-white`
-                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-              }`}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${model.color} text-white`}
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${
-                (viewMode === "tabs" ? activeTab === model.id : selectedModels.includes(model.id))
-                  ? "bg-white/50"
-                  : model.color
-              }`} />
+              <span className="w-1.5 h-1.5 rounded-full bg-white/50" />
               {model.name}
-            </button>
+              {/* Remove button (only in side-by-side with >1 selected) */}
+              {viewMode === "side-by-side" && selectedModels.length > 1 && (
+                <button
+                  onClick={() => toggleModel(model.id)}
+                  className="ml-0.5 -mr-1 w-3.5 h-3.5 rounded-full hover:bg-white/20 inline-flex items-center justify-center transition-colors"
+                  title={`Remove ${model.name}`}
+                >
+                  <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </span>
           ))}
-          {viewMode === "side-by-side" && (
+
+          {/* Add/change model popover trigger */}
+          <div className="relative" ref={modelPickerRef}>
             <button
-              onClick={selectAll}
-              className="px-1.5 py-1 text-xs text-neutral-400 hover:text-neutral-900 transition-colors"
+              onClick={() => setIsModelPickerOpen(!isModelPickerOpen)}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-neutral-100 text-neutral-600 hover:bg-neutral-200 transition-colors"
+              title={viewMode === "tabs" ? "Switch model" : "Add or remove models"}
             >
-              All
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v12M6 12h12" />
+              </svg>
+              Models
             </button>
-          )}
+
+            {isModelPickerOpen && (
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-56 bg-white border border-neutral-200 shadow-lg z-50 py-1">
+                {MODELS_BY_PROVIDER.map((group, gi) => (
+                  <div key={group.id}>
+                    {gi > 0 && <div className="border-t border-neutral-100 my-1" />}
+                    <div className="px-3 py-1.5 text-[10px] text-neutral-400 uppercase tracking-wider font-medium">
+                      {group.name}
+                    </div>
+                    {group.models.map(gm => {
+                      const model = MODELS.find(m => m.id === gm.id)!;
+                      const isActive = viewMode === "tabs"
+                        ? activeTab === model.id
+                        : selectedModels.includes(model.id);
+                      return (
+                        <button
+                          key={model.id}
+                          onClick={() => {
+                            if (viewMode === "tabs") {
+                              setActiveTab(model.id);
+                              setIsModelPickerOpen(false);
+                            } else {
+                              toggleModel(model.id);
+                            }
+                          }}
+                          className={`w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 transition-colors ${
+                            isActive ? "bg-neutral-50" : "hover:bg-neutral-50"
+                          }`}
+                        >
+                          <span className={`w-2 h-2 rounded-full ${model.color}`} />
+                          <span className="flex-1">{model.name}</span>
+                          {isActive && (
+                            <svg className="w-3.5 h-3.5 text-neutral-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+                {viewMode === "side-by-side" && (
+                  <>
+                    <div className="border-t border-neutral-100 my-1" />
+                    <div className="flex items-center justify-center gap-2 px-3 py-1.5">
+                      <button
+                        onClick={() => { selectAll(); setIsModelPickerOpen(false); }}
+                        className="text-xs text-neutral-400 hover:text-neutral-900 transition-colors"
+                      >
+                        Select all
+                      </button>
+                      <span className="text-neutral-200">|</span>
+                      <button
+                        onClick={() => { setSelectedModels([selectedModels[0]]); setIsModelPickerOpen(false); }}
+                        className="text-xs text-neutral-400 hover:text-neutral-900 transition-colors"
+                      >
+                        Select none
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Right - view toggle, share, close */}
+        {/* Right - content toggle, view toggle, share, close */}
         <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Demo / Stats toggle */}
           <div className="flex items-center gap-px bg-neutral-100 p-0.5">
             <button
-              onClick={() => setViewMode("side-by-side")}
+              onClick={() => setContentMode("demo")}
               className={`px-2 py-1 text-xs font-medium transition-colors ${
-                viewMode === "side-by-side"
+                contentMode === "demo"
                   ? "bg-white text-neutral-900 shadow-sm"
                   : "text-neutral-500 hover:text-neutral-900"
               }`}
             >
-              Split
+              Demo
             </button>
             <button
-              onClick={() => setViewMode("tabs")}
+              onClick={() => setContentMode("stats")}
               className={`px-2 py-1 text-xs font-medium transition-colors ${
-                viewMode === "tabs"
+                contentMode === "stats"
                   ? "bg-white text-neutral-900 shadow-sm"
                   : "text-neutral-500 hover:text-neutral-900"
               }`}
             >
-              Tabs
+              Stats
             </button>
           </div>
+
+          {/* Split / Tabs toggle (only for demo mode) */}
+          {contentMode === "demo" && (
+            <div className="flex items-center gap-px bg-neutral-100 p-0.5">
+              <button
+                onClick={() => setViewMode("side-by-side")}
+                className={`px-2 py-1 text-xs font-medium transition-colors ${
+                  viewMode === "side-by-side"
+                    ? "bg-white text-neutral-900 shadow-sm"
+                    : "text-neutral-500 hover:text-neutral-900"
+                }`}
+              >
+                Split
+              </button>
+              <button
+                onClick={() => setViewMode("tabs")}
+                className={`px-2 py-1 text-xs font-medium transition-colors ${
+                  viewMode === "tabs"
+                    ? "bg-white text-neutral-900 shadow-sm"
+                    : "text-neutral-500 hover:text-neutral-900"
+                }`}
+              >
+                Tabs
+              </button>
+            </div>
+          )}
 
           <button
             onClick={copyLink}
@@ -307,7 +431,9 @@ export function AppComparisonView({
 
       {/* Content */}
       <div className="flex-1 overflow-hidden">
-        {viewMode === "tabs" ? (
+        {contentMode === "stats" ? (
+          <StatsComparisonPanel appId={app.id} selectedModels={selectedModels} />
+        ) : viewMode === "tabs" ? (
           // Tabs view - single iframe
           <div className="h-full">
             <iframe
