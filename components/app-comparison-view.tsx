@@ -28,7 +28,7 @@ export function AppComparisonView({
   apps = [],
   isOpen,
   onClose: _onClose,
-  initialModels = ["gpt-5.4", "opus-4.6", "gemini-3"],
+  initialModels = ["gpt-5.4", "opus-4.7", "gemini-3"],
   initialView = "side-by-side",
   initialTab = "gpt-5.4",
   initialContentMode = "demo",

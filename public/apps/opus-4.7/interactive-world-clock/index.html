@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Meridian — Interactive World Clock</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg-0: #0a0e1a;
+    --bg-1: #0f1525;
+    --text: #e8ecf5;
+    --text-dim: #8a93a8;
+    --text-faint: #5a6178;
+    --border: rgba(255,255,255,0.08);
+    --border-strong: rgba(255,255,255,0.14);
+    --accent: #7aa7ff;
+  }
+  html, body {
+    height: 100%;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg-0);
+    color: var(--text);
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    background:
+      radial-gradient(1200px 800px at 80% -10%, rgba(122,167,255,0.08), transparent 60%),
+      radial-gradient(900px 600px at -10% 100%, rgba(255,120,180,0.05), transparent 60%),
+      linear-gradient(180deg, #0a0e1a 0%, #070a14 100%);
+    min-height: 100vh;
+    position: relative;
+  }
+  /* Subtle starfield */
+  .stars {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image:
+      radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.6), transparent 50%),
+      radial-gradient(1px 1px at 70% 80%, rgba(255,255,255,0.4), transparent 50%),
+      radial-gradient(1px 1px at 40% 60%, rgba(255,255,255,0.5), transparent 50%),
+      radial-gradient(1px 1px at 85% 20%, rgba(255,255,255,0.3), transparent 50%),
+      radial-gradient(1px 1px at 10% 80%, rgba(255,255,255,0.4), transparent 50%),
+      radial-gradient(1px 1px at 55% 15%, rgba(255,255,255,0.5), transparent 50%),
+      radial-gradient(1px 1px at 90% 65%, rgba(255,255,255,0.3), transparent 50%),
+      radial-gradient(1px 1px at 25% 85%, rgba(255,255,255,0.4), transparent 50%);
+    background-size: 1000px 1000px;
+    opacity: 0.5;
+    animation: drift 120s linear infinite;
+  }
+  @keyframes drift {
+    from { background-position: 0 0; }
+    to { background-position: 1000px 1000px; }
+  }
+
+  .app {
+    position: relative; z-index: 1;
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 28px 24px 60px;
+  }
+
+  /* Header */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 28px; gap: 16px; flex-wrap: wrap;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .logo {
+    width: 40px; height: 40px; border-radius: 12px;
+    background: linear-gradient(135deg, #7aa7ff 0%, #b47aff 100%);
+    display: grid; place-items: center;
+    box-shadow: 0 8px 24px rgba(122,167,255,0.3), inset 0 1px 0 rgba(255,255,255,0.3);
+  }
+  .logo svg { width: 22px; height: 22px; color: white; }
+  .brand h1 {
+    font-size: 20px; font-weight: 600; letter-spacing: -0.02em;
+  }
+  .brand .subtitle {
+    font-size: 12px; color: var(--text-dim); margin-top: 1px;
+  }
+  .controls {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .toggle {
+    display: inline-flex; align-items: center;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px;
+    position: relative;
+    height: 36px;
+  }
+  .toggle button {
+    background: transparent; border: 0; color: var(--text-dim);
+    font: 600 12px 'Inter', sans-serif;
+    padding: 0 14px; height: 30px; border-radius: 999px;
+    cursor: pointer; letter-spacing: 0.04em;
+    transition: color 0.2s;
+    z-index: 1; position: relative;
+  }
+  .toggle button.active { color: #0a0e1a; }
+  .toggle .pill {
+    position: absolute; top: 3px; left: 3px;
+    height: 30px; width: 56px;
+    background: linear-gradient(135deg, #ffffff 0%, #e8ecf5 100%);
+    border-radius: 999px;
+    transition: transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+  .toggle[data-mode="24"] .pill { transform: translateX(56px); }
+
+  .btn-add {
+    display: inline-flex; align-items: center; gap: 8px;
+    height: 36px; padding: 0 16px;
+    background: linear-gradient(135deg, #7aa7ff 0%, #5a87e0 100%);
+    border: 0; border-radius: 999px;
+    color: white; font: 600 13px 'Inter', sans-serif;
+    cursor: pointer; letter-spacing: 0.01em;
+    box-shadow: 0 4px 14px rgba(122,167,255,0.4), inset 0 1px 0 rgba(255,255,255,0.25);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn-add:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(122,167,255,0.5), inset 0 1px 0 rgba(255,255,255,0.25); }
+  .btn-add:active { transform: translateY(0); }
+  .btn-add svg { width: 16px; height: 16px; }
+
+  /* Hero — local time */
+  .hero {
+    background: linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01));
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 28px 32px;
+    margin-bottom: 28px;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 20px; flex-wrap: wrap;
+    position: relative; overflow: hidden;
+  }
+  .hero::before {
+    content: ""; position: absolute; inset: 0;
+    background: radial-gradient(600px 200px at 80% 0%, rgba(122,167,255,0.15), transparent 70%);
+    pointer-events: none;
+  }
+  .hero-label {
+    font: 500 11px 'Inter', sans-serif;
+    letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--text-dim); margin-bottom: 6px;
+  }
+  .hero-city {
+    font-size: 22px; font-weight: 600; letter-spacing: -0.01em;
+  }
+  .hero-city span { color: var(--text-dim); font-weight: 400; margin-left: 8px; font-size: 14px;}
+  .hero-time {
+    font: 200 56px 'Inter', sans-serif;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    display: flex; align-items: baseline; gap: 6px;
+  }
+  .hero-time .seconds {
+    font-size: 26px; color: var(--text-dim); font-weight: 300;
+  }
+  .hero-time .period {
+    font-size: 18px; color: var(--text-dim); font-weight: 500;
+    margin-left: 6px; letter-spacing: 0.05em;
+  }
+  .hero-date {
+    color: var(--text-dim); font-size: 13px; margin-top: 4px;
+    letter-spacing: 0.02em;
+  }
+
+  /* Grid */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 18px;
+  }
+
+  /* Card */
+  .card {
+    position: relative; overflow: hidden;
+    border-radius: 20px;
+    padding: 22px 22px 20px;
+    min-height: 220px;
+    border: 1px solid var(--border);
+    transition: transform 0.25s cubic-bezier(0.4, 0.0, 0.2, 1), border-color 0.25s;
+    animation: cardIn 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+  @keyframes cardIn {
+    from { opacity: 0; transform: translateY(10px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .card:hover { transform: translateY(-3px); border-color: var(--border-strong); }
+
+  /* Gradient themes by period */
+  .card.dawn {
+    background:
+      radial-gradient(140% 80% at 0% 0%, rgba(255,190,130,0.25), transparent 55%),
+      linear-gradient(160deg, #f7c9a0 0%, #ec97b7 45%, #7a5a9c 100%);
+    color: #2a1a3a;
+  }
+  .card.morning {
+    background:
+      radial-gradient(140% 80% at 0% 0%, rgba(255,220,140,0.4), transparent 55%),
+      linear-gradient(160deg, #ffd79d 0%, #83c6f0 70%, #4b8fd6 100%);
+    color: #1a2a4a;
+  }
+  .card.noon {
+    background:
+      radial-gradient(140% 80% at 50% 0%, rgba(255,255,200,0.3), transparent 55%),
+      linear-gradient(180deg, #74c3f4 0%, #4a9fe0 100%);
+    color: #0d2040;
+  }
+  .card.afternoon {
+    background:
+      radial-gradient(120% 80% at 100% 0%, rgba(255,200,120,0.4), transparent 55%),
+      linear-gradient(160deg, #f7b572 0%, #de7a6a 60%, #a34b7a 100%);
+    color: #2a1528;
+  }
+  .card.evening {
+    background:
+      radial-gradient(120% 90% at 100% 100%, rgba(255,100,120,0.35), transparent 55%),
+      linear-gradient(160deg, #e76b7a 0%, #8c4396 55%, #3f2562 100%);
+    color: #f6e8ff;
+  }
+  .card.night {
+    background:
+      radial-gradient(90% 70% at 100% 0%, rgba(180,200,255,0.15), transparent 55%),
+      linear-gradient(160deg, #1a2344 0%, #14193a 50%, #0a0e1e 100%);
+    color: #e8ecf5;
+  }
+  .card.latenight {
+    background:
+      radial-gradient(90% 70% at 0% 100%, rgba(150,120,255,0.2), transparent 55%),
+      linear-gradient(160deg, #0f1530 0%, #1a1640 55%, #070914 100%);
+    color: #dfe4f5;
+  }
+
+  .card-top {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    margin-bottom: 20px; position: relative; z-index: 2;
+  }
+  .card-city {
+    font-weight: 600; font-size: 17px; letter-spacing: -0.01em;
+    line-height: 1.15;
+  }
+  .card-country {
+    font-size: 11.5px; opacity: 0.72; margin-top: 3px;
+    letter-spacing: 0.02em;
+  }
+  .card-icon {
+    width: 36px; height: 36px; border-radius: 10px;
+    background: rgba(255,255,255,0.15);
+    backdrop-filter: blur(6px);
+    display: grid; place-items: center;
+    border: 1px solid rgba(255,255,255,0.2);
+  }
+  .card-icon svg { width: 20px; height: 20px; }
+
+  .card-remove {
+    position: absolute; top: 10px; right: 10px;
+    width: 26px; height: 26px; border-radius: 50%;
+    background: rgba(0,0,0,0.2); border: 0;
+    color: currentColor; cursor: pointer;
+    display: none; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity 0.2s, background 0.2s;
+    z-index: 3;
+  }
+  .card:hover .card-remove { display: flex; opacity: 1; }
+  .card-remove:hover { background: rgba(0,0,0,0.4); }
+  .card-remove svg { width: 12px; height: 12px; }
+
+  .card-time {
+    font: 200 44px 'Inter', sans-serif;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+    display: flex; align-items: baseline; gap: 4px;
+    position: relative; z-index: 2;
+  }
+  .card-time .seconds {
+    font-size: 20px; opacity: 0.65; font-weight: 300;
+  }
+  .card-time .period {
+    font-size: 13px; font-weight: 600;
+    opacity: 0.75; margin-left: 4px; letter-spacing: 0.08em;
+  }
+  .card-meta {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    margin-top: 14px; position: relative; z-index: 2;
+  }
+  .card-offset {
+    font-size: 11.5px; opacity: 0.72;
+    letter-spacing: 0.02em;
+  }
+  .card-period-label {
+    font-size: 10.5px; font-weight: 600;
+    letter-spacing: 0.2em; text-transform: uppercase;
+    opacity: 0.82;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .card-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: currentColor; opacity: 0.8;
+    box-shadow: 0 0 10px currentColor;
+  }
+
+  /* Ambient sky in card corner */
+  .card-sky {
+    position: absolute;
+    top: -20px; right: -20px;
+    width: 120px; height: 120px;
+    pointer-events: none;
+    opacity: 0.7;
+  }
+
+  /* Modal */
+  .modal-backdrop {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(5,8,18,0.65);
+    backdrop-filter: blur(6px);
+    display: none; align-items: center; justify-content: center;
+    padding: 20px;
+    animation: fadeIn 0.2s;
+  }
+  .modal-backdrop.open { display: flex; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .modal {
+    background: linear-gradient(180deg, #171e33 0%, #0f1525 100%);
+    border: 1px solid var(--border-strong);
+    border-radius: 20px;
+    width: 100%; max-width: 480px;
+    padding: 24px;
+    box-shadow: 0 40px 80px rgba(0,0,0,0.5);
+    animation: modalIn 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  @keyframes modalIn {
+    from { opacity: 0; transform: translateY(20px) scale(0.96); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .modal h2 {
+    font-size: 18px; font-weight: 600; margin-bottom: 6px;
+    letter-spacing: -0.01em;
+  }
+  .modal p {
+    color: var(--text-dim); font-size: 13px; margin-bottom: 18px;
+  }
+  .search-wrap {
+    position: relative; margin-bottom: 14px;
+  }
+  .search-wrap svg {
+    position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+    width: 16px; height: 16px; color: var(--text-dim);
+  }
+  .search {
+    width: 100%; height: 44px;
+    background: rgba(0,0,0,0.25);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0 14px 0 40px;
+    color: var(--text); font: 400 14px 'Inter', sans-serif;
+    outline: none; transition: border-color 0.15s;
+  }
+  .search:focus { border-color: var(--accent); }
+  .search::placeholder { color: var(--text-faint); }
+
+  .results {
+    max-height: 340px; overflow-y: auto;
+    margin: 0 -6px;
+    padding: 0 6px;
+  }
+  .results::-webkit-scrollbar { width: 6px; }
+  .results::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+  .result-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 11px 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  .result-item:hover { background: rgba(255,255,255,0.05); }
+  .result-item.added { opacity: 0.4; cursor: default; }
+  .result-item.added:hover { background: transparent; }
+  .result-name {
+    font-weight: 500; font-size: 14px;
+  }
+  .result-country {
+    font-size: 11.5px; color: var(--text-dim); margin-top: 2px;
+  }
+  .result-time {
+    font: 300 14px 'Inter', sans-serif;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-dim);
+  }
+  .result-time.added-tag {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--text-faint);
+  }
+
+  .modal-footer {
+    display: flex; justify-content: flex-end; gap: 10px;
+    margin-top: 18px;
+  }
+  .btn-ghost {
+    height: 36px; padding: 0 16px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text); font: 500 13px 'Inter', sans-serif;
+    cursor: pointer; transition: background 0.15s;
+  }
+  .btn-ghost:hover { background: rgba(255,255,255,0.04); }
+
+  /* Empty state */
+  .empty {
+    grid-column: 1 / -1;
+    padding: 60px 20px;
+    text-align: center;
+    border: 1.5px dashed var(--border);
+    border-radius: 20px;
+    color: var(--text-dim);
+  }
+  .empty h3 { color: var(--text); font-size: 16px; margin-bottom: 6px; font-weight: 500;}
+  .empty p { font-size: 13px; }
+
+  /* Smooth second tick */
+  .tick { animation: tick 1s ease; }
+  @keyframes tick { 0% { opacity: 0.5; } 100% { opacity: 1; } }
+
+  @media (max-width: 600px) {
+    .hero-time { font-size: 42px; }
+    .hero { padding: 20px 22px; }
+    .app { padding: 20px 16px 40px; }
+  }
+</style>
+</head>
+<body>
+<div class="stars"></div>
+<div class="app">
+  <header>
+    <div class="brand">
+      <div class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 3a14 14 0 0 1 0 18"/>
+          <path d="M12 3a14 14 0 0 0 0 18"/>
+          <path d="M3 12h18"/>
+        </svg>
+      </div>
+      <div>
+        <h1>Meridian</h1>
+        <div class="subtitle">Interactive World Clock</div>
+      </div>
+    </div>
+    <div class="controls">
+      <div class="toggle" id="format-toggle" data-mode="12">
+        <div class="pill"></div>
+        <button data-mode="12" class="active">12H</button>
+        <button data-mode="24">24H</button>
+      </div>
+      <button class="btn-add" id="add-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+        Add City
+      </button>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div>
+      <div class="hero-label">Your Local Time</div>
+      <div class="hero-city" id="hero-city">Detecting…<span id="hero-tz"></span></div>
+      <div class="hero-date" id="hero-date"></div>
+    </div>
+    <div class="hero-time" id="hero-time">--<span class="seconds">:--</span></div>
+  </section>
+
+  <div class="grid" id="grid"></div>
+</div>
+
+<!-- Modal -->
+<div class="modal-backdrop" id="modal">
+  <div class="modal">
+    <h2>Add a city</h2>
+    <p>Search from 140+ cities worldwide.</p>
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+      <input type="text" class="search" id="search" placeholder="Search city or country…" autocomplete="off" />
+    </div>
+    <div class="results" id="results"></div>
+    <div class="modal-footer">
+      <button class="btn-ghost" id="close-modal">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============ CITY DATA ============ */
+const CITIES = [
+  { name: "New York", country: "United States", tz: "America/New_York" },
+  { name: "Los Angeles", country: "United States", tz: "America/Los_Angeles" },
+  { name: "Chicago", country: "United States", tz: "America/Chicago" },
+  { name: "Denver", country: "United States", tz: "America/Denver" },
+  { name: "Phoenix", country: "United States", tz: "America/Phoenix" },
+  { name: "Miami", country: "United States", tz: "America/New_York" },
+  { name: "Honolulu", country: "United States", tz: "Pacific/Honolulu" },
+  { name: "Anchorage", country: "United States", tz: "America/Anchorage" },
+  { name: "Toronto", country: "Canada", tz: "America/Toronto" },
+  { name: "Vancouver", country: "Canada", tz: "America/Vancouver" },
+  { name: "Montreal", country: "Canada", tz: "America/Montreal" },
+  { name: "Mexico City", country: "Mexico", tz: "America/Mexico_City" },
+  { name: "Havana", country: "Cuba", tz: "America/Havana" },
+  { name: "Panama City", country: "Panama", tz: "America/Panama" },
+  { name: "Bogotá", country: "Colombia", tz: "America/Bogota" },
+  { name: "Lima", country: "Peru", tz: "America/Lima" },
+  { name: "Santiago", country: "Chile", tz: "America/Santiago" },
+  { name: "Buenos Aires", country: "Argentina", tz: "America/Argentina/Buenos_Aires" },
+  { name: "São Paulo", country: "Brazil", tz: "America/Sao_Paulo" },
+  { name: "Rio de Janeiro", country: "Brazil", tz: "America/Sao_Paulo" },
+  { name: "Caracas", country: "Venezuela", tz: "America/Caracas" },
+  { name: "London", country: "United Kingdom", tz: "Europe/London" },
+  { name: "Edinburgh", country: "United Kingdom", tz: "Europe/London" },
+  { name: "Dublin", country: "Ireland", tz: "Europe/Dublin" },
+  { name: "Lisbon", country: "Portugal", tz: "Europe/Lisbon" },
+  { name: "Madrid", country: "Spain", tz: "Europe/Madrid" },
+  { name: "Barcelona", country: "Spain", tz: "Europe/Madrid" },
+  { name: "Paris", country: "France", tz: "Europe/Paris" },
+  { name: "Brussels", country: "Belgium", tz: "Europe/Brussels" },
+  { name: "Amsterdam", country: "Netherlands", tz: "Europe/Amsterdam" },
+  { name: "Berlin", country: "Germany", tz: "Europe/Berlin" },
+  { name: "Munich", country: "Germany", tz: "Europe/Berlin" },
+  { name: "Frankfurt", country: "Germany", tz: "Europe/Berlin" },
+  { name: "Zürich", country: "Switzerland", tz: "Europe/Zurich" },
+  { name: "Geneva", country: "Switzerland", tz: "Europe/Zurich" },
+  { name: "Vienna", country: "Austria", tz: "Europe/Vienna" },
+  { name: "Prague", country: "Czech Republic", tz: "Europe/Prague" },
+  { name: "Warsaw", country: "Poland", tz: "Europe/Warsaw" },
+  { name: "Budapest", country: "Hungary", tz: "Europe/Budapest" },
+  { name: "Rome", country: "Italy", tz: "Europe/Rome" },
+  { name: "Milan", country: "Italy", tz: "Europe/Rome" },
+  { name: "Athens", country: "Greece", tz: "Europe/Athens" },
+  { name: "Istanbul", country: "Turkey", tz: "Europe/Istanbul" },
+  { name: "Copenhagen", country: "Denmark", tz: "Europe/Copenhagen" },
+  { name: "Oslo", country: "Norway", tz: "Europe/Oslo" },
+  { name: "Stockholm", country: "Sweden", tz: "Europe/Stockholm" },
+  { name: "Helsinki", country: "Finland", tz: "Europe/Helsinki" },
+  { name: "Reykjavík", country: "Iceland", tz: "Atlantic/Reykjavik" },
+  { name: "Moscow", country: "Russia", tz: "Europe/Moscow" },
+  { name: "Saint Petersburg", country: "Russia", tz: "Europe/Moscow" },
+  { name: "Kyiv", country: "Ukraine", tz: "Europe/Kyiv" },
+  { name: "Minsk", country: "Belarus", tz: "Europe/Minsk" },
+  { name: "Bucharest", country: "Romania", tz: "Europe/Bucharest" },
+  { name: "Sofia", country: "Bulgaria", tz: "Europe/Sofia" },
+  { name: "Cape Town", country: "South Africa", tz: "Africa/Johannesburg" },
+  { name: "Johannesburg", country: "South Africa", tz: "Africa/Johannesburg" },
+  { name: "Nairobi", country: "Kenya", tz: "Africa/Nairobi" },
+  { name: "Lagos", country: "Nigeria", tz: "Africa/Lagos" },
+  { name: "Cairo", country: "Egypt", tz: "Africa/Cairo" },
+  { name: "Casablanca", country: "Morocco", tz: "Africa/Casablanca" },
+  { name: "Algiers", country: "Algeria", tz: "Africa/Algiers" },
+  { name: "Accra", country: "Ghana", tz: "Africa/Accra" },
+  { name: "Addis Ababa", country: "Ethiopia", tz: "Africa/Addis_Ababa" },
+  { name: "Dubai", country: "UAE", tz: "Asia/Dubai" },
+  { name: "Abu Dhabi", country: "UAE", tz: "Asia/Dubai" },
+  { name: "Doha", country: "Qatar", tz: "Asia/Qatar" },
+  { name: "Riyadh", country: "Saudi Arabia", tz: "Asia/Riyadh" },
+  { name: "Tehran", country: "Iran", tz: "Asia/Tehran" },
+  { name: "Baghdad", country: "Iraq", tz: "Asia/Baghdad" },
+  { name: "Jerusalem", country: "Israel", tz: "Asia/Jerusalem" },
+  { name: "Tel Aviv", country: "Israel", tz: "Asia/Jerusalem" },
+  { name: "Beirut", country: "Lebanon", tz: "Asia/Beirut" },
+  { name: "Amman", country: "Jordan", tz: "Asia/Amman" },
+  { name: "Karachi", country: "Pakistan", tz: "Asia/Karachi" },
+  { name: "Islamabad", country: "Pakistan", tz: "Asia/Karachi" },
+  { name: "Kabul", country: "Afghanistan", tz: "Asia/Kabul" },
+  { name: "Tashkent", country: "Uzbekistan", tz: "Asia/Tashkent" },
+  { name: "Delhi", country: "India", tz: "Asia/Kolkata" },
+  { name: "Mumbai", country: "India", tz: "Asia/Kolkata" },
+  { name: "Bengaluru", country: "India", tz: "Asia/Kolkata" },
+  { name: "Kolkata", country: "India", tz: "Asia/Kolkata" },
+  { name: "Chennai", country: "India", tz: "Asia/Kolkata" },
+  { name: "Hyderabad", country: "India", tz: "Asia/Kolkata" },
+  { name: "Colombo", country: "Sri Lanka", tz: "Asia/Colombo" },
+  { name: "Kathmandu", country: "Nepal", tz: "Asia/Kathmandu" },
+  { name: "Dhaka", country: "Bangladesh", tz: "Asia/Dhaka" },
+  { name: "Yangon", country: "Myanmar", tz: "Asia/Yangon" },
+  { name: "Bangkok", country: "Thailand", tz: "Asia/Bangkok" },
+  { name: "Phnom Penh", country: "Cambodia", tz: "Asia/Phnom_Penh" },
+  { name: "Hanoi", country: "Vietnam", tz: "Asia/Ho_Chi_Minh" },
+  { name: "Ho Chi Minh City", country: "Vietnam", tz: "Asia/Ho_Chi_Minh" },
+  { name: "Kuala Lumpur", country: "Malaysia", tz: "Asia/Kuala_Lumpur" },
+  { name: "Singapore", country: "Singapore", tz: "Asia/Singapore" },
+  { name: "Jakarta", country: "Indonesia", tz: "Asia/Jakarta" },
+  { name: "Bali (Denpasar)", country: "Indonesia", tz: "Asia/Makassar" },
+  { name: "Manila", country: "Philippines", tz: "Asia/Manila" },
+  { name: "Hong Kong", country: "China SAR", tz: "Asia/Hong_Kong" },
+  { name: "Macau", country: "China SAR", tz: "Asia/Macau" },
+  { name: "Taipei", country: "Taiwan", tz: "Asia/Taipei" },
+  { name: "Beijing", country: "China", tz: "Asia/Shanghai" },
+  { name: "Shanghai", country: "China", tz: "Asia/Shanghai" },
+  { name: "Guangzhou", country: "China", tz: "Asia/Shanghai" },
+  { name: "Shenzhen", country: "China", tz: "Asia/Shanghai" },
+  { name: "Chengdu", country: "China", tz: "Asia/Shanghai" },
+  { name: "Ulaanbaatar", country: "Mongolia", tz: "Asia/Ulaanbaatar" },
+  { name: "Seoul", country: "South Korea", tz: "Asia/Seoul" },
+  { name: "Pyongyang", country: "North Korea", tz: "Asia/Pyongyang" },
+  { name: "Tokyo", country: "Japan", tz: "Asia/Tokyo" },
+  { name: "Osaka", country: "Japan", tz: "Asia/Tokyo" },
+  { name: "Kyoto", country: "Japan", tz: "Asia/Tokyo" },
+  { name: "Sapporo", country: "Japan", tz: "Asia/Tokyo" },
+  { name: "Perth", country: "Australia", tz: "Australia/Perth" },
+  { name: "Adelaide", country: "Australia", tz: "Australia/Adelaide" },
+  { name: "Darwin", country: "Australia", tz: "Australia/Darwin" },
+  { name: "Brisbane", country: "Australia", tz: "Australia/Brisbane" },
+  { name: "Sydney", country: "Australia", tz: "Australia/Sydney" },
+  { name: "Melbourne", country: "Australia", tz: "Australia/Melbourne" },
+  { name: "Canberra", country: "Australia", tz: "Australia/Sydney" },
+  { name: "Hobart", country: "Australia", tz: "Australia/Hobart" },
+  { name: "Auckland", country: "New Zealand", tz: "Pacific/Auckland" },
+  { name: "Wellington", country: "New Zealand", tz: "Pacific/Auckland" },
+  { name: "Fiji (Suva)", country: "Fiji", tz: "Pacific/Fiji" },
+  { name: "Nouméa", country: "New Caledonia", tz: "Pacific/Noumea" },
+  { name: "Papeete", country: "French Polynesia", tz: "Pacific/Tahiti" },
+  { name: "Samoa (Apia)", country: "Samoa", tz: "Pacific/Apia" },
+  { name: "Tonga (Nukuʻalofa)", country: "Tonga", tz: "Pacific/Tongatapu" },
+  { name: "Guam", country: "Guam", tz: "Pacific/Guam" },
+  { name: "Anadyr", country: "Russia", tz: "Asia/Anadyr" },
+  { name: "Vladivostok", country: "Russia", tz: "Asia/Vladivostok" },
+  { name: "Novosibirsk", country: "Russia", tz: "Asia/Novosibirsk" },
+  { name: "Yekaterinburg", country: "Russia", tz: "Asia/Yekaterinburg" },
+  { name: "Almaty", country: "Kazakhstan", tz: "Asia/Almaty" },
+  { name: "Baku", country: "Azerbaijan", tz: "Asia/Baku" },
+  { name: "Tbilisi", country: "Georgia", tz: "Asia/Tbilisi" },
+  { name: "Yerevan", country: "Armenia", tz: "Asia/Yerevan" }
+];
+
+/* ============ STATE ============ */
+const STORAGE_KEY = "meridian.cities.v1";
+const FORMAT_KEY = "meridian.format.v1";
+
+let state = {
+  cities: loadCities(),
+  format: localStorage.getItem(FORMAT_KEY) || "12"
+};
+
+function loadCities() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if (Array.isArray(saved) && saved.length) return saved;
+  } catch(_) {}
+  // Defaults
+  return [
+    { name: "London", country: "United Kingdom", tz: "Europe/London" },
+    { name: "New York", country: "United States", tz: "America/New_York" },
+    { name: "Tokyo", country: "Japan", tz: "Asia/Tokyo" },
+    { name: "Sydney", country: "Australia", tz: "Australia/Sydney" }
+  ];
+}
+function saveCities() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.cities));
+}
+
+/* ============ TIME HELPERS ============ */
+function getZonedParts(tz, date = new Date()) {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    weekday: "short"
+  });
+  const parts = {};
+  for (const p of fmt.formatToParts(date)) parts[p.type] = p.value;
+  let h = parseInt(parts.hour, 10);
+  if (h === 24) h = 0;
+  return {
+    hour: h,
+    minute: parseInt(parts.minute, 10),
+    second: parseInt(parts.second, 10),
+    day: parts.day,
+    month: parts.month,
+    year: parts.year,
+    weekday: parts.weekday
+  };
+}
+
+function formatTime(parts, format) {
+  const m = String(parts.minute).padStart(2, "0");
+  const s = String(parts.second).padStart(2, "0");
+  if (format === "24") {
+    return { hhmm: `${String(parts.hour).padStart(2,"0")}:${m}`, ss: s, period: "" };
+  }
+  let h = parts.hour % 12; if (h === 0) h = 12;
+  return { hhmm: `${h}:${m}`, ss: s, period: parts.hour < 12 ? "AM" : "PM" };
+}
+
+function getOffsetString(tz, date = new Date()) {
+  // Get offset in minutes for a timezone vs local
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, timeZoneName: "shortOffset",
+    hour: "2-digit", hour12: false
+  });
+  for (const p of dtf.formatToParts(date)) {
+    if (p.type === "timeZoneName") {
+      const v = p.value.replace("GMT", "").trim();
+      if (v === "") return "UTC";
+      return "UTC" + v;
+    }
+  }
+  return "";
+}
+
+function localOffsetDiff(tz, date = new Date()) {
+  // difference in minutes from user's local tz
+  const hereParts = getZonedParts(Intl.DateTimeFormat().resolvedOptions().timeZone, date);
+  const thereParts = getZonedParts(tz, date);
+  const hereDate = Date.UTC(+hereParts.year, +hereParts.month - 1, +hereParts.day, hereParts.hour, hereParts.minute);
+  const thereDate = Date.UTC(+thereParts.year, +thereParts.month - 1, +thereParts.day, thereParts.hour, thereParts.minute);
+  return Math.round((thereDate - hereDate) / 60000);
+}
+
+function formatDiff(min) {
+  if (min === 0) return "Same as local";
+  const sign = min > 0 ? "+" : "−";
+  const abs = Math.abs(min);
+  const h = Math.floor(abs / 60);
+  const m = abs % 60;
+  return `${sign}${h}${m ? ":" + String(m).padStart(2,"0") : "h"}${m ? "h" : ""} local`;
+}
+
+/* ============ PERIOD / THEME ============ */
+function periodOf(hour) {
+  if (hour >= 5 && hour < 7)   return { key: "dawn",      label: "Dawn" };
+  if (hour >= 7 && hour < 11)  return { key: "morning",   label: "Morning" };
+  if (hour >= 11 && hour < 14) return { key: "noon",      label: "Midday" };
+  if (hour >= 14 && hour < 17) return { key: "afternoon", label: "Afternoon" };
+  if (hour >= 17 && hour < 20) return { key: "evening",   label: "Evening" };
+  if (hour >= 20 && hour < 23) return { key: "night",     label: "Night" };
+  return                             { key: "latenight", label: "Late Night" };
+}
+
+/* ============ ICONS ============ */
+function periodIcon(key) {
+  const common = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
+  const sun = `<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>`;
+  const moon = `<path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/>`;
+  const sunrise = `<path d="M17 18a5 5 0 0 0-10 0"/><line x1="12" y1="2" x2="12" y2="9"/><line x1="4.22" y1="10.22" x2="5.64" y2="11.64"/><line x1="1" y1="18" x2="3" y2="18"/><line x1="21" y1="18" x2="23" y2="18"/><line x1="18.36" y1="11.64" x2="19.78" y2="10.22"/><line x1="23" y1="22" x2="1" y2="22"/><polyline points="8 6 12 2 16 6"/>`;
+  const sunset = `<path d="M17 18a5 5 0 0 0-10 0"/><line x1="12" y1="9" x2="12" y2="2"/><line x1="4.22" y1="10.22" x2="5.64" y2="11.64"/><line x1="1" y1="18" x2="3" y2="18"/><line x1="21" y1="18" x2="23" y2="18"/><line x1="18.36" y1="11.64" x2="19.78" y2="10.22"/><line x1="23" y1="22" x2="1" y2="22"/><polyline points="16 5 12 9 8 5"/>`;
+  const cloudSun = `<path d="M12 2v2M5.64 5.64l1.41 1.41M2 12h2M17 12a5 5 0 1 0-9.9 1"/><path d="M13 22H7a4 4 0 0 1 0-8 6 6 0 0 1 11.8 1.5A3.5 3.5 0 0 1 17.5 22H13z"/>`;
+  const stars = `<path d="M12 3l1.9 4 4.3.5-3.2 2.9 1 4.2L12 12.6 7.9 14.6l1-4.2L5.8 7.5l4.3-.5L12 3z"/><circle cx="19" cy="19" r="1"/><circle cx="5" cy="18" r="1"/>`;
+  let body;
+  switch(key) {
+    case "dawn":      body = sunrise; break;
+    case "morning":   body = cloudSun; break;
+    case "noon":      body = sun; break;
+    case "afternoon": body = sun; break;
+    case "evening":   body = sunset; break;
+    case "night":     body = moon; break;
+    case "latenight": body = stars; break;
+    default:          body = sun;
+  }
+  return `<svg ${common}>${body}</svg>`;
+}
+
+function periodSky(key) {
+  // decorative sun/moon in corner
+  if (key === "night" || key === "latenight") {
+    return `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+      <defs><radialGradient id="gm" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="rgba(255,255,255,0.35)"/><stop offset="100%" stop-color="rgba(255,255,255,0)"/></radialGradient></defs>
+      <circle cx="60" cy="60" r="55" fill="url(#gm)"/>
+      <circle cx="60" cy="60" r="28" fill="rgba(240,240,255,0.85)"/>
+      <circle cx="52" cy="54" r="26" fill="rgba(30,34,60,0.95)"/>
+    </svg>`;
+  }
+  return `<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+    <defs><radialGradient id="gs" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="rgba(255,230,160,0.6)"/><stop offset="100%" stop-color="rgba(255,230,160,0)"/></radialGradient></defs>
+    <circle cx="60" cy="60" r="58" fill="url(#gs)"/>
+    <circle cx="60" cy="60" r="26" fill="rgba(255,240,200,0.9)"/>
+  </svg>`;
+}
+
+/* ============ RENDER ============ */
+const $grid = document.getElementById("grid");
+const $heroTime = document.getElementById("hero-time");
+const $heroCity = document.getElementById("hero-city");
+const $heroTz = document.getElementById("hero-tz");
+const $heroDate = document.getElementById("hero-date");
+
+function renderHero() {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const parts = getZonedParts(tz);
+  const { hhmm, ss, period } = formatTime(parts, state.format);
+  const cityGuess = tz.split("/").pop().replace(/_/g, " ");
+  $heroCity.firstChild.nodeValue = cityGuess;
+  $heroTz.textContent = `· ${tz}`;
+  const dateFmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    weekday: "long", year: "numeric", month: "long", day: "numeric"
+  });
+  $heroDate.textContent = dateFmt.format(new Date());
+  $heroTime.innerHTML = `${hhmm}<span class="seconds">:${ss}</span>${period ? `<span class="period">${period}</span>` : ""}`;
+}
+
+function render() {
+  $grid.innerHTML = "";
+  if (state.cities.length === 0) {
+    $grid.innerHTML = `<div class="empty"><h3>No cities yet</h3><p>Tap “Add City” to start tracking times around the world.</p></div>`;
+    return;
+  }
+  state.cities.forEach((city, idx) => {
+    const parts = getZonedParts(city.tz);
+    const { hhmm, ss, period } = formatTime(parts, state.format);
+    const p = periodOf(parts.hour);
+    const offsetStr = getOffsetString(city.tz);
+    const diff = localOffsetDiff(city.tz);
+    const diffStr = formatDiff(diff);
+
+    const card = document.createElement("div");
+    card.className = `card ${p.key}`;
+    card.dataset.idx = idx;
+    card.innerHTML = `
+      <div class="card-sky">${periodSky(p.key)}</div>
+      <button class="card-remove" aria-label="Remove ${city.name}" data-remove="${idx}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+      <div class="card-top">
+        <div>
+          <div class="card-city">${city.name}</div>
+          <div class="card-country">${city.country}</div>
+        </div>
+        <div class="card-icon">${periodIcon(p.key)}</div>
+      </div>
+      <div>
+        <div class="card-time">${hhmm}<span class="seconds">:${ss}</span>${period ? `<span class="period">${period}</span>` : ""}</div>
+        <div class="card-meta">
+          <div class="card-offset">${offsetStr} · ${diffStr}</div>
+          <div class="card-period-label"><span class="card-dot"></span>${p.label}</div>
+        </div>
+      </div>
+    `;
+    $grid.appendChild(card);
+  });
+  // Remove handlers
+  $grid.querySelectorAll("[data-remove]").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const i = +btn.dataset.remove;
+      state.cities.splice(i, 1);
+      saveCities();
+      render();
+    });
+  });
+}
+
+function tick() {
+  renderHero();
+  // efficient: update times only for existing cards
+  const cards = $grid.querySelectorAll(".card");
+  if (cards.length !== state.cities.length) { render(); return; }
+  state.cities.forEach((city, idx) => {
+    const card = cards[idx];
+    const parts = getZonedParts(city.tz);
+    const { hhmm, ss, period } = formatTime(parts, state.format);
+    const p = periodOf(parts.hour);
+    // Check if period changed — re-render if so for colors
+    if (!card.classList.contains(p.key)) {
+      render(); return;
+    }
+    const timeEl = card.querySelector(".card-time");
+    timeEl.innerHTML = `${hhmm}<span class="seconds">:${ss}</span>${period ? `<span class="period">${period}</span>` : ""}`;
+  });
+}
+
+/* ============ TOGGLE ============ */
+const $toggle = document.getElementById("format-toggle");
+$toggle.dataset.mode = state.format;
+$toggle.querySelectorAll("button").forEach(b => {
+  b.classList.toggle("active", b.dataset.mode === state.format);
+  b.addEventListener("click", () => {
+    state.format = b.dataset.mode;
+    localStorage.setItem(FORMAT_KEY, state.format);
+    $toggle.dataset.mode = state.format;
+    $toggle.querySelectorAll("button").forEach(x => x.classList.toggle("active", x.dataset.mode === state.format));
+    render();
+    renderHero();
+  });
+});
+
+/* ============ MODAL ============ */
+const $modal = document.getElementById("modal");
+const $search = document.getElementById("search");
+const $results = document.getElementById("results");
+const $addBtn = document.getElementById("add-btn");
+const $closeModal = document.getElementById("close-modal");
+
+$addBtn.addEventListener("click", openModal);
+$closeModal.addEventListener("click", closeModal);
+$modal.addEventListener("click", (e) => { if (e.target === $modal) closeModal(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && $modal.classList.contains("open")) closeModal();
+});
+
+function openModal() {
+  $modal.classList.add("open");
+  $search.value = "";
+  renderResults("");
+  setTimeout(() => $search.focus(), 50);
+}
+function closeModal() { $modal.classList.remove("open"); }
+
+$search.addEventListener("input", () => renderResults($search.value));
+
+function renderResults(q) {
+  const query = q.trim().toLowerCase();
+  const addedKeys = new Set(state.cities.map(c => c.name + "|" + c.tz));
+  const filtered = CITIES.filter(c => {
+    if (!query) return true;
+    return c.name.toLowerCase().includes(query) || c.country.toLowerCase().includes(query) || c.tz.toLowerCase().includes(query);
+  }).slice(0, 80);
+
+  if (filtered.length === 0) {
+    $results.innerHTML = `<div class="result-item" style="cursor:default"><div><div class="result-name">No matches</div><div class="result-country">Try another search</div></div></div>`;
+    return;
+  }
+  $results.innerHTML = filtered.map(c => {
+    const added = addedKeys.has(c.name + "|" + c.tz);
+    const parts = getZonedParts(c.tz);
+    const { hhmm, period } = formatTime(parts, state.format);
+    return `<div class="result-item ${added ? "added" : ""}" data-name="${c.name}" data-country="${c.country}" data-tz="${c.tz}">
+      <div>
+        <div class="result-name">${c.name}</div>
+        <div class="result-country">${c.country}</div>
+      </div>
+      ${added
+        ? `<div class="result-time added-tag">Added</div>`
+        : `<div class="result-time">${hhmm}${period ? " " + period : ""}</div>`}
+    </div>`;
+  }).join("");
+  $results.querySelectorAll(".result-item").forEach(item => {
+    if (item.classList.contains("added")) return;
+    item.addEventListener("click", () => {
+      state.cities.push({
+        name: item.dataset.name,
+        country: item.dataset.country,
+        tz: item.dataset.tz
+      });
+      saveCities();
+      render();
+      closeModal();
+    });
+  });
+}
+
+/* ============ INIT ============ */
+render();
+renderHero();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>
