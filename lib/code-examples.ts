@@ -1,7 +1,6 @@
 import path from "path";
 import fs from "fs/promises";
 import YAML from "yaml";
-import { loadYamlFiles } from "./load-yaml";
 
 export interface CodeExampleYAML {
   id?: string; // optional in YAML—slug will be canonical
@@ -61,17 +60,18 @@ function toCodeExample(
 
 export async function loadApps(): Promise<CodeExample[]> {
   // Runs on the server; YAML files are in the examples/ directory at repo root
-  const repoRoot = process.cwd();
-  const files = await loadYamlFiles(repoRoot);
+  const examplesDir = path.join(process.cwd(), "examples");
+  const entries = await fs.readdir(examplesDir);
   const apps: CodeExample[] = [];
 
-  for (const file of files) {
+  for (const name of entries) {
+    if (!/\.(yaml|yml)$/i.test(name)) continue;
+    const file = path.join(examplesDir, name);
     try {
       const raw = await fs.readFile(file, "utf8");
       const obj = YAML.parse(raw) as CodeExampleYAML;
 
-      const base = path.basename(file);
-      const slug = base.replace(/\.(yaml|yml)$/i, "");
+      const slug = name.replace(/\.(yaml|yml)$/i, "");
 
       const title =
         (typeof obj.title === "string" && obj.title) ||
