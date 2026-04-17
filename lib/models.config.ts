@@ -97,6 +97,14 @@ export const models: ModelConfig[] = [
     provider: "anthropic",
   },
   {
+    id: "opus-4.7",
+    name: "Opus 4.7",
+    cli: "claude",
+    model: "claude-opus-4-7",
+    color: "bg-pink-500",
+    provider: "anthropic",
+  },
+  {
     id: "sonnet-4.5",
     name: "Sonnet 4.5",
     cli: "claude",

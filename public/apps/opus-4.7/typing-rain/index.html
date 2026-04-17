@@ -1,0 +1,1105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Typing Rain</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --neon-cyan: #00f0ff;
+    --neon-pink: #ff2d95;
+    --neon-purple: #9d4edd;
+    --neon-yellow: #ffd60a;
+    --danger: #ff4d6d;
+    --success: #3dffa4;
+    --bg-deep: #050814;
+  }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg-deep);
+    color: #e6f1ff;
+    user-select: none;
+  }
+  #game {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background:
+      radial-gradient(ellipse at 20% 10%, rgba(157, 78, 221, 0.25), transparent 55%),
+      radial-gradient(ellipse at 85% 15%, rgba(255, 45, 149, 0.18), transparent 55%),
+      linear-gradient(to bottom,
+        #0a0f2e 0%,
+        #1a1148 25%,
+        #2d1658 45%,
+        #3a1a5c 60%,
+        #1a0f3d 85%,
+        #050814 100%);
+  }
+  canvas.layer {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+  #starsCanvas { z-index: 1; }
+  #cityCanvas { z-index: 2; }
+  #rainCanvas { z-index: 3; }
+  #gameCanvas { z-index: 4; }
+  #fxCanvas { z-index: 5; pointer-events: none; }
+
+  /* HUD */
+  .hud {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 10;
+    display: flex;
+    justify-content: space-between;
+    padding: 18px 28px;
+    pointer-events: none;
+  }
+  .hud-group {
+    display: flex;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .stat {
+    background: rgba(10, 15, 46, 0.55);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(0, 240, 255, 0.25);
+    border-radius: 10px;
+    padding: 8px 14px;
+    min-width: 90px;
+    box-shadow: 0 4px 20px rgba(0, 240, 255, 0.08), inset 0 0 12px rgba(0, 240, 255, 0.04);
+  }
+  .stat .label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: #7a8ec4;
+    text-transform: uppercase;
+    display: block;
+  }
+  .stat .value {
+    font-family: 'Courier New', monospace;
+    font-size: 20px;
+    font-weight: 700;
+    color: #e6f1ff;
+    text-shadow: 0 0 10px rgba(0, 240, 255, 0.6);
+  }
+  .stat.score .value { color: var(--neon-cyan); }
+  .stat.level .value { color: var(--neon-yellow); }
+  .stat.lives .value { color: var(--danger); }
+  .stat.accuracy .value { color: var(--success); }
+  .stat.combo .value { color: var(--neon-pink); }
+
+  /* Input bar */
+  .input-wrap {
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    width: min(560px, 82vw);
+    text-align: center;
+  }
+  .input-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10, 15, 46, 0.7);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 2px solid rgba(0, 240, 255, 0.4);
+    border-radius: 14px;
+    padding: 14px 22px;
+    font-family: 'Courier New', monospace;
+    font-size: 26px;
+    letter-spacing: 3px;
+    color: var(--neon-cyan);
+    box-shadow:
+      0 0 30px rgba(0, 240, 255, 0.25),
+      inset 0 0 20px rgba(0, 240, 255, 0.08);
+    min-height: 60px;
+    transition: border-color 0.2s, box-shadow 0.2s, transform 0.08s;
+  }
+  .input-bar.shake { animation: shake 0.3s; }
+  .input-bar.flash-good {
+    border-color: var(--success);
+    box-shadow: 0 0 40px rgba(61, 255, 164, 0.5), inset 0 0 20px rgba(61, 255, 164, 0.15);
+  }
+  .input-bar.flash-bad {
+    border-color: var(--danger);
+    box-shadow: 0 0 40px rgba(255, 77, 109, 0.5), inset 0 0 20px rgba(255, 77, 109, 0.15);
+  }
+  .cursor {
+    display: inline-block;
+    width: 2px;
+    height: 28px;
+    background: var(--neon-cyan);
+    margin-left: 2px;
+    animation: blink 1s step-end infinite;
+    vertical-align: middle;
+    box-shadow: 0 0 8px var(--neon-cyan);
+  }
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-8px); }
+    40% { transform: translateX(8px); }
+    60% { transform: translateX(-6px); }
+    80% { transform: translateX(6px); }
+  }
+  .hint {
+    margin-top: 10px;
+    font-size: 12px;
+    color: #7a8ec4;
+    letter-spacing: 1px;
+  }
+
+  /* Overlays */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse at center, rgba(10, 15, 46, 0.8) 0%, rgba(5, 8, 20, 0.95) 100%);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    gap: 18px;
+    padding: 20px;
+    text-align: center;
+  }
+  .title {
+    font-size: clamp(42px, 8vw, 88px);
+    font-weight: 900;
+    letter-spacing: 6px;
+    background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink), var(--neon-purple), var(--neon-cyan));
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 40px rgba(0, 240, 255, 0.3);
+    animation: gradientShift 6s ease infinite;
+    filter: drop-shadow(0 0 20px rgba(0, 240, 255, 0.4));
+  }
+  @keyframes gradientShift {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+  .subtitle {
+    font-size: 16px;
+    color: #9cb3e0;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    max-width: 620px;
+    line-height: 1.6;
+  }
+  .btn {
+    font-family: inherit;
+    cursor: pointer;
+    background: linear-gradient(135deg, rgba(0, 240, 255, 0.15), rgba(255, 45, 149, 0.15));
+    border: 2px solid var(--neon-cyan);
+    color: #e6f1ff;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    padding: 14px 38px;
+    border-radius: 10px;
+    margin-top: 14px;
+    transition: all 0.2s;
+    box-shadow: 0 0 24px rgba(0, 240, 255, 0.3);
+  }
+  .btn:hover {
+    background: linear-gradient(135deg, rgba(0, 240, 255, 0.3), rgba(255, 45, 149, 0.3));
+    transform: translateY(-2px);
+    box-shadow: 0 0 36px rgba(0, 240, 255, 0.6);
+  }
+  .game-over-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 18px;
+    margin-top: 20px;
+    max-width: 560px;
+    width: 100%;
+  }
+  .go-stat {
+    background: rgba(10, 15, 46, 0.6);
+    border: 1px solid rgba(0, 240, 255, 0.3);
+    padding: 14px 18px;
+    border-radius: 10px;
+  }
+  .go-stat .lbl {
+    font-size: 11px;
+    color: #7a8ec4;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  .go-stat .val {
+    font-family: 'Courier New', monospace;
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--neon-cyan);
+    text-shadow: 0 0 12px rgba(0, 240, 255, 0.5);
+  }
+  .hidden { display: none !important; }
+
+  .instructions {
+    margin-top: 14px;
+    font-size: 13px;
+    color: #9cb3e0;
+    line-height: 1.8;
+    letter-spacing: 1px;
+  }
+  .instructions kbd {
+    display: inline-block;
+    background: rgba(0, 240, 255, 0.12);
+    border: 1px solid rgba(0, 240, 255, 0.4);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-family: 'Courier New', monospace;
+    color: var(--neon-cyan);
+    font-size: 12px;
+  }
+
+  /* Danger pulse on low lives */
+  #game.danger::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 9;
+    pointer-events: none;
+    box-shadow: inset 0 0 80px rgba(255, 77, 109, 0.3);
+    animation: dangerPulse 1.2s ease-in-out infinite;
+  }
+  @keyframes dangerPulse {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 1; }
+  }
+
+  /* Pause overlay */
+  .pause {
+    position: absolute;
+    inset: 0;
+    z-index: 15;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(5, 8, 20, 0.7);
+    backdrop-filter: blur(6px);
+  }
+  .pause .big {
+    font-size: 72px;
+    font-weight: 900;
+    letter-spacing: 10px;
+    color: var(--neon-cyan);
+    text-shadow: 0 0 30px var(--neon-cyan);
+  }
+</style>
+</head>
+<body>
+<div id="game">
+  <canvas id="starsCanvas" class="layer"></canvas>
+  <canvas id="cityCanvas" class="layer"></canvas>
+  <canvas id="rainCanvas" class="layer"></canvas>
+  <canvas id="gameCanvas" class="layer"></canvas>
+  <canvas id="fxCanvas" class="layer"></canvas>
+
+  <div class="hud">
+    <div class="hud-group">
+      <div class="stat score"><span class="label">Score</span><span class="value" id="scoreVal">0</span></div>
+      <div class="stat level"><span class="label">Level</span><span class="value" id="levelVal">1</span></div>
+      <div class="stat combo"><span class="label">Combo</span><span class="value" id="comboVal">x1</span></div>
+    </div>
+    <div class="hud-group">
+      <div class="stat accuracy"><span class="label">Accuracy</span><span class="value" id="accVal">100%</span></div>
+      <div class="stat lives"><span class="label">Lives</span><span class="value" id="livesVal">♥♥♥</span></div>
+    </div>
+  </div>
+
+  <div class="input-wrap">
+    <div class="input-bar" id="inputBar">
+      <span id="typedText"></span><span class="cursor"></span>
+    </div>
+    <div class="hint">Type the falling words — press <kbd>ESC</kbd> to pause</div>
+  </div>
+
+  <div class="overlay" id="startOverlay">
+    <div class="title">TYPING&nbsp;RAIN</div>
+    <div class="subtitle">Words are falling on the city. Type them before they hit the ground.</div>
+    <button class="btn" id="startBtn">Start Game</button>
+    <div class="instructions">
+      <div>Each word typed = points. Chain them for <span style="color:var(--neon-pink)">combo multipliers</span>.</div>
+      <div>Miss a word = lose a ❤ . Speed and difficulty ramp up every level.</div>
+      <div>Keys: <kbd>A-Z</kbd> to type, <kbd>BACKSPACE</kbd> to clear, <kbd>ESC</kbd> to pause</div>
+    </div>
+  </div>
+
+  <div class="overlay hidden" id="gameOverOverlay">
+    <div class="title" style="background: linear-gradient(90deg, var(--danger), var(--neon-pink), var(--danger)); -webkit-background-clip:text; background-clip:text; color:transparent;">GAME OVER</div>
+    <div class="subtitle">The rain has won... this time.</div>
+    <div class="game-over-stats">
+      <div class="go-stat"><div class="lbl">Final Score</div><div class="val" id="finalScore">0</div></div>
+      <div class="go-stat"><div class="lbl">Level</div><div class="val" id="finalLevel">1</div></div>
+      <div class="go-stat"><div class="lbl">Accuracy</div><div class="val" id="finalAcc">100%</div></div>
+      <div class="go-stat"><div class="lbl">Words</div><div class="val" id="finalWords">0</div></div>
+      <div class="go-stat"><div class="lbl">Max Combo</div><div class="val" id="finalCombo">x1</div></div>
+      <div class="go-stat"><div class="lbl">WPM</div><div class="val" id="finalWpm">0</div></div>
+    </div>
+    <button class="btn" id="restartBtn">Play Again</button>
+  </div>
+
+  <div class="pause hidden" id="pauseOverlay"><div class="big">PAUSED</div></div>
+</div>
+
+<script>
+(() => {
+  // ---------- Word bank ----------
+  const WORDS = {
+    easy: [
+      "rain","city","fog","star","code","pixel","neon","dark","glow","sky",
+      "moon","dash","fast","type","word","line","drop","echo","jump","core",
+      "byte","node","wave","beat","sync","data","ping","hack","slow","spin",
+      "keys","flux","soul","rush","mist","dust","cold","warm","loop","dream"
+    ],
+    medium: [
+      "pixel","signal","cipher","binary","photon","vector","matrix","kernel",
+      "nebula","quantum","digital","circuit","network","console","modular",
+      "trigger","voltage","analog","station","gravity","phantom","crimson",
+      "shadow","mirror","velvet","cosmic","synth","gadget","outrun","system"
+    ],
+    hard: [
+      "holographic","diagnostic","cybernetic","frequency","mainframe",
+      "compile","architect","encrypted","firewall","abstract","parallel",
+      "asynchronous","recursion","algorithm","delegate","refactor",
+      "interface","polymorphic","concurrency","decompile","synthesize"
+    ],
+    expert: [
+      "metamorphosis","chromodynamics","synchronization","constellation",
+      "extraterrestrial","bioluminescent","electromagnetic","cryptographic",
+      "multidimensional","unpredictability","interconnection","reconstruction"
+    ]
+  };
+
+  // ---------- Canvases ----------
+  const starsCanvas = document.getElementById('starsCanvas');
+  const cityCanvas = document.getElementById('cityCanvas');
+  const rainCanvas = document.getElementById('rainCanvas');
+  const gameCanvas = document.getElementById('gameCanvas');
+  const fxCanvas = document.getElementById('fxCanvas');
+  const sCtx = starsCanvas.getContext('2d');
+  const cCtx = cityCanvas.getContext('2d');
+  const rCtx = rainCanvas.getContext('2d');
+  const gCtx = gameCanvas.getContext('2d');
+  const fxCtx = fxCanvas.getContext('2d');
+
+  let W = 0, H = 0, DPR = 1;
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    [starsCanvas, cityCanvas, rainCanvas, gameCanvas, fxCanvas].forEach(c => {
+      c.width = W * DPR;
+      c.height = H * DPR;
+      c.style.width = W + 'px';
+      c.style.height = H + 'px';
+      c.getContext('2d').setTransform(DPR, 0, 0, DPR, 0, 0);
+    });
+    buildCity();
+    buildStars();
+  }
+  window.addEventListener('resize', resize);
+
+  // ---------- Stars (parallax) ----------
+  let stars = [];
+  function buildStars() {
+    stars = [];
+    const count = Math.floor((W * H) / 8000);
+    for (let i = 0; i < count; i++) {
+      stars.push({
+        x: Math.random() * W,
+        y: Math.random() * H * 0.55,
+        r: Math.random() * 1.4 + 0.2,
+        tw: Math.random() * Math.PI * 2,
+        spd: 0.5 + Math.random() * 1.5
+      });
+    }
+  }
+  function drawStars(t) {
+    sCtx.clearRect(0, 0, W, H);
+    // Moon
+    const mx = W * 0.78, my = H * 0.18, mr = Math.min(W, H) * 0.055;
+    const moonGrad = sCtx.createRadialGradient(mx, my, 0, mx, my, mr * 2.5);
+    moonGrad.addColorStop(0, 'rgba(255, 240, 210, 0.9)');
+    moonGrad.addColorStop(0.4, 'rgba(255, 200, 180, 0.25)');
+    moonGrad.addColorStop(1, 'rgba(255, 200, 180, 0)');
+    sCtx.fillStyle = moonGrad;
+    sCtx.beginPath();
+    sCtx.arc(mx, my, mr * 2.5, 0, Math.PI * 2);
+    sCtx.fill();
+    sCtx.fillStyle = '#fff5e0';
+    sCtx.beginPath();
+    sCtx.arc(mx, my, mr, 0, Math.PI * 2);
+    sCtx.fill();
+    // Moon crater shading
+    sCtx.fillStyle = 'rgba(200, 180, 150, 0.25)';
+    sCtx.beginPath();
+    sCtx.arc(mx - mr * 0.3, my - mr * 0.15, mr * 0.2, 0, Math.PI * 2);
+    sCtx.arc(mx + mr * 0.25, my + mr * 0.3, mr * 0.15, 0, Math.PI * 2);
+    sCtx.fill();
+
+    // Stars
+    for (let s of stars) {
+      const a = 0.4 + Math.sin(t * 0.002 * s.spd + s.tw) * 0.4;
+      sCtx.fillStyle = `rgba(220, 235, 255, ${a})`;
+      sCtx.beginPath();
+      sCtx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      sCtx.fill();
+    }
+  }
+
+  // ---------- City Skyline ----------
+  let cityLayers = [];
+  function buildCity() {
+    cityLayers = [];
+    // Three parallax layers
+    const layerConfigs = [
+      { yBase: 0.82, hMin: 60, hMax: 180, wMin: 35, wMax: 90, color: '#0a0a1f', windowAlpha: 0.15 },
+      { yBase: 0.88, hMin: 90, hMax: 240, wMin: 45, wMax: 110, color: '#0d0a24', windowAlpha: 0.25 },
+      { yBase: 0.94, hMin: 140, hMax: 320, wMin: 55, wMax: 130, color: '#120a2a', windowAlpha: 0.35 }
+    ];
+    for (let cfg of layerConfigs) {
+      const buildings = [];
+      let x = -20;
+      while (x < W + 40) {
+        const w = cfg.wMin + Math.random() * (cfg.wMax - cfg.wMin);
+        const h = cfg.hMin + Math.random() * (cfg.hMax - cfg.hMin);
+        const y = H * cfg.yBase - h;
+        const windows = [];
+        const winW = 4, winH = 6, padX = 6, padY = 10;
+        const cols = Math.floor((w - padX * 2) / (winW + 4));
+        const rows = Math.floor((h - padY * 2) / (winH + 6));
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            if (Math.random() > 0.45) {
+              windows.push({
+                x: padX + c * (winW + 4),
+                y: padY + r * (winH + 6),
+                w: winW, h: winH,
+                on: Math.random() > 0.3,
+                flicker: Math.random() * Math.PI * 2,
+                color: Math.random() > 0.85 ? (Math.random() > 0.5 ? '#ff9d5c' : '#5cc8ff') : '#ffd89b'
+              });
+            }
+          }
+        }
+        buildings.push({ x, y, w, h, windows, hasAntenna: Math.random() > 0.7, color: cfg.color, windowAlpha: cfg.windowAlpha });
+        x += w - 2;
+      }
+      cityLayers.push(buildings);
+    }
+  }
+
+  function drawCity(t) {
+    cCtx.clearRect(0, 0, W, H);
+    // Distant glow
+    const glowGrad = cCtx.createLinearGradient(0, H * 0.6, 0, H * 0.95);
+    glowGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    glowGrad.addColorStop(0.5, 'rgba(255, 80, 150, 0.08)');
+    glowGrad.addColorStop(1, 'rgba(0, 240, 255, 0.05)');
+    cCtx.fillStyle = glowGrad;
+    cCtx.fillRect(0, H * 0.6, W, H * 0.4);
+
+    for (let i = 0; i < cityLayers.length; i++) {
+      const layer = cityLayers[i];
+      const depthDim = 1 - (2 - i) * 0.15;
+      for (let b of layer) {
+        cCtx.fillStyle = b.color;
+        cCtx.fillRect(b.x, b.y, b.w, b.h);
+        // edge highlight
+        cCtx.fillStyle = 'rgba(100, 80, 140, 0.15)';
+        cCtx.fillRect(b.x, b.y, 1, b.h);
+        // antenna
+        if (b.hasAntenna) {
+          cCtx.fillStyle = '#1a1340';
+          cCtx.fillRect(b.x + b.w / 2 - 1, b.y - 14, 2, 14);
+          const blink = Math.sin(t * 0.003 + b.x) > 0.8;
+          if (blink) {
+            cCtx.fillStyle = 'rgba(255, 50, 80, 0.9)';
+            cCtx.beginPath();
+            cCtx.arc(b.x + b.w / 2, b.y - 14, 2, 0, Math.PI * 2);
+            cCtx.fill();
+          }
+        }
+        // windows
+        for (let w of b.windows) {
+          if (!w.on) continue;
+          const flick = 0.7 + Math.sin(t * 0.004 + w.flicker) * 0.3;
+          cCtx.fillStyle = w.color;
+          cCtx.globalAlpha = b.windowAlpha * flick * depthDim + 0.35 * depthDim;
+          cCtx.fillRect(b.x + w.x, b.y + w.y, w.w, w.h);
+        }
+        cCtx.globalAlpha = 1;
+      }
+    }
+
+    // Wet street reflection
+    const reflGrad = cCtx.createLinearGradient(0, H * 0.94, 0, H);
+    reflGrad.addColorStop(0, 'rgba(10, 10, 35, 0.8)');
+    reflGrad.addColorStop(1, 'rgba(40, 10, 60, 0.6)');
+    cCtx.fillStyle = reflGrad;
+    cCtx.fillRect(0, H * 0.94, W, H * 0.06);
+  }
+
+  // ---------- Rain (background drops) ----------
+  const raindrops = [];
+  function initRain() {
+    raindrops.length = 0;
+    const count = 180;
+    for (let i = 0; i < count; i++) {
+      raindrops.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        len: 10 + Math.random() * 20,
+        spd: 6 + Math.random() * 10,
+        a: 0.2 + Math.random() * 0.4
+      });
+    }
+  }
+  function drawRain() {
+    rCtx.clearRect(0, 0, W, H);
+    rCtx.strokeStyle = 'rgba(140, 200, 255, 0.6)';
+    rCtx.lineWidth = 1;
+    for (let d of raindrops) {
+      rCtx.strokeStyle = `rgba(140, 200, 255, ${d.a})`;
+      rCtx.beginPath();
+      rCtx.moveTo(d.x, d.y);
+      rCtx.lineTo(d.x - 1, d.y + d.len);
+      rCtx.stroke();
+      d.x -= 0.5;
+      d.y += d.spd;
+      if (d.y > H) {
+        d.y = -d.len;
+        d.x = Math.random() * W + 20;
+      }
+    }
+  }
+
+  // ---------- Game State ----------
+  const state = {
+    running: false,
+    paused: false,
+    words: [],
+    typed: '',
+    score: 0,
+    level: 1,
+    lives: 3,
+    combo: 1,
+    maxCombo: 1,
+    correct: 0,
+    wrong: 0,
+    wordsTyped: 0,
+    spawnTimer: 0,
+    spawnInterval: 2000,
+    baseSpeed: 0.6,
+    activeWord: null,
+    splashes: [],
+    particles: [],
+    startTime: 0,
+  };
+
+  // ---------- Word entity ----------
+  function pickWordText() {
+    const lvl = state.level;
+    let pool;
+    const r = Math.random();
+    if (lvl <= 2) pool = WORDS.easy;
+    else if (lvl <= 5) pool = r < 0.7 ? WORDS.easy : WORDS.medium;
+    else if (lvl <= 9) pool = r < 0.5 ? WORDS.medium : (r < 0.85 ? WORDS.easy : WORDS.hard);
+    else if (lvl <= 14) pool = r < 0.5 ? WORDS.hard : (r < 0.85 ? WORDS.medium : WORDS.expert);
+    else pool = r < 0.5 ? WORDS.expert : WORDS.hard;
+    let txt = pool[Math.floor(Math.random() * pool.length)];
+    // Avoid collision prefix with existing words (for fair targeting)
+    const lower = txt.toLowerCase();
+    const conflict = state.words.some(w => w.text.toLowerCase()[0] === lower[0]);
+    if (conflict) {
+      const alt = pool.find(x => !state.words.some(w => w.text.toLowerCase()[0] === x.toLowerCase()[0]));
+      if (alt) txt = alt;
+    }
+    return txt;
+  }
+
+  function spawnWord() {
+    const text = pickWordText();
+    gCtx.font = 'bold 22px "Courier New", monospace';
+    const tw = gCtx.measureText(text).width + 24;
+    const x = 30 + Math.random() * (W - 60 - tw);
+    const speed = state.baseSpeed + Math.random() * 0.3 + state.level * 0.08;
+    // color by difficulty
+    const lenC = text.length;
+    let hue = 190; // cyan
+    if (lenC >= 8) hue = 320; // pink
+    if (lenC >= 11) hue = 45; // gold
+    if (lenC >= 14) hue = 0; // red-ish
+    state.words.push({
+      text,
+      x, y: -20,
+      w: tw,
+      speed,
+      typedIdx: 0,
+      hue,
+      sway: Math.random() * Math.PI * 2,
+      swayAmp: 0.3 + Math.random() * 0.6,
+      id: Math.random()
+    });
+  }
+
+  // ---------- Visual FX ----------
+  function splash(x, y, hue) {
+    for (let i = 0; i < 18; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      const spd = 1 + Math.random() * 4;
+      state.particles.push({
+        x, y,
+        vx: Math.cos(ang) * spd,
+        vy: Math.sin(ang) * spd - 1,
+        life: 1,
+        decay: 0.02 + Math.random() * 0.02,
+        size: 2 + Math.random() * 3,
+        hue
+      });
+    }
+    state.splashes.push({ x, y, r: 2, maxR: 60, life: 1, hue });
+  }
+
+  function drawFx() {
+    fxCtx.clearRect(0, 0, W, H);
+    // Splashes
+    for (let i = state.splashes.length - 1; i >= 0; i--) {
+      const s = state.splashes[i];
+      s.r += 2.5;
+      s.life -= 0.04;
+      fxCtx.strokeStyle = `hsla(${s.hue}, 90%, 65%, ${s.life})`;
+      fxCtx.lineWidth = 2;
+      fxCtx.beginPath();
+      fxCtx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      fxCtx.stroke();
+      if (s.life <= 0) state.splashes.splice(i, 1);
+    }
+    // Particles
+    for (let i = state.particles.length - 1; i >= 0; i--) {
+      const p = state.particles[i];
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += 0.15;
+      p.life -= p.decay;
+      fxCtx.fillStyle = `hsla(${p.hue}, 90%, 65%, ${p.life})`;
+      fxCtx.beginPath();
+      fxCtx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+      fxCtx.fill();
+      if (p.life <= 0) state.particles.splice(i, 1);
+    }
+  }
+
+  // ---------- Drawing words ----------
+  function drawWords() {
+    gCtx.clearRect(0, 0, W, H);
+    gCtx.font = 'bold 22px "Courier New", monospace';
+    gCtx.textBaseline = 'middle';
+
+    for (let w of state.words) {
+      const swayX = Math.sin(w.sway) * 6 * w.swayAmp;
+      const cx = w.x + swayX;
+      const cy = w.y;
+      const isActive = state.activeWord === w;
+
+      // Background pill
+      gCtx.save();
+      gCtx.shadowColor = `hsla(${w.hue}, 90%, 65%, 0.7)`;
+      gCtx.shadowBlur = isActive ? 28 : 14;
+      gCtx.fillStyle = isActive
+        ? `hsla(${w.hue}, 90%, 20%, 0.85)`
+        : `hsla(${w.hue}, 70%, 12%, 0.75)`;
+      roundRect(gCtx, cx, cy - 18, w.w, 36, 8);
+      gCtx.fill();
+      gCtx.restore();
+
+      // Border
+      gCtx.strokeStyle = `hsla(${w.hue}, 90%, 65%, ${isActive ? 1 : 0.6})`;
+      gCtx.lineWidth = isActive ? 2 : 1;
+      roundRect(gCtx, cx, cy - 18, w.w, 36, 8);
+      gCtx.stroke();
+
+      // Drop tail (water drip from underneath)
+      const dripY = cy + 18;
+      const dripGrad = gCtx.createLinearGradient(cx + w.w / 2, dripY, cx + w.w / 2, dripY + 18);
+      dripGrad.addColorStop(0, `hsla(${w.hue}, 90%, 65%, 0.5)`);
+      dripGrad.addColorStop(1, `hsla(${w.hue}, 90%, 65%, 0)`);
+      gCtx.fillStyle = dripGrad;
+      gCtx.beginPath();
+      gCtx.moveTo(cx + w.w / 2 - 3, dripY);
+      gCtx.quadraticCurveTo(cx + w.w / 2, dripY + 22, cx + w.w / 2 + 3, dripY);
+      gCtx.closePath();
+      gCtx.fill();
+
+      // Text - two colors (typed vs remaining)
+      const typed = w.text.substring(0, w.typedIdx);
+      const rest = w.text.substring(w.typedIdx);
+      const tx = cx + 12;
+      const ty = cy;
+      // Typed portion
+      gCtx.fillStyle = `hsla(${w.hue}, 95%, 80%, 1)`;
+      gCtx.shadowColor = `hsla(${w.hue}, 95%, 70%, 0.8)`;
+      gCtx.shadowBlur = 8;
+      gCtx.fillText(typed, tx, ty);
+      const typedW = gCtx.measureText(typed).width;
+      // Remaining portion
+      gCtx.shadowBlur = 0;
+      gCtx.fillStyle = isActive ? 'rgba(230, 241, 255, 1)' : 'rgba(200, 215, 240, 0.92)';
+      gCtx.fillText(rest, tx + typedW, ty);
+
+      // Progress underline
+      if (w.typedIdx > 0) {
+        gCtx.strokeStyle = `hsla(${w.hue}, 90%, 70%, 0.9)`;
+        gCtx.lineWidth = 2;
+        gCtx.beginPath();
+        gCtx.moveTo(tx, ty + 12);
+        gCtx.lineTo(tx + typedW, ty + 12);
+        gCtx.stroke();
+      }
+    }
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  // ---------- Game loop ----------
+  let lastTime = 0;
+  function loop(ts) {
+    const dt = Math.min(50, ts - lastTime);
+    lastTime = ts;
+
+    drawStars(ts);
+    drawCity(ts);
+    if (state.running && !state.paused) {
+      drawRain();
+      update(dt, ts);
+    } else {
+      drawRain();
+    }
+    drawWords();
+    drawFx();
+    requestAnimationFrame(loop);
+  }
+
+  function update(dt, ts) {
+    // Spawn
+    state.spawnTimer += dt;
+    if (state.spawnTimer >= state.spawnInterval) {
+      state.spawnTimer = 0;
+      spawnWord();
+    }
+
+    // Update words
+    const groundY = H * 0.92;
+    for (let i = state.words.length - 1; i >= 0; i--) {
+      const w = state.words[i];
+      w.y += w.speed * (dt / 16);
+      w.sway += 0.03;
+      if (w.y > groundY) {
+        // Missed
+        splash(w.x + w.w / 2, groundY, 0);
+        state.lives--;
+        state.combo = 1;
+        state.wrong += w.text.length - w.typedIdx;
+        state.words.splice(i, 1);
+        if (state.activeWord === w) { state.activeWord = null; state.typed = ''; updateInputDisplay(); }
+        shakeInput();
+        flashInput('bad');
+        if (state.lives <= 0) {
+          endGame();
+          return;
+        }
+      }
+    }
+
+    // Difficulty scaling
+    const wordsForLevel = state.wordsTyped;
+    const newLevel = 1 + Math.floor(wordsForLevel / 7);
+    if (newLevel !== state.level) {
+      state.level = newLevel;
+    }
+    state.spawnInterval = Math.max(600, 2000 - state.level * 110);
+    state.baseSpeed = 0.5 + state.level * 0.06;
+
+    // HUD
+    document.getElementById('scoreVal').textContent = state.score.toLocaleString();
+    document.getElementById('levelVal').textContent = state.level;
+    document.getElementById('comboVal').textContent = 'x' + state.combo;
+    const acc = state.correct + state.wrong === 0 ? 100 : Math.round((state.correct / (state.correct + state.wrong)) * 100);
+    document.getElementById('accVal').textContent = acc + '%';
+    const hearts = '♥'.repeat(Math.max(0, state.lives)) + '♡'.repeat(Math.max(0, 3 - state.lives));
+    document.getElementById('livesVal').textContent = hearts || '—';
+
+    // Danger state
+    document.getElementById('game').classList.toggle('danger', state.lives === 1);
+  }
+
+  // ---------- Input handling ----------
+  function handleKey(e) {
+    if (!state.running) return;
+    if (e.key === 'Escape') {
+      togglePause();
+      return;
+    }
+    if (state.paused) return;
+    if (e.key === 'Backspace') {
+      if (state.typed.length > 0) {
+        state.typed = state.typed.slice(0, -1);
+        recomputeActive();
+        updateInputDisplay();
+      }
+      return;
+    }
+    if (e.key.length !== 1) return;
+    const ch = e.key;
+    if (!/^[a-zA-Z0-9']$/.test(ch)) return;
+
+    const tryTyped = state.typed + ch.toLowerCase();
+    // Look for a word that matches (prefix)
+    let best = null;
+    if (state.activeWord && state.activeWord.text.toLowerCase().startsWith(tryTyped)) {
+      best = state.activeWord;
+    } else {
+      // Choose lowest (most urgent) word that matches
+      let candidates = state.words.filter(w => w.text.toLowerCase().startsWith(tryTyped));
+      if (candidates.length) {
+        candidates.sort((a, b) => b.y - a.y);
+        best = candidates[0];
+      }
+    }
+
+    if (best) {
+      state.typed = tryTyped;
+      state.activeWord = best;
+      best.typedIdx = tryTyped.length;
+      state.correct++;
+      updateInputDisplay();
+
+      // Completed?
+      if (best.typedIdx >= best.text.length) {
+        wordCompleted(best);
+      } else {
+        flashInput('good', 80);
+      }
+    } else {
+      // Wrong key
+      state.wrong++;
+      state.combo = 1;
+      shakeInput();
+      flashInput('bad', 150);
+    }
+  }
+
+  function recomputeActive() {
+    if (state.typed.length === 0) {
+      state.activeWord = null;
+      for (let w of state.words) w.typedIdx = 0;
+      return;
+    }
+    // Find first word that matches prefix; prefer lowest
+    let candidates = state.words.filter(w => w.text.toLowerCase().startsWith(state.typed));
+    if (!candidates.length) {
+      state.typed = '';
+      state.activeWord = null;
+      for (let w of state.words) w.typedIdx = 0;
+      return;
+    }
+    candidates.sort((a, b) => b.y - a.y);
+    state.activeWord = candidates[0];
+    for (let w of state.words) {
+      w.typedIdx = w === state.activeWord ? state.typed.length : 0;
+    }
+  }
+
+  function wordCompleted(w) {
+    state.combo++;
+    if (state.combo > state.maxCombo) state.maxCombo = state.combo;
+    const base = w.text.length * 10;
+    const levelBonus = state.level * 5;
+    const comboBonus = Math.floor(base * (state.combo - 1) * 0.25);
+    const gained = base + levelBonus + comboBonus;
+    state.score += gained;
+    state.wordsTyped++;
+
+    splash(w.x + w.w / 2, w.y, w.hue);
+    // Score popup
+    state.particles.push({
+      x: w.x + w.w / 2,
+      y: w.y - 10,
+      vx: 0, vy: -1.2,
+      life: 1,
+      decay: 0.015,
+      size: 0,
+      hue: w.hue,
+      text: '+' + gained
+    });
+    flashInput('good', 200);
+
+    const idx = state.words.indexOf(w);
+    if (idx >= 0) state.words.splice(idx, 1);
+    state.activeWord = null;
+    state.typed = '';
+    updateInputDisplay();
+  }
+
+  function updateInputDisplay() {
+    const el = document.getElementById('typedText');
+    el.textContent = state.typed;
+  }
+
+  let flashTimeout;
+  function flashInput(type, ms = 200) {
+    const bar = document.getElementById('inputBar');
+    bar.classList.remove('flash-good', 'flash-bad');
+    void bar.offsetWidth;
+    bar.classList.add(type === 'good' ? 'flash-good' : 'flash-bad');
+    clearTimeout(flashTimeout);
+    flashTimeout = setTimeout(() => {
+      bar.classList.remove('flash-good', 'flash-bad');
+    }, ms);
+  }
+
+  let shakeTimeout;
+  function shakeInput() {
+    const bar = document.getElementById('inputBar');
+    bar.classList.remove('shake');
+    void bar.offsetWidth;
+    bar.classList.add('shake');
+    clearTimeout(shakeTimeout);
+    shakeTimeout = setTimeout(() => bar.classList.remove('shake'), 320);
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Backspace') e.preventDefault();
+    handleKey(e);
+  });
+
+  // ---------- Custom particle text render ----------
+  const origDrawFx = drawFx;
+  function drawFxWithText() {
+    origDrawFx();
+    for (let p of state.particles) {
+      if (p.text) {
+        fxCtx.font = 'bold 18px "Courier New", monospace';
+        fxCtx.fillStyle = `hsla(${p.hue}, 95%, 75%, ${p.life})`;
+        fxCtx.shadowColor = `hsla(${p.hue}, 95%, 65%, ${p.life})`;
+        fxCtx.shadowBlur = 10;
+        fxCtx.textAlign = 'center';
+        fxCtx.fillText(p.text, p.x, p.y);
+        fxCtx.shadowBlur = 0;
+        fxCtx.textAlign = 'left';
+      }
+    }
+  }
+  // Swap implementation
+  window.__drawFx = drawFxWithText;
+
+  // Override drawFx in loop
+  const _loop = loop;
+  function loop2(ts) {
+    const dt = Math.min(50, ts - lastTime);
+    lastTime = ts;
+    drawStars(ts);
+    drawCity(ts);
+    drawRain();
+    if (state.running && !state.paused) update(dt, ts);
+    drawWords();
+    drawFxWithText();
+    requestAnimationFrame(loop2);
+  }
+
+  // ---------- Game control ----------
+  function startGame() {
+    state.running = true;
+    state.paused = false;
+    state.words = [];
+    state.typed = '';
+    state.activeWord = null;
+    state.score = 0;
+    state.level = 1;
+    state.lives = 3;
+    state.combo = 1;
+    state.maxCombo = 1;
+    state.correct = 0;
+    state.wrong = 0;
+    state.wordsTyped = 0;
+    state.spawnTimer = 0;
+    state.spawnInterval = 2000;
+    state.baseSpeed = 0.6;
+    state.splashes = [];
+    state.particles = [];
+    state.startTime = performance.now();
+    updateInputDisplay();
+    document.getElementById('startOverlay').classList.add('hidden');
+    document.getElementById('gameOverOverlay').classList.add('hidden');
+    document.getElementById('game').classList.remove('danger');
+    // Give first word after short delay
+    setTimeout(() => spawnWord(), 600);
+  }
+
+  function endGame() {
+    state.running = false;
+    const elapsed = (performance.now() - state.startTime) / 60000;
+    const totalChars = state.correct;
+    const wpm = elapsed > 0 ? Math.round((totalChars / 5) / elapsed) : 0;
+    const acc = state.correct + state.wrong === 0 ? 100 : Math.round((state.correct / (state.correct + state.wrong)) * 100);
+    document.getElementById('finalScore').textContent = state.score.toLocaleString();
+    document.getElementById('finalLevel').textContent = state.level;
+    document.getElementById('finalAcc').textContent = acc + '%';
+    document.getElementById('finalWords').textContent = state.wordsTyped;
+    document.getElementById('finalCombo').textContent = 'x' + state.maxCombo;
+    document.getElementById('finalWpm').textContent = wpm;
+    document.getElementById('gameOverOverlay').classList.remove('hidden');
+    document.getElementById('game').classList.remove('danger');
+  }
+
+  function togglePause() {
+    if (!state.running) return;
+    state.paused = !state.paused;
+    document.getElementById('pauseOverlay').classList.toggle('hidden', !state.paused);
+  }
+
+  document.getElementById('startBtn').addEventListener('click', startGame);
+  document.getElementById('restartBtn').addEventListener('click', startGame);
+
+  // ---------- Init ----------
+  resize();
+  initRain();
+  requestAnimationFrame(loop2);
+})();
+</script>
+</body>
+</html>

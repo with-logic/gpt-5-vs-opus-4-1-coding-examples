@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+<title>Online Whiteboard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #f5f5f7; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; user-select: none; }
+
+  #app { position: fixed; inset: 0; display: flex; flex-direction: column; }
+
+  /* Canvas */
+  #canvasWrap {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(circle at 1px 1px, rgba(0,0,0,0.08) 1px, transparent 0) 0 0 / 24px 24px,
+      linear-gradient(180deg, #fafafa, #eef1f5);
+  }
+  canvas { position: absolute; top: 0; left: 0; display: block; cursor: crosshair; touch-action: none; }
+
+  /* Top Bar */
+  #topbar {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    background: rgba(255,255,255,0.85);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border: 1px solid rgba(0,0,0,0.06);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.04);
+    border-radius: 16px;
+    padding: 8px;
+    display: flex; align-items: center; gap: 4px;
+    z-index: 10;
+    max-width: calc(100vw - 32px);
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .tool-group {
+    display: flex; align-items: center; gap: 2px;
+    padding: 2px;
+  }
+  .tool-group + .tool-group { border-left: 1px solid rgba(0,0,0,0.08); padding-left: 6px; margin-left: 4px; }
+
+  .tool-btn {
+    width: 40px; height: 40px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: none; background: transparent; color: #333;
+    border-radius: 10px; cursor: pointer;
+    transition: background 0.18s ease, transform 0.1s ease, color 0.18s ease;
+    position: relative;
+  }
+  .tool-btn:hover { background: rgba(0,0,0,0.06); }
+  .tool-btn:active { transform: scale(0.94); }
+  .tool-btn.active {
+    background: linear-gradient(135deg, #4f8cff, #4361ee);
+    color: #fff;
+    box-shadow: 0 4px 14px rgba(67,97,238,0.35);
+  }
+  .tool-btn svg { width: 20px; height: 20px; stroke-width: 2; }
+  .tool-btn[disabled] { opacity: 0.35; cursor: not-allowed; }
+
+  /* Tooltip */
+  .tool-btn[data-tip]::after {
+    content: attr(data-tip);
+    position: absolute;
+    top: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+    background: rgba(30,30,30,0.95);
+    color: #fff; font-size: 11px; padding: 5px 8px; border-radius: 6px;
+    white-space: nowrap; pointer-events: none; opacity: 0;
+    transition: opacity 0.2s ease;
+    z-index: 30;
+    font-weight: 500;
+  }
+  .tool-btn:hover[data-tip]::after { opacity: 1; }
+
+  /* Bottom/Side Bar for colors + size */
+  #sidebar {
+    position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
+    background: rgba(255,255,255,0.85);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border: 1px solid rgba(0,0,0,0.06);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+    border-radius: 16px;
+    padding: 12px 10px;
+    display: flex; flex-direction: column; gap: 10px; align-items: center;
+    z-index: 10;
+  }
+  .swatches { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+  .swatch {
+    width: 24px; height: 24px; border-radius: 50%; border: 2px solid #fff;
+    cursor: pointer; box-shadow: 0 0 0 1px rgba(0,0,0,0.12), 0 2px 4px rgba(0,0,0,0.08);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .swatch:hover { transform: scale(1.12); }
+  .swatch.active {
+    transform: scale(1.18);
+    box-shadow: 0 0 0 2px #4361ee, 0 2px 8px rgba(67,97,238,0.3);
+  }
+  .custom-color {
+    width: 28px; height: 28px;
+    border-radius: 8px;
+    cursor: pointer;
+    overflow: hidden;
+    position: relative;
+    border: 2px solid #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.12), 0 2px 4px rgba(0,0,0,0.08);
+    background: conic-gradient(from 0deg, red, orange, yellow, lime, cyan, blue, magenta, red);
+  }
+  .custom-color input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+  .divider { width: 28px; height: 1px; background: rgba(0,0,0,0.08); margin: 2px 0; }
+
+  .size-control {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: 2px;
+  }
+  .size-preview {
+    width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.03);
+    border-radius: 8px;
+  }
+  .size-dot {
+    background: #333; border-radius: 50%;
+    transition: width 0.15s, height 0.15s, background 0.15s;
+  }
+  #sizeSlider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100px;
+    height: 4px;
+    background: rgba(0,0,0,0.1);
+    border-radius: 2px;
+    outline: none;
+    transform: rotate(-90deg);
+    margin: 40px 0;
+  }
+  #sizeSlider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px; height: 16px;
+    background: #fff;
+    border: 2px solid #4361ee;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  }
+  #sizeSlider::-moz-range-thumb {
+    width: 16px; height: 16px;
+    background: #fff;
+    border: 2px solid #4361ee;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  /* Status label */
+  #status {
+    position: absolute; bottom: 16px; right: 16px;
+    background: rgba(255,255,255,0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(0,0,0,0.06);
+    border-radius: 10px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: #555;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  /* Toast */
+  #toast {
+    position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: rgba(30,30,30,0.95);
+    color: #fff; padding: 10px 18px; border-radius: 10px;
+    font-size: 13px; font-weight: 500;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    z-index: 100;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* Modal */
+  .modal-backdrop {
+    position: absolute; inset: 0;
+    background: rgba(0,0,0,0.4);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    display: none; align-items: center; justify-content: center;
+    z-index: 50;
+  }
+  .modal-backdrop.show { display: flex; }
+  .modal {
+    background: #fff;
+    border-radius: 16px;
+    padding: 24px;
+    max-width: 360px;
+    width: 90%;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+    animation: pop 0.22s ease;
+  }
+  @keyframes pop { from { transform: scale(0.92); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .modal h3 { font-size: 17px; margin-bottom: 8px; }
+  .modal p { font-size: 13px; color: #555; margin-bottom: 18px; line-height: 1.4; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .btn {
+    padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 500;
+    border: none; cursor: pointer;
+    transition: background 0.15s ease, transform 0.1s ease;
+  }
+  .btn:active { transform: scale(0.96); }
+  .btn-secondary { background: rgba(0,0,0,0.06); color: #333; }
+  .btn-secondary:hover { background: rgba(0,0,0,0.1); }
+  .btn-danger { background: #e53935; color: #fff; }
+  .btn-danger:hover { background: #c62828; }
+  .btn-primary { background: #4361ee; color: #fff; }
+  .btn-primary:hover { background: #3548c4; }
+
+  @media (max-width: 640px) {
+    #sidebar { left: 50%; top: auto; bottom: 16px; transform: translateX(-50%); flex-direction: row; padding: 10px 12px; }
+    .swatches { grid-template-columns: repeat(5, 1fr); }
+    .divider { width: 1px; height: 24px; margin: 0 4px; }
+    #sizeSlider { transform: none; margin: 0; width: 80px; }
+    .size-control { flex-direction: row; }
+    #status { bottom: 80px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="canvasWrap">
+    <canvas id="bgCanvas"></canvas>
+    <canvas id="canvas"></canvas>
+    <canvas id="previewCanvas"></canvas>
+  </div>
+
+  <!-- Top Bar: Tools + Actions -->
+  <div id="topbar">
+    <div class="tool-group" id="toolGroup">
+      <button class="tool-btn active" data-tool="pen" data-tip="Pen (P)" aria-label="Pen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>
+      </button>
+      <button class="tool-btn" data-tool="marker" data-tip="Highlighter (H)" aria-label="Highlighter">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2l4 4-10 10-4-4L18 2z"/><path d="M8 12l-4 4v4h4l4-4"/><line x1="2" y1="22" x2="22" y2="22"/></svg>
+      </button>
+      <button class="tool-btn" data-tool="line" data-tip="Line (L)" aria-label="Line">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="19" x2="19" y2="5"/><circle cx="5" cy="19" r="1.5" fill="currentColor"/><circle cx="19" cy="5" r="1.5" fill="currentColor"/></svg>
+      </button>
+      <button class="tool-btn" data-tool="rect" data-tip="Rectangle (R)" aria-label="Rectangle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="6" width="16" height="12" rx="1"/></svg>
+      </button>
+      <button class="tool-btn" data-tool="ellipse" data-tip="Ellipse (O)" aria-label="Ellipse">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="12" rx="9" ry="6"/></svg>
+      </button>
+      <button class="tool-btn" data-tool="arrow" data-tip="Arrow (A)" aria-label="Arrow">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="19" x2="19" y2="5"/><polyline points="10 5 19 5 19 14"/></svg>
+      </button>
+      <button class="tool-btn" data-tool="text" data-tip="Text (T)" aria-label="Text">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+      </button>
+      <button class="tool-btn" data-tool="eraser" data-tip="Eraser (E)" aria-label="Eraser">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H8L3 15a2 2 0 0 1 0-2.83L12.17 3a2 2 0 0 1 2.83 0L21 9a2 2 0 0 1 0 2.83L12 20"/><line x1="8" y1="20" x2="20" y2="20"/></svg>
+      </button>
+    </div>
+
+    <div class="tool-group">
+      <button class="tool-btn" id="undoBtn" data-tip="Undo (⌘Z)" aria-label="Undo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+      </button>
+      <button class="tool-btn" id="redoBtn" data-tip="Redo (⌘⇧Z)" aria-label="Redo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.13-9.36L23 10"/></svg>
+      </button>
+    </div>
+
+    <div class="tool-group">
+      <button class="tool-btn" id="gridBtn" data-tip="Toggle Grid (G)" aria-label="Toggle Grid">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="1"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+      </button>
+      <button class="tool-btn" id="clearBtn" data-tip="Clear Canvas (⌘⌫)" aria-label="Clear">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>
+      </button>
+      <button class="tool-btn" id="saveBtn" data-tip="Save PNG (⌘S)" aria-label="Save">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Sidebar: Colors & Size -->
+  <div id="sidebar">
+    <div class="swatches" id="swatches"></div>
+    <label class="custom-color" data-tip="Custom color" aria-label="Custom color">
+      <input type="color" id="colorPicker" value="#111111" />
+    </label>
+    <div class="divider"></div>
+    <div class="size-control">
+      <div class="size-preview"><div id="sizeDot" class="size-dot" style="width:6px;height:6px;"></div></div>
+      <input type="range" min="1" max="60" value="4" id="sizeSlider" />
+    </div>
+  </div>
+
+  <div id="status">Ready</div>
+  <div id="toast"></div>
+
+  <!-- Clear Modal -->
+  <div class="modal-backdrop" id="clearModal">
+    <div class="modal">
+      <h3>Clear the canvas?</h3>
+      <p>This will erase everything on the whiteboard. You can undo this action afterward.</p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="clearCancel">Cancel</button>
+        <button class="btn btn-danger" id="clearConfirm">Clear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Text Input Modal (inline input for text tool) -->
+  <input id="textInput" style="position:absolute; display:none; background:transparent; border:1px dashed #4361ee; padding:2px 4px; outline:none; z-index: 20; font-family: inherit; min-width: 40px;" />
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  const DPR = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+
+  const bgCanvas = document.getElementById('bgCanvas');
+  const canvas = document.getElementById('canvas');
+  const previewCanvas = document.getElementById('previewCanvas');
+  const bgCtx = bgCanvas.getContext('2d');
+  const ctx = canvas.getContext('2d');
+  const pCtx = previewCanvas.getContext('2d');
+
+  const statusEl = document.getElementById('status');
+  const toastEl = document.getElementById('toast');
+  const textInput = document.getElementById('textInput');
+
+  // State
+  const state = {
+    tool: 'pen',
+    color: '#111111',
+    size: 4,
+    isDrawing: false,
+    startX: 0, startY: 0,
+    lastX: 0, lastY: 0,
+    path: [],
+    strokes: [],     // Completed drawn shapes/strokes
+    undone: [],
+    showGrid: true,
+    width: 0, height: 0,
+  };
+
+  const PALETTE = [
+    '#111111', '#ffffff',
+    '#e53935', '#ff9800',
+    '#ffc107', '#4caf50',
+    '#2196f3', '#673ab7',
+    '#e91e63', '#795548',
+  ];
+
+  // Build swatches
+  const swatchEl = document.getElementById('swatches');
+  PALETTE.forEach((c, i) => {
+    const s = document.createElement('div');
+    s.className = 'swatch' + (i === 0 ? ' active' : '');
+    s.style.background = c;
+    s.dataset.color = c;
+    s.title = c;
+    s.addEventListener('click', () => setColor(c));
+    swatchEl.appendChild(s);
+  });
+
+  const colorPicker = document.getElementById('colorPicker');
+  colorPicker.addEventListener('input', (e) => setColor(e.target.value, true));
+
+  const sizeSlider = document.getElementById('sizeSlider');
+  const sizeDot = document.getElementById('sizeDot');
+  sizeSlider.addEventListener('input', (e) => {
+    state.size = parseInt(e.target.value, 10);
+    const d = Math.max(3, Math.min(28, state.size));
+    sizeDot.style.width = d + 'px';
+    sizeDot.style.height = d + 'px';
+    sizeDot.style.background = state.color;
+  });
+
+  function setColor(c, fromPicker) {
+    state.color = c;
+    sizeDot.style.background = c;
+    document.querySelectorAll('.swatch').forEach(sw => {
+      sw.classList.toggle('active', sw.dataset.color === c);
+    });
+    if (!fromPicker) colorPicker.value = c;
+  }
+
+  // Tool selection
+  const toolButtons = document.querySelectorAll('[data-tool]');
+  toolButtons.forEach(btn => {
+    btn.addEventListener('click', () => setTool(btn.dataset.tool));
+  });
+  function setTool(t) {
+    state.tool = t;
+    toolButtons.forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+    updateCursor();
+    updateStatus();
+  }
+
+  function updateCursor() {
+    if (state.tool === 'eraser') canvas.style.cursor = 'cell';
+    else if (state.tool === 'text') canvas.style.cursor = 'text';
+    else canvas.style.cursor = 'crosshair';
+  }
+
+  function updateStatus() {
+    const names = { pen:'Pen', marker:'Highlighter', eraser:'Eraser', line:'Line', rect:'Rectangle', ellipse:'Ellipse', arrow:'Arrow', text:'Text' };
+    statusEl.textContent = `${names[state.tool]} · ${state.size}px`;
+  }
+
+  // Resize canvas
+  function resize() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    state.width = w; state.height = h;
+    [canvas, bgCanvas, previewCanvas].forEach(c => {
+      c.width = w * DPR;
+      c.height = h * DPR;
+      c.style.width = w + 'px';
+      c.style.height = h + 'px';
+    });
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    bgCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    pCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    redraw();
+  }
+  window.addEventListener('resize', resize);
+
+  // Drawing helpers
+  function drawBackground() {
+    bgCtx.clearRect(0, 0, state.width, state.height);
+    if (!state.showGrid) return;
+    const gap = 24;
+    bgCtx.fillStyle = 'rgba(0,0,0,0.07)';
+    for (let x = gap; x < state.width; x += gap) {
+      for (let y = gap; y < state.height; y += gap) {
+        bgCtx.beginPath();
+        bgCtx.arc(x, y, 0.9, 0, Math.PI * 2);
+        bgCtx.fill();
+      }
+    }
+  }
+
+  function redraw() {
+    drawBackground();
+    ctx.clearRect(0, 0, state.width, state.height);
+    for (const s of state.strokes) {
+      renderStroke(ctx, s);
+    }
+  }
+
+  function renderStroke(context, s) {
+    context.save();
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.globalCompositeOperation = s.composite || 'source-over';
+    context.globalAlpha = s.alpha != null ? s.alpha : 1;
+    context.strokeStyle = s.color;
+    context.fillStyle = s.color;
+    context.lineWidth = s.size;
+
+    switch (s.type) {
+      case 'pen':
+      case 'marker':
+      case 'eraser': {
+        const pts = s.points;
+        if (pts.length < 2) {
+          // single dot
+          context.beginPath();
+          context.arc(pts[0].x, pts[0].y, s.size / 2, 0, Math.PI * 2);
+          context.fill();
+          break;
+        }
+        context.beginPath();
+        context.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length - 1; i++) {
+          const midX = (pts[i].x + pts[i+1].x) / 2;
+          const midY = (pts[i].y + pts[i+1].y) / 2;
+          context.quadraticCurveTo(pts[i].x, pts[i].y, midX, midY);
+        }
+        const last = pts[pts.length - 1];
+        context.lineTo(last.x, last.y);
+        context.stroke();
+        break;
+      }
+      case 'line': {
+        context.beginPath();
+        context.moveTo(s.x1, s.y1);
+        context.lineTo(s.x2, s.y2);
+        context.stroke();
+        break;
+      }
+      case 'rect': {
+        context.strokeRect(
+          Math.min(s.x1, s.x2), Math.min(s.y1, s.y2),
+          Math.abs(s.x2 - s.x1), Math.abs(s.y2 - s.y1)
+        );
+        break;
+      }
+      case 'ellipse': {
+        const cx = (s.x1 + s.x2) / 2;
+        const cy = (s.y1 + s.y2) / 2;
+        const rx = Math.abs(s.x2 - s.x1) / 2;
+        const ry = Math.abs(s.y2 - s.y1) / 2;
+        context.beginPath();
+        context.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+        context.stroke();
+        break;
+      }
+      case 'arrow': {
+        const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
+        const len = Math.hypot(dx, dy);
+        if (len < 1) break;
+        const angle = Math.atan2(dy, dx);
+        const head = Math.max(10, s.size * 3);
+        context.beginPath();
+        context.moveTo(s.x1, s.y1);
+        context.lineTo(s.x2, s.y2);
+        context.stroke();
+        // Arrowhead
+        context.beginPath();
+        context.moveTo(s.x2, s.y2);
+        context.lineTo(s.x2 - head * Math.cos(angle - Math.PI / 7), s.y2 - head * Math.sin(angle - Math.PI / 7));
+        context.lineTo(s.x2 - head * Math.cos(angle + Math.PI / 7), s.y2 - head * Math.sin(angle + Math.PI / 7));
+        context.closePath();
+        context.fill();
+        break;
+      }
+      case 'text': {
+        context.font = `${Math.max(12, s.size * 4)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+        context.textBaseline = 'top';
+        context.fillText(s.text, s.x, s.y);
+        break;
+      }
+    }
+    context.restore();
+  }
+
+  // Pointer handling
+  function getPoint(e) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left),
+      y: (e.clientY - rect.top)
+    };
+  }
+
+  function startStroke(e) {
+    if (state.tool === 'text') {
+      const p = getPoint(e);
+      beginTextInput(p.x, p.y);
+      return;
+    }
+    const p = getPoint(e);
+    state.isDrawing = true;
+    state.startX = state.lastX = p.x;
+    state.startY = state.lastY = p.y;
+    state.path = [p];
+    // live render on main ctx for free-draw
+    if (state.tool === 'pen' || state.tool === 'marker' || state.tool === 'eraser') {
+      // nothing yet; we'll render on move
+    }
+    canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
+  }
+
+  function moveStroke(e) {
+    if (!state.isDrawing) return;
+    const p = getPoint(e);
+
+    if (state.tool === 'pen' || state.tool === 'marker' || state.tool === 'eraser') {
+      state.path.push(p);
+      // Draw an incremental segment to main canvas to avoid re-rendering entire stack
+      ctx.save();
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      if (state.tool === 'eraser') {
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.strokeStyle = 'rgba(0,0,0,1)';
+        ctx.lineWidth = state.size * 2.2;
+      } else if (state.tool === 'marker') {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 0.35;
+        ctx.strokeStyle = state.color;
+        ctx.lineWidth = state.size * 2.5;
+      } else {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.strokeStyle = state.color;
+        ctx.lineWidth = state.size;
+      }
+      ctx.beginPath();
+      ctx.moveTo(state.lastX, state.lastY);
+      // smooth line through midpoint
+      const midX = (state.lastX + p.x) / 2;
+      const midY = (state.lastY + p.y) / 2;
+      ctx.quadraticCurveTo(state.lastX, state.lastY, midX, midY);
+      ctx.stroke();
+      ctx.restore();
+      state.lastX = p.x; state.lastY = p.y;
+    } else {
+      // Preview shapes on preview canvas
+      pCtx.clearRect(0, 0, state.width, state.height);
+      const preview = buildShape(state.tool, state.startX, state.startY, p.x, p.y, e.shiftKey);
+      renderStroke(pCtx, preview);
+    }
+  }
+
+  function endStroke(e) {
+    if (!state.isDrawing) return;
+    state.isDrawing = false;
+    let shape;
+
+    if (state.tool === 'pen' || state.tool === 'marker' || state.tool === 'eraser') {
+      const pts = state.path;
+      if (pts.length < 1) return;
+      shape = {
+        type: state.tool,
+        points: pts,
+        color: state.color,
+        size: state.tool === 'eraser' ? state.size * 2.2 : (state.tool === 'marker' ? state.size * 2.5 : state.size),
+        composite: state.tool === 'eraser' ? 'destination-out' : 'source-over',
+        alpha: state.tool === 'marker' ? 0.35 : 1,
+      };
+    } else {
+      const p = e ? getPoint(e) : { x: state.lastX, y: state.lastY };
+      pCtx.clearRect(0, 0, state.width, state.height);
+      shape = buildShape(state.tool, state.startX, state.startY, p.x, p.y, e && e.shiftKey);
+      renderStroke(ctx, shape);
+    }
+
+    state.strokes.push(shape);
+    state.undone.length = 0;
+    updateUndoRedo();
+  }
+
+  function buildShape(tool, x1, y1, x2, y2, shift) {
+    if (shift) {
+      if (tool === 'rect' || tool === 'ellipse') {
+        const dx = x2 - x1, dy = y2 - y1;
+        const size = Math.max(Math.abs(dx), Math.abs(dy));
+        x2 = x1 + Math.sign(dx || 1) * size;
+        y2 = y1 + Math.sign(dy || 1) * size;
+      } else if (tool === 'line' || tool === 'arrow') {
+        const dx = x2 - x1, dy = y2 - y1;
+        const angle = Math.atan2(dy, dx);
+        const snap = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+        const len = Math.hypot(dx, dy);
+        x2 = x1 + Math.cos(snap) * len;
+        y2 = y1 + Math.sin(snap) * len;
+      }
+    }
+    return {
+      type: tool,
+      x1, y1, x2, y2,
+      color: state.color,
+      size: state.size,
+      composite: 'source-over',
+      alpha: 1,
+    };
+  }
+
+  // Text Input
+  function beginTextInput(x, y) {
+    textInput.value = '';
+    textInput.style.display = 'block';
+    textInput.style.left = x + 'px';
+    textInput.style.top = y + 'px';
+    textInput.style.color = state.color;
+    const fontSize = Math.max(12, state.size * 4);
+    textInput.style.fontSize = fontSize + 'px';
+    textInput.focus();
+
+    function commit() {
+      const v = textInput.value.trim();
+      textInput.style.display = 'none';
+      textInput.removeEventListener('blur', commit);
+      textInput.removeEventListener('keydown', onKey);
+      if (v) {
+        const shape = {
+          type: 'text', x, y, text: v,
+          color: state.color, size: state.size,
+          composite: 'source-over', alpha: 1,
+        };
+        state.strokes.push(shape);
+        state.undone.length = 0;
+        renderStroke(ctx, shape);
+        updateUndoRedo();
+      }
+    }
+    function onKey(ev) {
+      if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
+      if (ev.key === 'Escape') { textInput.style.display = 'none'; textInput.removeEventListener('blur', commit); textInput.removeEventListener('keydown', onKey); }
+    }
+    textInput.addEventListener('blur', commit);
+    textInput.addEventListener('keydown', onKey);
+  }
+
+  // Events
+  canvas.addEventListener('pointerdown', (e) => { e.preventDefault(); startStroke(e); });
+  canvas.addEventListener('pointermove', moveStroke);
+  canvas.addEventListener('pointerup', endStroke);
+  canvas.addEventListener('pointercancel', endStroke);
+  canvas.addEventListener('pointerleave', (e) => { if (state.isDrawing) endStroke(e); });
+
+  // Prevent context menu to keep drawing clean
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // Undo / Redo
+  const undoBtn = document.getElementById('undoBtn');
+  const redoBtn = document.getElementById('redoBtn');
+  function updateUndoRedo() {
+    undoBtn.disabled = state.strokes.length === 0;
+    redoBtn.disabled = state.undone.length === 0;
+  }
+  function undo() {
+    if (!state.strokes.length) return;
+    state.undone.push(state.strokes.pop());
+    redraw();
+    updateUndoRedo();
+  }
+  function redo() {
+    if (!state.undone.length) return;
+    state.strokes.push(state.undone.pop());
+    redraw();
+    updateUndoRedo();
+  }
+  undoBtn.addEventListener('click', undo);
+  redoBtn.addEventListener('click', redo);
+
+  // Grid toggle
+  const gridBtn = document.getElementById('gridBtn');
+  gridBtn.classList.add('active');
+  gridBtn.addEventListener('click', () => {
+    state.showGrid = !state.showGrid;
+    gridBtn.classList.toggle('active', state.showGrid);
+    drawBackground();
+  });
+
+  // Clear
+  const clearBtn = document.getElementById('clearBtn');
+  const clearModal = document.getElementById('clearModal');
+  const clearConfirm = document.getElementById('clearConfirm');
+  const clearCancel = document.getElementById('clearCancel');
+  clearBtn.addEventListener('click', () => {
+    if (state.strokes.length === 0) { showToast('Nothing to clear'); return; }
+    clearModal.classList.add('show');
+  });
+  clearCancel.addEventListener('click', () => clearModal.classList.remove('show'));
+  clearModal.addEventListener('click', (e) => { if (e.target === clearModal) clearModal.classList.remove('show'); });
+  clearConfirm.addEventListener('click', () => {
+    state.undone = state.strokes.slice();
+    state.strokes = [];
+    redraw();
+    updateUndoRedo();
+    clearModal.classList.remove('show');
+    showToast('Canvas cleared');
+  });
+
+  // Save
+  const saveBtn = document.getElementById('saveBtn');
+  saveBtn.addEventListener('click', saveImage);
+
+  function saveImage() {
+    // Composite: white background + strokes
+    const out = document.createElement('canvas');
+    out.width = state.width * DPR;
+    out.height = state.height * DPR;
+    const octx = out.getContext('2d');
+    octx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    octx.fillStyle = '#ffffff';
+    octx.fillRect(0, 0, state.width, state.height);
+    for (const s of state.strokes) renderStroke(octx, s);
+
+    out.toBlob((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.href = url;
+      a.download = `whiteboard-${ts}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 500);
+      showToast('Saved as PNG');
+    }, 'image/png');
+  }
+
+  // Toast
+  let toastTimer = null;
+  function showToast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1800);
+  }
+
+  // Keyboard shortcuts
+  window.addEventListener('keydown', (e) => {
+    if (e.target === textInput) return;
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
+    if (mod && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); redo(); return; }
+    if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); saveImage(); return; }
+    if (mod && (e.key === 'Backspace' || e.key === 'Delete')) { e.preventDefault(); clearBtn.click(); return; }
+    if (e.target.tagName === 'INPUT') return;
+    const k = e.key.toLowerCase();
+    const map = { p:'pen', h:'marker', l:'line', r:'rect', o:'ellipse', a:'arrow', t:'text', e:'eraser' };
+    if (map[k]) { setTool(map[k]); return; }
+    if (k === 'g') { gridBtn.click(); }
+    if (k === '[') { sizeSlider.value = Math.max(1, parseInt(sizeSlider.value) - 2); sizeSlider.dispatchEvent(new Event('input')); }
+    if (k === ']') { sizeSlider.value = Math.min(60, parseInt(sizeSlider.value) + 2); sizeSlider.dispatchEvent(new Event('input')); }
+  });
+
+  // Init
+  resize();
+  updateUndoRedo();
+  updateStatus();
+  // Tiny size dot color
+  sizeDot.style.background = state.color;
+
+  // Welcome hint
+  setTimeout(() => showToast('Pick a tool and start drawing ✨'), 400);
+})();
+</script>
+</body>
+</html>
