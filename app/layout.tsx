@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/react";
 import { MODELS } from "@/lib/models";
+import { faviconMetadata } from "../lib/favicon.mjs";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -19,9 +20,7 @@ const modelNames = MODELS.map(m => m.name).join(", ");
 export const metadata: Metadata = {
   title: "Agentic Coding Arena - Compare OpenAI, Anthropic, and Gemini models",
   description: `Side-by-side comparison of ${MODELS.length} frontier AI models (${modelNames}) on identical coding challenges. See how each model approaches the same prompts.`,
-  icons: {
-    icon: "/favicon.ico",
-  },
+  ...faviconMetadata,
   openGraph: {
     title: "Agentic Coding Arena",
     description: `Compare ${MODELS.length} frontier AI models on identical coding challenges`,
