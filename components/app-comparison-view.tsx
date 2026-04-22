@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { CodeExample } from "@/lib/code-examples";
 import { MODELS as BASE_MODELS, MODELS_BY_PROVIDER } from "@/lib/models";
+import { Brandmark } from "./brandmark";
 import { StatsComparisonPanel } from "./stats-comparison-panel";
 
 const MODELS = BASE_MODELS.map(m => ({
@@ -187,8 +188,7 @@ export function AppComparisonView({
         <div className="flex items-center gap-3 min-w-0">
           {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a href="/" className="flex-shrink-0" title="Back to home">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logic_brandmark.png" alt="Logic" className="w-7 h-7" />
+            <Brandmark size={24} fill="#0a0a0a" />
           </a>
           <span className="text-neutral-300">/</span>
           <div className="flex items-center gap-1.5 min-w-0">

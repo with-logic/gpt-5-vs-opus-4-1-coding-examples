@@ -1,6 +1,7 @@
 export const dynamic = "force-static";
 import { loadApps } from "@/lib/code-examples";
 import { AppGridWithRouting } from "@/components/app-grid-with-routing";
+import { Brandmark } from "@/components/brandmark";
 import { MODELS, MODELS_BY_PROVIDER } from "@/lib/models";
 import Link from "next/link";
 
@@ -13,8 +14,7 @@ export default async function Home() {
       <header className="border-b border-neutral-200">
         <div className="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logic_brandmark.png" alt="Logic" className="w-8 h-8" />
+            <Brandmark size={28} fill="#0a0a0a" />
             <span className="font-semibold text-neutral-900">Logic&apos;s Agentic Coding Arena</span>
           </Link>
           <div className="flex items-center gap-4">
