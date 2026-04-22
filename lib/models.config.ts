@@ -1,4 +1,4 @@
-export type Provider = "openai" | "anthropic" | "google";
+export type Provider = "openai" | "anthropic" | "google" | "moonshot";
 
 export interface ProviderConfig {
   id: Provider;
@@ -9,6 +9,7 @@ export const providers: ProviderConfig[] = [
   { id: "openai", name: "OpenAI" },
   { id: "anthropic", name: "Anthropic" },
   { id: "google", name: "Google" },
+  { id: "moonshot", name: "Moonshot AI" },
 ];
 
 export interface ModelConfig {
@@ -18,8 +19,8 @@ export interface ModelConfig {
   /** Display name shown in the UI (e.g., "GPT-5.1") */
   name: string;
 
-  /** CLI tool to invoke (e.g., "claude", "codex", "gemini") */
-  cli: "claude" | "codex" | "gemini";
+  /** CLI tool to invoke (e.g., "claude", "codex", "gemini", "anthropic-proxy") */
+  cli: "claude" | "codex" | "gemini" | "anthropic-proxy";
 
   /** Model identifier passed to the CLI tool (e.g., "opus", "gpt-5.1", "gemini-3") */
   model: string;
@@ -143,6 +144,14 @@ export const models: ModelConfig[] = [
     model: "gemini-3-flash-preview",
     color: "bg-yellow-500",
     provider: "google",
+  },
+  {
+    id: "kimi-k2.6",
+    name: "Kimi K2.6",
+    cli: "anthropic-proxy",
+    model: "accounts/fireworks/models/kimi-k2p6",
+    color: "bg-fuchsia-500",
+    provider: "moonshot",
   },
 ];
 

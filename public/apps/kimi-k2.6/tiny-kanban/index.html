@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tiny Kanban</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style type="text/tailwindcss">
+        @layer base {
+            body {
+                font-family: 'Inter', sans-serif;
+                background-color: #f1f5f9;
+            }
+        }
+        @layer components {
+            .kanban-card {
+                transition: transform 0.15s ease, box-shadow 0.15s ease;
+                cursor: grab;
+            }
+            .kanban-card:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            }
+            .kanban-card:active {
+                cursor: grabbing;
+            }
+            .kanban-card.sortable-ghost {
+                opacity: 0.4;
+                background: #e2e8f0;
+                border: 2px dashed #94a3b8;
+            }
+            .kanban-card.sortable-drag {
+                opacity: 0.95;
+                transform: rotate(2deg) scale(1.02);
+                box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+                z-index: 9999;
+            }
+            .column-drop-highlight {
+                background-color: #e0f2fe !important;
+                border: 2px dashed #3b82f6;
+            }
+            .priority-high { border-left: 5px solid #ef4444; }
+            .priority-medium { border-left: 5px solid #f59e0b; }
+            .priority-low { border-left: 5px solid #10b981; }
+            .wip-exceeded {
+                border: 2px solid #ef4444 !important;
+                background-color: #fef2f2 !important;
+            }
+            .wip-warning {
+                border: 2px solid #f59e0b !important;
+                background-color: #fffbeb !important;
+            }
+            .avatar-circle {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 32px;
+                height: 32px;
+                border-radius: 50%;
+                font-weight: 700;
+                font-size: 12px;
+                color: white;
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+                border: 2px solid white;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            }
+            .modal-backdrop {
+                backdrop-filter: blur(8px);
+            }
+            .btn-primary {
+                background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+                transition: all 0.15s ease;
+            }
+            .btn-primary:hover {
+                background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+            }
+            .btn-danger {
+                background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+                transition: all 0.15s ease;
+            }
+            .btn-danger:hover {
+                background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+            }
+            .column-header {
+                position: sticky;
+                top: 0;
+                z-index: 10;
+            }
+            .delete-btn {
+                opacity: 0;
+                transition: opacity 0.15s ease;
+            }
+            .kanban-card:hover .delete-btn {
+                opacity: 1;
+            }
+            .search-input:focus {
+                box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+            }
+            .column-count {
+                font-variant-numeric: tabular-nums;
+            }
+            @keyframes slideIn {
+                from { opacity: 0; transform: translateY(-10px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            .animate-slide-in {
+                animation: slideIn 0.2s ease-out;
+            }
+            @keyframes pulse-red {
+                0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+                50% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+            }
+            .wip-pulse {
+                animation: pulse-red 2s infinite;
+            }
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontSize: {
+                        'standup': '1.125rem',
+                        'standup-lg': '1.25rem',
+                        'standup-xl': '1.5rem',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="min-h-screen bg-slate-100 text-slate-800">
+
+    <!-- Header -->
+    <header class="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-50">
+        <div class="max-w-[1600px] mx-auto px-4 sm:px-6 py-4">
+            <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                <div class="flex items-center gap-4">
+                    <div class="bg-gradient-to-br from-blue-500 to-blue-700 text-white p-2.5 rounded-xl shadow-lg">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    </div>
+                    <div>
+                        <h1 class="text-standup-xl font-extrabold tracking-tight text-slate-900">Tiny Kanban</h1>
+                        <p class="text-sm text-slate-500 font-medium">Standup-ready task board</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-3 flex-wrap">
+                    <!-- Search -->
+                    <div class="relative flex-1 lg:flex-none min-w-[240px]">
+                        <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                        <input
+                            type="text"
+                            id="searchInput"
+                            placeholder="Search cards..."
+                            class="search-input w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-standup font-medium placeholder:text-slate-400 focus:outline-none focus:border-blue-400 focus:bg-white transition-all"
+                        >
+                    </div>
+
+                    <!-- WIP Limit Config -->
+                    <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5">
+                        <span class="text-sm font-semibold text-slate-600 whitespace-nowrap">WIP Limit:</span>
+                        <input
+                            type="number"
+                            id="wipLimit"
+                            value="5"
+                            min="1"
+                            max="20"
+                            class="w-14 text-center py-1 bg-white border border-slate-300 rounded-lg text-standup font-bold focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                        >
+                    </div>
+
+                    <!-- Add Button -->
+                    <button
+                        onclick="openModal()"
+                        class="btn-primary flex items-center gap-2 text-white font-bold py-3 px-6 rounded-xl text-standup whitespace-nowrap"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                        Add Task
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Board -->
+    <main class="max-w-[1600px] mx-auto px-4 sm:px-6 py-6">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6" id="board">
+
+            <!-- Todo Column -->
+            <div class="flex flex-col h-full" id="col-todo-wrapper">
+                <div class="column-header bg-white rounded-t-2xl border border-slate-200 border-b-0 p-5 flex items-center justify-between shadow-sm">
+                    <div class="flex items-center gap-3">
+                        <div class="w-4 h-4 rounded-full bg-slate-400 ring-4 ring-slate-100"></div>
+                        <h2 class="text-standup-lg font-bold text-slate-800">To Do</h2>
+                        <span id="count-todo" class="column-count bg-slate-100 text-slate-600 px-3 py-1 rounded-full text-sm font-bold min-w-[28px] text-center">0</span>
+                    </div>
+                </div>
+                <div
+                    id="todo"
+                    class="flex-1 bg-white rounded-b-2xl border border-slate-200 border-t-0 p-4 min-h-[500px] space-y-3"
+                    data-status="todo"
+                ></div>
+            </div>
+
+            <!-- Doing Column -->
+            <div class="flex flex-col h-full" id="col-doing-wrapper">
+                <div class="column-header bg-white rounded-t-2xl border border-slate-200 border-b-0 p-5 flex items-center justify-between shadow-sm" id="doing-header">
+                    <div class="flex items-center gap-3">
+                        <div class="w-4 h-4 rounded-full bg-blue-500 ring-4 ring-blue-100"></div>
+                        <h2 class="text-standup-lg font-bold text-slate-800">Doing</h2>
+                        <span id="count-doing" class="column-count bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-bold min-w-[28px] text-center">0</span>
+                    </div>
+                    <span id="wip-badge" class="text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-500">Limit: 5</span>
+                </div>
+                <div
+                    id="doing"
+                    class="flex-1 bg-white rounded-b-2xl border border-slate-200 border-t-0 p-4 min-h-[500px] space-y-3"
+                    data-status="doing"
+                ></div>
+            </div>
+
+            <!-- Done Column -->
+            <div class="flex flex-col h-full" id="col-done-wrapper">
+                <div class="column-header bg-white rounded-t-2xl border border-slate-200 border-b-0 p-5 flex items-center justify-between shadow-sm">
+                    <div class="flex items-center gap-3">
+                        <div class="w-4 h-4 rounded-full bg-emerald-500 ring-4 ring-emerald-100"></div>
+                        <h2 class="text-standup-lg font-bold text-slate-800">Done</h2>
+                        <span id="count-done" class="column-count bg-emerald-100 text-emerald-700 px-3 py-1 rounded-full text-sm font-bold min-w-[28px] text-center">0</span>
+                    </div>
+                </div>
+                <div
+                    id="done"
+                    class="flex-1 bg-white rounded-b-2xl border border-slate-200 border-t-0 p-4 min-h-[500px] space-y-3"
+                    data-status="done"
+                ></div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal -->
+    <div id="modal" class="fixed inset-0 z-[100] hidden">
+        <div class="absolute inset-0 bg-black/40 modal-backdrop" onclick="closeModal()"></div>
+        <div class="relative flex items-center justify-center min-h-screen p-4 pointer-events-none">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg pointer-events-auto animate-slide-in">
+                <div class="p-6 border-b border-slate-100 flex items-center justify-between">
+                    <h2 id="modalTitle" class="text-xl font-bold text-slate-900">Add Task</h2>
+                    <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-lg hover:bg-slate-100">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    </button>
+                </div>
+                <form id="taskForm" class="p-6 space-y-5">
+                    <input type="hidden" id="taskId">
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-2">Title <span class="text-red-500">*</span></label>
+                        <input type="text" id="taskTitle" required class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-standup font-medium focus:outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50 transition-all" placeholder="What needs to be done?">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-2">Description</label>
+                        <textarea id="taskDesc" rows="3" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-standup font-medium focus:outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50 transition-all resize-none" placeholder="Add details..."></textarea>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-bold text-slate-700 mb-2">Priority</label>
+                            <select id="taskPriority" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-standup font-medium focus:outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50 transition-all appearance-none cursor-pointer">
+                                <option value="high">High</option>
+                                <option value="medium" selected>Medium</option>
+                                <option value="low">Low</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-bold text-slate-700 mb-2">Assignee</label>
+                            <input type="text" id="taskAssignee" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-standup font-medium focus:outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50 transition-all" placeholder="Name or initials">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-slate-700 mb-2">Column</label>
+                        <select id="taskStatus" class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-standup font-medium focus:outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50 transition-all appearance-none cursor-pointer">
+                            <option value="todo">To Do</option>
+                            <option value="doing">Doing</option>
+                            <option value="done">Done</option>
+                        </select>
+                    </div>
+                    <div class="pt-2 flex gap-3">
+                        <button type="submit" class="btn-primary flex-1 text-white font-bold py-3.5 px-6 rounded-xl text-standup">Save Task</button>
+                        <button type="button" onclick="closeModal()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3.5 px-6 rounded-xl text-standup transition-colors">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation -->
+    <div id="deleteModal" class="fixed inset-0 z-[100] hidden">
+        <div class="absolute inset-0 bg-black/40 modal-backdrop" onclick="closeDeleteModal()"></div>
+        <div class="relative flex items-center justify-center min-h-screen p-4 pointer-events-none">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md pointer-events-auto animate-slide-in p-6 text-center">
+                <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                </div>
+                <h3 class="text-xl font-bold text-slate-900 mb-2">Delete Task?</h3>
+                <p class="text-slate-500 mb-6">This action cannot be undone.</p>
+                <div class="flex gap-3">
+                    <button onclick="confirmDelete()" class="btn-danger flex-1 text-white font-bold py-3 px-6 rounded-xl text-standup">Delete</button>
+                    <button onclick="closeDeleteModal()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 px-6 rounded-xl text-standup transition-colors">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="fixed bottom-6 right-6 z-[100] transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none">
+        <div class="bg-slate-900 text-white px-5 py-3.5 rounded-xl shadow-2xl flex items-center gap-3 font-semibold">
+            <span id="toastIcon"></span>
+            <span id="toastMessage"></span>
+        </div>
+    </div>
+
+    <script>
+        // --- State ---
+        let tasks = [];
+        let wipLimit = 5;
+        let deleteTargetId = null;
+        let sortables = {};
+
+        const AVATAR_COLORS = [
+            '#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
+            '#ec4899', '#06b6d4', '#f97316', '#84cc16', '#6366f1'
+        ];
+
+        const DEMO_TASKS = [
+            { id: 't1', title: 'Review API design doc', desc: 'Check endpoints and data models for the new user service', priority: 'high', assignee: 'SK', status: 'todo' },
+            { id: 't2', title: 'Fix login redirect bug', desc: 'After OAuth, users are sent to /home instead of /dashboard', priority: 'high', assignee: 'AM', status: 'doing' },
+            { id: 't3', title: 'Update onboarding flow', desc: 'Add tooltip hints for new users in the project creation step', priority: 'medium', assignee: 'JD', status: 'doing' },
+            { id: 't4', title: 'Write E2E tests for checkout', desc: 'Cover happy path and error states with Cypress', priority: 'medium', assignee: 'SK', status: 'done' },
+            { id: 't5', title: 'Optimize image loading', desc: 'Implement lazy loading for gallery thumbnails', priority: 'low', assignee: 'TL', status: 'todo' },
+            { id: 't6', title: 'Design system audit', desc: 'Identify unused components and consolidate button variants', priority: 'low', assignee: 'JD', status: 'todo' },
+            { id: 't7', title: 'Migrate to Tailwind v4', desc: 'Update config and resolve breaking changes', priority: 'medium', assignee: 'AM', status: 'doing' },
+        ];
+
+        // --- Storage ---
+        function load() {
+            try {
+                const saved = localStorage.getItem('tinykanban');
+                if (saved) {
+                    const data = JSON.parse(saved);
+                    tasks = data.tasks || [];
+                    wipLimit = data.wipLimit || 5;
+                } else {
+                    tasks = [...DEMO_TASKS];
+                }
+            } catch (e) {
+                tasks = [...DEMO_TASKS];
+            }
+            document.getElementById('wipLimit').value = wipLimit;
+        }
+
+        function save() {
+            try {
+                localStorage.setItem('tinykanban', JSON.stringify({ tasks, wipLimit }));
+            } catch (e) {}
+        }
+
+        // --- Helpers ---
+        function getInitials(name) {
+            if (!name) return '?';
+            return name.split(/\s+/).map(p => p[0]).join('').slice(0, 2);
+        }
+
+        function getAvatarColor(name) {
+            if (!name) return AVATAR_COLORS[0];
+            let hash = 0;
+            for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+            return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+        }
+
+        function priorityLabel(p) {
+            return { high: 'High', medium: 'Medium', low: 'Low' }[p] || p;
+        }
+
+        function priorityBadge(p) {
+            const map = {
+                high: { text: 'High', class: 'bg-red-100 text-red-700 border-red-200' },
+                medium: { text: 'Medium', class: 'bg-amber-100 text-amber-700 border-amber-200' },
+                low: { text: 'Low', class: 'bg-emerald-100 text-emerald-700 border-emerald-200' }
+            };
+            const cfg = map[p] || map.medium;
+            return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-bold border ${cfg.class}">${cfg.text}</span>`;
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // --- Rendering ---
+        function renderCard(task) {
+            const initials = getInitials(task.assignee);
+            const color = getAvatarColor(task.assignee);
+            const avatar = task.assignee
+                ? `<span class="avatar-circle" style="background-color: ${color};" title="${escapeHtml(task.assignee)}">${escapeHtml(initials)}</span>`
+                : '';
+
+            return `
+                <div
+                    class="kanban-card priority-${task.priority} bg-white rounded-xl border border-slate-200 p-4 animate-slide-in group relative"
+                    data-id="${task.id}"
+                    data-title="${escapeHtml(task.title).toLowerCase()}"
+                    data-desc="${escapeHtml(task.desc || '').toLowerCase()}"
+                    data-assignee="${escapeHtml(task.assignee || '').toLowerCase()}"
+                >
+                    <button onclick="deleteTask('${task.id}')" class="delete-btn absolute top-3 right-3 text-slate-300 hover:text-red-500 transition-colors p-1 rounded-lg hover:bg-red-50 z-10">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    </button>
+                    <div class="flex items-start gap-2 mb-2 pr-6">
+                        ${priorityBadge(task.priority)}
+                    </div>
+                    <h3 class="text-standup font-bold text-slate-900 mb-1.5 leading-snug pr-6">${escapeHtml(task.title)}</h3>
+                    ${task.desc ? `<p class="text-sm text-slate-500 leading-relaxed mb-3 line-clamp-3">${escapeHtml(task.desc)}</p>` : '<div class="mb-3"></div>'}
+                    <div class="flex items-center justify-between pt-2 border-t border-slate-100">
+                        <div class="flex items-center gap-2">
+                            ${avatar}
+                            ${task.assignee ? `<span class="text-sm font-semibold text-slate-600">${escapeHtml(task.assignee)}</span>` : '<span class="text-sm text-slate-400 italic">Unassigned</span>'}
+                        </div>
+                        <button onclick="editTask('${task.id}')" class="text-slate-400 hover:text-blue-500 transition-colors p-1.5 rounded-lg hover:bg-blue-50">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function render() {
+            const cols = { todo: [], doing: [], done: [] };
+            const query = document.getElementById('searchInput').value.trim().toLowerCase();
+
+            tasks.forEach(task => {
+                const matches = !query ||
+                    task.title.toLowerCase().includes(query) ||
+                    (task.desc || '').toLowerCase().includes(query) ||
+                    (task.assignee || '').toLowerCase().includes(query);
+
+                if (matches) {
+                    cols[task.status].push(task);
+                }
+            });
+
+            Object.keys(cols).forEach(status => {
+                const el = document.getElementById(status);
+                el.innerHTML = cols[status].map(renderCard).join('') || `
+                    <div class="flex flex-col items-center justify-center py-12 text-slate-300 empty-placeholder">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+                        <p class="mt-3 text-sm font-semibold">No cards</p>
+                    </div>
+                `;
+                document.getElementById(`count-${status}`).textContent = cols[status].length;
+            });
+
+            checkWipLimit();
+        }
+
+        function checkWipLimit() {
+            const doingCount = tasks.filter(t => t.status === 'doing').length;
+            const header = document.getElementById('doing-header');
+            const wrapper = document.getElementById('col-doing-wrapper');
+            const badge = document.getElementById('wip-badge');
+            const count = document.getElementById('count-doing');
+
+            badge.textContent = `${doingCount}/${wipLimit}`;
+
+            header.classList.remove('wip-exceeded', 'wip-warning');
+            wrapper.classList.remove('wip-exceeded', 'wip-warning');
+            count.classList.remove('wip-pulse');
+
+            if (doingCount > wipLimit) {
+                header.classList.add('wip-exceeded');
+                wrapper.classList.add('wip-exceeded');
+                badge.className = 'text-xs font-bold px-2.5 py-1 rounded-full bg-red-100 text-red-700 wip-pulse';
+                count.className = 'column-count bg-red-100 text-red-700 px-3 py-1 rounded-full text-sm font-bold min-w-[28px] text-center wip-pulse';
+            } else if (doingCount >= wipLimit) {
+                header.classList.add('wip-warning');
+                wrapper.classList.add('wip-warning');
+                badge.className = 'text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700';
+                count.className = 'column-count bg-amber-100 text-amber-700 px-3 py-1 rounded-full text-sm font-bold min-w-[28px] text-center';
+            } else {
+                badge.className = 'text-xs font-bold px-2.5 py-1 rounded-full bg-slate-100 text-slate-500';
+                count.className = 'column-count bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm font-bold min-w-[28px] text-center';
+            }
+        }
+
+        // --- Drag & Drop ---
+        function initSortable() {
+            ['todo', 'doing', 'done'].forEach(id => {
+                const el = document.getElementById(id);
+                sortables[id] = new Sortable(el, {
+                    group: 'kanban',
+                    animation: 200,
+                    delay: 0,
+                    ghostClass: 'sortable-ghost',
+                    dragClass: 'sortable-drag',
+                    forceFallback: true,
+                    fallbackClass: 'sortable-drag',
+                    onStart: function() {
+                        document.body.style.cursor = 'grabbing';
+                    },
+                    onEnd: function(evt) {
+                        document.body.style.cursor = '';
+                        const itemEl = evt.item;
+                        const newStatus = evt.to.dataset.status;
+                        const taskId = itemEl.dataset.id;
+                        const task = tasks.find(t => t.id === taskId);
+
+                        if (task && task.status !== newStatus) {
+                            // Check WIP limit for Doing
+                            if (newStatus === 'doing') {
+                                const doingCount = tasks.filter(t => t.status === 'doing').length;
+                                if (doingCount >= wipLimit) {
+                                    showToast('WIP limit reached!', 'warning');
+                                    // Still allow, just warn
+                                }
+                            }
+                            task.status = newStatus;
+                            save();
+                            render();
+                            showToast(`Moved to ${newStatus === 'todo' ? 'To Do' : newStatus === 'doing' ? 'Doing' : 'Done'}`, 'success');
+                        } else if (task && evt.from !== evt.to) {
+                            // Same status but reordered in different column (shouldn't happen with same group)
+                            render();
+                        }
+                    }
+                });
+            });
+        }
+
+        // --- Modal ---
+        function openModal(taskId = null) {
+            const modal = document.getElementById('modal');
+            const form = document.getElementById('taskForm');
+            const title = document.getElementById('modalTitle');
+
+            if (taskId) {
+                const task = tasks.find(t => t.id === taskId);
+                if (!task) return;
+                document.getElementById('taskId').value = task.id;
+                document.getElementById('taskTitle').value = task.title;
+                document.getElementById('taskDesc').value = task.desc || '';
+                document.getElementById('taskPriority').value = task.priority;
+                document.getElementById('taskAssignee').value = task.assignee || '';
+                document.getElementById('taskStatus').value = task.status;
+                title.textContent = 'Edit Task';
+            } else {
+                form.reset();
+                document.getElementById('taskId').value = '';
+                document.getElementById('taskPriority').value = 'medium';
+                document.getElementById('taskStatus').value = 'todo';
+                title.textContent = 'Add Task';
+            }
+
+            modal.classList.remove('hidden');
+            setTimeout(() => document.getElementById('taskTitle').focus(), 50);
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.add('hidden');
+        }
+
+        function editTask(taskId) {
+            openModal(taskId);
+        }
+
+        function deleteTask(taskId) {
+            deleteTargetId = taskId;
+            document.getElementById('deleteModal').classList.remove('hidden');
+        }
+
+        function closeDeleteModal() {
+            deleteTargetId = null;
+            document.getElementById('deleteModal').classList.add('hidden');
+        }
+
+        function confirmDelete() {
+            if (deleteTargetId) {
+                tasks = tasks.filter(t => t.id !== deleteTargetId);
+                save();
+                render();
+                showToast('Task deleted', 'success');
+            }
+            closeDeleteModal();
+        }
+
+        // --- Form ---
+        document.getElementById('taskForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const id = document.getElementById('taskId').value;
+            const title = document.getElementById('taskTitle').value.trim();
+            const desc = document.getElementById('taskDesc').value.trim();
+            const priority = document.getElementById('taskPriority').value;
+            const assignee = document.getElementById('taskAssignee').value.trim();
+            const status = document.getElementById('taskStatus').value;
+
+            if (!title) return;
+
+            if (id) {
+                const task = tasks.find(t => t.id === id);
+                if (task) {
+                    task.title = title;
+                    task.desc = desc;
+                    task.priority = priority;
+                    task.assignee = assignee;
+                    task.status = status;
+                }
+                showToast('Task updated', 'success');
+            } else {
+                tasks.push({
+                    id: 't' + Date.now(),
+                    title,
+                    desc,
+                    priority,
+                    assignee,
+                    status
+                });
+                showToast('Task added', 'success');
+            }
+
+            save();
+            render();
+            closeModal();
+        });
+
+        // --- Search ---
+        document.getElementById('searchInput').addEventListener('input', function() {
+            render();
+        });
+
+        // --- WIP Limit ---
+        document.getElementById('wipLimit').addEventListener('change', function() {
+            wipLimit = parseInt(this.value) || 5;
+            if (wipLimit < 1) wipLimit = 1;
+            if (wipLimit > 20) wipLimit = 20;
+            this.value = wipLimit;
+            save();
+            render();
+        });
+
+        // --- Toast ---
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            const msg = document.getElementById('toastMessage');
+            const icon = document.getElementById('toastIcon');
+
+            msg.textContent = message;
+
+            if (type === 'warning') {
+                icon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fbbf24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>';
+            } else {
+                icon.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+            }
+
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            toast.classList.add('translate-y-0', 'opacity-100');
+
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+                toast.classList.remove('translate-y-0', 'opacity-100');
+            }, 2500);
+        }
+
+        // --- Keyboard shortcuts ---
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeModal();
+                closeDeleteModal();
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !document.getElementById('modal').classList.contains('hidden')) {
+                document.getElementById('taskForm').dispatchEvent(new Event('submit'));
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                document.getElementById('searchInput').focus();
+            }
+            if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+                e.preventDefault();
+                openModal();
+            }
+        });
+
+        // --- Init ---
+        load();
+        render();
+        initSortable();
+    </script>
+</body>
+</html>
