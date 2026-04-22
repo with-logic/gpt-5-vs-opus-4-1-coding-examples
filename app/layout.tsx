@@ -18,17 +18,19 @@ const geistMono = Geist_Mono({
 const modelNames = MODELS.map(m => m.name).join(", ");
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://arena.logic.inc"),
   title: "Agentic Coding Arena - Compare OpenAI, Anthropic, and Gemini models",
   description: `Side-by-side comparison of ${MODELS.length} frontier AI models (${modelNames}) on identical coding challenges. See how each model approaches the same prompts.`,
   ...faviconMetadata,
   openGraph: {
     title: "Agentic Coding Arena",
     description: `Compare ${MODELS.length} frontier AI models on identical coding challenges`,
-    images: ["/gpt-5.png"],
+    type: "website",
+    url: "https://arena.logic.inc",
+    siteName: "Logic's Agentic Coding Arena",
   },
   twitter: {
     card: "summary_large_image",
-    images: ["/gpt-5.png"],
     title: "Agentic Coding Arena",
     description: `Compare ${modelNames} side-by-side`,
   },
