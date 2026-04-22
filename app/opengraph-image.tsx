@@ -25,6 +25,8 @@ const COLOR_MAP: Record<string, string> = {
   "bg-rose-500": "#f43f5e",
   "bg-blue-500": "#3b82f6",
   "bg-yellow-500": "#eab308",
+  "bg-fuchsia-500": "#d946ef",
+  "bg-lime-500": "#84cc16",
 };
 
 const BG = "#040c28";
@@ -51,10 +53,10 @@ async function loadFont(file: string): Promise<Buffer> {
 }
 
 export default async function OpengraphImage() {
-  const [fraunces, frauncesItalic, inter] = await Promise.all([
-    loadFont("Fraunces-SemiBold.ttf"),
-    loadFont("Fraunces-SemiBoldItalic.ttf"),
-    loadFont("Inter-Medium.ttf"),
+  const [playfair, playfairItalic, workSans] = await Promise.all([
+    loadFont("PlayfairDisplay-SemiBold.ttf"),
+    loadFont("PlayfairDisplay-SemiBoldItalic.ttf"),
+    loadFont("WorkSans-Medium.ttf"),
   ]);
 
   const modelCount = models.length;
@@ -71,7 +73,7 @@ export default async function OpengraphImage() {
           backgroundColor: BG,
           backgroundImage: `radial-gradient(ellipse at 80% 110%, ${BG_ELEVATED} 0%, ${BG} 60%)`,
           padding: `${s(64)}px ${s(72)}px`,
-          fontFamily: "Inter",
+          fontFamily: "Work Sans",
           color: FG,
           position: "relative",
         }}
@@ -139,7 +141,7 @@ export default async function OpengraphImage() {
           <div
             style={{
               marginLeft: "auto",
-              fontFamily: "Inter",
+              fontFamily: "Work Sans",
               fontSize: s(15),
               fontWeight: 500,
               color: FG_MUTED,
@@ -161,7 +163,7 @@ export default async function OpengraphImage() {
         >
           <div
             style={{
-              fontFamily: "Fraunces",
+              fontFamily: "Playfair Display",
               fontSize: s(88),
               fontWeight: 600,
               lineHeight: 1.02,
@@ -174,7 +176,7 @@ export default async function OpengraphImage() {
           </div>
           <div
             style={{
-              fontFamily: "Fraunces",
+              fontFamily: "Playfair Display",
               fontSize: s(88),
               fontWeight: 600,
               lineHeight: 1.02,
@@ -185,7 +187,7 @@ export default async function OpengraphImage() {
           >
             <span
               style={{
-                fontFamily: "Fraunces",
+                fontFamily: "Playfair Display",
                 fontStyle: "italic",
                 color: ACCENT,
               }}
@@ -196,7 +198,7 @@ export default async function OpengraphImage() {
           </div>
           <div
             style={{
-              fontFamily: "Fraunces",
+              fontFamily: "Playfair Display",
               fontSize: s(88),
               fontWeight: 600,
               lineHeight: 1.02,
@@ -210,7 +212,7 @@ export default async function OpengraphImage() {
           <div
             style={{
               marginTop: s(28),
-              fontFamily: "Inter",
+              fontFamily: "Work Sans",
               fontSize: s(24),
               color: FG_MUTED,
               display: "flex",
@@ -238,7 +240,7 @@ export default async function OpengraphImage() {
               >
                 <span
                   style={{
-                    fontFamily: "Inter",
+                    fontFamily: "Work Sans",
                     fontSize: s(13),
                     fontWeight: 500,
                     color: FG_MUTED,
@@ -267,7 +269,7 @@ export default async function OpengraphImage() {
           <div
             style={{
               marginLeft: "auto",
-              fontFamily: "Inter",
+              fontFamily: "Work Sans",
               fontSize: s(16),
               color: FG_MUTED,
               display: "flex",
@@ -281,9 +283,9 @@ export default async function OpengraphImage() {
     {
       ...size,
       fonts: [
-        { name: "Fraunces", data: fraunces, weight: 600, style: "normal" },
-        { name: "Fraunces", data: frauncesItalic, weight: 600, style: "italic" },
-        { name: "Inter", data: inter, weight: 500, style: "normal" },
+        { name: "Playfair Display", data: playfair, weight: 600, style: "normal" },
+        { name: "Playfair Display", data: playfairItalic, weight: 600, style: "italic" },
+        { name: "Work Sans", data: workSans, weight: 500, style: "normal" },
       ],
     }
   );
