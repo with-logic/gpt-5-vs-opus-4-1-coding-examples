@@ -1,0 +1,1233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FocusFlow - Pomodoro Timer</title>
+<style>
+  :root {
+    --primary: #ff6b4a;
+    --primary-dark: #e85a3a;
+    --secondary: #ffd93d;
+    --accent: #6bcb77;
+    --accent-blue: #4d96ff;
+    --bg: #fff8f0;
+    --bg-card: rgba(255,255,255,0.85);
+    --text: #2d2d2d;
+    --text-secondary: #666;
+    --border: rgba(0,0,0,0.08);
+    --shadow: 0 8px 32px rgba(255,107,74,0.15);
+    --timer-work: #ff6b4a;
+    --timer-break: #6bcb77;
+    --timer-long: #4d96ff;
+  }
+
+  [data-theme="dark"] {
+    --bg: #0f0f1a;
+    --bg-card: rgba(30,30,45,0.85);
+    --text: #f0f0f5;
+    --text-secondary: #a0a0b0;
+    --border: rgba(255,255,255,0.08);
+    --shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    transition: background 0.5s, color 0.5s;
+    overflow-x: hidden;
+  }
+
+  /* Animated background blobs */
+  .bg-blobs {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .blob {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0.4;
+    animation: float 20s infinite ease-in-out;
+  }
+  .blob-1 {
+    width: 400px; height: 400px;
+    background: var(--primary);
+    top: -100px; left: -100px;
+    animation-delay: 0s;
+  }
+  .blob-2 {
+    width: 350px; height: 350px;
+    background: var(--accent);
+    bottom: -80px; right: -80px;
+    animation-delay: -7s;
+    animation-duration: 25s;
+  }
+  .blob-3 {
+    width: 300px; height: 300px;
+    background: var(--accent-blue);
+    top: 40%; left: 60%;
+    animation-delay: -14s;
+    animation-duration: 22s;
+  }
+  [data-theme="dark"] .blob { opacity: 0.15; }
+
+  @keyframes float {
+    0%, 100% { transform: translate(0,0) scale(1); }
+    33% { transform: translate(30px,-50px) scale(1.1); }
+    66% { transform: translate(-20px,20px) scale(0.9); }
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 32px;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 1.6rem;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+  .logo-icon {
+    width: 40px; height: 40px;
+    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    font-size: 1.4rem;
+    box-shadow: 0 4px 12px rgba(255,107,74,0.3);
+  }
+  .header-controls {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .icon-btn {
+    width: 42px; height: 42px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    font-size: 1.1rem;
+    transition: all 0.2s;
+    backdrop-filter: blur(12px);
+  }
+  .icon-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
+  }
+  .icon-btn.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+  }
+
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 24px;
+  }
+  @media (max-width: 900px) {
+    .main-grid { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 28px;
+    backdrop-filter: blur(16px);
+    box-shadow: var(--shadow);
+    transition: all 0.3s;
+  }
+
+  .timer-modes {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 28px;
+    justify-content: center;
+  }
+  .mode-btn {
+    padding: 10px 20px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .mode-btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--timer-work);
+    opacity: 0;
+    transition: opacity 0.2s;
+    border-radius: inherit;
+  }
+  .mode-btn span { position: relative; z-index: 1; }
+  .mode-btn:hover::before { opacity: 0.08; }
+  .mode-btn.active {
+    color: white;
+    border-color: transparent;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  }
+  .mode-btn.active::before { opacity: 1; }
+  .mode-btn.work.active::before { background: var(--timer-work); }
+  .mode-btn.short.active::before { background: var(--timer-break); }
+  .mode-btn.long.active::before { background: var(--timer-long); }
+
+  .timer-display {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 32px;
+  }
+  .timer-ring-wrapper {
+    position: relative;
+    width: 280px;
+    height: 280px;
+    margin-bottom: 24px;
+  }
+  .timer-ring-svg {
+    width: 100%; height: 100%;
+    transform: rotate(-90deg);
+  }
+  .timer-ring-bg {
+    fill: none;
+    stroke: var(--border);
+    stroke-width: 8;
+  }
+  .timer-ring-progress {
+    fill: none;
+    stroke-width: 8;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 1s linear, stroke 0.3s;
+  }
+  .timer-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .timer-time {
+    font-size: 4rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -2px;
+    line-height: 1;
+    transition: color 0.3s;
+  }
+  .timer-label {
+    margin-top: 8px;
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .timer-controls {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+  }
+  .ctrl-btn {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    font-size: 1.6rem;
+    transition: all 0.2s;
+    color: white;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+  }
+  .ctrl-btn:hover {
+    transform: scale(1.08);
+    box-shadow: 0 8px 28px rgba(0,0,0,0.2);
+  }
+  .ctrl-btn:active { transform: scale(0.96); }
+  .ctrl-main {
+    width: 80px; height: 80px;
+    font-size: 2rem;
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  }
+  .ctrl-reset { background: linear-gradient(135deg, #888, #666); }
+  .ctrl-skip { background: linear-gradient(135deg, var(--accent-blue), #3a7bd5); }
+
+  .stats-bar {
+    display: flex;
+    gap: 16px;
+    margin-top: 24px;
+    justify-content: center;
+  }
+  .stat-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--bg);
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+  }
+  .stat-pill strong {
+    color: var(--text);
+    font-size: 1.1rem;
+  }
+
+  .section-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .chart-card { margin-bottom: 24px; }
+  .chart-svg {
+    width: 100%;
+    height: 160px;
+  }
+  .chart-bar {
+    transition: all 0.3s;
+    cursor: pointer;
+  }
+  .chart-bar:hover { opacity: 0.8; }
+  .chart-label {
+    font-size: 10px;
+    fill: var(--text-secondary);
+    text-anchor: middle;
+  }
+  .chart-value {
+    font-size: 11px;
+    fill: var(--text);
+    text-anchor: middle;
+    font-weight: 600;
+  }
+  .chart-grid-line {
+    stroke: var(--border);
+    stroke-dasharray: 4,4;
+  }
+
+  .sessions-list {
+    max-height: 320px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .sessions-list::-webkit-scrollbar { width: 4px; }
+  .sessions-list::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
+  }
+  .session-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    background: var(--bg);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    transition: all 0.2s;
+    animation: slideIn 0.3s ease-out;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(-12px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  .session-item:hover {
+    transform: translateX(4px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  }
+  .session-info { display: flex; align-items: center; gap: 10px; }
+  .session-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .session-dot.work { background: var(--timer-work); }
+  .session-dot.short { background: var(--timer-break); }
+  .session-dot.long { background: var(--timer-long); }
+  .session-name { font-weight: 600; font-size: 0.9rem; }
+  .session-time { font-size: 0.8rem; color: var(--text-secondary); }
+  .session-duration { font-weight: 700; font-size: 0.9rem; color: var(--text-secondary); }
+
+  .settings-group {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .setting-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .setting-label {
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+  .setting-sublabel {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: 2px;
+  }
+  .time-input {
+    width: 64px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg);
+    color: var(--text);
+    font-weight: 600;
+    font-size: 0.9rem;
+    text-align: center;
+  }
+  .time-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(255,107,74,0.15);
+  }
+
+  .toggle {
+    width: 48px; height: 26px;
+    background: #ddd;
+    border-radius: 13px;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.3s;
+    flex-shrink: 0;
+  }
+  .toggle::after {
+    content: '';
+    position: absolute;
+    width: 20px; height: 20px;
+    background: white;
+    border-radius: 50%;
+    top: 3px; left: 3px;
+    transition: transform 0.3s;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+  }
+  .toggle.on {
+    background: var(--primary);
+  }
+  .toggle.on::after {
+    transform: translateX(22px);
+  }
+  [data-theme="dark"] .toggle:not(.on) { background: #444; }
+
+  .empty-state {
+    text-align: center;
+    padding: 32px 16px;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+  }
+  .empty-state-icon {
+    font-size: 2.5rem;
+    margin-bottom: 12px;
+    opacity: 0.5;
+  }
+
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    backdrop-filter: blur(4px);
+    z-index: 100;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .modal-overlay.show {
+    display: flex;
+    opacity: 1;
+  }
+  .modal {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 28px;
+    width: 90%;
+    max-width: 420px;
+    max-height: 80vh;
+    overflow-y: auto;
+    transform: scale(0.9);
+    transition: transform 0.3s;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.2);
+  }
+  .modal-overlay.show .modal {
+    transform: scale(1);
+  }
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  .modal-title {
+    font-size: 1.3rem;
+    font-weight: 700;
+  }
+  .modal-close {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    font-size: 1.2rem;
+    color: var(--text);
+  }
+
+  .pulse-animation {
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255,107,74,0.4); }
+    50% { box-shadow: 0 0 0 20px rgba(255,107,74,0); }
+  }
+
+  .confetti {
+    position: fixed;
+    pointer-events: none;
+    z-index: 200;
+  }
+
+  .energy-particles {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .particle {
+    position: absolute;
+    border-radius: 50%;
+    opacity: 0.3;
+    animation: particle-float 15s infinite linear;
+  }
+  @keyframes particle-float {
+    0% { transform: translateY(100vh) scale(0); opacity: 0; }
+    10% { opacity: 0.3; }
+    90% { opacity: 0.3; }
+    100% { transform: translateY(-10vh) scale(1); opacity: 0; }
+  }
+
+  .streak-flame {
+    display: inline-block;
+    animation: flicker 1s infinite alternate;
+  }
+  @keyframes flicker {
+    0% { transform: scale(1); }
+    100% { transform: scale(1.15); }
+  }
+
+  footer {
+    text-align: center;
+    padding: 32px 0;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    position: relative;
+    z-index: 1;
+  }
+
+  @media (max-width: 600px) {
+    .timer-ring-wrapper { width: 240px; height: 240px; }
+    .timer-time { font-size: 3rem; }
+    .timer-controls { gap: 12px; }
+    .ctrl-main { width: 68px; height: 68px; font-size: 1.6rem; }
+    .ctrl-btn { width: 54px; height: 54px; font-size: 1.3rem; }
+    .card { padding: 20px; }
+    .container { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="bg-blobs">
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="blob blob-3"></div>
+</div>
+<div class="energy-particles" id="particles"></div>
+
+<div class="container">
+  <header>
+    <div class="logo">
+      <div class="logo-icon">🔥</div>
+      <span>FocusFlow</span>
+    </div>
+    <div class="header-controls">
+      <button class="icon-btn" id="soundToggle" title="Toggle sound">
+        🔊
+      </button>
+      <button class="icon-btn" id="themeToggle" title="Toggle dark mode">
+        🌙
+      </button>
+      <button class="icon-btn" id="settingsBtn" title="Settings">
+        ⚙️
+      </button>
+    </div>
+  </header>
+
+  <div class="main-grid">
+    <div class="left-col">
+      <div class="card timer-card">
+        <div class="timer-modes">
+          <button class="mode-btn work active" data-mode="work"><span>Focus</span></button>
+          <button class="mode-btn short" data-mode="short"><span>Short Break</span></button>
+          <button class="mode-btn long" data-mode="long"><span>Long Break</span></button>
+        </div>
+
+        <div class="timer-display">
+          <div class="timer-ring-wrapper">
+            <svg class="timer-ring-svg" viewBox="0 0 200 200">
+              <circle class="timer-ring-bg" cx="100" cy="100" r="90"/>
+              <circle class="timer-ring-progress" id="progressRing" cx="100" cy="100" r="90"
+                stroke-dasharray="565.48" stroke-dashoffset="0" stroke="var(--timer-work)"/>
+            </svg>
+            <div class="timer-center">
+              <div class="timer-time" id="timerDisplay">25:00</div>
+              <div class="timer-label" id="timerLabel">Ready to focus?</div>
+            </div>
+          </div>
+
+          <div class="timer-controls">
+            <button class="ctrl-btn ctrl-reset" id="resetBtn" title="Reset">
+              ↺
+            </button>
+            <button class="ctrl-btn ctrl-main" id="mainBtn" title="Start/Pause (Space)">
+              ▶
+            </button>
+            <button class="ctrl-btn ctrl-skip" id="skipBtn" title="Skip">
+              ⏭
+            </button>
+          </div>
+        </div>
+
+        <div class="stats-bar">
+          <div class="stat-pill">
+            <span>✅</span>
+            <span><strong id="todayCount">0</strong> sessions</span>
+          </div>
+          <div class="stat-pill">
+            <span>⏱️</span>
+            <span><strong id="todayMinutes">0</strong> min</span>
+          </div>
+          <div class="stat-pill">
+            <span class="streak-flame">🔥</span>
+            <span><strong id="streakCount">0</strong> streak</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card chart-card">
+        <div class="section-title">
+          📊 Weekly Overview
+        </div>
+        <svg class="chart-svg" id="weeklyChart" viewBox="0 0 400 160">
+          <g id="chartGrid"></g>
+          <g id="chartBars"></g>
+        </svg>
+      </div>
+    </div>
+
+    <div class="right-col">
+      <div class="card">
+        <div class="section-title">
+          📝 Session Log
+        </div>
+        <div class="sessions-list" id="sessionsList">
+          <div class="empty-state">
+            <div class="empty-state-icon">🍅</div>
+            <div>Complete a session to see it here!</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Press <strong>Space</strong> to start/pause &middot; Built with focus 🔥
+  </footer>
+</div>
+
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">⚙️ Settings</div>
+      <button class="modal-close" id="closeSettings">✕</button>
+    </div>
+    <div class="settings-group">
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Focus Duration</div>
+          <div class="setting-sublabel">Minutes per pomodoro</div>
+        </div>
+        <input type="number" class="time-input" id="workDuration" value="25" min="1" max="60">
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Short Break</div>
+          <div class="setting-sublabel">Minutes between sessions</div>
+        </div>
+        <input type="number" class="time-input" id="shortDuration" value="5" min="1" max="30">
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Long Break</div>
+          <div class="setting-sublabel">Minutes after 4 sessions</div>
+        </div>
+        <input type="number" class="time-input" id="longDuration" value="15" min="1" max="60">
+      </div>
+      <hr style="border: none; border-top: 1px solid var(--border); margin: 4px 0;">
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Auto-start Breaks</div>
+          <div class="setting-sublabel">Start breaks automatically</div>
+        </div>
+        <div class="toggle" id="autoStartBreakToggle"></div>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Auto-start Focus</div>
+          <div class="setting-sublabel">Start focus after break</div>
+        </div>
+        <div class="toggle" id="autoStartFocusToggle"></div>
+      </div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-label">Sound Alerts</div>
+          <div class="setting-sublabel">Play beep when timer ends</div>
+        </div>
+        <div class="toggle on" id="soundToggleSetting"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ── State ──
+  const MODES = {
+    work: { name: 'Focus', color: 'var(--timer-work)', label: 'Focus time!' },
+    short: { name: 'Short Break', color: 'var(--timer-break)', label: 'Take a breather' },
+    long: { name: 'Long Break', color: 'var(--timer-long)', label: 'Rest & recharge' }
+  };
+
+  let state = {
+    mode: 'work',
+    timeLeft: 25 * 60,
+    totalTime: 25 * 60,
+    isRunning: false,
+    sessions: [],
+    settings: {
+      work: 25,
+      short: 5,
+      long: 15,
+      autoStartBreak: false,
+      autoStartFocus: false,
+      sound: true
+    },
+    darkMode: false,
+    timerId: null,
+    sessionsToday: 0,
+    minutesToday: 0,
+    streak: 0
+  };
+
+  // ── Audio Context for beep ──
+  let audioCtx = null;
+  function initAudio() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  function playBeep() {
+    if (!state.settings.sound) return;
+    initAudio();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.3);
+    gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+    osc.start(audioCtx.currentTime);
+    osc.stop(audioCtx.currentTime + 0.5);
+
+    // Second beep
+    const osc2 = audioCtx.createOscillator();
+    const gain2 = audioCtx.createGain();
+    osc2.connect(gain2);
+    gain2.connect(audioCtx.destination);
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(880, audioCtx.currentTime + 0.4);
+    osc2.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.7);
+    gain2.gain.setValueAtTime(0.3, audioCtx.currentTime + 0.4);
+    gain2.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.9);
+    osc2.start(audioCtx.currentTime + 0.4);
+    osc2.stop(audioCtx.currentTime + 0.9);
+  }
+
+  // ── DOM refs ──
+  const els = {
+    timerDisplay: document.getElementById('timerDisplay'),
+    timerLabel: document.getElementById('timerLabel'),
+    progressRing: document.getElementById('progressRing'),
+    mainBtn: document.getElementById('mainBtn'),
+    resetBtn: document.getElementById('resetBtn'),
+    skipBtn: document.getElementById('skipBtn'),
+    modeBtns: document.querySelectorAll('.mode-btn'),
+    sessionsList: document.getElementById('sessionsList'),
+    todayCount: document.getElementById('todayCount'),
+    todayMinutes: document.getElementById('todayMinutes'),
+    streakCount: document.getElementById('streakCount'),
+    weeklyChart: document.getElementById('weeklyChart'),
+    chartBars: document.getElementById('chartBars'),
+    chartGrid: document.getElementById('chartGrid'),
+    settingsModal: document.getElementById('settingsModal'),
+    settingsBtn: document.getElementById('settingsBtn'),
+    closeSettings: document.getElementById('closeSettings'),
+    workInput: document.getElementById('workDuration'),
+    shortInput: document.getElementById('shortDuration'),
+    longInput: document.getElementById('longDuration'),
+    autoStartBreakToggle: document.getElementById('autoStartBreakToggle'),
+    autoStartFocusToggle: document.getElementById('autoStartFocusToggle'),
+    soundToggleSetting: document.getElementById('soundToggleSetting'),
+    soundToggleHeader: document.getElementById('soundToggle'),
+    themeToggle: document.getElementById('themeToggle'),
+    particles: document.getElementById('particles')
+  };
+
+  // ── Persistence ──
+  function save() {
+    const data = {
+      sessions: state.sessions,
+      settings: state.settings,
+      darkMode: state.darkMode,
+      lastDate: new Date().toDateString()
+    };
+    localStorage.setItem('focusflow_data', JSON.stringify(data));
+  }
+  function load() {
+    try {
+      const raw = localStorage.getItem('focusflow_data');
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (data.sessions) state.sessions = data.sessions;
+      if (data.settings) state.settings = { ...state.settings, ...data.settings };
+      if (data.darkMode !== undefined) state.darkMode = data.darkMode;
+
+      // Reset daily stats if new day
+      const today = new Date().toDateString();
+      if (data.lastDate !== today) {
+        state.sessionsToday = 0;
+        state.minutesToday = 0;
+      }
+    } catch(e) { console.error(e); }
+  }
+
+  // ── Helpers ──
+  function formatTime(sec) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+  }
+  function formatTimeShort(sec) {
+    const m = Math.floor(sec / 60);
+    return m + ' min';
+  }
+  function getTodaySessions() {
+    const today = new Date().toDateString();
+    return state.sessions.filter(s => new Date(s.timestamp).toDateString() === today);
+  }
+  function getWeekData() {
+    const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const now = new Date();
+    const result = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const ds = d.toDateString();
+      const daySessions = state.sessions.filter(s => new Date(s.timestamp).toDateString() === ds && s.mode === 'work');
+      const count = daySessions.length;
+      const minutes = daySessions.reduce((a, s) => a + Math.floor(s.duration / 60), 0);
+      result.push({ day: days[d.getDay()], count, minutes, isToday: i === 0 });
+    }
+    return result;
+  }
+  function computeStreak() {
+    let streak = 0;
+    const today = new Date();
+    for (let i = 0; i < 365; i++) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const ds = d.toDateString();
+      const hasSession = state.sessions.some(s => new Date(s.timestamp).toDateString() === ds && s.mode === 'work');
+      if (hasSession) streak++;
+      else if (i > 0) break;
+    }
+    return streak;
+  }
+
+  // ── Render ──
+  function updateTimerDisplay() {
+    els.timerDisplay.textContent = formatTime(state.timeLeft);
+    const circumference = 2 * Math.PI * 90;
+    const pct = state.timeLeft / state.totalTime;
+    els.progressRing.style.strokeDashoffset = circumference * (1 - pct);
+    els.progressRing.setAttribute('stroke', MODES[state.mode].color);
+    els.timerLabel.textContent = state.isRunning
+      ? (state.mode === 'work' ? 'Focusing...' : 'Relaxing...')
+      : MODES[state.mode].label;
+    els.mainBtn.innerHTML = state.isRunning ? '⏸' : '▶';
+    document.title = `${formatTime(state.timeLeft)} - FocusFlow`;
+  }
+
+  function updateStats() {
+    const today = getTodaySessions();
+    state.sessionsToday = today.length;
+    state.minutesToday = today.reduce((a, s) => a + Math.floor(s.duration / 60), 0);
+    state.streak = computeStreak();
+    els.todayCount.textContent = state.sessionsToday;
+    els.todayMinutes.textContent = state.minutesToday;
+    els.streakCount.textContent = state.streak;
+  }
+
+  function renderSessions() {
+    const recent = [...state.sessions].reverse().slice(0, 50);
+    if (recent.length === 0) {
+      els.sessionsList.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">🍅</div>
+          <div>Complete a session to see it here!</div>
+        </div>`;
+      return;
+    }
+    els.sessionsList.innerHTML = recent.map(s => {
+      const date = new Date(s.timestamp);
+      const timeStr = date.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+      return `
+        <div class="session-item">
+          <div class="session-info">
+            <div class="session-dot ${s.mode}"></div>
+            <div>
+              <div class="session-name">${MODES[s.mode].name}</div>
+              <div class="session-time">${timeStr}</div>
+            </div>
+          </div>
+          <div class="session-duration">${formatTimeShort(s.duration)}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderChart() {
+    const data = getWeekData();
+    const maxCount = Math.max(...data.map(d => d.count), 1);
+    const maxMinutes = Math.max(...data.map(d => d.minutes), 1);
+    const W = 400, H = 160;
+    const pad = { top: 20, right: 10, bottom: 24, left: 10 };
+    const barW = (W - pad.left - pad.right) / data.length * 0.5;
+    const gap = (W - pad.left - pad.right) / data.length;
+
+    // Grid lines
+    let gridHTML = '';
+    for (let i = 0; i <= 2; i++) {
+      const y = pad.top + (H - pad.top - pad.bottom) * (i / 2);
+      gridHTML += `<line class="chart-grid-line" x1="${pad.left}" y1="${y}" x2="${W-pad.right}" y2="${y}"/>`;
+    }
+    els.chartGrid.innerHTML = gridHTML;
+
+    // Bars
+    let barsHTML = '';
+    data.forEach((d, i) => {
+      const x = pad.left + gap * i + gap / 2;
+      const barH = d.count / maxCount * (H - pad.top - pad.bottom) * 0.85;
+      const y = H - pad.bottom - barH;
+      const color = d.isToday ? MODES.work.color : (d.count > 0 ? '#ff9e80' : 'var(--border)');
+      const opacity = d.isToday ? 1 : (d.count > 0 ? 0.7 : 0.4);
+      barsHTML += `
+        <rect class="chart-bar" x="${x - barW/2}" y="${y}" width="${barW}" height="${barH > 0 ? barH : 0}"
+          fill="${color}" opacity="${opacity}" rx="6">
+          <title>${d.day}: ${d.count} sessions, ${d.minutes} min</title>
+        </rect>
+        <text class="chart-label" x="${x}" y="${H - 6}">${d.day}</text>
+      `;
+      if (d.count > 0) {
+        barsHTML += `<text class="chart-value" x="${x}" y="${y - 6}">${d.count}</text>`;
+      }
+    });
+    els.chartBars.innerHTML = barsHTML;
+  }
+
+  function setMode(mode) {
+    state.mode = mode;
+    state.totalTime = state.settings[mode] * 60;
+    state.timeLeft = state.totalTime;
+    state.isRunning = false;
+    clearInterval(state.timerId);
+    els.modeBtns.forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+    updateTimerDisplay();
+    els.mainBtn.classList.remove('pulse-animation');
+  }
+
+  function logSession() {
+    const completed = state.totalTime - state.timeLeft;
+    if (completed > 30) {
+      state.sessions.push({
+        mode: state.mode,
+        duration: completed,
+        timestamp: Date.now()
+      });
+      save();
+      updateStats();
+      renderSessions();
+      renderChart();
+      spawnConfetti();
+    }
+  }
+
+  function onTimerComplete() {
+    clearInterval(state.timerId);
+    state.isRunning = false;
+    playBeep();
+    logSession();
+
+    // Determine next mode
+    const todayWork = getTodaySessions().filter(s => s.mode === 'work').length;
+    if (state.mode === 'work') {
+      const next = (todayWork + 1) % 4 === 0 ? 'long' : 'short';
+      setMode(next);
+      if (state.settings.autoStartBreak) startTimer();
+    } else {
+      setMode('work');
+      if (state.settings.autoStartFocus) startTimer();
+    }
+  }
+
+  function tick() {
+    state.timeLeft--;
+    if (state.timeLeft <= 0) {
+      state.timeLeft = 0;
+      onTimerComplete();
+    }
+    updateTimerDisplay();
+  }
+
+  function startTimer() {
+    if (state.isRunning) return;
+    initAudio();
+    state.isRunning = true;
+    state.timerId = setInterval(tick, 1000);
+    els.mainBtn.classList.add('pulse-animation');
+    updateTimerDisplay();
+  }
+
+  function pauseTimer() {
+    state.isRunning = false;
+    clearInterval(state.timerId);
+    els.mainBtn.classList.remove('pulse-animation');
+    updateTimerDisplay();
+  }
+
+  function toggleTimer() {
+    state.isRunning ? pauseTimer() : startTimer();
+  }
+
+  function resetTimer() {
+    pauseTimer();
+    state.timeLeft = state.totalTime;
+    updateTimerDisplay();
+  }
+
+  function skipTimer() {
+    pauseTimer();
+    logSession();
+    const todayWork = getTodaySessions().filter(s => s.mode === 'work').length;
+    if (state.mode === 'work') {
+      setMode((todayWork + 1) % 4 === 0 ? 'long' : 'short');
+    } else {
+      setMode('work');
+    }
+  }
+
+  // ── Confetti ──
+  function spawnConfetti() {
+    const colors = ['#ff6b4a','#ffd93d','#6bcb77','#4d96ff','#ff8fab'];
+    for (let i = 0; i < 40; i++) {
+      const el = document.createElement('div');
+      el.className = 'confetti';
+      el.style.left = Math.random() * 100 + 'vw';
+      el.style.top = '-10px';
+      el.style.width = (6 + Math.random() * 8) + 'px';
+      el.style.height = (6 + Math.random() * 8) + 'px';
+      el.style.background = colors[Math.floor(Math.random() * colors.length)];
+      el.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px';
+      el.style.transform = `rotate(${Math.random()*360}deg)`;
+      document.body.appendChild(el);
+      const duration = 1500 + Math.random() * 1500;
+      const x = (Math.random() - 0.5) * 300;
+      el.animate([
+        { transform: `translate(0,0) rotate(0deg)`, opacity: 1 },
+        { transform: `translate(${x}px, ${window.innerHeight + 20}px) rotate(${Math.random()*720}deg)`, opacity: 0 }
+      ], { duration, easing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)' });
+      setTimeout(() => el.remove(), duration);
+    }
+  }
+
+  // ── Particles ──
+  function spawnParticles() {
+    const colors = ['rgba(255,107,74,0.3)','rgba(107,203,119,0.3)','rgba(77,150,255,0.3)'];
+    for (let i = 0; i < 12; i++) {
+      const p = document.createElement('div');
+      p.className = 'particle';
+      p.style.left = Math.random() * 100 + '%';
+      p.style.width = (4 + Math.random() * 8) + 'px';
+      p.style.height = p.style.width;
+      p.style.background = colors[Math.floor(Math.random() * colors.length)];
+      p.style.animationDelay = Math.random() * 15 + 's';
+      p.style.animationDuration = (12 + Math.random() * 10) + 's';
+      els.particles.appendChild(p);
+    }
+  }
+
+  // ── Settings ──
+  function openSettings() {
+    els.settingsModal.classList.add('show');
+    els.workInput.value = state.settings.work;
+    els.shortInput.value = state.settings.short;
+    els.longInput.value = state.settings.long;
+    updateToggleVisuals();
+  }
+  function closeSettings() {
+    els.settingsModal.classList.remove('show');
+  }
+  function updateToggleVisuals() {
+    els.autoStartBreakToggle.classList.toggle('on', state.settings.autoStartBreak);
+    els.autoStartFocusToggle.classList.toggle('on', state.settings.autoStartFocus);
+    els.soundToggleSetting.classList.toggle('on', state.settings.sound);
+  }
+  function toggleSetting(key, toggleEl) {
+    state.settings[key] = !state.settings[key];
+    toggleEl.classList.toggle('on', state.settings[key]);
+    if (key === 'sound') {
+      els.soundToggleHeader.textContent = state.settings.sound ? '🔊' : '🔇';
+    }
+    save();
+  }
+  function applyDuration(mode, val) {
+    const v = parseInt(val, 10);
+    if (v > 0 && v <= 120) {
+      state.settings[mode] = v;
+      if (state.mode === mode && !state.isRunning) {
+        state.totalTime = v * 60;
+        state.timeLeft = state.totalTime;
+        updateTimerDisplay();
+      }
+      save();
+    }
+  }
+
+  // ── Theme ──
+  function applyTheme() {
+    document.documentElement.setAttribute('data-theme', state.darkMode ? 'dark' : 'light');
+    els.themeToggle.textContent = state.darkMode ? '☀️' : '🌙';
+  }
+  function toggleTheme() {
+    state.darkMode = !state.darkMode;
+    applyTheme();
+    save();
+  }
+
+  // ── Events ──
+  els.modeBtns.forEach(btn => {
+    btn.addEventListener('click', () => setMode(btn.dataset.mode));
+  });
+  els.mainBtn.addEventListener('click', toggleTimer);
+  els.resetBtn.addEventListener('click', resetTimer);
+  els.skipBtn.addEventListener('click', skipTimer);
+  els.settingsBtn.addEventListener('click', openSettings);
+  els.closeSettings.addEventListener('click', closeSettings);
+  els.settingsModal.addEventListener('click', e => {
+    if (e.target === els.settingsModal) closeSettings();
+  });
+  els.autoStartBreakToggle.addEventListener('click', () => toggleSetting('autoStartBreak', els.autoStartBreakToggle));
+  els.autoStartFocusToggle.addEventListener('click', () => toggleSetting('autoStartFocus', els.autoStartFocusToggle));
+  els.soundToggleSetting.addEventListener('click', () => toggleSetting('sound', els.soundToggleSetting));
+  els.soundToggleHeader.addEventListener('click', () => {
+    state.settings.sound = !state.settings.sound;
+    els.soundToggleHeader.textContent = state.settings.sound ? '🔊' : '🔇';
+    save();
+  });
+  els.themeToggle.addEventListener('click', toggleTheme);
+  els.workInput.addEventListener('change', () => applyDuration('work', els.workInput.value));
+  els.shortInput.addEventListener('change', () => applyDuration('short', els.shortInput.value));
+  els.longInput.addEventListener('change', () => applyDuration('long', els.longInput.value));
+
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space' && !['INPUT','TEXTAREA'].includes(document.activeElement.tagName)) {
+      e.preventDefault();
+      toggleTimer();
+    }
+  });
+
+  // ── Init ──
+  load();
+  applyTheme();
+  setMode('work');
+  updateStats();
+  renderSessions();
+  renderChart();
+  spawnParticles();
+  els.soundToggleHeader.textContent = state.settings.sound ? '🔊' : '🔇';
+
+  // Ensure ring has correct dasharray
+  const circumference = 2 * Math.PI * 90;
+  els.progressRing.setAttribute('stroke-dasharray', circumference);
+  updateTimerDisplay();
+
+})();
+</script>
+</body>
+</html>

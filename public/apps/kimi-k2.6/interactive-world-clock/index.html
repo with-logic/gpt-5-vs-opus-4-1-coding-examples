@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive World Clock</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Inter', sans-serif; }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+
+        /* Time Period Themes */
+        .period-morning {
+            background: linear-gradient(135deg, #fef9c3 0%, #fde047 30%, #fbbf24 100%);
+            color: #854d0e;
+        }
+        .period-morning .card-bg { background: rgba(255, 255, 255, 0.45); }
+        .period-morning .text-secondary { color: rgba(133, 77, 14, 0.7); }
+        .period-morning .border-subtle { border-color: rgba(133, 77, 14, 0.15); }
+
+        .period-afternoon {
+            background: linear-gradient(135deg, #bae6fd 0%, #38bdf8 50%, #0ea5e9 100%);
+            color: #0c4a6e;
+        }
+        .period-afternoon .card-bg { background: rgba(255, 255, 255, 0.4); }
+        .period-afternoon .text-secondary { color: rgba(12, 74, 110, 0.7); }
+        .period-afternoon .border-subtle { border-color: rgba(12, 74, 110, 0.15); }
+
+        .period-evening {
+            background: linear-gradient(135deg, #fed7aa 0%, #fb923c 40%, #e11d48 100%);
+            color: #881337;
+        }
+        .period-evening .card-bg { background: rgba(255, 255, 255, 0.35); }
+        .period-evening .text-secondary { color: rgba(136, 19, 55, 0.75); }
+        .period-evening .border-subtle { border-color: rgba(136, 19, 55, 0.15); }
+
+        .period-night {
+            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 40%, #1e3a8a 100%);
+            color: #e0e7ff;
+        }
+        .period-night .card-bg { background: rgba(255, 255, 255, 0.08); }
+        .period-night .text-secondary { color: rgba(224, 231, 255, 0.6); }
+        .period-night .border-subtle { border-color: rgba(224, 231, 255, 0.1); }
+
+        /* Animations */
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-6px); }
+        }
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(20px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes spin-slow {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .animate-float { animation: float 4s ease-in-out infinite; }
+        .animate-slide-in { animation: slideIn 0.4s ease-out forwards; }
+        .animate-spin-slow { animation: spin-slow 20s linear infinite; }
+
+        .clock-card {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        .clock-card:hover {
+            transform: translateY(-4px) scale(1.02);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+        }
+
+        /* Analog Clock SVG */
+        .clock-face { transform-origin: center; }
+        .hand { transform-origin: center; transition: transform 0.1s cubic-bezier(0.4, 2, 0.6, 1); }
+        .hand-hour { stroke-linecap: round; }
+        .hand-minute { stroke-linecap: round; }
+        .hand-second { stroke-linecap: round; }
+
+        /* Toggle Switch */
+        .toggle-track {
+            transition: background-color 0.3s ease;
+        }
+        .toggle-thumb {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(128, 128, 128, 0.3); border-radius: 3px; }
+
+        /* Search dropdown */
+        .search-dropdown {
+            max-height: 300px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+        }
+
+        /* Background decoration */
+        .bg-decoration {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0.03;
+        }
+
+        /* Period indicator pulse */
+        .period-indicator {
+            animation: pulse-glow 3s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100 overflow-x-hidden">
+
+    <!-- Background decoration -->
+    <svg class="bg-decoration" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <defs>
+            <pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse">
+                <circle cx="0.5" cy="0.5" r="0.5" fill="currentColor"/>
+            </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#grid)"/>
+    </svg>
+
+    <div id="app" class="relative z-10">
+        <!-- Header -->
+        <header class="sticky top-0 z-50 backdrop-blur-xl bg-slate-950/70 border-b border-slate-800/50">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                <div class="flex items-center justify-between flex-wrap gap-4">
+                    <div class="flex items-center gap-3">
+                        <div class="relative w-10 h-10 flex items-center justify-center">
+                            <svg class="w-10 h-10 animate-spin-slow" viewBox="0 0 40 40" fill="none">
+                                <circle cx="20" cy="20" r="18" stroke="currentColor" stroke-width="1" opacity="0.3"/>
+                                <line x1="20" y1="20" x2="20" y2="6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                <line x1="20" y1="20" x2="32" y2="20" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                                <circle cx="20" cy="20" r="2" fill="currentColor"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h1 class="text-xl font-bold tracking-tight text-white">World Clock</h1>
+                            <p class="text-xs text-slate-400" id="header-date">Loading...</p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-4">
+                        <!-- Format Toggle -->
+                        <button id="format-toggle" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-800/80 border border-slate-700/50 hover:bg-slate-700/80 transition-colors text-sm font-medium">
+                            <span class="text-slate-400">12H</span>
+                            <div class="relative w-10 h-5">
+                                <div id="toggle-track" class="toggle-track absolute inset-0 rounded-full bg-slate-600"></div>
+                                <div id="toggle-thumb" class="toggle-thumb absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-md"></div>
+                            </div>
+                            <span class="text-slate-400">24H</span>
+                        </button>
+
+                        <!-- Add City Button -->
+                        <button id="add-btn" class="flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-600 hover:bg-indigo-500 transition-all text-white text-sm font-medium shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-95">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                            Add City
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Search Modal -->
+        <div id="search-modal" class="fixed inset-0 z-50 hidden">
+            <div class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" id="search-backdrop"></div>
+            <div class="relative flex items-start justify-center pt-20 px-4">
+                <div class="w-full max-w-lg bg-slate-900 rounded-2xl border border-slate-700 shadow-2xl overflow-hidden">
+                    <div class="p-4 border-b border-slate-800">
+                        <div class="relative">
+                            <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                            <input type="text" id="search-input" placeholder="Search for a city..." class="w-full pl-10 pr-4 py-3 bg-slate-800 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 border border-slate-700 transition-all" autocomplete="off">
+                        </div>
+                    </div>
+                    <div id="search-results" class="search-dropdown p-2">
+                        <!-- Results populated by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <!-- Empty State -->
+            <div id="empty-state" class="hidden flex flex-col items-center justify-center py-20 text-center">
+                <div class="w-20 h-20 mb-6 rounded-2xl bg-slate-800/80 flex items-center justify-center">
+                    <svg class="w-10 h-10 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                </div>
+                <h2 class="text-xl font-semibold text-white mb-2">No cities added yet</h2>
+                <p class="text-slate-400 max-w-sm mb-6">Add cities from around the world to see their local times and track time differences.</p>
+                <button onclick="app.openSearch()" class="px-6 py-2.5 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-all shadow-lg shadow-indigo-500/25">
+                    Add Your First City
+                </button>
+            </div>
+
+            <!-- Clock Grid -->
+            <div id="clock-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                <!-- Cards populated by JS -->
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 text-center text-xs text-slate-500">
+            <p>Times update automatically every second. Drag to reorder (coming soon).</p>
+        </footer>
+    </div>
+
+    <script>
+    (function() {
+        'use strict';
+
+        // ==================== DATA ====================
+        const CITIES_DB = [
+            { name: "New York", country: "USA", timezone: "America/New_York", region: "Americas" },
+            { name: "Los Angeles", country: "USA", timezone: "America/Los_Angeles", region: "Americas" },
+            { name: "Chicago", country: "USA", timezone: "America/Chicago", region: "Americas" },
+            { name: "Denver", country: "USA", timezone: "America/Denver", region: "Americas" },
+            { name: "Anchorage", country: "USA", timezone: "America/Anchorage", region: "Americas" },
+            { name: "Honolulu", country: "USA", timezone: "Pacific/Honolulu", region: "Americas" },
+            { name: "London", country: "UK", timezone: "Europe/London", region: "Europe" },
+            { name: "Paris", country: "France", timezone: "Europe/Paris", region: "Europe" },
+            { name: "Berlin", country: "Germany", timezone: "Europe/Berlin", region: "Europe" },
+            { name: "Rome", country: "Italy", timezone: "Europe/Rome", region: "Europe" },
+            { name: "Madrid", country: "Spain", timezone: "Europe/Madrid", region: "Europe" },
+            { name: "Amsterdam", country: "Netherlands", timezone: "Europe/Amsterdam", region: "Europe" },
+            { name: "Zurich", country: "Switzerland", timezone: "Europe/Zurich", region: "Europe" },
+            { name: "Vienna", country: "Austria", timezone: "Europe/Vienna", region: "Europe" },
+            { name: "Stockholm", country: "Sweden", timezone: "Europe/Stockholm", region: "Europe" },
+            { name: "Oslo", country: "Norway", timezone: "Europe/Oslo", region: "Europe" },
+            { name: "Copenhagen", country: "Denmark", timezone: "Europe/Copenhagen", region: "Europe" },
+            { name: "Helsinki", country: "Finland", timezone: "Europe/Helsinki", region: "Europe" },
+            { name: "Warsaw", country: "Poland", timezone: "Europe/Warsaw", region: "Europe" },
+            { name: "Prague", country: "Czech Republic", timezone: "Europe/Prague", region: "Europe" },
+            { name: "Budapest", country: "Hungary", timezone: "Europe/Budapest", region: "Europe" },
+            { name: "Athens", country: "Greece", timezone: "Europe/Athens", region: "Europe" },
+            { name: "Istanbul", country: "Turkey", timezone: "Europe/Istanbul", region: "Europe" },
+            { name: "Moscow", country: "Russia", timezone: "Europe/Moscow", region: "Europe" },
+            { name: "Dubai", country: "UAE", timezone: "Asia/Dubai", region: "Middle East" },
+            { name: "Tel Aviv", country: "Israel", timezone: "Asia/Jerusalem", region: "Middle East" },
+            { name: "Riyadh", country: "Saudi Arabia", timezone: "Asia/Riyadh", region: "Middle East" },
+            { name: "Tokyo", country: "Japan", timezone: "Asia/Tokyo", region: "Asia" },
+            { name: "Shanghai", country: "China", timezone: "Asia/Shanghai", region: "Asia" },
+            { name: "Beijing", country: "China", timezone: "Asia/Shanghai", region: "Asia" },
+            { name: "Hong Kong", country: "China", timezone: "Asia/Hong_Kong", region: "Asia" },
+            { name: "Singapore", country: "Singapore", timezone: "Asia/Singapore", region: "Asia" },
+            { name: "Seoul", country: "South Korea", timezone: "Asia/Seoul", region: "Asia" },
+            { name: "Bangkok", country: "Thailand", timezone: "Asia/Bangkok", region: "Asia" },
+            { name: "Jakarta", country: "Indonesia", timezone: "Asia/Jakarta", region: "Asia" },
+            { name: "Manila", country: "Philippines", timezone: "Asia/Manila", region: "Asia" },
+            { name: "Kuala Lumpur", country: "Malaysia", timezone: "Asia/Kuala_Lumpur", region: "Asia" },
+            { name: "Hanoi", country: "Vietnam", timezone: "Asia/Bangkok", region: "Asia" },
+            { name: "Mumbai", country: "India", timezone: "Asia/Kolkata", region: "Asia" },
+            { name: "Delhi", country: "India", timezone: "Asia/Kolkata", region: "Asia" },
+            { name: "Karachi", country: "Pakistan", timezone: "Asia/Karachi", region: "Asia" },
+            { name: "Dhaka", country: "Bangladesh", timezone: "Asia/Dhaka", region: "Asia" },
+            { name: "Colombo", country: "Sri Lanka", timezone: "Asia/Colombo", region: "Asia" },
+            { name: "Sydney", country: "Australia", timezone: "Australia/Sydney", region: "Oceania" },
+            { name: "Melbourne", country: "Australia", timezone: "Australia/Melbourne", region: "Oceania" },
+            { name: "Brisbane", country: "Australia", timezone: "Australia/Brisbane", region: "Oceania" },
+            { name: "Perth", country: "Australia", timezone: "Australia/Perth", region: "Oceania" },
+            { name: "Adelaide", country: "Australia", timezone: "Australia/Adelaide", region: "Oceania" },
+            { name: "Auckland", country: "New Zealand", timezone: "Pacific/Auckland", region: "Oceania" },
+            { name: "Fiji", country: "Fiji", timezone: "Pacific/Fiji", region: "Oceania" },
+            { name: "Sao Paulo", country: "Brazil", timezone: "America/Sao_Paulo", region: "Americas" },
+            { name: "Buenos Aires", country: "Argentina", timezone: "America/Argentina/Buenos_Aires", region: "Americas" },
+            { name: "Lima", country: "Peru", timezone: "America/Lima", region: "Americas" },
+            { name: "Bogota", country: "Colombia", timezone: "America/Bogota", region: "Americas" },
+            { name: "Caracas", country: "Venezuela", timezone: "America/Caracas", region: "Americas" },
+            { name: "Santiago", country: "Chile", timezone: "America/Santiago", region: "Americas" },
+            { name: "Mexico City", country: "Mexico", timezone: "America/Mexico_City", region: "Americas" },
+            { name: "Vancouver", country: "Canada", timezone: "America/Vancouver", region: "Americas" },
+            { name: "Toronto", country: "Canada", timezone: "America/Toronto", region: "Americas" },
+            { name: "Montreal", country: "Canada", timezone: "America/Toronto", region: "Americas" },
+            { name: "Calgary", country: "Canada", timezone: "America/Edmonton", region: "Americas" },
+            { name: "Halifax", country: "Canada", timezone: "America/Halifax", region: "Americas" },
+            { name: "Cairo", country: "Egypt", timezone: "Africa/Cairo", region: "Africa" },
+            { name: "Johannesburg", country: "South Africa", timezone: "Africa/Johannesburg", region: "Africa" },
+            { name: "Lagos", country: "Nigeria", timezone: "Africa/Lagos", region: "Africa" },
+            { name: "Nairobi", country: "Kenya", timezone: "Africa/Nairobi", region: "Africa" },
+            { name: "Casablanca", country: "Morocco", timezone: "Africa/Casablanca", region: "Africa" },
+            { name: "Accra", country: "Ghana", timezone: "Africa/Accra", region: "Africa" },
+            { name: "Cape Town", country: "South Africa", timezone: "Africa/Johannesburg", region: "Africa" },
+            { name: "Reykjavik", country: "Iceland", timezone: "Atlantic/Reykjavik", region: "Europe" },
+            { name: "Dublin", country: "Ireland", timezone: "Europe/Dublin", region: "Europe" },
+            { name: "Lisbon", country: "Portugal", timezone: "Europe/Lisbon", region: "Europe" },
+            { name: "Brussels", country: "Belgium", timezone: "Europe/Brussels", region: "Europe" },
+            { name: "Luxembourg", country: "Luxembourg", timezone: "Europe/Luxembourg", region: "Europe" },
+            { name: "Monaco", country: "Monaco", timezone: "Europe/Monaco", region: "Europe" },
+            { name: "San Francisco", country: "USA", timezone: "America/Los_Angeles", region: "Americas" },
+            { name: "Seattle", country: "USA", timezone: "America/Los_Angeles", region: "Americas" },
+            { name: "Phoenix", country: "USA", timezone: "America/Phoenix", region: "Americas" },
+            { name: "Las Vegas", country: "USA", timezone: "America/Los_Angeles", region: "Americas" },
+            { name: "Miami", country: "USA", timezone: "America/New_York", region: "Americas" },
+            { name: "Boston", country: "USA", timezone: "America/New_York", region: "Americas" },
+            { name: "Washington DC", country: "USA", timezone: "America/New_York", region: "Americas" },
+            { name: "Atlanta", country: "USA", timezone: "America/New_York", region: "Americas" },
+            { name: "Dallas", country: "USA", timezone: "America/Chicago", region: "Americas" },
+            { name: "Houston", country: "USA", timezone: "America/Chicago", region: "Americas" },
+            { name: "Minneapolis", country: "USA", timezone: "America/Chicago", region: "Americas" },
+            { name: "New Orleans", country: "USA", timezone: "America/Chicago", region: "Americas" },
+            { name: "Salt Lake City", country: "USA", timezone: "America/Denver", region: "Americas" },
+            { name: "Kansas City", country: "USA", timezone: "America/Chicago", region: "Americas" },
+            { name: "Taipei", country: "Taiwan", timezone: "Asia/Taipei", region: "Asia" },
+            { name: "Osaka", country: "Japan", timezone: "Asia/Tokyo", region: "Asia" },
+            { name: "Kyoto", country: "Japan", timezone: "Asia/Tokyo", region: "Asia" },
+            { name: "Sapporo", country: "Japan", timezone: "Asia/Tokyo", region: "Asia" },
+            { name: "Guangzhou", country: "China", timezone: "Asia/Shanghai", region: "Asia" },
+            { name: "Shenzhen", country: "China", timezone: "Asia/Shanghai", region: "Asia" },
+            { name: "Chengdu", country: "China", timezone: "Asia/Shanghai", region: "Asia" },
+            { name: "Macau", country: "China", timezone: "Asia/Macau", region: "Asia" },
+            { name: "Seville", country: "Spain", timezone: "Europe/Madrid", region: "Europe" },
+            { name: "Barcelona", country: "Spain", timezone: "Europe/Madrid", region: "Europe" },
+            { name: "Milan", country: "Italy", timezone: "Europe/Rome", region: "Europe" },
+            { name: "Venice", country: "Italy", timezone: "Europe/Rome", region: "Europe" },
+            { name: "Florence", country: "Italy", timezone: "Europe/Rome", region: "Europe" },
+            { name: "Munich", country: "Germany", timezone: "Europe/Berlin", region: "Europe" },
+            { name: "Hamburg", country: "Germany", timezone: "Europe/Berlin", region: "Europe" },
+            { name: "Frankfurt", country: "Germany", timezone: "Europe/Berlin", region: "Europe" },
+            { name: "Stuttgart", country: "Germany", timezone: "Europe/Berlin", region: "Europe" },
+            { name: "Geneva", country: "Switzerland", timezone: "Europe/Zurich", region: "Europe" },
+            { name: "Edinburgh", country: "Scotland", timezone: "Europe/London", region: "Europe" },
+            { name: "Glasgow", country: "Scotland", timezone: "Europe/London", region: "Europe" },
+            { name: "Manchester", country: "UK", timezone: "Europe/London", region: "Europe" },
+            { name: "Birmingham", country: "UK", timezone: "Europe/London", region: "Europe" },
+            { name: "Belfast", country: "UK", timezone: "Europe/London", region: "Europe" },
+            { name: "Cardiff", country: "Wales", timezone: "Europe/London", region: "Europe" },
+            { name: "Bristol", country: "UK", timezone: "Europe/London", region: "Europe" },
+            { name: "Liverpool", country: "UK", timezone: "Europe/London", region: "Europe" },
+            { name: "Leeds", country: "UK", timezone: "Europe/London", region: "Europe" },
+            { name: "Newcastle", country: "UK", timezone: "Europe/London", region: "Europe" },
+            { name: "Gibraltar", country: "Gibraltar", timezone: "Europe/Gibraltar", region: "Europe" },
+            { name: "Valletta", country: "Malta", timezone: "Europe/Malta", region: "Europe" },
+            { name: "Nicosia", country: "Cyprus", timezone: "Asia/Nicosia", region: "Europe" },
+            { name: "Tallinn", country: "Estonia", timezone: "Europe/Tallinn", region: "Europe" },
+            { name: "Riga", country: "Latvia", timezone: "Europe/Riga", region: "Europe" },
+            { name: "Vilnius", country: "Lithuania", timezone: "Europe/Vilnius", region: "Europe" },
+            { name: "Bratislava", country: "Slovakia", timezone: "Europe/Bratislava", region: "Europe" },
+            { name: "Ljubljana", country: "Slovenia", timezone: "Europe/Ljubljana", region: "Europe" },
+            { name: "Zagreb", country: "Croatia", timezone: "Europe/Zagreb", region: "Europe" },
+            { name: "Belgrade", country: "Serbia", timezone: "Europe/Belgrade", region: "Europe" },
+            { name: "Bucharest", country: "Romania", timezone: "Europe/Bucharest", region: "Europe" },
+            { name: "Sofia", country: "Bulgaria", timezone: "Europe/Sofia", region: "Europe" },
+            { name: "Tirana", country: "Albania", timezone: "Europe/Tirane", region: "Europe" },
+            { name: "Podgorica", country: "Montenegro", timezone: "Europe/Podgorica", region: "Europe" },
+            { name: "Skopje", country: "North Macedonia", timezone: "Europe/Skopje", region: "Europe" },
+            { name: "Sarajevo", country: "Bosnia", timezone: "Europe/Sarajevo", region: "Europe" },
+            { name: "Chisinau", country: "Moldova", timezone: "Europe/Chisinau", region: "Europe" },
+            { name: "Kiev", country: "Ukraine", timezone: "Europe/Kyiv", region: "Europe" },
+            { name: "Minsk", country: "Belarus", timezone: "Europe/Minsk", region: "Europe" },
+            { name: "Kaliningrad", country: "Russia", timezone: "Europe/Kaliningrad", region: "Europe" },
+            { name: "Samara", country: "Russia", timezone: "Europe/Samara", region: "Europe" },
+            { name: "Yekaterinburg", country: "Russia", timezone: "Asia/Yekaterinburg", region: "Asia" },
+            { name: "Novosibirsk", country: "Russia", timezone: "Asia/Novosibirsk", region: "Asia" },
+            { name: "Krasnoyarsk", country: "Russia", timezone: "Asia/Krasnoyarsk", region: "Asia" },
+            { name: "Irkutsk", country: "Russia", timezone: "Asia/Irkutsk", region: "Asia" },
+            { name: "Vladivostok", country: "Russia", timezone: "Asia/Vladivostok", region: "Asia" },
+            { name: "Magadan", country: "Russia", timezone: "Asia/Magadan", region: "Asia" },
+            { name: "Kamchatka", country: "Russia", timezone: "Asia/Kamchatka", region: "Asia" },
+            { name: "Tbilisi", country: "Georgia", timezone: "Asia/Tbilisi", region: "Asia" },
+            { name: "Yerevan", country: "Armenia", timezone: "Asia/Yerevan", region: "Asia" },
+            { name: "Baku", country: "Azerbaijan", timezone: "Asia/Baku", region: "Asia" },
+            { name: "Tehran", country: "Iran", timezone: "Asia/Tehran", region: "Asia" },
+            { name: "Baghdad", country: "Iraq", timezone: "Asia/Baghdad", region: "Asia" },
+            { name: "Kuwait City", country: "Kuwait", timezone: "Asia/Kuwait", region: "Middle East" },
+            { name: "Manama", country: "Bahrain", timezone: "Asia/Bahrain", region: "Middle East" },
+            { name: "Doha", country: "Qatar", timezone: "Asia/Qatar", region: "Middle East" },
+            { name: "Muscat", country: "Oman", timezone: "Asia/Muscat", region: "Middle East" },
+            { name: "Amman", country: "Jordan", timezone: "Asia/Amman", region: "Middle East" },
+            { name: "Beirut", country: "Lebanon", timezone: "Asia/Beirut", region: "Middle East" },
+            { name: "Damascus", country: "Syria", timezone: "Asia/Damascus", region: "Middle East" },
+            { name: "Sanaa", country: "Yemen", timezone: "Asia/Aden", region: "Middle East" },
+            { name: "Kabul", country: "Afghanistan", timezone: "Asia/Kabul", region: "Asia" },
+            { name: "Tashkent", country: "Uzbekistan", timezone: "Asia/Tashkent", region: "Asia" },
+            { name: "Almaty", country: "Kazakhstan", timezone: "Asia/Almaty", region: "Asia" },
+            { name: "Astana", country: "Kazakhstan", timezone: "Asia/Almaty", region: "Asia" },
+            { name: "Bishkek", country: "Kyrgyzstan", timezone: "Asia/Bishkek", region: "Asia" },
+            { name: "Dushanbe", country: "Tajikistan", timezone: "Asia/Dushanbe", region: "Asia" },
+            { name: "Ashgabat", country: "Turkmenistan", timezone: "Asia/Ashgabat", region: "Asia" },
+            { name: "Ulaanbaatar", country: "Mongolia", timezone: "Asia/Ulaanbaatar", region: "Asia" },
+            { name: "Pyongyang", country: "North Korea", timezone: "Asia/Pyongyang", region: "Asia" },
+            { name: "Yangon", country: "Myanmar", timezone: "Asia/Yangon", region: "Asia" },
+            { name: "Phnom Penh", country: "Cambodia", timezone: "Asia/Bangkok", region: "Asia" },
+            { name: "Vientiane", country: "Laos", timezone: "Asia/Bangkok", region: "Asia" },
+            { name: "Kathmandu", country: "Nepal", timezone: "Asia/Kathmandu", region: "Asia" },
+            { name: "Thimphu", country: "Bhutan", timezone: "Asia/Thimphu", region: "Asia" },
+            { name: "Male", country: "Maldives", timezone: "Indian/Maldives", region: "Asia" },
+            { name: "Port Moresby", country: "Papua New Guinea", timezone: "Pacific/Port_Moresby", region: "Oceania" },
+            { name: "Honiara", country: "Solomon Islands", timezone: "Pacific/Guadalcanal", region: "Oceania" },
+            { name: "Noumea", country: "New Caledonia", timezone: "Pacific/Noumea", region: "Oceania" },
+            { name: "Port Vila", country: "Vanuatu", timezone: "Pacific/Efate", region: "Oceania" },
+            { name: "Nuku'alofa", country: "Tonga", timezone: "Pacific/Tongatapu", region: "Oceania" },
+            { name: "Apia", country: "Samoa", timezone: "Pacific/Apia", region: "Oceania" },
+            { name: "Tarawa", country: "Kiribati", timezone: "Pacific/Tarawa", region: "Oceania" },
+            { name: "Majuro", country: "Marshall Islands", timezone: "Pacific/Majuro", region: "Oceania" },
+            { name: "Palikir", country: "Micronesia", timezone: "Pacific/Pohnpei", region: "Oceania" },
+            { name: "Saipan", country: "Northern Mariana", timezone: "Pacific/Saipan", region: "Oceania" },
+            { name: "Guam", country: "Guam", timezone: "Pacific/Guam", region: "Oceania" },
+            { name: "Pago Pago", country: "American Samoa", timezone: "Pacific/Pago_Pago", region: "Oceania" },
+            { name: "Honolulu", country: "Hawaii", timezone: "Pacific/Honolulu", region: "Oceania" },
+            { name: "Tahiti", country: "French Polynesia", timezone: "Pacific/Tahiti", region: "Oceania" },
+            { name: "La Paz", country: "Bolivia", timezone: "America/La_Paz", region: "Americas" },
+            { name: "Asuncion", country: "Paraguay", timezone: "America/Asuncion", region: "Americas" },
+            { name: "Montevideo", country: "Uruguay", timezone: "America/Montevideo", region: "Americas" },
+            { name: "Quito", country: "Ecuador", timezone: "America/Guayaquil", region: "Americas" },
+            { name: "Panama City", country: "Panama", timezone: "America/Panama", region: "Americas" },
+            { name: "San Jose", country: "Costa Rica", timezone: "America/Costa_Rica", region: "Americas" },
+            { name: "Guatemala City", country: "Guatemala", timezone: "America/Guatemala", region: "Americas" },
+            { name: "San Salvador", country: "El Salvador", timezone: "America/El_Salvador", region: "Americas" },
+            { name: "Tegucigalpa", country: "Honduras", timezone: "America/Tegucigalpa", region: "Americas" },
+            { name: "Managua", country: "Nicaragua", timezone: "America/Managua", region: "Americas" },
+            { name: "Havana", country: "Cuba", timezone: "America/Havana", region: "Americas" },
+            { name: "Kingston", country: "Jamaica", timezone: "America/Jamaica", region: "Americas" },
+            { name: "Port-au-Prince", country: "Haiti", timezone: "America/Port-au-Prince", region: "Americas" },
+            { name: "Santo Domingo", country: "Dominican Republic", timezone: "America/Santo_Domingo", region: "Americas" },
+            { name: "San Juan", country: "Puerto Rico", timezone: "America/Puerto_Rico", region: "Americas" },
+            { name: "St. John's", country: "Antigua", timezone: "America/Antigua", region: "Americas" },
+            { name: "Bridgetown", country: "Barbados", timezone: "America/Barbados", region: "Americas" },
+            { name: "Port of Spain", country: "Trinidad", timezone: "America/Port_of_Spain", region: "Americas" },
+            { name: "Willemstad", country: "Curacao", timezone: "America/Curacao", region: "Americas" },
+            { name: "Oranjestad", country: "Aruba", timezone: "America/Aruba", region: "Americas" },
+            { name: "Cayenne", country: "French Guiana", timezone: "America/Cayenne", region: "Americas" },
+            { name: "Paramaribo", country: "Suriname", timezone: "America/Paramaribo", region: "Americas" },
+            { name: "Georgetown", country: "Guyana", timezone: "America/Guyana", region: "Americas" },
+            { name: "St. George's", country: "Grenada", timezone: "America/Grenada", region: "Americas" },
+            { name: "Castries", country: "St Lucia", timezone: "America/St_Lucia", region: "Americas" },
+            { name: "Roseau", country: "Dominica", timezone: "America/Dominica", region: "Americas" },
+            { name: "Basseterre", country: "St Kitts", timezone: "America/St_Kitts", region: "Americas" },
+            { name: "Praia", country: "Cape Verde", timezone: "Atlantic/Cape_Verde", region: "Africa" },
+            { name: "Banjul", country: "Gambia", timezone: "Africa/Banjul", region: "Africa" },
+            { name: "Dakar", country: "Senegal", timezone: "Africa/Dakar", region: "Africa" },
+            { name: "Bamako", country: "Mali", timezone: "Africa/Bamako", region: "Africa" },
+            { name: "Ouagadougou", country: "Burkina Faso", timezone: "Africa/Ouagadougou", region: "Africa" },
+            { name: "Conakry", country: "Guinea", timezone: "Africa/Conakry", region: "Africa" },
+            { name: "Freetown", country: "Sierra Leone", timezone: "Africa/Freetown", region: "Africa" },
+            { name: "Monrovia", country: "Liberia", timezone: "Africa/Monrovia", region: "Africa" },
+            { name: "Abidjan", country: "Ivory Coast", timezone: "Africa/Abidjan", region: "Africa" },
+            { name: "Lome", country: "Togo", timezone: "Africa/Lome", region: "Africa" },
+            { name: "Port Harcourt", country: "Nigeria", timezone: "Africa/Lagos", region: "Africa" },
+            { name: "Douala", country: "Cameroon", timezone: "Africa/Douala", region: "Africa" },
+            { name: "Yaounde", country: "Cameroon", timezone: "Africa/Douala", region: "Africa" },
+            { name: "Libreville", country: "Gabon", timezone: "Africa/Libreville", region: "Africa" },
+            { name: "Malabo", country: "Equatorial Guinea", timezone: "Africa/Malabo", region: "Africa" },
+            { name: "Brazzaville", country: "Congo", timezone: "Africa/Brazzaville", region: "Africa" },
+            { name: "Kinshasa", country: "DR Congo", timezone: "Africa/Kinshasa", region: "Africa" },
+            { name: "Luanda", country: "Angola", timezone: "Africa/Luanda", region: "Africa" },
+            { name: "Windhoek", country: "Namibia", timezone: "Africa/Windhoek", region: "Africa" },
+            { name: "Gaborone", country: "Botswana", timezone: "Africa/Gaborone", region: "Africa" },
+            { name: "Harare", country: "Zimbabwe", timezone: "Africa/Harare", region: "Africa" },
+            { name: "Lusaka", country: "Zambia", timezone: "Africa/Lusaka", region: "Africa" },
+            { name: "Maputo", country: "Mozambique", timezone: "Africa/Maputo", region: "Africa" },
+            { name: "Antananarivo", country: "Madagascar", timezone: "Indian/Antananarivo", region: "Africa" },
+            { name: "Port Louis", country: "Mauritius", timezone: "Indian/Mauritius", region: "Africa" },
+            { name: "Moroni", country: "Comoros", timezone: "Indian/Comoro", region: "Africa" },
+            { name: "Mamoudzou", country: "Mayotte", timezone: "Indian/Mayotte", region: "Africa" },
+            { name: "Maseru", country: "Lesotho", timezone: "Africa/Maseru", region: "Africa" },
+            { name: "Mbabane", country: "Eswatini", timezone: "Africa/Mbabane", region: "Africa" },
+            { name: "Kigali", country: "Rwanda", timezone: "Africa/Kigali", region: "Africa" },
+            { name: "Bujumbura", country: "Burundi", timezone: "Africa/Bujumbura", region: "Africa" },
+            { name: "Kampala", country: "Uganda", timezone: "Africa/Kampala", region: "Africa" },
+            { name: "Juba", country: "South Sudan", timezone: "Africa/Juba", region: "Africa" },
+            { name: "Khartoum", country: "Sudan", timezone: "Africa/Khartoum", region: "Africa" },
+            { name: "Addis Ababa", country: "Ethiopia", timezone: "Africa/Addis_Ababa", region: "Africa" },
+            { name: "Asmara", country: "Eritrea", timezone: "Africa/Asmara", region: "Africa" },
+            { name: "Djibouti", country: "Djibouti", timezone: "Africa/Djibouti", region: "Africa" },
+            { name: "Mogadishu", country: "Somalia", timezone: "Africa/Mogadishu", region: "Africa" },
+            { name: "Dar es Salaam", country: "Tanzania", timezone: "Africa/Dar_es_Salaam", region: "Africa" },
+            { name: "Niamey", country: "Niger", timezone: "Africa/Niamey", region: "Africa" },
+            { name: "N'Djamena", country: "Chad", timezone: "Africa/Ndjamena", region: "Africa" },
+            { name: "Bangui", country: "Central African", timezone: "Africa/Bangui", region: "Africa" },
+            { name: "Tripoli", country: "Libya", timezone: "Africa/Tripoli", region: "Africa" },
+            { name: "Tunis", country: "Tunisia", timezone: "Africa/Tunis", region: "Africa" },
+            { name: "Algiers", country: "Algeria", timezone: "Africa/Algiers", region: "Africa" },
+            { name: "Rabat", country: "Morocco", timezone: "Africa/Casablanca", region: "Africa" },
+            { name: "Marrakech", country: "Morocco", timezone: "Africa/Casablanca", region: "Africa" },
+            { name: "Fez", country: "Morocco", timezone: "Africa/Casablanca", region: "Africa" },
+            { name: "Tangier", country: "Morocco", timezone: "Africa/Casablanca", region: "Africa" },
+            { name: "El Aaiun", country: "Western Sahara", timezone: "Africa/El_Aaiun", region: "Africa" },
+            { name: "Nuuk", country: "Greenland", timezone: "America/Nuuk", region: "Americas" },
+            { name: "Thule", country: "Greenland", timezone: "America/Thule", region: "Americas" },
+            { name: "Scoresbysund", country: "Greenland", timezone: "America/Scoresbysund", region: "Americas" },
+            { name: "Danmarkshavn", country: "Greenland", timezone: "America/Danmarkshavn", region: "Americas" },
+            { name: "Stanley", country: "Falklands", timezone: "Atlantic/Stanley", region: "Americas" },
+            { name: "South Georgia", country: "South Georgia", timezone: "Atlantic/South_Georgia", region: "Americas" },
+            { name: "Canary Islands", country: "Spain", timezone: "Atlantic/Canary", region: "Europe" },
+            { name: "Madeira", country: "Portugal", timezone: "Atlantic/Madeira", region: "Europe" },
+            { name: "Azores", country: "Portugal", timezone: "Atlantic/Azores", region: "Europe" },
+            { name: "Bermuda", country: "Bermuda", timezone: "Atlantic/Bermuda", region: "Americas" },
+            { name: "Barbados", country: "Barbados", timezone: "America/Barbados", region: "Americas" },
+            { name: "St. Helena", country: "St Helena", timezone: "Atlantic/St_Helena", region: "Africa" },
+            { name: "Ascension", country: "Ascension", timezone: "Atlantic/St_Helena", region: "Africa" },
+            { name: "Tristan da Cunha", country: "Tristan", timezone: "Atlantic/St_Helena", region: "Africa" },
+            { name: "Cayman", country: "Cayman", timezone: "America/Cayman", region: "Americas" },
+            { name: "Turks and Caicos", country: "Turks", timezone: "America/Grand_Turk", region: "Americas" },
+            { name: "Cancun", country: "Mexico", timezone: "America/Cancun", region: "Americas" },
+            { name: "Merida", country: "Mexico", timezone: "America/Merida", region: "Americas" },
+            { name: "Monterrey", country: "Mexico", timezone: "America/Monterrey", region: "Americas" },
+            { name: "Mazatlan", country: "Mexico", timezone: "America/Mazatlan", region: "Americas" },
+            { name: "Chihuahua", country: "Mexico", timezone: "America/Chihuahua", region: "Americas" },
+            { name: "Hermosillo", country: "Mexico", timezone: "America/Hermosillo", region: "Americas" },
+            { name: "Tijuana", country: "Mexico", timezone: "America/Tijuana", region: "Americas" },
+            { name: "Ojinaga", country: "Mexico", timezone: "America/Ojinaga", region: "Americas" },
+            { name: "Bahia Banderas", country: "Mexico", timezone: "America/Bahia_Banderas", region: "Americas" },
+            { name: "Matamoros", country: "Mexico", timezone: "America/Matamoros", region: "Americas" },
+            { name: "Nuevo Laredo", country: "Mexico", timezone: "America/Matamoros", region: "Americas" },
+            { name: "Reynosa", country: "Mexico", timezone: "America/Matamoros", region: "Americas" },
+            { name: "Ciudad Juarez", country: "Mexico", timezone: "America/Ojinaga", region: "Americas" },
+            { name: "Edmonton", country: "Canada", timezone: "America/Edmonton", region: "Americas" },
+            { name: "Regina", country: "Canada", timezone: "America/Regina", region: "Americas" },
+            { name: "Winnipeg", country: "Canada", timezone: "America/Winnipeg", region: "Americas" },
+            { name: "St. John's", country: "Canada", timezone: "America/St_Johns", region: "Americas" },
+            { name: "Whitehorse", country: "Canada", timezone: "America/Whitehorse", region: "Americas" },
+            { name: "Yellowknife", country: "Canada", timezone: "America/Yellowknife", region: "Americas" },
+            { name: "Iqaluit", country: "Canada", timezone: "America/Iqaluit", region: "Americas" },
+            { name: "Inuvik", country: "Canada", timezone: "America/Inuvik", region: "Americas" },
+            { name: "Rankin Inlet", country: "Canada", timezone: "America/Rankin_Inlet", region: "Americas" },
+            { name: "Resolute", country: "Canada", timezone: "America/Resolute", region: "Americas" },
+            { name: "Pangnirtung", country: "Canada", timezone: "America/Pangnirtung", region: "Americas" },
+            { name: "Cambridge Bay", country: "Canada", timezone: "America/Cambridge_Bay", region: "Americas" },
+            { name: "Alert", country: "Canada", timezone: "America/Pangnirtung", region: "Americas" },
+            { name: "Godthab", country: "Greenland", timezone: "America/Nuuk", region: "Americas" },
+            { name: "Sisimiut", country: "Greenland", timezone: "America/Nuuk", region: "Americas" },
+            { name: "Qaanaaq", country: "Greenland", timezone: "America/Thule", region: "Americas" },
+            { name: "Ittoqqortoormiit", country: "Greenland", timezone: "America/Scoresbysund", region: "Americas" },
+            { name: "Tasiilaq", country: "Greenland", timezone: "America/Scoresbysund", region: "Americas" },
+            { name: "Kulusuk", country: "Greenland", timezone: "America/Scoresbysund", region: "Americas" },
+            { name: "Cabo San Lucas", country: "Mexico", timezone: "America/Mazatlan", region: "Americas" },
+            { name: "Puerto Vallarta", country: "Mexico", timezone: "America/Bahia_Banderas", region: "Americas" },
+            { name: "Acapulco", country: "Mexico", timezone: "America/Mexico_City", region: "Americas" },
+            { name: "Oaxaca", country: "Mexico", timezone: "America/Mexico_City", region: "Americas" },
+            { name: "Puebla", country: "Mexico", timezone: "America/Mexico_City", region: "Americas" },
+            { name: "Guadalajara", country: "Mexico", timezone: "America/Mexico_City", region: "Americas" },
+            { name: "Leon", country: "Mexico", timezone: "America/Mexico_City", region: "Americas" },
+            { name: "San Miguel de Allende", country: "Mexico", timezone: "America/Mexico_City", region: "Americas" },
+            { name: "Tulum", country: "Mexico", timezone: "America/Cancun", region: "Americas" },
+            { name: "Playa del Carmen", country: "Mexico", timezone: "America/Cancun", region: "Americas" },
+            { name: "Cozumel", country: "Mexico", timezone: "America/Cancun", region: "Americas" },
+            { name: "Isla Mujeres", country: "Mexico", timezone: "America/Cancun", region: "Americas" },
+            { name: "Progreso", country: "Mexico", timezone: "America/Merida", region: "Americas" },
+            { name: "Valladolid", country: "Mexico", timezone: "America/Cancun", region: "Americas" },
+            { name: "Bacalar", country: "Mexico", timezone: "America/Cancun", region: "Americas" },
+            { name: "Mahahual", country: "Mexico", timezone: "America/Cancun", region: "Americas" },
+            { name: "Xcalak", country: "Mexico", timezone: "America/Cancun", region: "Americas" },
+            { name: "Chetumal", country: "Mexico", timezone: "America/Cancun", region: "Americas" },
+            { name: "Ciudad del Carmen", country: "Mexico", timezone: "America/Merida", region: "Americas" },
+            { name: "Villahermosa", country: "Mexico", timezone: "America/Mexico_City", region: "Americas" },
+            { name: "Tuxtla Gutierrez", country: "Mexico", timezone: "America/Mexico_City", region: "Americas" },
+            { name: "San Cristobal", country: "Mexico", timezone: "America/Mexico_City", region: "Americas" },
+            { name: "Tapachula", country: "Mexico", timezone: "America/Mexico_City", region: "Americas" },
+            { name: "Huatulco", country: "Mexico", timezone: "America/Mexico_City", region: "Americas" },
+            { name: "Puerto Escondido", country: "Mexico", timezone: "America/Mexico_City", region: "Americas" },
+            { name: "Mazunte", country: "Mexico", timezone: "America/Mexico_City", region: "Americas" },
+            { name: "Zipolite", country: "Mexico", timezone: "America/Mexico_City", region: "Americas" },
+            { name: "San Agustinillo", country: "Mexico", timezone: "America/Mexico_City", region: "Americas" },
+            { name: "Poipet", country: "Cambodia", timezone: "Asia/Bangkok", region: "Asia" }
+        ];
+
+        const DEFAULT_CITIES = [
+            { name: "New York", country: "USA", timezone: "America/New_York" },
+            { name: "London", country: "UK", timezone: "Europe/London" },
+            { name: "Tokyo", country: "Japan", timezone: "Asia/Tokyo" },
+            { name: "Sydney", country: "Australia", timezone: "Australia/Sydney" },
+            { name: "Dubai", country: "UAE", timezone: "Asia/Dubai" },
+            { name: "Paris", country: "France", timezone: "Europe/Paris" },
+            { name: "Singapore", country: "Singapore", timezone: "Asia/Singapore" },
+            { name: "Los Angeles", country: "USA", timezone: "America/Los_Angeles" }
+        ];
+
+        // ==================== UTILS ====================
+        function getTimeInZone(timezone) {
+            const now = new Date();
+            return new Date(now.toLocaleString('en-US', { timeZone: timezone }));
+        }
+
+        function getLocalTimeInZone(timezone) {
+            const now = new Date();
+            const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+            // Get timezone offset by comparing UTC timestamps
+            const tzDate = new Date(now.toLocaleString('en-US', { timeZone: timezone }));
+            const localDate = new Date(now.toLocaleString('en-US', { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }));
+            const diffMs = tzDate.getTime() - localDate.getTime();
+            const diffHours = diffMs / (1000 * 60 * 60);
+            return diffHours;
+        }
+
+        function getPeriod(hour) {
+            if (hour >= 5 && hour < 12) return { name: 'morning', icon: '☀️', label: 'Morning' };
+            if (hour >= 12 && hour < 17) return { name: 'afternoon', icon: '☀️', label: 'Afternoon' };
+            if (hour >= 17 && hour < 21) return { name: 'evening', icon: '🌅', label: 'Evening' };
+            return { name: 'night', icon: '🌙', label: 'Night' };
+        }
+
+        function formatTime(date, use24Hour) {
+            let hours = date.getHours();
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            const seconds = String(date.getSeconds()).padStart(2, '0');
+
+            if (!use24Hour) {
+                const ampm = hours >= 12 ? 'PM' : 'AM';
+                hours = hours % 12 || 12;
+                return { time: `${hours}:${minutes}`, seconds, ampm };
+            }
+            return { time: `${String(hours).padStart(2, '0')}:${minutes}`, seconds, ampm: null };
+        }
+
+        function formatDate(date) {
+            return new Intl.DateTimeFormat('en-US', {
+                weekday: 'long',
+                month: 'short',
+                day: 'numeric'
+            }).format(date);
+        }
+
+        function formatOffset(hours) {
+            const sign = hours >= 0 ? '+' : '';
+            const whole = Math.floor(Math.abs(hours));
+            const frac = Math.abs(hours) - whole;
+            const mins = Math.round(frac * 60);
+            if (mins === 0) return `${sign}${whole}h`;
+            return `${sign}${whole}:${String(mins).padStart(2, '0')}`;
+        }
+
+        // ==================== APP ====================
+        class WorldClockApp {
+            constructor() {
+                this.cities = this.loadCities();
+                this.use24Hour = this.loadFormat();
+                this.searchOpen = false;
+                this.init();
+            }
+
+            loadCities() {
+                try {
+                    const stored = localStorage.getItem('worldclock_cities');
+                    if (stored) return JSON.parse(stored);
+                } catch (e) {}
+                return [...DEFAULT_CITIES];
+            }
+
+            saveCities() {
+                localStorage.setItem('worldclock_cities', JSON.stringify(this.cities));
+            }
+
+            loadFormat() {
+                try {
+                    return localStorage.getItem('worldclock_format') === '24';
+                } catch (e) {
+                    return false;
+                }
+            }
+
+            saveFormat() {
+                localStorage.setItem('worldclock_format', this.use24Hour ? '24' : '12');
+            }
+
+            init() {
+                this.setupEventListeners();
+                this.updateToggleUI();
+                this.render();
+                this.startTick();
+            }
+
+            setupEventListeners() {
+                // Toggle format
+                document.getElementById('format-toggle').addEventListener('click', () => {
+                    this.use24Hour = !this.use24Hour;
+                    this.saveFormat();
+                    this.updateToggleUI();
+                    this.render();
+                });
+
+                // Add city button
+                document.getElementById('add-btn').addEventListener('click', () => this.openSearch());
+
+                // Search modal
+                document.getElementById('search-backdrop').addEventListener('click', () => this.closeSearch());
+
+                // Search input
+                const searchInput = document.getElementById('search-input');
+                searchInput.addEventListener('input', (e) => this.handleSearch(e.target.value));
+                searchInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') this.closeSearch();
+                });
+            }
+
+            updateToggleUI() {
+                const track = document.getElementById('toggle-track');
+                const thumb = document.getElementById('toggle-thumb');
+                if (this.use24Hour) {
+                    track.classList.remove('bg-slate-600');
+                    track.classList.add('bg-indigo-500');
+                    thumb.style.transform = 'translateX(18px)';
+                } else {
+                    track.classList.add('bg-slate-600');
+                    track.classList.remove('bg-indigo-500');
+                    thumb.style.transform = 'translateX(0)';
+                }
+            }
+
+            openSearch() {
+                this.searchOpen = true;
+                document.getElementById('search-modal').classList.remove('hidden');
+                document.getElementById('search-input').value = '';
+                document.getElementById('search-input').focus();
+                document.getElementById('search-results').innerHTML = '';
+                this.showPopularCities();
+            }
+
+            closeSearch() {
+                this.searchOpen = false;
+                document.getElementById('search-modal').classList.add('hidden');
+            }
+
+            showPopularCities() {
+                const results = document.getElementById('search-results');
+                const popular = ['New York', 'London', 'Tokyo', 'Paris', 'Sydney', 'Dubai', 'Singapore', 'Berlin', 'Rome', 'Hong Kong'];
+                const cities = popular.map(name => CITIES_DB.find(c => c.name === name)).filter(Boolean);
+
+                results.innerHTML = `
+                    <div class="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Popular Cities</div>
+                    ${cities.map(city => this.renderSearchResult(city)).join('')}
+                `;
+            }
+
+            handleSearch(query) {
+                const results = document.getElementById('search-results');
+                if (!query.trim()) {
+                    this.showPopularCities();
+                    return;
+                }
+
+                const q = query.toLowerCase();
+                const matches = CITIES_DB.filter(c =>
+                    c.name.toLowerCase().includes(q) ||
+                    c.country.toLowerCase().includes(q) ||
+                    c.region.toLowerCase().includes(q)
+                ).slice(0, 20);
+
+                if (matches.length === 0) {
+                    results.innerHTML = `<div class="px-4 py-6 text-center text-slate-500 text-sm">No cities found for "${query}"</div>`;
+                    return;
+                }
+
+                results.innerHTML = matches.map(city => this.renderSearchResult(city)).join('');
+            }
+
+            renderSearchResult(city) {
+                const alreadyAdded = this.cities.some(c => c.name === city.name && c.timezone === city.timezone);
+                return `
+                    <button class="w-full flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-slate-800/80 transition-colors text-left group ${alreadyAdded ? 'opacity-50 cursor-not-allowed' : ''}"
+                        onclick="${alreadyAdded ? '' : `app.addCity('${city.name.replace(/'/g, "\\'")}', '${city.country.replace(/'/g, "\\'")}', '${city.timezone}')`}"
+                        ${alreadyAdded ? 'disabled' : ''}>
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-sm">${this.getFlag(city.country)}</div>
+                            <div>
+                                <div class="text-sm font-medium text-white">${city.name}</div>
+                                <div class="text-xs text-slate-400">${city.country} · ${city.region}</div>
+                            </div>
+                        </div>
+                        ${alreadyAdded
+                            ? '<span class="text-xs text-slate-500 font-medium">Added</span>'
+                            : '<svg class="w-5 h-5 text-slate-500 group-hover:text-indigo-400 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>'
+                        }
+                    </button>
+                `;
+            }
+
+            getFlag(country) {
+                const flags = {
+                    'USA': '🇺🇸', 'UK': '🇬🇧', 'Japan': '🇯🇵', 'Australia': '🇦🇺', 'France': '🇫🇷',
+                    'UAE': '🇦🇪', 'Singapore': '🇸🇬', 'Germany': '🇩🇪', 'Italy': '🇮🇹', 'China': '🇨🇳',
+                    'Spain': '🇪🇸', 'Netherlands': '🇳🇱', 'Switzerland': '🇨🇭', 'Sweden': '🇸🇪', 'Norway': '🇳🇴',
+                    'Denmark': '🇩🇰', 'Finland': '🇫🇮', 'Poland': '🇵🇱', 'Czech Republic': '🇨🇿', 'Hungary': '🇭🇺',
+                    'Greece': '🇬🇷', 'Turkey': '🇹🇷', 'Russia': '🇷🇺', 'Israel': '🇮🇱', 'Saudi Arabia': '🇸🇦',
+                    'South Korea': '🇰🇷', 'Thailand': '🇹🇭', 'Indonesia': '🇮🇩', 'Philippines': '🇵🇭', 'Malaysia': '🇲🇾',
+                    'Vietnam': '🇻🇳', 'India': '🇮🇳', 'Pakistan': '🇵🇰', 'Bangladesh': '🇧🇩', 'Sri Lanka': '🇱🇰',
+                    'New Zealand': '🇳🇿', 'Fiji': '🇫🇯', 'Brazil': '🇧🇷', 'Argentina': '🇦🇷', 'Peru': '🇵🇪',
+                    'Colombia': '🇨🇴', 'Venezuela': '🇻🇪', 'Chile': '🇨🇱', 'Mexico': '🇲🇽', 'Canada': '🇨🇦',
+                    'Egypt': '🇪🇬', 'South Africa': '🇿🇦', 'Nigeria': '🇳🇬', 'Kenya': '🇰🇪', 'Morocco': '🇲🇦',
+                    'Ghana': '🇬🇭', 'Iceland': '🇮🇸', 'Ireland': '🇮🇪', 'Portugal': '🇵🇹', 'Belgium': '🇧🇪',
+                    'Luxembourg': '🇱🇺', 'Monaco': '🇲🇨', 'Taiwan': '🇹🇼', 'Austria': '🇦🇹', 'Croatia': '🇭🇷',
+                    'Serbia': '🇷🇸', 'Romania': '🇷🇴', 'Bulgaria': '🇧🇬', 'Albania': '🇦🇱', 'Montenegro': '🇲🇪',
+                    'North Macedonia': '🇲🇰', 'Bosnia': '🇧🇦', 'Moldova': '🇲🇩', 'Ukraine': '🇺🇦', 'Belarus': '🇧🇾',
+                    'Georgia': '🇬🇪', 'Armenia': '🇦🇲', 'Azerbaijan': '🇦🇿', 'Iran': '🇮🇷', 'Iraq': '🇮🇶',
+                    'Kuwait': '🇰🇼', 'Bahrain': '🇧🇭', 'Qatar': '🇶🇦', 'Oman': '🇴🇲', 'Jordan': '🇯🇴',
+                    'Lebanon': '🇱🇧', 'Syria': '🇸🇾', 'Yemen': '🇾🇪', 'Afghanistan': '🇦🇫', 'Uzbekistan': '🇺🇿',
+                    'Kazakhstan': '🇰🇿', 'Kyrgyzstan': '🇰🇬', 'Tajikistan': '🇹🇯', 'Turkmenistan': '🇹🇲', 'Mongolia': '🇲🇳',
+                    'North Korea': '🇰🇵', 'Myanmar': '🇲🇲', 'Cambodia': '🇰🇭', 'Laos': '🇱🇦', 'Nepal': '🇳🇵',
+                    'Bhutan': '🇧🇹', 'Maldives': '🇲🇻', 'Papua New Guinea': '🇵🇬', 'Solomon Islands': '🇸🇧',
+                    'New Caledonia': '🇳🇨', 'Vanuatu': '🇻🇺', 'Tonga': '🇹🇴', 'Samoa': '🇼🇸', 'Kiribati': '🇰🇮',
+                    'Marshall Islands': '🇲🇭', 'Micronesia': '🇫🇲', 'Northern Mariana': '🇲🇵', 'Guam': '🇬🇺',
+                    'American Samoa': '🇦🇸', 'Hawaii': '🇺🇸', 'French Polynesia': '🇵🇫', 'Bolivia': '🇧🇴',
+                    'Paraguay': '🇵🇾', 'Uruguay': '🇺🇾', 'Ecuador': '🇪🇨', 'Panama': '🇵🇦', 'Costa Rica': '🇨🇷',
+                    'Guatemala': '🇬🇹', 'El Salvador': '🇸🇻', 'Honduras': '🇭🇳', 'Nicaragua': '🇳🇮', 'Cuba': '🇨🇺',
+                    'Jamaica': '🇯🇲', 'Haiti': '🇭🇹', 'Dominican Republic': '🇩🇴', 'Puerto Rico': '🇵🇷', 'Antigua': '🇦🇬',
+                    'Barbados': '🇧🇧', 'Trinidad': '🇹🇹', 'Curacao': '🇨🇼', 'Aruba': '🇦🇼', 'French Guiana': '🇬🇫',
+                    'Suriname': '🇸🇷', 'Guyana': '🇬🇾', 'Grenada': '🇬🇩', 'St Lucia': '🇱🇨', 'Dominica': '🇩🇲',
+                    'St Kitts': '🇰🇳', 'Cape Verde': '🇨🇻', 'Gambia': '🇬🇲', 'Senegal': '🇸🇳', 'Mali': '🇲🇱',
+                    'Burkina Faso': '🇧🇫', 'Guinea': '🇬🇳', 'Sierra Leone': '🇸🇱', 'Liberia': '🇱🇷', 'Ivory Coast': '🇨🇮',
+                    'Togo': '🇹🇬', 'Cameroon': '🇨🇲', 'Gabon': '🇬🇦', 'Equatorial Guinea': '🇬🇶', 'Congo': '🇨🇬',
+                    'DR Congo': '🇨🇩', 'Angola': '🇦🇴', 'Namibia': '🇳🇦', 'Botswana': '🇧🇼', 'Zimbabwe': '🇿🇼',
+                    'Zambia': '🇿🇲', 'Mozambique': '🇲🇿', 'Madagascar': '🇲🇬', 'Mauritius': '🇲🇺', 'Comoros': '🇰🇲',
+                    'Mayotte': '🇾🇹', 'Lesotho': '🇱🇸', 'Eswatini': '🇸🇿', 'Rwanda': '🇷🇼', 'Burundi': '🇧🇮',
+                    'Uganda': '🇺🇬', 'South Sudan': '🇸🇸', 'Sudan': '🇸🇩', 'Ethiopia': '🇪🇹', 'Eritrea': '🇪🇷',
+                    'Djibouti': '🇩🇯', 'Somalia': '🇸🇴', 'Tanzania': '🇹🇿', 'Niger': '🇳🇪', 'Chad': '🇹🇩',
+                    'Central African': '🇨🇫', 'Libya': '🇱🇾', 'Tunisia': '🇹🇳', 'Algeria': '🇩🇿', 'Western Sahara': '🇪🇭',
+                    'Greenland': '🇬🇱', 'Falklands': '🇫🇰', 'South Georgia': '🇬🇸', 'Bermuda': '🇧🇲', 'St Helena': '🇸🇭',
+                    'Ascension': '🇸🇭', 'Tristan': '🇸🇭', 'Cayman': '🇰🇾', 'Turks': '🇹🇨', 'Scotland': '🏴󠁧󠁢󠁳󠁣󠁴󠁿',
+                    'Wales': '🏴󠁧󠁢󠁷󠁬󠁳󠁿', 'England': '🏴󠁧󠁢󠁥󠁮󠁧󠁿'
+                };
+                return flags[country] || '🌍';
+            }
+
+            addCity(name, country, timezone) {
+                if (this.cities.some(c => c.name === name && c.timezone === timezone)) return;
+                this.cities.push({ name, country, timezone });
+                this.saveCities();
+                this.closeSearch();
+                this.render();
+            }
+
+            removeCity(index) {
+                this.cities.splice(index, 1);
+                this.saveCities();
+                this.render();
+            }
+
+            getAnalogClockSVG(hour, minute, second, period) {
+                const cx = 50, cy = 50, r = 42;
+                const hourAngle = (hour % 12) * 30 + minute * 0.5;
+                const minuteAngle = minute * 6 + second * 0.1;
+                const secondAngle = second * 6;
+
+                const handColor = period === 'night' ? '#e0e7ff' : '#1e293b';
+                const tickColor = period === 'night' ? 'rgba(224, 231, 255, 0.3)' : 'rgba(30, 41, 59, 0.3)';
+
+                let ticks = '';
+                for (let i = 0; i < 12; i++) {
+                    const a = i * 30 * Math.PI / 180;
+                    const isMajor = i % 3 === 0;
+                    const len = isMajor ? 6 : 3;
+                    const width = isMajor ? 2 : 1;
+                    const x1 = cx + (r - len) * Math.sin(a);
+                    const y1 = cy - (r - len) * Math.cos(a);
+                    const x2 = cx + r * Math.sin(a);
+                    const y2 = cy - r * Math.cos(a);
+                    ticks += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${tickColor}" stroke-width="${width}" stroke-linecap="round"/>`;
+                }
+
+                return `
+                    <svg class="w-full h-full" viewBox="0 0 100 100">
+                        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${tickColor}" stroke-width="1"/>
+                        ${ticks}
+                        <line x1="${cx}" y1="${cy}" x2="${cx + 24 * Math.sin(hourAngle * Math.PI / 180)}" y2="${cy - 24 * Math.cos(hourAngle * Math.PI / 180)}"
+                            stroke="${handColor}" stroke-width="3" stroke-linecap="round" class="hand hand-hour"/>
+                        <line x1="${cx}" y1="${cy}" x2="${cx + 34 * Math.sin(minuteAngle * Math.PI / 180)}" y2="${cy - 34 * Math.cos(minuteAngle * Math.PI / 180)}"
+                            stroke="${handColor}" stroke-width="2" stroke-linecap="round" class="hand hand-minute"/>
+                        <line x1="${cx}" y1="${cy}" x2="${cx + 38 * Math.sin(secondAngle * Math.PI / 180)}" y2="${cy - 38 * Math.cos(secondAngle * Math.PI / 180)}"
+                            stroke="#ef4444" stroke-width="1" stroke-linecap="round" class="hand hand-second"/>
+                        <circle cx="${cx}" cy="${cy}" r="2" fill="#ef4444"/>
+                    </svg>
+                `;
+            }
+
+            render() {
+                const grid = document.getElementById('clock-grid');
+                const emptyState = document.getElementById('empty-state');
+
+                if (this.cities.length === 0) {
+                    grid.classList.add('hidden');
+                    emptyState.classList.remove('hidden');
+                    return;
+                }
+
+                grid.classList.remove('hidden');
+                emptyState.classList.add('hidden');
+
+                const now = new Date();
+
+                grid.innerHTML = this.cities.map((city, index) => {
+                    const cityTime = getTimeInZone(city.timezone);
+                    const hour = cityTime.getHours();
+                    const minute = cityTime.getMinutes();
+                    const second = cityTime.getSeconds();
+                    const period = getPeriod(hour);
+                    const formatted = formatTime(cityTime, this.use24Hour);
+                    const offset = getLocalTimeInZone(city.timezone);
+                    const offsetStr = formatOffset(offset);
+                    const isNextDay = cityTime.getDate() !== now.getDate();
+                    const isPrevDay = cityTime.getDate() < now.getDate() ||
+                        (cityTime.getMonth() !== now.getMonth() && cityTime.getDate() < now.getDate());
+                    const dayIndicator = isNextDay ? '+1 day' : isPrevDay ? '-1 day' : 'Today';
+                    const dateStr = formatDate(cityTime);
+
+                    return `
+                        <div class="clock-card period-${period.name} rounded-2xl overflow-hidden shadow-xl animate-slide-in relative group"
+                             style="animation-delay: ${index * 50}ms">
+                            <div class="card-bg p-5 h-full flex flex-col">
+                                <div class="flex items-start justify-between mb-4">
+                                    <div class="flex items-center gap-3">
+                                        <div class="text-2xl">${this.getFlag(city.country)}</div>
+                                        <div>
+                                            <h3 class="font-bold text-lg leading-tight">${city.name}</h3>
+                                            <p class="text-secondary text-xs font-medium">${city.country}</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <div class="period-indicator text-xl animate-float" style="animation-delay: ${index * 0.5}s">${period.icon}</div>
+                                        <button onclick="app.removeCity(${index})"
+                                            class="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg hover:bg-black/10 active:scale-90"
+                                            title="Remove city">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="flex items-center gap-4 mb-4">
+                                    <div class="w-20 h-20 flex-shrink-0">
+                                        ${this.getAnalogClockSVG(hour, minute, second, period.name)}
+                                    </div>
+                                    <div class="flex-1">
+                                        <div class="flex items-baseline gap-1">
+                                            <span class="mono text-4xl font-semibold tracking-tight leading-none">${formatted.time}</span>
+                                            <span class="mono text-lg font-medium opacity-70">${formatted.seconds}</span>
+                                        </div>
+                                        ${!this.use24Hour && formatted.ampm ? `<span class="text-sm font-medium opacity-60 ml-1">${formatted.ampm}</span>` : ''}
+                                    </div>
+                                </div>
+
+                                <div class="mt-auto pt-3 border-t border-subtle flex items-center justify-between text-xs font-medium">
+                                    <span class="text-secondary">${dateStr}</span>
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-secondary">${dayIndicator}</span>
+                                        <span class="px-2 py-0.5 rounded-full card-bg border border-subtle font-mono text-xs">${offsetStr}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            startTick() {
+                const tick = () => {
+                    // Update header date
+                    const now = new Date();
+                    document.getElementById('header-date').textContent = now.toLocaleDateString('en-US', {
+                        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+                    });
+
+                    // Update each clock's time text without full re-render for performance
+                    const cards = document.querySelectorAll('.clock-card');
+                    this.cities.forEach((city, index) => {
+                        const card = cards[index];
+                        if (!card) return;
+
+                        const cityTime = getTimeInZone(city.timezone);
+                        const hour = cityTime.getHours();
+                        const minute = cityTime.getMinutes();
+                        const second = cityTime.getSeconds();
+                        const formatted = formatTime(cityTime, this.use24Hour);
+
+                        // Update digital time
+                        const timeEl = card.querySelector('.mono.text-4xl');
+                        if (timeEl) timeEl.textContent = formatted.time;
+
+                        const secEl = card.querySelector('.mono.text-lg');
+                        if (secEl) secEl.textContent = formatted.seconds;
+
+                        const ampmEl = card.querySelector('.text-sm.font-medium.opacity-60');
+                        if (ampmEl && !this.use24Hour) ampmEl.textContent = formatted.ampm || '';
+                        else if (ampmEl && this.use24Hour) ampmEl.textContent = '';
+
+                        // Update analog clock
+                        const svg = card.querySelector('svg');
+                        if (svg) {
+                            const hourAngle = (hour % 12) * 30 + minute * 0.5;
+                            const minuteAngle = minute * 6 + second * 0.1;
+                            const secondAngle = second * 6;
+
+                            const hands = svg.querySelectorAll('.hand');
+                            if (hands[0]) hands[0].setAttribute('x2', 50 + 24 * Math.sin(hourAngle * Math.PI / 180));
+                            if (hands[0]) hands[0].setAttribute('y2', 50 - 24 * Math.cos(hourAngle * Math.PI / 180));
+                            if (hands[1]) hands[1].setAttribute('x2', 50 + 34 * Math.sin(minuteAngle * Math.PI / 180));
+                            if (hands[1]) hands[1].setAttribute('y2', 50 - 34 * Math.cos(minuteAngle * Math.PI / 180));
+                            if (hands[2]) hands[2].setAttribute('x2', 50 + 38 * Math.sin(secondAngle * Math.PI / 180));
+                            if (hands[2]) hands[2].setAttribute('y2', 50 - 38 * Math.cos(secondAngle * Math.PI / 180));
+                        }
+                    });
+
+                    requestAnimationFrame(tick);
+                };
+                requestAnimationFrame(tick);
+            }
+        }
+
+        // ==================== INIT ====================
+        const app = new WorldClockApp();
+        window.app = app; // Expose for onclick handlers
+    })();
+    </script>
+</body>
+</html>

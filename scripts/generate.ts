@@ -150,6 +150,52 @@ Begin implementation now. DO NOT FORGET TO STORE YOUR OUTPUT IN output/index.htm
 // CLI Invocation
 // ============================================================================
 
+function readEnvFile(): Record<string, string> | undefined {
+  const envPath = path.join(REPO_ROOT, ".env");
+  try {
+    const content = fs.readFileSync(envPath, "utf-8");
+    const env: Record<string, string> = {};
+    for (const line of content.split("\n")) {
+      const match = line.match(/^export\s+(\w+)="(.*)"$/);
+      if (match) {
+        env[match[1]] = match[2];
+      }
+    }
+    return Object.keys(env).length > 0 ? env : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Build env overrides for models served via an Anthropic-compatible proxy
+ *  (e.g. Fireworks, OpenRouter, a self-hosted gateway). Reads the base URL
+ *  and auth from .env and pins every Claude Code model slot to this model's
+ *  id so a single run uses one backend end-to-end.
+ */
+function buildAnthropicProxyEnv(model: ModelConfig): Record<string, string> | undefined {
+  const base = readEnvFile();
+  if (!base) return undefined;
+
+  const result: Record<string, string> = {};
+
+  // ANTHROPIC_AUTH_TOKEN is the variable most proxy providers document;
+  // Claude Code reads ANTHROPIC_API_KEY. Accept either in .env.
+  if (base.ANTHROPIC_BASE_URL) result.ANTHROPIC_BASE_URL = base.ANTHROPIC_BASE_URL;
+  const apiKey = base.ANTHROPIC_API_KEY || base.ANTHROPIC_AUTH_TOKEN;
+  if (apiKey) result.ANTHROPIC_API_KEY = apiKey;
+
+  // Pin every Claude Code model slot to this model id so internal
+  // sub-model calls (sonnet/haiku/opus defaults) also go through the proxy.
+  const modelId = model.model;
+  result.ANTHROPIC_MODEL = modelId;
+  result.ANTHROPIC_SMALL_FAST_MODEL = modelId;
+  result.ANTHROPIC_DEFAULT_SONNET_MODEL = modelId;
+  result.ANTHROPIC_DEFAULT_HAIKU_MODEL = modelId;
+  result.ANTHROPIC_DEFAULT_OPUS_MODEL = modelId;
+
+  return result;
+}
+
 function buildCliCommand(
   model: ModelConfig,
   prompt: string
@@ -163,7 +209,7 @@ function buildCliCommand(
           "--model",
           model.model,
           "--max-turns",
-          "50",
+          "500",
           "--dangerously-skip-permissions",
           "--permission-mode",
           "bypassPermissions",
@@ -197,6 +243,27 @@ function buildCliCommand(
           "yolo",
           prompt,
         ],
+      };
+
+    case "anthropic-proxy":
+      // Models served by an Anthropic-compatible proxy (Fireworks, OpenRouter,
+      // self-hosted gateway, etc). Uses the Claude Code CLI with ANTHROPIC_*
+      // env vars pointed at the proxy's base URL so multiple proxied models
+      // can coexist without manually editing .env between runs.
+      return {
+        cmd: "claude",
+        args: [
+          "-p",
+          "--model",
+          model.model,
+          "--max-turns",
+          "500",
+          "--dangerously-skip-permissions",
+          "--permission-mode",
+          "bypassPermissions",
+          prompt,
+        ],
+        env: buildAnthropicProxyEnv(model),
       };
 
     default:

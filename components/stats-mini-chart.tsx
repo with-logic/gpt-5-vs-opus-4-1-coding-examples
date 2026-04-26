@@ -15,11 +15,13 @@ const TW_HEX: Record<string, string> = {
   "bg-amber-500": "#f59e0b",
   "bg-orange-500": "#f97316",
   "bg-red-500": "#ef4444",
+  "bg-pink-500": "#ec4899",
   "bg-purple-500": "#a855f7",
   "bg-violet-500": "#8b5cf6",
   "bg-rose-500": "#f43f5e",
   "bg-blue-500": "#3b82f6",
   "bg-yellow-500": "#eab308",
+  "bg-fuchsia-500": "#d946ef",
 };
 
 export function getModelHex(color: string): string {
