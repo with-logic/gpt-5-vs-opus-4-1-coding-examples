@@ -146,6 +146,14 @@ export const models: ModelConfig[] = [
     provider: "google",
   },
   {
+    id: "gemini-3.5-flash",
+    name: "Gemini 3.5 Flash",
+    cli: "gemini",
+    model: "gemini-3.5-flash",
+    color: "bg-lime-500",
+    provider: "google",
+  },
+  {
     id: "kimi-k2.6",
     name: "Kimi K2.6",
     cli: "anthropic-proxy",
