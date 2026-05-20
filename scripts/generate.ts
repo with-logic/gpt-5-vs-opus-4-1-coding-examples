@@ -241,6 +241,7 @@ function buildCliCommand(
           model.model,
           "--approval-mode",
           "yolo",
+          "--skip-trust",
           prompt,
         ],
       };

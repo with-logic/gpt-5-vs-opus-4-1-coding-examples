@@ -77,6 +77,12 @@ You can experiment with these same prompts using any of the models:
 - **[Gemini](https://gemini.google.com)** – Chat with Gemini 3
 - **API** – Access Gemini 3 through Google's API for programmatic generation
 
+### Using Gemini 3.5 Flash
+
+- **[Google AI Studio](https://aistudio.google.com)** – Use Gemini 3.5 Flash in the browser interface
+- **[Gemini](https://gemini.google.com)** – Chat with Gemini 3.5 Flash
+- **API** – Access Gemini 3.5 Flash through Google's API for programmatic generation
+
 ### Using Kimi K2.6
 
 - **[Moonshot AI](https://www.moonshot.cn)** – Use Kimi K2.6 in the browser interface

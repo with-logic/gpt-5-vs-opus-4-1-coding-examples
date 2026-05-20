@@ -1,0 +1,2964 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Online Whiteboard - Visual Collaboration Playground</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts - Inter & Permanent Marker (for sticky note / marker style) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Permanent+Marker&family=Playpen+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            marker: ['Permanent Marker', 'cursive'],
+            hand: ['Playpen Sans', 'sans-serif'],
+          },
+          boxShadow: {
+            'glow-pink': '0 0 15px rgba(236, 72, 153, 0.5)',
+            'glow-blue': '0 0 15px rgba(59, 130, 246, 0.5)',
+            'glow-orange': '0 0 15px rgba(249, 115, 22, 0.5)',
+            'glass': '0 8px 32px 0 rgba(15, 23, 42, 0.08)',
+            'glass-dark': '0 8px 32px 0 rgba(0, 0, 0, 0.37)',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom Scrollbar for Chat and Sidebars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    .dark ::-webkit-scrollbar-thumb {
+      background: #475569;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    
+    /* Neon trail glow animation */
+    @keyframes pulse-glow {
+      0%, 100% { filter: drop-shadow(0 0 2px rgba(244, 63, 94, 0.6)); }
+      50% { filter: drop-shadow(0 0 8px rgba(244, 63, 94, 0.9)); }
+    }
+    
+    /* Smooth CSS animations */
+    .fade-enter {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    .fade-enter-active {
+      opacity: 1;
+      transform: scale(1);
+      transition: opacity 150ms ease-out, transform 150ms ease-out;
+    }
+    
+    /* Selection Box Styles */
+    #marquee {
+      border: 1px dashed #3b82f6;
+      background-color: rgba(59, 130, 246, 0.08);
+      position: absolute;
+      pointer-events: none;
+      display: none;
+      z-index: 10;
+    }
+
+    /* Floating speech bubbles */
+    .speech-bubble {
+      position: absolute;
+      transform: translate(-50%, -100%) translateY(-20px);
+      transition: left 0.08s ease-out, top 0.08s ease-out;
+      pointer-events: none;
+      z-index: 40;
+    }
+    
+    /* Cursors layout */
+    .remote-cursor {
+      position: absolute;
+      pointer-events: none;
+      z-index: 30;
+      transition: left 0.08s ease-out, top 0.08s ease-out;
+    }
+  </style>
+</head>
+<body class="flex h-screen w-screen overflow-hidden bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 font-sans select-none transition-colors duration-300">
+
+  <!-- Core Whiteboard Canvas Area -->
+  <div class="relative flex-1 h-full w-full overflow-hidden">
+    <canvas id="canvas" class="block w-full h-full cursor-crosshair touch-none"></canvas>
+    <div id="marquee"></div>
+    
+    <!-- Speech Bubbles for Simulated Live Cursors -->
+    <div id="speech-bubbles-container" class="absolute inset-0 pointer-events-none overflow-hidden z-40"></div>
+    <!-- Remote Cursors Overlay -->
+    <div id="remote-cursors-container" class="absolute inset-0 pointer-events-none overflow-hidden z-30"></div>
+  </div>
+
+  <!-- FLOATING INTERFACE PANELS -->
+
+  <!-- Top Center: Main Floating Tools Toolbar -->
+  <div class="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center bg-white/90 dark:bg-slate-900/95 backdrop-blur-md px-2 py-1.5 rounded-2xl border border-slate-200/80 dark:border-slate-800/80 shadow-glass dark:shadow-glass-dark">
+    <!-- Action Menu / Brand Logo -->
+    <div class="flex items-center gap-1.5 pr-3 mr-3 border-r border-slate-200 dark:border-slate-800 pl-1">
+      <div class="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center text-white font-black text-sm shadow-md shadow-indigo-500/30">
+        W
+      </div>
+      <div class="hidden sm:block">
+        <h1 class="text-xs font-bold leading-none tracking-tight">Board</h1>
+        <span class="text-[10px] text-slate-500 font-medium leading-none">Local-Only v2.0</span>
+      </div>
+    </div>
+    
+    <!-- Core Tools Grid -->
+    <div class="flex items-center gap-1" id="toolbar-buttons">
+      <button data-tool="select" title="Select / Move / Resize (V)" class="tool-btn w-9 h-9 flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 active:scale-95">
+        <i data-lucide="mouse-pointer-2" class="w-4.5 h-4.5"></i>
+      </button>
+      <button data-tool="hand" title="Pan Board (H or Space+Drag)" class="tool-btn w-9 h-9 flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 active:scale-95">
+        <i data-lucide="hand" class="w-4.5 h-4.5"></i>
+      </button>
+      <div class="h-6 w-px bg-slate-200 dark:bg-slate-800 mx-1"></div>
+      <button data-tool="pen" title="Pencil / Smooth Draw (P)" class="tool-btn w-9 h-9 flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 active:scale-95">
+        <i data-lucide="pencil" class="w-4.5 h-4.5"></i>
+      </button>
+      <button data-tool="laser" title="Laser Pointer / Present (F)" class="tool-btn w-9 h-9 flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 active:scale-95">
+        <i data-lucide="zap" class="w-4.5 h-4.5 text-rose-500"></i>
+      </button>
+      <button data-tool="line" title="Line Segment (L)" class="tool-btn w-9 h-9 flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 active:scale-95">
+        <svg class="w-4.5 h-4.5 stroke-current fill-none" viewBox="0 0 24 24" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line></svg>
+      </button>
+      <button data-tool="arrow" title="Arrow Pointer (A)" class="tool-btn w-9 h-9 flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 active:scale-95">
+        <i data-lucide="arrow-up-right" class="w-4.5 h-4.5"></i>
+      </button>
+      <button data-tool="rect" title="Rectangle (R)" class="tool-btn w-9 h-9 flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 active:scale-95">
+        <i data-lucide="square" class="w-4.5 h-4.5"></i>
+      </button>
+      <button data-tool="circle" title="Circle (O)" class="tool-btn w-9 h-9 flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 active:scale-95">
+        <i data-lucide="circle" class="w-4.5 h-4.5"></i>
+      </button>
+      <button data-tool="text" title="Text Box (T)" class="tool-btn w-9 h-9 flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 active:scale-95">
+        <i data-lucide="type" class="w-4.5 h-4.5"></i>
+      </button>
+      <button data-tool="sticky" title="Sticky Note (S)" class="tool-btn w-9 h-9 flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 active:scale-95">
+        <i data-lucide="sticky-note" class="w-4.5 h-4.5"></i>
+      </button>
+      <div class="h-6 w-px bg-slate-200 dark:bg-slate-800 mx-1"></div>
+      <button data-tool="eraser" title="Stroke Eraser (E)" class="tool-btn w-9 h-9 flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 active:scale-95">
+        <i data-lucide="eraser" class="w-4.5 h-4.5"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Top Right Panel: Board Actions & Simulated Multiplayer -->
+  <div class="absolute top-4 right-4 z-20 flex items-center gap-2">
+    <!-- Active simulated avatars -->
+    <div id="collab-avatars" class="hidden sm:flex items-center -space-x-2 mr-1">
+      <!-- Generated dynamically -->
+    </div>
+    
+    <!-- Mock Room Code & Multiplay Button -->
+    <button id="collab-toggle" title="Toggle Simulated Collaboration Room" class="flex items-center gap-2 px-3 py-1.5 rounded-xl border font-semibold text-xs transition-all duration-200 active:scale-95 shadow-md bg-white border-slate-200 hover:bg-slate-50 text-slate-700 dark:bg-slate-900 dark:border-slate-800 dark:hover:bg-slate-800 dark:text-slate-200">
+      <div class="relative flex h-2 w-2">
+        <span id="collab-ping" class="absolute inline-flex h-full w-full rounded-full opacity-75"></span>
+        <span id="collab-dot" class="relative inline-flex rounded-full h-2 w-2 bg-slate-400"></span>
+      </div>
+      <span id="collab-status-text">Simulate Team</span>
+    </button>
+
+    <!-- Theme Mode toggle -->
+    <button id="theme-toggle" class="w-9 h-9 flex items-center justify-center rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-300 transition-all duration-200" title="Toggle Light/Dark Mode">
+      <i data-lucide="sun" id="theme-sun-icon" class="w-4.5 h-4.5 hidden"></i>
+      <i data-lucide="moon" id="theme-moon-icon" class="w-4.5 h-4.5"></i>
+    </button>
+    
+    <!-- More options dropdown button -->
+    <div class="relative">
+      <button id="options-btn" class="w-9 h-9 flex items-center justify-center rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800 dark:text-slate-300 transition-all" title="Actions Menu">
+        <i data-lucide="menu" class="w-4.5 h-4.5"></i>
+      </button>
+      
+      <!-- Actions Dropdown panel -->
+      <div id="options-dropdown" class="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-2 hidden z-30 transform scale-95 opacity-0 transition-all duration-200 origin-top-right">
+        <button id="export-png-btn" class="w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-left text-sm font-medium">
+          <i data-lucide="download" class="w-4 h-4 text-indigo-500"></i> Export Board (PNG)
+        </button>
+        <button id="save-json-btn" class="w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-left text-sm font-medium">
+          <i data-lucide="save" class="w-4 h-4 text-teal-500"></i> Save Board State (.json)
+        </button>
+        <button id="load-json-trigger-btn" class="w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-left text-sm font-medium">
+          <i data-lucide="folder-open" class="w-4 h-4 text-orange-500"></i> Open Board State (.json)
+        </button>
+        <input type="file" id="load-json-file" class="hidden" accept=".json">
+        <div class="my-1.5 border-t border-slate-150 dark:border-slate-850"></div>
+        <button id="clear-board-btn" class="w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-600 dark:text-rose-450 text-left text-sm font-semibold">
+          <i data-lucide="trash-2" class="w-4 h-4 text-rose-500"></i> Clear Board
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Left Sidebar: Style Options & Properties -->
+  <div id="style-panel" class="absolute top-20 left-4 z-20 w-64 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl border border-slate-200/85 dark:border-slate-800/85 shadow-glass dark:shadow-glass-dark p-4 flex flex-col gap-4 transform transition-all duration-300">
+    <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+      <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Style Properties</h2>
+      <span class="text-[10px] bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded font-bold" id="context-indicator">Tool Defaults</span>
+    </div>
+
+    <!-- Stroke and Line Color Selection -->
+    <div>
+      <div class="flex justify-between items-center mb-1.5">
+        <label class="text-xs font-semibold text-slate-500 dark:text-slate-400">Stroke Color</label>
+        <span id="color-hex-val" class="text-[10px] text-slate-400 font-mono">#000000</span>
+      </div>
+      <div class="grid grid-cols-8 gap-1.5" id="stroke-color-palette">
+        <!-- Colored circles generated dynamically -->
+      </div>
+      <div class="mt-2 flex items-center gap-2">
+        <input type="color" id="custom-stroke-picker" class="w-5 h-5 rounded-md cursor-pointer border-0 p-0 bg-transparent">
+        <span class="text-xs text-slate-500 dark:text-slate-400">Custom Stroke Picker</span>
+      </div>
+    </div>
+
+    <!-- Fill Color Options (Only relevant for Rect, Circle, Sticky, etc) -->
+    <div id="fill-color-container">
+      <div class="flex justify-between items-center mb-1.5">
+        <label class="text-xs font-semibold text-slate-500 dark:text-slate-400">Fill Background</label>
+      </div>
+      <div class="grid grid-cols-8 gap-1.5" id="fill-color-palette">
+        <!-- Colored circles generated dynamically -->
+      </div>
+      <div class="mt-2 flex items-center gap-2">
+        <input type="color" id="custom-fill-picker" class="w-5 h-5 rounded-md cursor-pointer border-0 p-0 bg-transparent">
+        <span class="text-xs text-slate-500 dark:text-slate-400">Custom Fill Picker</span>
+      </div>
+    </div>
+
+    <!-- Stroke Style Selection -->
+    <div id="stroke-style-container">
+      <label class="text-xs font-semibold text-slate-500 dark:text-slate-400 block mb-1.5">Stroke Style</label>
+      <div class="grid grid-cols-3 gap-1">
+        <button data-val="solid" class="stroke-style-btn py-1 px-2.5 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850">Solid</button>
+        <button data-val="dashed" class="stroke-style-btn py-1 px-2.5 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850">Dashed</button>
+        <button data-val="dotted" class="stroke-style-btn py-1 px-2.5 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850">Dotted</button>
+      </div>
+    </div>
+
+    <!-- Thickness -->
+    <div>
+      <div class="flex justify-between items-center mb-1.5">
+        <label class="text-xs font-semibold text-slate-500 dark:text-slate-400">Stroke Thickness</label>
+        <span id="stroke-thickness-val" class="text-xs font-bold text-slate-600 dark:text-slate-300">2 px</span>
+      </div>
+      <input type="range" id="stroke-thickness-slider" min="1" max="25" value="2" class="w-full accent-indigo-600 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg cursor-pointer">
+    </div>
+
+    <!-- Opacity slider -->
+    <div>
+      <div class="flex justify-between items-center mb-1.5">
+        <label class="text-xs font-semibold text-slate-500 dark:text-slate-400">Opacity</label>
+        <span id="opacity-val" class="text-xs font-bold text-slate-600 dark:text-slate-300">100%</span>
+      </div>
+      <input type="range" id="opacity-slider" min="10" max="100" value="100" class="w-full accent-indigo-600 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg cursor-pointer">
+    </div>
+
+    <!-- Text / Font Size slider (Dynamic depending on Text/Sticky/Shape tool selected) -->
+    <div id="text-size-container">
+      <div class="flex justify-between items-center mb-1.5">
+        <label class="text-xs font-semibold text-slate-500 dark:text-slate-400">Text Size</label>
+        <span id="text-size-val" class="text-xs font-bold text-slate-600 dark:text-slate-300">20 px</span>
+      </div>
+      <input type="range" id="text-size-slider" min="12" max="72" value="20" class="w-full accent-indigo-600 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg cursor-pointer">
+    </div>
+
+    <!-- Selection Actions Panel (Shows up ONLY when shapes are selected) -->
+    <div id="selected-actions-panel" class="hidden border-t border-slate-100 dark:border-slate-800 pt-3 flex flex-col gap-2">
+      <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Selection Actions</label>
+      <div class="flex items-center gap-1">
+        <button id="layer-back-btn" title="Send to Back" class="flex-1 py-1.5 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850 active:scale-95 transition text-xs font-medium">
+          <i data-lucide="chevrons-down" class="w-3.5 h-3.5"></i>
+        </button>
+        <button id="layer-backward-btn" title="Move Backward" class="flex-1 py-1.5 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850 active:scale-95 transition text-xs font-medium">
+          <i data-lucide="chevron-down" class="w-3.5 h-3.5"></i>
+        </button>
+        <button id="layer-forward-btn" title="Move Forward" class="flex-1 py-1.5 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850 active:scale-95 transition text-xs font-medium">
+          <i data-lucide="chevron-up" class="w-3.5 h-3.5"></i>
+        </button>
+        <button id="layer-front-btn" title="Bring to Front" class="flex-1 py-1.5 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850 active:scale-95 transition text-xs font-medium">
+          <i data-lucide="chevrons-up" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+      <div class="flex items-center gap-1.5 mt-1">
+        <button id="duplicate-selection-btn" class="flex-1 py-1.5 flex items-center justify-center gap-1 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-xs font-bold active:scale-95 transition">
+          <i data-lucide="copy" class="w-3.5 h-3.5"></i> Duplicate
+        </button>
+        <button id="delete-selection-btn" class="flex-1 py-1.5 flex items-center justify-center gap-1 rounded-lg border border-rose-200 dark:border-rose-950 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-rose-600 dark:text-rose-450 text-xs font-bold active:scale-95 transition">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Delete
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom Left: Board Navigation & Layout Tools -->
+  <div class="absolute bottom-4 left-4 z-20 flex flex-col gap-2">
+    <!-- Quick Canvas Zoom & Navigation Options -->
+    <div class="flex items-center gap-1.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-slate-200/80 dark:border-slate-800/80 shadow-glass dark:shadow-glass-dark">
+      <!-- Zoom controls -->
+      <button id="zoom-out-btn" title="Zoom Out (Ctrl+-)" class="w-7.5 h-7.5 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition">
+        <i data-lucide="minus" class="w-4 h-4"></i>
+      </button>
+      <span id="zoom-percentage-text" class="text-xs font-bold font-mono min-w-[40px] text-center text-slate-700 dark:text-slate-300">100%</span>
+      <button id="zoom-in-btn" title="Zoom In (Ctrl++)" class="w-7.5 h-7.5 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition">
+        <i data-lucide="plus" class="w-4 h-4"></i>
+      </button>
+      <div class="h-4 w-px bg-slate-200 dark:bg-slate-800 mx-1"></div>
+      <button id="zoom-reset-btn" title="Reset Zoom / Fit Canvas" class="px-2 py-1 flex items-center justify-center text-[10px] font-bold rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition uppercase tracking-wider">
+        Reset
+      </button>
+    </div>
+
+    <!-- Undo/Redo & History Quick Actions -->
+    <div class="flex items-center gap-1 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-1.5 py-1 rounded-xl border border-slate-200/80 dark:border-slate-800/80 shadow-glass dark:shadow-glass-dark self-start">
+      <button id="undo-btn" disabled title="Undo (Ctrl+Z)" class="w-7.5 h-7.5 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 disabled:opacity-30 disabled:hover:bg-transparent transition">
+        <i data-lucide="undo" class="w-4 h-4"></i>
+      </button>
+      <button id="redo-btn" disabled title="Redo (Ctrl+Y)" class="w-7.5 h-7.5 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 disabled:opacity-30 disabled:hover:bg-transparent transition">
+        <i data-lucide="redo" class="w-4 h-4"></i>
+      </button>
+      <div class="h-4 w-px bg-slate-200 dark:bg-slate-800 mx-1"></div>
+      
+      <!-- Grid Settings selector -->
+      <div class="relative flex items-center">
+        <button id="grid-toggle-btn" class="w-7.5 h-7.5 flex items-center justify-center rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition" title="Grid Settings">
+          <i data-lucide="grid-3x3" class="w-4 h-4"></i>
+        </button>
+        
+        <!-- Grid list sub-bar panel -->
+        <div id="grid-dropdown" class="absolute left-9 bottom-0 flex items-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-1 rounded-lg gap-0.5 shadow-xl hidden">
+          <button data-grid="none" title="Blank" class="grid-style-btn px-2 py-1 text-[10px] font-bold uppercase rounded hover:bg-slate-100 dark:hover:bg-slate-800">Blank</button>
+          <button data-grid="lines" title="Grid Lines" class="grid-style-btn px-2 py-1 text-[10px] font-bold uppercase rounded hover:bg-slate-100 dark:hover:bg-slate-800">Grid</button>
+          <button data-grid="dots" title="Dotted Grid" class="grid-style-btn px-2 py-1 text-[10px] font-bold uppercase rounded hover:bg-slate-100 dark:hover:bg-slate-800">Dots</button>
+          <button data-grid="isometric" title="Isometric Dots" class="grid-style-btn px-2 py-1 text-[10px] font-bold uppercase rounded hover:bg-slate-100 dark:hover:bg-slate-800">Iso</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom Center: Page/Board Tabs Manager -->
+  <div class="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-slate-200/80 dark:border-slate-800/80 shadow-glass dark:shadow-glass-dark">
+    <!-- Page icon -->
+    <i data-lucide="layers" class="w-3.5 h-3.5 text-slate-400"></i>
+    
+    <!-- Page tabs layout -->
+    <div id="pages-container" class="flex items-center gap-1">
+      <!-- Pages tabs injected here -->
+    </div>
+    
+    <!-- Add new Board page -->
+    <button id="add-page-btn" title="Add New Board Page" class="w-6 h-6 flex items-center justify-center rounded bg-indigo-50 dark:bg-indigo-950 hover:bg-indigo-100 dark:hover:bg-indigo-900 text-indigo-600 dark:text-indigo-400 transition">
+      <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+    </button>
+  </div>
+
+  <!-- Bottom Right: Simulated Chat & Collaboration Sidebar Button -->
+  <div class="absolute bottom-4 right-4 z-20 flex flex-col items-end gap-2">
+    <!-- Simulated Team Chat Widget (Collapsible drawer) -->
+    <div id="chat-sidebar" class="w-80 h-96 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden hidden transform translate-y-4 opacity-0 transition-all duration-300">
+      <!-- Sidebar Header -->
+      <div class="px-4 py-3 bg-slate-50 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i data-lucide="message-square-code" class="w-4 h-4 text-indigo-500"></i>
+          <div>
+            <h3 class="text-xs font-bold leading-none text-slate-800 dark:text-slate-100">Live Team Sandbox</h3>
+            <span class="text-[9px] text-slate-400 dark:text-slate-500">Simulating interactive feedback</span>
+          </div>
+        </div>
+        <!-- Close Button -->
+        <button id="chat-close-btn" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+      
+      <!-- Messages Feed Container -->
+      <div id="chat-messages" class="flex-1 p-4 overflow-y-auto space-y-3 text-xs">
+        <div class="text-center text-slate-400 dark:text-slate-500 text-[10px] py-1 border-b border-dashed border-slate-100 dark:border-slate-800">
+          Collaboration session activated.
+        </div>
+        <!-- Injected chats -->
+      </div>
+      
+      <!-- Input Area -->
+      <form id="chat-form" class="p-2 bg-slate-50 dark:bg-slate-850 border-t border-slate-200 dark:border-slate-800 flex gap-1.5">
+        <input id="chat-input" type="text" autocomplete="off" placeholder="Type a message to your team..." class="flex-1 px-3 py-1.5 text-xs bg-white dark:bg-slate-950 rounded-lg outline-none border border-slate-200 dark:border-slate-800 focus:border-indigo-500 text-slate-800 dark:text-slate-100" />
+        <button type="submit" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold shadow-md active:scale-95 transition">Send</button>
+      </form>
+    </div>
+
+    <!-- Toggle Chat Button -->
+    <button id="chat-toggle-btn" title="Open Simulated Team Chat" class="relative w-12 h-12 flex items-center justify-center bg-indigo-600 hover:bg-indigo-500 text-white rounded-full shadow-2xl transition hover:rotate-6 active:scale-95 duration-200">
+      <i data-lucide="message-circle" class="w-5 h-5"></i>
+      <!-- Unread Badge -->
+      <span id="chat-badge" class="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[8px] font-bold text-white hidden">!</span>
+    </button>
+  </div>
+
+  <!-- Notification Banner Center Container -->
+  <div id="notification-container" class="absolute top-24 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- Confirmation Modals Overlay -->
+  <div id="modal-overlay" class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+    <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 max-w-sm w-full mx-4 shadow-2xl flex flex-col gap-4 text-center">
+      <div class="w-12 h-12 rounded-full bg-rose-100 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto text-xl">
+        <i data-lucide="alert-triangle"></i>
+      </div>
+      <div>
+        <h3 class="text-base font-bold text-slate-800 dark:text-slate-100" id="modal-title">Confirm Action</h3>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1" id="modal-desc">Are you sure you want to perform this action? This cannot be undone.</p>
+      </div>
+      <div class="flex items-center gap-2 mt-2">
+        <button id="modal-cancel-btn" class="flex-1 py-2 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition">Cancel</button>
+        <button id="modal-confirm-btn" class="flex-1 py-2 text-xs font-semibold rounded-xl bg-rose-600 text-white hover:bg-rose-500 transition">Clear Board</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CORE SCRIPTS -->
+  <script>
+    // Initialize standard state variables
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    let width = window.innerWidth;
+    let height = window.innerHeight;
+    
+    // Zoom and pan tracking variables
+    let zoom = 1.0;
+    const pan = { x: 0, y: 0 };
+    
+    // Grid settings
+    let gridStyle = 'dots'; // 'none', 'lines', 'dots', 'isometric'
+    
+    // Color preset lists
+    const strokeColors = [
+      '#1e293b', // Slate Charcoal
+      '#e11d48', // Vibrant Rose
+      '#f97316', // Orange
+      '#eab308', // Amber Yellow
+      '#10b981', // Emerald Green
+      '#06b6d4', // Cyan Blue
+      '#3b82f6', // Indigo Blue
+      '#8b5cf6', // Purple
+    ];
+    
+    const fillColors = [
+      'transparent', // Transparent
+      '#f1f5f9', // Light Slate
+      '#fecdd3', // Pastel Rose
+      '#ffedd5', // Pastel Orange
+      '#fef9c3', // Pastel Yellow
+      '#d1fae5', // Pastel Emerald
+      '#cffafe', // Pastel Cyan
+      '#dbeafe', // Pastel Indigo
+    ];
+
+    // Selected drawing styles
+    let activeStrokeColor = strokeColors[0];
+    let activeFillColor = fillColors[0];
+    let activeStrokeWidth = 2;
+    let activeStrokeStyle = 'solid'; // 'solid', 'dashed', 'dotted'
+    let activeOpacity = 1.0;
+    let activeFontSize = 20;
+    
+    // Active tool state
+    let activeTool = 'pen'; // 'select', 'hand', 'pen', 'laser', 'line', 'arrow', 'rect', 'circle', 'text', 'sticky', 'eraser'
+    
+    // Multiple pages representation
+    let pages = [
+      { id: 'page-1', name: 'Design Board', shapes: [] }
+    ];
+    let currentPageId = 'page-1';
+    
+    // Navigation / Action logs
+    const historyManager = {
+      'page-1': { undo: [[]], redo: [] }
+    };
+    
+    // Theme toggle
+    let currentTheme = 'light';
+    
+    // Drawing gesture tracking states
+    let isDrawing = false;
+    let isPanning = false;
+    let lastPointer = { x: 0, y: 0 };
+    let startPointer = { x: 0, y: 0 };
+    let currentPointer = { x: 0, y: 0 };
+    let activeShape = null;
+    
+    // Vector shape selection variables
+    let selectedShapeIds = new Set();
+    let isMovingSelection = false;
+    let isResizingSelection = false;
+    let activeResizeHandle = null; // 'tl', 'tr', 'bl', 'br'
+    let dragStartOffsets = new Map(); // shapeId -> offset variables
+    let resizeStartRect = null; // shape bounding box before resize drag
+    let marqueeStart = null;
+    let textEditingShape = null;
+
+    // Laser pointer line array
+    let laserPoints = [];
+    
+    // Touch tracking for mobile multi-touch gestures
+    const activePointers = new Map();
+    let initialPinchDistance = null;
+    let initialZoom = 1.0;
+    let initialPan = { x: 0, y: 0 };
+
+    // --- MOCK REALTIME COLLABORATION VARIABLES ---
+    let collabActive = false;
+    let collabTimer = null;
+    let collabUsers = [
+      {
+        id: 'user-aria',
+        name: 'Aria (UX)',
+        initials: 'AR',
+        color: '#ec4899',
+        x: 350, y: 250,
+        targetX: 350, targetY: 250,
+        isDrawing: false,
+        drawingShape: null,
+        speechText: '',
+        speechTimeout: null
+      },
+      {
+        id: 'user-leo',
+        name: 'Leo (Eng)',
+        initials: 'LE',
+        color: '#3b82f6',
+        x: 450, y: 400,
+        targetX: 450, targetY: 400,
+        isDrawing: false,
+        drawingShape: null,
+        speechText: '',
+        speechTimeout: null
+      },
+      {
+        id: 'user-marcus',
+        name: 'Marcus (PM)',
+        initials: 'MA',
+        color: '#f97316',
+        x: 200, y: 450,
+        targetX: 200, targetY: 450,
+        isDrawing: false,
+        drawingShape: null,
+        speechText: '',
+        speechTimeout: null
+      }
+    ];
+    
+    const sampleChatMessages = [
+      { user: 'user-aria', text: "Hello! Adding a canvas here for brainstorming." },
+      { user: 'user-leo', text: "Awesome, let's test our product flows." },
+      { user: 'user-marcus', text: "Looks extremely high-fidelity!" }
+    ];
+
+    // --- SHAPE MODEL DEFINITION ---
+    class Shape {
+      constructor(type, x1, y1, options = {}) {
+        this.id = 'shape-' + Math.random().toString(36).substr(2, 9);
+        this.type = type; // 'pen', 'line', 'arrow', 'rect', 'circle', 'text', 'sticky'
+        this.x1 = x1;
+        this.y1 = y1;
+        this.x2 = x1;
+        this.y2 = y1;
+        this.points = type === 'pen' ? [{ x: x1, y: y1 }] : [];
+        this.strokeColor = options.strokeColor || activeStrokeColor;
+        this.fillColor = options.fillColor || activeFillColor;
+        this.strokeWidth = options.strokeWidth || activeStrokeWidth;
+        this.strokeStyle = options.strokeStyle || activeStrokeStyle;
+        this.opacity = options.opacity !== undefined ? options.opacity : activeOpacity;
+        this.text = options.text || '';
+        this.fontSize = options.fontSize || activeFontSize;
+        this.fontFamily = type === 'sticky' ? 'hand' : 'sans';
+        this.isEditing = false;
+      }
+    }
+
+    // --- INITIALIZATION ---
+    window.addEventListener('DOMContentLoaded', () => {
+      // Build UI color grids
+      buildColorPalette('stroke-color-palette', strokeColors, 'stroke');
+      buildColorPalette('fill-color-palette', fillColors, 'fill');
+      
+      // Setup elements size, listeners, icon rendering
+      resizeCanvas();
+      window.addEventListener('resize', resizeCanvas);
+      
+      lucide.createIcons();
+      setupEventListeners();
+      setupTheme();
+      renderPageList();
+      saveState(); // Capture blank state
+      
+      // Update indicators
+      updateToolUI();
+      updateStylePanelUI();
+      
+      // Request animation frame for smooth custom renders
+      requestAnimationFrame(renderLoop);
+      
+      // Display greeting notification
+      showNotification("Welcome to Online Whiteboard! Double-click canvas to type.", "info");
+    });
+
+    // Render loop for laser pointer, smooth cursor interpolations, etc.
+    function renderLoop() {
+      // Smoothly update simulated user cursors
+      if (collabActive) {
+        collabUsers.forEach(user => {
+          user.x += (user.targetX - user.x) * 0.08;
+          user.y += (user.targetY - user.y) * 0.08;
+        });
+        updateRemoteCursorsDOM();
+      }
+      
+      // Clear decaying laser points
+      const oldLen = laserPoints.length;
+      laserPoints = laserPoints.filter(p => Date.now() - p.time < 1200);
+      
+      if (laserPoints.length > 0 || oldLen > 0 || collabActive) {
+        draw();
+      }
+      
+      requestAnimationFrame(renderLoop);
+    }
+
+    // --- THEME SETUP ---
+    function setupTheme() {
+      // Default to Light, check storage if available
+      const storedTheme = localStorage.getItem('theme') || 'light';
+      setTheme(storedTheme);
+    }
+
+    function setTheme(theme) {
+      currentTheme = theme;
+      if (theme === 'dark') {
+        document.documentElement.classList.add('dark');
+        document.getElementById('theme-sun-icon').classList.remove('hidden');
+        document.getElementById('theme-moon-icon').classList.add('hidden');
+      } else {
+        document.documentElement.classList.remove('dark');
+        document.getElementById('theme-sun-icon').classList.add('hidden');
+        document.getElementById('theme-moon-icon').classList.remove('hidden');
+      }
+      localStorage.setItem('theme', theme);
+      draw();
+    }
+
+    // --- MULTIPAGE RENDERING & WORKFLOWS ---
+    function getCurrentPage() {
+      return pages.find(p => p.id === currentPageId) || pages[0];
+    }
+
+    function renderPageList() {
+      const container = document.getElementById('pages-container');
+      container.innerHTML = '';
+      
+      pages.forEach((p, idx) => {
+        const isActive = p.id === currentPageId;
+        
+        const tab = document.createElement('div');
+        tab.className = `flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition duration-150 cursor-pointer ${
+          isActive 
+            ? 'bg-indigo-600 text-white shadow-sm' 
+            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+        }`;
+        
+        // Editable Title inside page switcher tab
+        const titleSpan = document.createElement('span');
+        titleSpan.innerText = p.name;
+        titleSpan.className = "outline-none border-b border-transparent focus:border-white focus:bg-indigo-700 px-0.5 rounded";
+        titleSpan.contentEditable = isActive;
+        
+        // Block workspace interactions while editing tab title
+        titleSpan.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            titleSpan.blur();
+          }
+        });
+        titleSpan.addEventListener('blur', () => {
+          const newName = titleSpan.innerText.trim();
+          if (newName) {
+            p.name = newName;
+            showNotification(`Renamed board to "${newName}"`, "success");
+          } else {
+            titleSpan.innerText = p.name;
+          }
+        });
+        
+        tab.appendChild(titleSpan);
+        
+        // Display delete option for multi pages
+        if (pages.length > 1) {
+          const delBtn = document.createElement('button');
+          delBtn.className = `ml-1 w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-black/20 ${isActive ? 'text-indigo-200 hover:text-white' : 'text-slate-400 hover:text-slate-600'}`;
+          delBtn.innerHTML = `<svg class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12"/></svg>`;
+          delBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showDeletePageModal(p.id);
+          });
+          tab.appendChild(delBtn);
+        }
+        
+        tab.addEventListener('click', () => {
+          if (!isActive) {
+            currentPageId = p.id;
+            clearSelection();
+            renderPageList();
+            draw();
+            showNotification(`Switched to "${p.name}"`, "info");
+          }
+        });
+        
+        container.appendChild(tab);
+      });
+    }
+
+    function createNewPage() {
+      const newId = 'page-' + Math.random().toString(36).substr(2, 9);
+      const count = pages.length + 1;
+      const newPage = {
+        id: newId,
+        name: `Board ${count}`,
+        shapes: []
+      };
+      
+      pages.push(newPage);
+      historyManager[newId] = { undo: [[]], redo: [] };
+      currentPageId = newId;
+      
+      clearSelection();
+      renderPageList();
+      draw();
+      showNotification(`Created "${newPage.name}"`, "success");
+    }
+
+    function deletePage(pageId) {
+      if (pages.length <= 1) return;
+      const index = pages.findIndex(p => p.id === pageId);
+      if (index === -1) return;
+      
+      pages = pages.filter(p => p.id !== pageId);
+      delete historyManager[pageId];
+      
+      if (currentPageId === pageId) {
+        currentPageId = pages[Math.max(0, index - 1)].id;
+      }
+      
+      clearSelection();
+      renderPageList();
+      draw();
+      showNotification("Board page removed", "info");
+    }
+
+    function showDeletePageModal(pageId) {
+      const p = pages.find(page => page.id === pageId);
+      if (!p) return;
+      showConfirmationModal(
+        "Delete Board Page?",
+        `Are you sure you want to delete "${p.name}"? This will delete all its shapes permanently.`,
+        () => {
+          deletePage(pageId);
+        }
+      );
+    }
+
+    // --- COLOR PALETTE UI POPULATION ---
+    function buildColorPalette(elementId, colorsList, type) {
+      const palette = document.getElementById(elementId);
+      palette.innerHTML = '';
+      
+      colorsList.forEach(color => {
+        const btn = document.createElement('button');
+        btn.className = `w-6 h-6 rounded-full border border-slate-300 dark:border-slate-700 focus:outline-none transition transform hover:scale-110 flex items-center justify-center ${color === 'transparent' ? 'bg-transparent relative overflow-hidden' : ''}`;
+        
+        if (color === 'transparent') {
+          btn.innerHTML = `<div class="absolute w-full h-0.5 bg-red-500 rotate-45"></div>`;
+        } else {
+          btn.style.backgroundColor = color;
+        }
+        
+        btn.addEventListener('click', () => {
+          if (type === 'stroke') {
+            activeStrokeColor = color;
+            updateStrokeColorSelectionUI(color);
+            applyStylesToSelection({ strokeColor: color });
+          } else {
+            activeFillColor = color;
+            updateFillColorSelectionUI(color);
+            applyStylesToSelection({ fillColor: color });
+          }
+        });
+        
+        palette.appendChild(btn);
+      });
+    }
+
+    function updateStrokeColorSelectionUI(color) {
+      document.getElementById('color-hex-val').innerText = color.toUpperCase();
+      const palette = document.getElementById('stroke-color-palette');
+      Array.from(palette.children).forEach(btn => {
+        const isSelected = btn.style.backgroundColor === color || 
+                           (color === 'transparent' && btn.classList.contains('bg-transparent'));
+        if (isSelected) {
+          btn.className = btn.className.replace(/ ring-\d.*/g, '') + ' ring-2 ring-indigo-500 ring-offset-2 dark:ring-offset-slate-900';
+        } else {
+          btn.className = btn.className.replace(/ ring-\d.*/g, '');
+        }
+      });
+    }
+
+    function updateFillColorSelectionUI(color) {
+      const palette = document.getElementById('fill-color-palette');
+      Array.from(palette.children).forEach(btn => {
+        const isSelected = btn.style.backgroundColor === color || 
+                           (color === 'transparent' && btn.classList.contains('bg-transparent'));
+        if (isSelected) {
+          btn.className = btn.className.replace(/ ring-\d.*/g, '') + ' ring-2 ring-indigo-500 ring-offset-2 dark:ring-offset-slate-900';
+        } else {
+          btn.className = btn.className.replace(/ ring-\d.*/g, '');
+        }
+      });
+    }
+
+    // --- WORKFLOW SELECTION ACTIONS ---
+    function applyStylesToSelection(stylesMap) {
+      if (selectedShapeIds.size > 0) {
+        let changed = false;
+        const page = getCurrentPage();
+        page.shapes.forEach(s => {
+          if (selectedShapeIds.has(s.id)) {
+            Object.keys(stylesMap).forEach(key => {
+              s[key] = stylesMap[key];
+            });
+            changed = true;
+          }
+        });
+        if (changed) {
+          draw();
+          saveState();
+        }
+      }
+    }
+
+    // --- UNDO / REDO MANAGING ENGINE ---
+    function saveState() {
+      const pageId = currentPageId;
+      if (!historyManager[pageId]) {
+        historyManager[pageId] = { undo: [], redo: [] };
+      }
+      
+      const currentShapes = getCurrentPage().shapes;
+      const snap = JSON.parse(JSON.stringify(currentShapes));
+      
+      const hist = historyManager[pageId];
+      // Push state
+      hist.undo.push(snap);
+      if (hist.undo.length > 50) hist.undo.shift(); // Limit size
+      
+      // Clear redo
+      hist.redo = [];
+      updateUndoRedoUI();
+    }
+
+    function undo() {
+      const hist = historyManager[currentPageId];
+      if (!hist || hist.undo.length <= 1) return;
+      
+      const top = hist.undo.pop();
+      hist.redo.push(top);
+      
+      const last = hist.undo[hist.undo.length - 1];
+      getCurrentPage().shapes = JSON.parse(JSON.stringify(last));
+      
+      clearSelection();
+      draw();
+      updateUndoRedoUI();
+      showNotification("Undo action executed", "info");
+    }
+
+    function redo() {
+      const hist = historyManager[currentPageId];
+      if (!hist || hist.redo.length === 0) return;
+      
+      const next = hist.redo.pop();
+      hist.undo.push(next);
+      
+      getCurrentPage().shapes = JSON.parse(JSON.stringify(next));
+      
+      clearSelection();
+      draw();
+      updateUndoRedoUI();
+      showNotification("Redo action executed", "info");
+    }
+
+    function updateUndoRedoUI() {
+      const hist = historyManager[currentPageId];
+      const hasUndo = hist && hist.undo.length > 1;
+      const hasRedo = hist && hist.redo.length > 0;
+      
+      const undoBtn = document.getElementById('undo-btn');
+      const redoBtn = document.getElementById('redo-btn');
+      
+      undoBtn.disabled = !hasUndo;
+      redoBtn.disabled = !hasRedo;
+    }
+
+    // --- GRAPHICS DRAWING LOGIC ---
+    function resizeCanvas() {
+      const dpr = window.devicePixelRatio || 1;
+      width = window.innerWidth;
+      height = window.innerHeight;
+      
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = width + 'px';
+      canvas.style.height = height + 'px';
+      
+      ctx.scale(dpr, dpr);
+      draw();
+    }
+
+    // Convert Screen Coords to Canvas Space
+    function screenToCanvas(screenX, screenY) {
+      return {
+        x: (screenX - pan.x) / zoom,
+        y: (screenY - pan.y) / zoom
+      };
+    }
+
+    // Convert Canvas Coords to Screen Space
+    function canvasToScreen(canvasX, canvasY) {
+      return {
+        x: canvasX * zoom + pan.x,
+        y: canvasY * zoom + pan.y
+      };
+    }
+
+    // High performance adaptive grid renderer
+    function drawGrid() {
+      if (gridStyle === 'none') return;
+      
+      ctx.save();
+      
+      const topLeft = screenToCanvas(0, 0);
+      const bottomRight = screenToCanvas(width, height);
+      
+      const step = 50;
+      const startX = Math.floor(topLeft.x / step) * step;
+      const startY = Math.floor(topLeft.y / step) * step;
+      const endX = Math.ceil(bottomRight.x / step) * step;
+      const endY = Math.ceil(bottomRight.y / step) * step;
+      
+      // Beautiful adaptive opacity fading
+      let alpha = 0.85;
+      if (zoom < 0.35) {
+        alpha = Math.max(0, (zoom - 0.15) / 0.2);
+      }
+      if (alpha <= 0) {
+        ctx.restore();
+        return;
+      }
+      
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = currentTheme === 'dark' ? '#334155' : '#cbd5e1';
+      ctx.lineWidth = 0.5;
+      
+      if (gridStyle === 'lines') {
+        ctx.beginPath();
+        for (let x = startX; x <= endX; x += step) {
+          ctx.moveTo(x, startY);
+          ctx.lineTo(x, endY);
+        }
+        for (let y = startY; y <= endY; y += step) {
+          ctx.moveTo(startX, y);
+          ctx.lineTo(endX, y);
+        }
+        ctx.stroke();
+      } else if (gridStyle === 'dots') {
+        ctx.fillStyle = currentTheme === 'dark' ? '#475569' : '#94a3b8';
+        for (let x = startX; x <= endX; x += step) {
+          for (let y = startY; y <= endY; y += step) {
+            ctx.beginPath();
+            ctx.arc(x, y, 1.2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      } else if (gridStyle === 'isometric') {
+        ctx.fillStyle = currentTheme === 'dark' ? '#475569' : '#94a3b8';
+        const isoX = step * Math.sqrt(3);
+        const isoY = step;
+        
+        for (let x = startX - isoX; x <= endX + isoX; x += isoX) {
+          let row = 0;
+          for (let y = startY; y <= endY; y += isoY / 2) {
+            const offset = (row % 2 === 0) ? 0 : isoX / 2;
+            ctx.beginPath();
+            ctx.arc(x + offset, y, 1.2, 0, Math.PI * 2);
+            ctx.fill();
+            row++;
+          }
+        }
+      }
+      
+      ctx.restore();
+    }
+
+    // Main Draw Function (Clears & paints everything)
+    function draw() {
+      // Clear the viewport
+      ctx.clearRect(0, 0, width, height);
+      
+      // Dynamic Canvas Theme Background Render
+      ctx.fillStyle = currentTheme === 'dark' ? '#0f172a' : '#f8fafc';
+      ctx.fillRect(0, 0, width, height);
+      
+      // Render grid with pan/zoom transformations
+      drawGrid();
+      
+      // Apply active global transformations
+      ctx.save();
+      ctx.translate(pan.x, pan.y);
+      ctx.scale(zoom, zoom);
+      
+      // Draw Page shapes
+      const page = getCurrentPage();
+      page.shapes.forEach(shape => {
+        if (!shape.isEditing) {
+          drawShape(shape);
+        }
+      });
+      
+      // Draw selected shape bounding boxes & handles
+      if (selectedShapeIds.size > 0 && activeTool === 'select') {
+        drawSelectionBoundingBoxes();
+      }
+      
+      ctx.restore();
+      
+      // Draw Laser Pointer Trail in screen space
+      drawLaserPointer();
+    }
+
+    // Adaptive color for dark mode switches
+    function getAdaptColor(color) {
+      if (currentTheme === 'dark') {
+        if (color === '#1e293b' || color === '#000000' || color === 'black') {
+          return '#ffffff';
+        }
+      } else {
+        if (color === '#ffffff' || color === 'white') {
+          return '#1e293b';
+        }
+      }
+      return color;
+    }
+
+    // Drawing individual shape
+    function drawShape(s, drawCtx = ctx) {
+      drawCtx.save();
+      drawCtx.globalAlpha = s.opacity;
+      
+      // Adaptive lines styles
+      drawCtx.lineCap = 'round';
+      drawCtx.lineJoin = 'round';
+      drawCtx.lineWidth = s.strokeWidth;
+      drawCtx.strokeStyle = getAdaptColor(s.strokeColor);
+      
+      if (s.strokeStyle === 'dashed') {
+        drawCtx.setLineDash([s.strokeWidth * 3, s.strokeWidth * 3]);
+      } else if (s.strokeStyle === 'dotted') {
+        drawCtx.setLineDash([1, s.strokeWidth * 2.5]);
+      } else {
+        drawCtx.setLineDash([]);
+      }
+      
+      drawCtx.fillStyle = s.fillColor === 'transparent' ? 'transparent' : getAdaptColor(s.fillColor);
+      
+      switch (s.type) {
+        case 'pen':
+          if (s.points.length < 2) break;
+          drawCtx.beginPath();
+          drawCtx.moveTo(s.points[0].x, s.points[0].y);
+          for (let i = 1; i < s.points.length; i++) {
+            // Quadratic splines for ultra-smooth rendering
+            const xc = (s.points[i].x + s.points[i-1].x) / 2;
+            const yc = (s.points[i].y + s.points[i-1].y) / 2;
+            drawCtx.quadraticCurveTo(s.points[i-1].x, s.points[i-1].y, xc, yc);
+          }
+          drawCtx.stroke();
+          break;
+          
+        case 'line':
+          drawCtx.beginPath();
+          drawCtx.moveTo(s.x1, s.y1);
+          drawCtx.lineTo(s.x2, s.y2);
+          drawCtx.stroke();
+          break;
+          
+        case 'arrow':
+          drawCtx.beginPath();
+          drawCtx.moveTo(s.x1, s.y1);
+          drawCtx.lineTo(s.x2, s.y2);
+          drawCtx.stroke();
+          
+          // Draw elegant arrowhead
+          const arrowAngle = Math.atan2(s.y2 - s.y1, s.x2 - s.x1);
+          const arrowLength = Math.max(12, s.strokeWidth * 4);
+          drawCtx.beginPath();
+          drawCtx.moveTo(s.x2, s.y2);
+          drawCtx.lineTo(
+            s.x2 - arrowLength * Math.cos(arrowAngle - Math.PI / 6),
+            s.y2 - arrowLength * Math.sin(arrowAngle - Math.PI / 6)
+          );
+          drawCtx.lineTo(
+            s.x2 - arrowLength * Math.cos(arrowAngle + Math.PI / 6),
+            s.y2 - arrowLength * Math.sin(arrowAngle + Math.PI / 6)
+          );
+          drawCtx.closePath();
+          drawCtx.fillStyle = getAdaptColor(s.strokeColor);
+          drawCtx.fill();
+          break;
+          
+        case 'rect':
+          const rx = Math.min(s.x1, s.x2);
+          const ry = Math.min(s.y1, s.y2);
+          const rw = Math.abs(s.x2 - s.x1);
+          const rh = Math.abs(s.y2 - s.y1);
+          
+          drawCtx.beginPath();
+          drawCtx.rect(rx, ry, rw, rh);
+          if (s.fillColor !== 'transparent') {
+            drawCtx.fill();
+          }
+          drawCtx.stroke();
+          break;
+          
+        case 'circle':
+          const cx = (s.x1 + s.x2) / 2;
+          const cy = (s.y1 + s.y2) / 2;
+          const rx_val = Math.abs(s.x2 - s.x1) / 2;
+          const ry_val = Math.abs(s.y2 - s.y1) / 2;
+          
+          drawCtx.beginPath();
+          drawCtx.ellipse(cx, cy, rx_val, ry_val, 0, 0, Math.PI * 2);
+          if (s.fillColor !== 'transparent') {
+            drawCtx.fill();
+          }
+          drawCtx.stroke();
+          break;
+          
+        case 'text':
+          drawCtx.font = `${s.fontSize}px sans-serif`;
+          drawCtx.fillStyle = getAdaptColor(s.strokeColor);
+          drawCtx.textBaseline = 'top';
+          drawCtx.textAlign = 'left';
+          
+          const lines = s.text.split('\n');
+          let tY = s.y1;
+          for (let line of lines) {
+            drawCtx.fillText(line, s.x1, tY);
+            tY += s.fontSize * 1.25;
+          }
+          break;
+          
+        case 'sticky':
+          const sx = Math.min(s.x1, s.x2);
+          const sy = Math.min(s.y1, s.y2);
+          const sw = Math.max(120, Math.abs(s.x2 - s.x1));
+          const sh = Math.max(120, Math.abs(s.y2 - s.y1));
+          
+          // Realistic shadow for premium touch
+          drawCtx.shadowColor = 'rgba(15, 23, 42, 0.12)';
+          drawCtx.shadowBlur = 12;
+          drawCtx.shadowOffsetX = 3;
+          drawCtx.shadowOffsetY = 4;
+          
+          drawCtx.beginPath();
+          drawCtx.roundRect(sx, sy, sw, sh, 6);
+          drawCtx.fillStyle = getAdaptColor(s.fillColor === 'transparent' ? '#fef08a' : s.fillColor);
+          drawCtx.fill();
+          
+          // Clear shadow properties for border & text drawing
+          drawCtx.shadowBlur = 0;
+          drawCtx.shadowOffsetX = 0;
+          drawCtx.shadowOffsetY = 0;
+          
+          // Subtle border
+          drawCtx.strokeStyle = 'rgba(0, 0, 0, 0.08)';
+          drawCtx.lineWidth = 1;
+          drawCtx.stroke();
+          
+          // Draw sticky text aligned with proper wrapping
+          drawCtx.font = `500 ${s.fontSize}px 'Playpen Sans', sans-serif`;
+          drawCtx.fillStyle = '#1e293b'; // Slate dark always for pastel sticky notes
+          drawCtx.textBaseline = 'middle';
+          drawCtx.textAlign = 'center';
+          
+          const padding = 12;
+          const maxTextW = sw - padding * 2;
+          const textWords = s.text.split(' ');
+          let txtLines = [];
+          let currentLine = '';
+          
+          for (let word of textWords) {
+            const testLine = currentLine ? currentLine + ' ' + word : word;
+            const metrics = drawCtx.measureText(testLine);
+            if (metrics.width > maxTextW && currentLine) {
+              txtLines.push(currentLine);
+              currentLine = word;
+            } else {
+              currentLine = testLine;
+            }
+          }
+          if (currentLine) txtLines.push(currentLine);
+          
+          const fullHeight = txtLines.length * s.fontSize * 1.25;
+          let textY = sy + (sh - fullHeight) / 2 + (s.fontSize * 1.2) / 2;
+          
+          for (let line of txtLines) {
+            if (textY < sy + sh - padding) {
+              drawCtx.fillText(line, sx + sw / 2, textY);
+            }
+            textY += s.fontSize * 1.25;
+          }
+          break;
+      }
+      
+      drawCtx.restore();
+    }
+
+    // High fidelity laser pointer trail line renderer
+    function drawLaserPointer() {
+      if (laserPoints.length < 2) return;
+      
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      
+      ctx.shadowColor = '#f43f5e';
+      
+      for (let i = 1; i < laserPoints.length; i++) {
+        const p1 = laserPoints[i-1];
+        const p2 = laserPoints[i];
+        
+        const age = Date.now() - p1.time;
+        if (age > 1200) continue;
+        const ratio = 1 - (age / 1200);
+        
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.strokeStyle = `rgba(244, 63, 94, ${ratio})`;
+        ctx.lineWidth = 6 * ratio;
+        ctx.shadowBlur = 10 * ratio;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // --- SELECTION CORNER BOX BOUNDING RENDERER ---
+    function drawSelectionBoundingBoxes() {
+      const page = getCurrentPage();
+      page.shapes.forEach(s => {
+        if (!selectedShapeIds.has(s.id)) return;
+        
+        const box = getShapeCanvasBoundingBox(s);
+        
+        // Draw dashed selection outline
+        ctx.strokeStyle = '#3b82f6';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeRect(box.x1 - 4, box.y1 - 4, (box.x2 - box.x1) + 8, (box.y2 - box.y1) + 8);
+        
+        // Draw selection corner handles
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#3b82f6';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([]);
+        
+        const hs = 8; // Handle box size
+        const handles = [
+          { x: box.x1 - 4, y: box.y1 - 4 }, // tl
+          { x: box.x2 + 4, y: box.y1 - 4 }, // tr
+          { x: box.x1 - 4, y: box.y2 + 4 }, // bl
+          { x: box.x2 + 4, y: box.y2 + 4 }  // br
+        ];
+        
+        // Render 4 handles
+        handles.forEach(h => {
+          ctx.fillRect(h.x - hs/2, h.y - hs/2, hs, hs);
+          ctx.strokeRect(h.x - hs/2, h.y - hs/2, hs, hs);
+        });
+      });
+    }
+
+    // --- SHAPES BOUNDING MATHEMATICS ---
+    function getShapeCanvasBoundingBox(s) {
+      switch (s.type) {
+        case 'pen':
+          if (s.points.length === 0) return { x1: s.x1, y1: s.y1, x2: s.x1, y2: s.y1 };
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          s.points.forEach(p => {
+            if (p.x < minX) minX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y > maxY) maxY = p.y;
+          });
+          return { x1: minX, y1: minY, x2: maxX, y2: maxY };
+          
+        case 'text':
+          // Approx height/width based on context font size
+          ctx.save();
+          ctx.font = `${s.fontSize}px sans-serif`;
+          const textLines = s.text.split('\n');
+          let maxW = 80;
+          textLines.forEach(l => {
+            const w = ctx.measureText(l).width;
+            if (w > maxW) maxW = w;
+          });
+          ctx.restore();
+          const th = textLines.length * s.fontSize * 1.25;
+          return { x1: s.x1, y1: s.y1, x2: s.x1 + maxW, y2: s.y1 + th };
+          
+        default:
+          return {
+            x1: Math.min(s.x1, s.x2),
+            y1: Math.min(s.y1, s.y2),
+            x2: Math.max(s.x1, s.x2),
+            y2: Math.max(s.y1, s.y2)
+          };
+      }
+    }
+
+    // Precise segment distance checker (to click line/drawings)
+    function distanceToSegment(px, py, x1, y1, x2, y2) {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const l2 = dx * dx + dy * dy;
+      if (l2 === 0) return Math.hypot(px - x1, py - y1);
+      
+      let t = ((px - x1) * dx + (py - y1) * dy) / l2;
+      t = Math.max(0, Math.min(1, t));
+      return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+    }
+
+    // Vector selection hit detection
+    function hitTestShape(px, py, s) {
+      const box = getShapeCanvasBoundingBox(s);
+      
+      switch (s.type) {
+        case 'rect':
+        case 'sticky':
+          return px >= box.x1 && px <= box.x2 && py >= box.y1 && py <= box.y2;
+          
+        case 'circle':
+          const cx = (box.x1 + box.x2) / 2;
+          const cy = (box.y1 + box.y2) / 2;
+          const rx = (box.x2 - box.x1) / 2;
+          const ry = (box.y2 - box.y1) / 2;
+          if (rx === 0 || ry === 0) return false;
+          const normX = (px - cx) / rx;
+          const normY = (py - cy) / ry;
+          return (normX * normX + normY * normY) <= 1.05; // 5% tolerance
+          
+        case 'line':
+        case 'arrow':
+          return distanceToSegment(px, py, s.x1, s.y1, s.x2, s.y2) < (s.strokeWidth + 6);
+          
+        case 'pen':
+          for (let i = 0; i < s.points.length - 1; i++) {
+            if (distanceToSegment(px, py, s.points[i].x, s.points[i].y, s.points[i+1].x, s.points[i+1].y) < (s.strokeWidth + 8)) {
+              return true;
+            }
+          }
+          return false;
+          
+        case 'text':
+          return px >= box.x1 && px <= box.x2 && py >= box.y1 && py <= box.y2;
+      }
+      return false;
+    }
+
+    // Get shape hit handle if any
+    function getResizeHandleHit(px, py, shapeId) {
+      const page = getCurrentPage();
+      const s = page.shapes.find(shape => shape.id === shapeId);
+      if (!s) return null;
+      
+      const box = getShapeCanvasBoundingBox(s);
+      const grabRadius = 10 / zoom; // Adjust grab size for current zoom
+      
+      const handles = {
+        tl: { x: box.x1 - 4, y: box.y1 - 4 },
+        tr: { x: box.x2 + 4, y: box.y1 - 4 },
+        bl: { x: box.x1 - 4, y: box.y2 + 4 },
+        br: { x: box.x2 + 4, y: box.y2 + 4 }
+      };
+      
+      for (const [handleKey, h] of Object.entries(handles)) {
+        if (Math.hypot(px - h.x, py - h.y) < grabRadius) {
+          return handleKey;
+        }
+      }
+      return null;
+    }
+
+    // Deselect selection elements
+    function clearSelection() {
+      selectedShapeIds.clear();
+      updateStylePanelUI();
+      draw();
+    }
+
+    // Delete selected items
+    function deleteSelectedShapes() {
+      if (selectedShapeIds.size === 0) return;
+      
+      const page = getCurrentPage();
+      page.shapes = page.shapes.filter(s => !selectedShapeIds.has(s.id));
+      selectedShapeIds.clear();
+      
+      saveState();
+      draw();
+      updateStylePanelUI();
+      showNotification("Selected elements deleted", "info");
+    }
+
+    // Duplicate selected items
+    function duplicateSelectedShapes() {
+      if (selectedShapeIds.size === 0) return;
+      
+      const page = getCurrentPage();
+      const newSelections = new Set();
+      
+      page.shapes.forEach(s => {
+        if (selectedShapeIds.has(s.id)) {
+          const clone = JSON.parse(JSON.stringify(s));
+          clone.id = 'shape-' + Math.random().toString(36).substr(2, 9);
+          // Offset clones slightly
+          clone.x1 += 30;
+          clone.y1 += 30;
+          clone.x2 += 30;
+          clone.y2 += 30;
+          if (clone.points) {
+            clone.points = clone.points.map(p => ({ x: p.x + 30, y: p.y + 30 }));
+          }
+          page.shapes.push(clone);
+          newSelections.add(clone.id);
+        }
+      });
+      
+      selectedShapeIds = newSelections;
+      saveState();
+      draw();
+      showNotification("Elements duplicated", "success");
+    }
+
+    // Bring selected shapes closer or further in layers
+    function changeSelectionLayer(action) {
+      if (selectedShapeIds.size === 0) return;
+      const page = getCurrentPage();
+      
+      if (action === 'front') {
+        const matching = [];
+        const nonMatching = [];
+        page.shapes.forEach(s => {
+          if (selectedShapeIds.has(s.id)) matching.push(s);
+          else nonMatching.push(s);
+        });
+        page.shapes = [...nonMatching, ...matching];
+      } else if (action === 'back') {
+        const matching = [];
+        const nonMatching = [];
+        page.shapes.forEach(s => {
+          if (selectedShapeIds.has(s.id)) matching.push(s);
+          else nonMatching.push(s);
+        });
+        page.shapes = [...matching, ...nonMatching];
+      } else if (action === 'forward' || action === 'backward') {
+        // Step-by-step swap
+        const shapes = page.shapes;
+        if (action === 'forward') {
+          for (let i = shapes.length - 2; i >= 0; i--) {
+            if (selectedShapeIds.has(shapes[i].id) && !selectedShapeIds.has(shapes[i+1].id)) {
+              const temp = shapes[i];
+              shapes[i] = shapes[i+1];
+              shapes[i+1] = temp;
+            }
+          }
+        } else {
+          for (let i = 1; i < shapes.length; i++) {
+            if (selectedShapeIds.has(shapes[i].id) && !selectedShapeIds.has(shapes[i-1].id)) {
+              const temp = shapes[i];
+              shapes[i] = shapes[i-1];
+              shapes[i-1] = temp;
+            }
+          }
+        }
+      }
+      
+      saveState();
+      draw();
+    }
+
+    // --- ON-SCREEN INTERACTIVE TEXT EDITING ---
+    function openInlineTextEditor(shape) {
+      if (textEditingShape) return;
+      
+      // Calculate shape screen coordinates
+      const box = getShapeCanvasBoundingBox(shape);
+      const sX = canvasToScreen(box.x1, box.y1);
+      
+      const editor = document.createElement('textarea');
+      editor.value = shape.text;
+      editor.className = `absolute z-50 p-2 rounded outline-none border border-indigo-500 shadow-2xl resize-none ${
+        shape.type === 'sticky' 
+          ? 'text-slate-800 focus:ring-0 font-hand' 
+          : 'bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-100 font-sans'
+      }`;
+      
+      // Compute width and height values
+      const cw = Math.max(160, (box.x2 - box.x1) * zoom);
+      const ch = Math.max(120, (box.y2 - box.y1) * zoom);
+      
+      editor.style.left = `${sX.x}px`;
+      editor.style.top = `${sX.y}px`;
+      editor.style.width = `${cw}px`;
+      editor.style.height = `${ch}px`;
+      editor.style.fontSize = `${shape.fontSize * zoom}px`;
+      editor.style.lineHeight = '1.25';
+      
+      if (shape.type === 'sticky') {
+        editor.style.backgroundColor = getAdaptColor(shape.fillColor);
+        editor.style.border = 'none';
+      }
+      
+      document.body.appendChild(editor);
+      editor.focus();
+      
+      shape.isEditing = true;
+      textEditingShape = shape;
+      draw();
+      
+      function closeEditor() {
+        if (!editor.parentNode) return;
+        
+        const textVal = editor.value.trim();
+        shape.text = textVal;
+        shape.isEditing = false;
+        textEditingShape = null;
+        document.body.removeChild(editor);
+        
+        if (!textVal) {
+          // If shape empty, delete it
+          const page = getCurrentPage();
+          page.shapes = page.shapes.filter(s => s.id !== shape.id);
+          selectedShapeIds.delete(shape.id);
+        } else {
+          saveState();
+        }
+        
+        draw();
+      }
+      
+      editor.addEventListener('blur', closeEditor);
+      editor.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          closeEditor();
+        }
+        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+          closeEditor();
+        }
+      });
+    }
+
+    // --- INTERACTIVE POINTER ACTION HANDLERS ---
+    function setupEventListeners() {
+      // General Pointer Down
+      canvas.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        canvas.setPointerCapture(e.pointerId);
+        
+        const screenPt = { x: e.clientX, y: e.clientY };
+        const canvasPt = screenToCanvas(screenPt.x, screenPt.y);
+        
+        activePointers.set(e.pointerId, { start: screenPt, current: screenPt });
+        
+        // Multi-touch gestures logic
+        if (activePointers.size === 2) {
+          isDrawing = false;
+          isPanning = true;
+          initialPinchDistance = getPointersDistance();
+          initialZoom = zoom;
+          initialPan = { ...pan };
+          return;
+        }
+        
+        startPointer = screenPt;
+        currentPointer = screenPt;
+        lastPointer = screenPt;
+        
+        // Handle Space key drag or middle click for instant pan
+        if (activeTool === 'hand' || e.button === 1 || e.button === 2 || e.spaceKey || e.shiftKey && e.button === 0) {
+          isPanning = true;
+          canvas.style.cursor = 'grabbing';
+          return;
+        }
+        
+        if (activeTool === 'laser') {
+          isDrawing = true;
+          laserPoints.push({ x: screenPt.x, y: screenPt.y, time: Date.now() });
+          return;
+        }
+        
+        const page = getCurrentPage();
+        
+        // SELECTION TOOL PRESS ACTIONS
+        if (activeTool === 'select') {
+          // Check if clicked inside resize handle of a selected shape first
+          for (const sId of selectedShapeIds) {
+            const handle = getResizeHandleHit(canvasPt.x, canvasPt.y, sId);
+            if (handle) {
+              isResizingSelection = true;
+              activeResizeHandle = handle;
+              const shape = page.shapes.find(s => s.id === sId);
+              resizeStartRect = {
+                x1: shape.x1, y1: shape.y1,
+                x2: shape.x2, y2: shape.y2,
+                points: shape.points ? shape.points.map(p => ({...p})) : null
+              };
+              return;
+            }
+          }
+          
+          // Check if clicked on shapes
+          let clickedShape = null;
+          for (let i = page.shapes.length - 1; i >= 0; i--) {
+            if (hitTestShape(canvasPt.x, canvasPt.y, page.shapes[i])) {
+              clickedShape = page.shapes[i];
+              break;
+            }
+          }
+          
+          if (clickedShape) {
+            if (!selectedShapeIds.has(clickedShape.id)) {
+              selectedShapeIds.clear();
+              selectedShapeIds.add(clickedShape.id);
+            }
+            isMovingSelection = true;
+            
+            // Capture offsets
+            dragStartOffsets.clear();
+            selectedShapeIds.forEach(id => {
+              const s = page.shapes.find(shape => shape.id === id);
+              dragStartOffsets.set(id, {
+                x1: s.x1 - canvasPt.x,
+                y1: s.y1 - canvasPt.y,
+                x2: s.x2 - canvasPt.x,
+                y2: s.y2 - canvasPt.y,
+                points: s.points ? s.points.map(p => ({ x: p.x - canvasPt.x, y: p.y - canvasPt.y })) : null
+              });
+            });
+            
+            updateStylePanelUI();
+            draw();
+          } else {
+            // Clicked empty space: start selection marquee bounding rect
+            selectedShapeIds.clear();
+            marqueeStart = screenPt;
+            updateStylePanelUI();
+            draw();
+          }
+          return;
+        }
+        
+        // DRAWING TOOLS PRESS ACTIONS
+        if (activeTool === 'eraser') {
+          isDrawing = true;
+          eraseShapesAt(canvasPt.x, canvasPt.y);
+          return;
+        }
+        
+        if (activeTool === 'text') {
+          // Click to type
+          const txtShape = new Shape('text', canvasPt.x, canvasPt.y, { text: 'Click to edit...' });
+          page.shapes.push(txtShape);
+          selectedShapeIds.clear();
+          selectedShapeIds.add(txtShape.id);
+          draw();
+          openInlineTextEditor(txtShape);
+          return;
+        }
+        
+        if (activeTool === 'sticky') {
+          const sticky = new Shape('sticky', canvasPt.x, canvasPt.y, {
+            text: 'Hello, team!',
+            fillColor: activeFillColor === 'transparent' ? fillColors[4] : activeFillColor,
+          });
+          sticky.x2 = canvasPt.x + 150;
+          sticky.y2 = canvasPt.y + 150;
+          page.shapes.push(sticky);
+          selectedShapeIds.clear();
+          selectedShapeIds.add(sticky.id);
+          draw();
+          openInlineTextEditor(sticky);
+          return;
+        }
+        
+        // Shape vector drawing initiation
+        isDrawing = true;
+        const nShape = new Shape(activeTool, canvasPt.x, canvasPt.y);
+        page.shapes.push(nShape);
+        activeShape = nShape;
+      });
+
+      // General Pointer Move
+      canvas.addEventListener('pointermove', (e) => {
+        const screenPt = { x: e.clientX, y: e.clientY };
+        const canvasPt = screenToCanvas(screenPt.x, screenPt.y);
+        
+        if (!activePointers.has(e.pointerId)) return;
+        activePointers.get(e.pointerId).current = screenPt;
+        
+        // Handle dual pointer pinch to zoom / drag
+        if (isPanning && activePointers.size === 2) {
+          const currentDist = getPointersDistance();
+          if (initialPinchDistance && currentDist) {
+            const factor = currentDist / initialPinchDistance;
+            zoom = Math.max(0.15, Math.min(8, initialZoom * factor));
+            
+            // Adjust pan around center point
+            const center = getPointersCenter();
+            pan.x = center.x - (center.x - initialPan.x) * (zoom / initialZoom);
+            pan.y = center.y - (center.y - initialPan.y) * (zoom / initialZoom);
+            
+            updateZoomDisplay();
+            draw();
+          }
+          return;
+        }
+        
+        // Hand tool panning
+        if (isPanning) {
+          const dx = screenPt.x - lastPointer.x;
+          const dy = screenPt.y - lastPointer.y;
+          pan.x += dx;
+          pan.y += dy;
+          lastPointer = screenPt;
+          draw();
+          return;
+        }
+        
+        if (activeTool === 'laser' && isDrawing) {
+          laserPoints.push({ x: screenPt.x, y: screenPt.y, time: Date.now() });
+          return;
+        }
+        
+        // Multi-item moving drag actions
+        if (isMovingSelection && activeTool === 'select') {
+          const page = getCurrentPage();
+          selectedShapeIds.forEach(id => {
+            const s = page.shapes.find(shape => shape.id === id);
+            const offset = dragStartOffsets.get(id);
+            if (s && offset) {
+              s.x1 = canvasPt.x + offset.x1;
+              s.y1 = canvasPt.y + offset.y1;
+              s.x2 = canvasPt.x + offset.x2;
+              s.y2 = canvasPt.y + offset.y2;
+              if (s.points && offset.points) {
+                s.points = offset.points.map(p => ({ x: canvasPt.x + p.x, y: canvasPt.y + p.y }));
+              }
+            }
+          });
+          draw();
+          return;
+        }
+        
+        // Bounding box resizing
+        if (isResizingSelection && activeTool === 'select') {
+          const page = getCurrentPage();
+          selectedShapeIds.forEach(id => {
+            const s = page.shapes.find(shape => shape.id === id);
+            if (!s || !resizeStartRect) return;
+            
+            const dx = canvasPt.x - screenToCanvas(startPointer.x, startPointer.y).x;
+            const dy = canvasPt.y - screenToCanvas(startPointer.x, startPointer.y).y;
+            
+            switch (activeResizeHandle) {
+              case 'br':
+                s.x2 = resizeStartRect.x2 + dx;
+                s.y2 = resizeStartRect.y2 + dy;
+                break;
+              case 'tl':
+                s.x1 = resizeStartRect.x1 + dx;
+                s.y1 = resizeStartRect.y1 + dy;
+                break;
+              case 'tr':
+                s.x2 = resizeStartRect.x2 + dx;
+                s.y1 = resizeStartRect.y1 + dy;
+                break;
+              case 'bl':
+                s.x1 = resizeStartRect.x1 + dx;
+                s.y2 = resizeStartRect.y2 + dy;
+                break;
+            }
+          });
+          draw();
+          return;
+        }
+        
+        // Selection marquee drawing
+        if (marqueeStart && activeTool === 'select') {
+          const marquee = document.getElementById('marquee');
+          const mx1 = Math.min(marqueeStart.x, screenPt.x);
+          const my1 = Math.min(marqueeStart.y, screenPt.y);
+          const mw = Math.abs(marqueeStart.x - screenPt.x);
+          const mh = Math.abs(marqueeStart.y - screenPt.y);
+          
+          marquee.style.display = 'block';
+          marquee.style.left = `${mx1}px`;
+          marquee.style.top = `${my1}px`;
+          marquee.style.width = `${mw}px`;
+          marquee.style.height = `${mh}px`;
+          
+          // Dynamically check intersecting shapes for marquee selection box
+          selectShapesInMarquee(marqueeStart, screenPt);
+          return;
+        }
+        
+        // Adaptive Eraser dragging
+        if (activeTool === 'eraser' && isDrawing) {
+          eraseShapesAt(canvasPt.x, canvasPt.y);
+          return;
+        }
+        
+        // Active vector creation
+        if (isDrawing && activeShape) {
+          if (activeShape.type === 'pen') {
+            activeShape.points.push(canvasPt);
+          } else {
+            activeShape.x2 = canvasPt.x;
+            activeShape.y2 = canvasPt.y;
+          }
+          draw();
+        }
+      });
+
+      // General Pointer Up
+      canvas.addEventListener('pointerup', (e) => {
+        canvas.releasePointerCapture(e.pointerId);
+        activePointers.delete(e.pointerId);
+        
+        if (activePointers.size < 2) {
+          initialPinchDistance = null;
+        }
+        
+        if (isPanning) {
+          isPanning = false;
+          canvas.style.cursor = activeTool === 'hand' ? 'grab' : 'crosshair';
+          return;
+        }
+        
+        if (activeTool === 'select') {
+          if (isMovingSelection || isResizingSelection) {
+            saveState();
+          }
+          isMovingSelection = false;
+          isResizingSelection = false;
+          activeResizeHandle = null;
+          
+          const marquee = document.getElementById('marquee');
+          if (marquee.style.display === 'block') {
+            marquee.style.display = 'none';
+            marqueeStart = null;
+            updateStylePanelUI();
+          }
+          return;
+        }
+        
+        if (isDrawing) {
+          isDrawing = false;
+          activeShape = null;
+          saveState();
+          draw();
+        }
+      });
+
+      // Mouse Wheel Zoom (centered zoom on hover cursor point!)
+      canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        
+        const zoomIntensity = 0.08;
+        const delta = e.deltaY < 0 ? 1 : -1;
+        
+        const pointerCanvasBefore = screenToCanvas(e.clientX, e.clientY);
+        
+        // Apply zoom step
+        zoom = Math.max(0.12, Math.min(8.0, zoom + delta * zoomIntensity * zoom));
+        
+        const pointerCanvasAfter = screenToCanvas(e.clientX, e.clientY);
+        
+        // Translate pan to center zooming
+        pan.x += (pointerCanvasAfter.x - pointerCanvasBefore.x) * zoom;
+        pan.y += (pointerCanvasAfter.y - pointerCanvasBefore.y) * zoom;
+        
+        updateZoomDisplay();
+        draw();
+      }, { passive: false });
+
+      // Double-click text-editing trigger
+      canvas.addEventListener('dblclick', (e) => {
+        const pt = screenToCanvas(e.clientX, e.clientY);
+        const page = getCurrentPage();
+        
+        // Check text or sticky shape double-clicked
+        let targetShape = null;
+        for (let i = page.shapes.length - 1; i >= 0; i--) {
+          const s = page.shapes[i];
+          if ((s.type === 'text' || s.type === 'sticky') && hitTestShape(pt.x, pt.y, s)) {
+            targetShape = s;
+            break;
+          }
+        }
+        
+        if (targetShape) {
+          selectedShapeIds.clear();
+          selectedShapeIds.add(targetShape.id);
+          draw();
+          openInlineTextEditor(targetShape);
+        } else {
+          // Double click blank canvas -> create quick text shape
+          const txtShape = new Shape('text', pt.x, pt.y, { text: 'Double clicked' });
+          page.shapes.push(txtShape);
+          selectedShapeIds.clear();
+          selectedShapeIds.add(txtShape.id);
+          draw();
+          openInlineTextEditor(txtShape);
+        }
+      });
+
+      // Context menu prevent (let right click pan comfortably)
+      canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+      // Keyboard hotkeys
+      window.addEventListener('keydown', (e) => {
+        // Ignore if user is inside speech input/chat text input, or inline editing textareas
+        if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA' || document.activeElement.contentEditable === 'true') {
+          return;
+        }
+        
+        const key = e.key.toLowerCase();
+        
+        // Tool selectors
+        if (key === 'v') setTool('select');
+        if (key === 'h') setTool('hand');
+        if (key === 'p') setTool('pen');
+        if (key === 'f') setTool('laser');
+        if (key === 'l') setTool('line');
+        if (key === 'a') setTool('arrow');
+        if (key === 'r') setTool('rect');
+        if (key === 'o') setTool('circle');
+        if (key === 't') setTool('text');
+        if (key === 's') setTool('sticky');
+        if (key === 'e') setTool('eraser');
+        
+        // Delete items
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          deleteSelectedShapes();
+        }
+        
+        // Undo Redo
+        if ((e.ctrlKey || e.metaKey) && key === 'z') {
+          e.preventDefault();
+          if (e.shiftKey) redo();
+          else undo();
+        }
+        if ((e.ctrlKey || e.metaKey) && key === 'y') {
+          e.preventDefault();
+          redo();
+        }
+        
+        // Duplicate selection
+        if ((e.ctrlKey || e.metaKey) && key === 'd') {
+          e.preventDefault();
+          duplicateSelectedShapes();
+        }
+      });
+
+      // Bind floating toolbar items
+      const toolbar = document.getElementById('toolbar-buttons');
+      toolbar.addEventListener('click', (e) => {
+        const btn = e.target.closest('.tool-btn');
+        if (btn) {
+          setTool(btn.getAttribute('data-tool'));
+        }
+      });
+
+      // Style Property Panel elements binding
+      document.getElementById('stroke-thickness-slider').addEventListener('input', (e) => {
+        const val = parseInt(e.target.value);
+        activeStrokeWidth = val;
+        document.getElementById('stroke-thickness-val').innerText = `${val} px`;
+        applyStylesToSelection({ strokeWidth: val });
+      });
+
+      document.getElementById('opacity-slider').addEventListener('input', (e) => {
+        const val = parseInt(e.target.value);
+        activeOpacity = val / 100;
+        document.getElementById('opacity-val').innerText = `${val}%`;
+        applyStylesToSelection({ opacity: activeOpacity });
+      });
+
+      document.getElementById('text-size-slider').addEventListener('input', (e) => {
+        const val = parseInt(e.target.value);
+        activeFontSize = val;
+        document.getElementById('text-size-val').innerText = `${val} px`;
+        applyStylesToSelection({ fontSize: val });
+      });
+
+      // Layer buttons
+      document.getElementById('layer-back-btn').addEventListener('click', () => changeSelectionLayer('back'));
+      document.getElementById('layer-backward-btn').addEventListener('click', () => changeSelectionLayer('backward'));
+      document.getElementById('layer-forward-btn').addEventListener('click', () => changeSelectionLayer('forward'));
+      document.getElementById('layer-front-btn').addEventListener('click', () => changeSelectionLayer('front'));
+      
+      // Select stroke style
+      const strokeStyleContainer = document.getElementById('stroke-style-container');
+      strokeStyleContainer.addEventListener('click', (e) => {
+        const btn = e.target.closest('.stroke-style-btn');
+        if (btn) {
+          const val = btn.getAttribute('data-val');
+          activeStrokeStyle = val;
+          updateStrokeStyleSelectionUI(val);
+          applyStylesToSelection({ strokeStyle: val });
+        }
+      });
+
+      // Selection action buttons
+      document.getElementById('duplicate-selection-btn').addEventListener('click', duplicateSelectedShapes);
+      document.getElementById('delete-selection-btn').addEventListener('click', deleteSelectedShapes);
+
+      // Custom HTML color pickers
+      document.getElementById('custom-stroke-picker').addEventListener('input', (e) => {
+        const color = e.target.value;
+        activeStrokeColor = color;
+        updateStrokeColorSelectionUI(color);
+        applyStylesToSelection({ strokeColor: color });
+      });
+
+      document.getElementById('custom-fill-picker').addEventListener('input', (e) => {
+        const color = e.target.value;
+        activeFillColor = color;
+        updateFillColorSelectionUI(color);
+        applyStylesToSelection({ fillColor: color });
+      });
+
+      // Navigation Zoom controls
+      document.getElementById('zoom-out-btn').addEventListener('click', () => {
+        zoom = Math.max(0.15, zoom - 0.1);
+        updateZoomDisplay();
+        draw();
+      });
+
+      document.getElementById('zoom-in-btn').addEventListener('click', () => {
+        zoom = Math.min(8.0, zoom + 0.1);
+        updateZoomDisplay();
+        draw();
+      });
+
+      document.getElementById('zoom-reset-btn').addEventListener('click', () => {
+        zoom = 1.0;
+        pan.x = 0;
+        pan.y = 0;
+        updateZoomDisplay();
+        draw();
+        showNotification("Zoom and position reset", "info");
+      });
+
+      // Undo Redo buttons
+      document.getElementById('undo-btn').addEventListener('click', undo);
+      document.getElementById('redo-btn').addEventListener('click', redo);
+
+      // Grid Styles toggle options
+      const gridBtn = document.getElementById('grid-toggle-btn');
+      const gridDrop = document.getElementById('grid-dropdown');
+      gridBtn.addEventListener('click', () => {
+        gridDrop.classList.toggle('hidden');
+      });
+
+      gridDrop.addEventListener('click', (e) => {
+        const btn = e.target.closest('.grid-style-btn');
+        if (btn) {
+          gridStyle = btn.getAttribute('data-grid');
+          gridDrop.classList.add('hidden');
+          updateGridStyleSelectionUI();
+          draw();
+          showNotification(`Grid changed to ${gridStyle}`, "info");
+        }
+      });
+
+      // Switch theme mode
+      document.getElementById('theme-toggle').addEventListener('click', () => {
+        const next = currentTheme === 'light' ? 'dark' : 'light';
+        setTheme(next);
+        showNotification(`Theme set to ${next}`, "success");
+      });
+
+      // Action options menu
+      const optionsBtn = document.getElementById('options-btn');
+      const optionsDropdown = document.getElementById('options-dropdown');
+      optionsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        optionsDropdown.classList.toggle('hidden');
+        if (!optionsDropdown.classList.contains('hidden')) {
+          optionsDropdown.classList.remove('scale-95', 'opacity-0');
+          optionsDropdown.classList.add('scale-100', 'opacity-100');
+        }
+      });
+
+      // Hide dropdowns on screen click
+      window.addEventListener('click', () => {
+        optionsDropdown.classList.add('hidden', 'scale-95', 'opacity-0');
+        gridDrop.classList.add('hidden');
+      });
+
+      // Clear Canvas modal trigger
+      document.getElementById('clear-board-btn').addEventListener('click', () => {
+        showConfirmationModal("Clear Current Board?", "This will delete all shapes drawn on the active board page.", () => {
+          getCurrentPage().shapes = [];
+          clearSelection();
+          saveState();
+          draw();
+          showNotification("Board cleared successfully!", "success");
+        });
+      });
+
+      // Multi page additions
+      document.getElementById('add-page-btn').addEventListener('click', createNewPage);
+
+      // JSON Board Save and Load
+      document.getElementById('export-png-btn').addEventListener('click', exportBoardToPNG);
+      document.getElementById('save-json-btn').addEventListener('click', saveBoardToJSON);
+      
+      const fileInput = document.getElementById('load-json-file');
+      document.getElementById('load-json-trigger-btn').addEventListener('click', () => {
+        fileInput.click();
+      });
+      fileInput.addEventListener('change', loadBoardFromJSON);
+
+      // Realtime collab toggle
+      document.getElementById('collab-toggle').addEventListener('click', toggleCollaborationSimulation);
+
+      // Collab Chat toggler
+      document.getElementById('chat-toggle-btn').addEventListener('click', toggleChatSidebar);
+      document.getElementById('chat-close-btn').addEventListener('click', toggleChatSidebar);
+
+      document.getElementById('chat-form').addEventListener('submit', handleUserChatSubmit);
+    }
+
+    // --- SELECTION INTERSECTION CALCULATOR ---
+    function selectShapesInMarquee(start, current) {
+      const page = getCurrentPage();
+      
+      const x1 = Math.min(start.x, current.x);
+      const y1 = Math.min(start.y, current.y);
+      const x2 = Math.max(start.x, current.x);
+      const y2 = Math.max(start.y, current.y);
+      
+      const cBox1 = screenToCanvas(x1, y1);
+      const cBox2 = screenToCanvas(x2, y2);
+      
+      selectedShapeIds.clear();
+      
+      page.shapes.forEach(s => {
+        const box = getShapeCanvasBoundingBox(s);
+        // If bounding box overlaps selection marquee
+        const overlaps = !(box.x2 < cBox1.x || box.x1 > cBox2.x || box.y2 < cBox1.y || box.y1 > cBox2.y);
+        if (overlaps) {
+          selectedShapeIds.add(s.id);
+        }
+      });
+      
+      draw();
+    }
+
+    // --- SMOOTH ERASER INTERSECT CALCULATOR ---
+    function eraseShapesAt(cx, cy) {
+      const page = getCurrentPage();
+      const initialCount = page.shapes.length;
+      
+      // Filter out shapes that overlap eraser cursor point
+      page.shapes = page.shapes.filter(s => !hitTestShape(cx, cy, s));
+      
+      if (page.shapes.length !== initialCount) {
+        saveState();
+        draw();
+      }
+    }
+
+    // --- UI VIEW UPDATE HELPERS ---
+    function setTool(tool) {
+      activeTool = tool;
+      clearSelection();
+      updateToolUI();
+      
+      canvas.style.cursor = tool === 'hand' ? 'grab' : 'crosshair';
+      
+      // Filter out or adapt styles panel default values depending on tool selection
+      updateStylePanelUI();
+      
+      showNotification(`Tool: ${tool.toUpperCase()}`, "info");
+    }
+
+    function updateToolUI() {
+      const buttons = document.querySelectorAll('.tool-btn');
+      buttons.forEach(btn => {
+        const btnTool = btn.getAttribute('data-tool');
+        if (btnTool === activeTool) {
+          btn.className = "tool-btn w-9 h-9 flex items-center justify-center rounded-xl bg-indigo-600 text-white shadow-md shadow-indigo-500/30 scale-105 transition-all duration-200";
+        } else {
+          btn.className = "tool-btn w-9 h-9 flex items-center justify-center rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all duration-200 active:scale-95";
+        }
+      });
+    }
+
+    function updateStylePanelUI() {
+      const page = getCurrentPage();
+      const hasSelection = selectedShapeIds.size > 0;
+      
+      // Update Context Indicator label
+      const indicator = document.getElementById('context-indicator');
+      const actionPanel = document.getElementById('selected-actions-panel');
+      
+      if (hasSelection) {
+        indicator.innerText = "Selection";
+        indicator.className = "text-[10px] bg-indigo-500 text-white px-1.5 py-0.5 rounded font-bold";
+        actionPanel.classList.remove('hidden');
+        
+        // Populate sidebar defaults from first selected shape
+        const firstId = Array.from(selectedShapeIds)[0];
+        const s = page.shapes.find(shape => shape.id === firstId);
+        if (s) {
+          activeStrokeColor = s.strokeColor;
+          activeFillColor = s.fillColor;
+          activeStrokeWidth = s.strokeWidth;
+          activeStrokeStyle = s.strokeStyle;
+          activeOpacity = s.opacity;
+          activeFontSize = s.fontSize;
+          
+          // Apply properties to sliding selectors
+          document.getElementById('stroke-thickness-slider').value = activeStrokeWidth;
+          document.getElementById('stroke-thickness-val').innerText = `${activeStrokeWidth} px`;
+          
+          document.getElementById('opacity-slider').value = Math.round(activeOpacity * 100);
+          document.getElementById('opacity-val').innerText = `${Math.round(activeOpacity * 100)}%`;
+          
+          document.getElementById('text-size-slider').value = activeFontSize;
+          document.getElementById('text-size-val').innerText = `${activeFontSize} px`;
+          
+          updateStrokeColorSelectionUI(activeStrokeColor);
+          updateFillColorSelectionUI(activeFillColor);
+          updateStrokeStyleSelectionUI(activeStrokeStyle);
+        }
+      } else {
+        indicator.innerText = "Tool Defaults";
+        indicator.className = "text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded font-bold";
+        actionPanel.classList.add('hidden');
+        
+        // Show tool defaults
+        document.getElementById('stroke-thickness-slider').value = activeStrokeWidth;
+        document.getElementById('stroke-thickness-val').innerText = `${activeStrokeWidth} px`;
+        
+        document.getElementById('opacity-slider').value = Math.round(activeOpacity * 100);
+        document.getElementById('opacity-val').innerText = `${Math.round(activeOpacity * 100)}%`;
+        
+        document.getElementById('text-size-slider').value = activeFontSize;
+        document.getElementById('text-size-val').innerText = `${activeFontSize} px`;
+        
+        updateStrokeColorSelectionUI(activeStrokeColor);
+        updateFillColorSelectionUI(activeFillColor);
+        updateStrokeStyleSelectionUI(activeStrokeStyle);
+      }
+      
+      // Show or hide text options if appropriate
+      const textContainer = document.getElementById('text-size-container');
+      const isTextTool = activeTool === 'text' || activeTool === 'sticky' || 
+                        (hasSelection && Array.from(selectedShapeIds).some(id => {
+                          const s = page.shapes.find(shape => shape.id === id);
+                          return s && (s.type === 'text' || s.type === 'sticky');
+                        }));
+                        
+      if (isTextTool) {
+        textContainer.classList.remove('hidden');
+      } else {
+        textContainer.classList.add('hidden');
+      }
+    }
+
+    function updateStrokeStyleSelectionUI(style) {
+      const btns = document.querySelectorAll('.stroke-style-btn');
+      btns.forEach(btn => {
+        if (btn.getAttribute('data-val') === style) {
+          btn.className = "stroke-style-btn py-1 px-2.5 text-xs font-bold rounded-lg bg-indigo-600 text-white border-transparent transition";
+        } else {
+          btn.className = "stroke-style-btn py-1 px-2.5 text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-850 text-slate-600 dark:text-slate-400 transition";
+        }
+      });
+    }
+
+    function updateGridStyleSelectionUI() {
+      const btns = document.querySelectorAll('.grid-style-btn');
+      btns.forEach(btn => {
+        if (btn.getAttribute('data-grid') === gridStyle) {
+          btn.className = "grid-style-btn px-2 py-1 text-[10px] font-black uppercase rounded bg-indigo-600 text-white";
+        } else {
+          btn.className = "grid-style-btn px-2 py-1 text-[10px] font-bold uppercase rounded text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800";
+        }
+      });
+    }
+
+    function updateZoomDisplay() {
+      document.getElementById('zoom-percentage-text').innerText = `${Math.round(zoom * 100)}%`;
+    }
+
+    // --- MULTIPLAYER REALTIME CURSORS DOM RENDERING ---
+    function updateRemoteCursorsDOM() {
+      const container = document.getElementById('remote-cursors-container');
+      
+      collabUsers.forEach(user => {
+        if (!user.active) {
+          const el = document.getElementById(user.id);
+          if (el) container.removeChild(el);
+          return;
+        }
+        
+        let cursorEl = document.getElementById(user.id);
+        if (!cursorEl) {
+          cursorEl = document.createElement('div');
+          cursorEl.id = user.id;
+          cursorEl.className = 'remote-cursor flex flex-col items-start';
+          cursorEl.innerHTML = `
+            <svg class="w-6 h-6 transform -rotate-45" viewBox="0 0 24 24" fill="${user.color}" stroke="white" stroke-width="2">
+              <path d="M5.65 19.65l3.54-3.54-3.54-3.54a1 1 0 011.42-1.42l3.54 3.54 3.54-3.54a1 1 0 011.42 1.42L12.5 16.1l3.54 3.54a1 1 0 01-1.42 1.42l-3.54-3.54-3.54 3.54a1 1 0 01-1.42-1.42z" class="hidden"></path>
+              <polygon points="4,4 4,21 10,15 19,15"></polygon>
+            </svg>
+            <div class="px-2 py-0.5 rounded-md text-[10px] font-bold text-white shadow-lg whitespace-nowrap mt-1 leading-none transition" style="background-color: ${user.color}">
+              ${user.name}
+            </div>
+          `;
+          container.appendChild(cursorEl);
+        }
+        
+        // Convert canvas positions to screen positions dynamically
+        const scrPt = canvasToScreen(user.x, user.y);
+        cursorEl.style.left = `${scrPt.x}px`;
+        cursorEl.style.top = `${scrPt.y}px`;
+      });
+    }
+
+    function removeAllRemoteCursorsDOM() {
+      document.getElementById('remote-cursors-container').innerHTML = '';
+      document.getElementById('speech-bubbles-container').innerHTML = '';
+    }
+
+    // Speech bubble UI popups
+    function showSpeechBubble(user, text) {
+      const container = document.getElementById('speech-bubbles-container');
+      const bubbleId = `bubble-${user.id}`;
+      
+      let el = document.getElementById(bubbleId);
+      if (el) {
+        if (el.parentNode) container.removeChild(el);
+      }
+      
+      el = document.createElement('div');
+      el.id = bubbleId;
+      el.className = "speech-bubble px-3 py-2 rounded-xl text-xs font-semibold text-slate-800 bg-white border shadow-2xl z-40 max-w-xs break-words";
+      el.style.borderLeftColor = user.color;
+      el.style.borderLeftWidth = '4px';
+      el.innerText = text;
+      
+      container.appendChild(el);
+      
+      // Keep track of bubble movements over cursor frames
+      function positionBubble() {
+        if (!collabActive) {
+          if (el.parentNode) container.removeChild(el);
+          return;
+        }
+        const scr = canvasToScreen(user.x, user.y);
+        el.style.left = `${scr.x}px`;
+        el.style.top = `${scr.y - 12}px`;
+        
+        if (document.getElementById(bubbleId)) {
+          requestAnimationFrame(positionBubble);
+        }
+      }
+      
+      requestAnimationFrame(positionBubble);
+      
+      if (user.speechTimeout) clearTimeout(user.speechTimeout);
+      user.speechTimeout = setTimeout(() => {
+        if (el.parentNode) container.removeChild(el);
+      }, 4000);
+    }
+
+    // --- EXPORT TO PNG WORKFLOW ---
+    function exportBoardToPNG() {
+      const page = getCurrentPage();
+      if (page.shapes.length === 0) {
+        showNotification("Cannot export empty board", "error");
+        return;
+      }
+      
+      showNotification("Generating PNG render... please wait", "info");
+      
+      // Calculate export bounding box covering all elements
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      page.shapes.forEach(s => {
+        const b = getShapeCanvasBoundingBox(s);
+        if (b.x1 < minX) minX = b.x1;
+        if (b.y1 < minY) minY = b.y1;
+        if (b.x2 > maxX) maxX = b.x2;
+        if (b.y2 > maxY) maxY = b.y2;
+      });
+      
+      // Add padding
+      const pad = 40;
+      minX -= pad;
+      minY -= pad;
+      maxX += pad;
+      maxY += pad;
+      
+      const exportW = maxX - minX;
+      const exportH = maxY - minY;
+      
+      // Create off-screen canvas for rendering
+      const offCanvas = document.createElement('canvas');
+      const offCtx = offCanvas.getContext('2d');
+      
+      const dpr = window.devicePixelRatio || 2;
+      offCanvas.width = exportW * dpr;
+      offCanvas.height = exportH * dpr;
+      offCtx.scale(dpr, dpr);
+      
+      // Paint background
+      offCtx.fillStyle = currentTheme === 'dark' ? '#0f172a' : '#ffffff'; // Use pure white for clean light exports
+      offCtx.fillRect(0, 0, exportW, exportH);
+      
+      // Optional background Grid drawn in off-screen
+      if (gridStyle !== 'none') {
+        offCtx.save();
+        offCtx.strokeStyle = currentTheme === 'dark' ? '#1e293b' : '#f1f5f9';
+        offCtx.lineWidth = 1;
+        
+        const step = 50;
+        const gridStartX = Math.floor(minX / step) * step;
+        const gridStartY = Math.floor(minY / step) * step;
+        
+        for (let gx = gridStartX; gx <= maxX; gx += step) {
+          offCtx.beginPath();
+          offCtx.moveTo(gx - minX, 0);
+          offCtx.lineTo(gx - minX, exportH);
+          offCtx.stroke();
+        }
+        for (let gy = gridStartY; gy <= maxY; gy += step) {
+          offCtx.beginPath();
+          offCtx.moveTo(0, gy - minY);
+          offCtx.lineTo(exportW, gy - minY);
+          offCtx.stroke();
+        }
+        offCtx.restore();
+      }
+      
+      // Draw all shapes translated to export box origin
+      offCtx.save();
+      offCtx.translate(-minX, -minY);
+      
+      page.shapes.forEach(s => {
+        if (!s.isEditing) {
+          drawShape(s, offCtx);
+        }
+      });
+      
+      // Create download anchor trigger
+      const link = document.createElement('a');
+      link.download = `${page.name.toLowerCase().replace(/\s+/g, '-')}-export.png`;
+      link.href = offCanvas.toDataURL('image/png');
+      link.click();
+      
+      showNotification("Board exported successfully!", "success");
+    }
+
+    // --- LOCAL BOARD STATE EXPORTS (JSON) ---
+    function saveBoardToJSON() {
+      const payload = {
+        app: "Online Whiteboard",
+        version: "2.0",
+        pages: pages,
+        currentPageId: currentPageId,
+        theme: currentTheme,
+        gridStyle: gridStyle
+      };
+      
+      const serialized = JSON.stringify(payload, null, 2);
+      const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(serialized);
+      
+      const file = `whiteboard-board-${new Date().toISOString().slice(0, 10)}.json`;
+      const anchor = document.createElement('a');
+      anchor.setAttribute('href', dataUri);
+      anchor.setAttribute('download', file);
+      anchor.click();
+      
+      showNotification("Board saved as JSON", "success");
+    }
+
+    function loadBoardFromJSON(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const payload = JSON.parse(event.target.result);
+          if (payload.pages && Array.isArray(payload.pages)) {
+            pages = payload.pages;
+            currentPageId = payload.currentPageId || payload.pages[0].id;
+            
+            // Re-initialize undo lists
+            pages.forEach(p => {
+              historyManager[p.id] = { undo: [JSON.parse(JSON.stringify(p.shapes))], redo: [] };
+            });
+            
+            if (payload.theme) setTheme(payload.theme);
+            if (payload.gridStyle) {
+              gridStyle = payload.gridStyle;
+              updateGridStyleSelectionUI();
+            }
+            
+            clearSelection();
+            renderPageList();
+            draw();
+            showNotification("Whiteboard loaded successfully!", "success");
+          } else {
+            showNotification("Invalid whiteboard JSON schema", "error");
+          }
+        } catch (err) {
+          showNotification("Error parsing backup JSON file", "error");
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    // --- DYNAMIC COLLABORATION SIMULATION ACTIONS ---
+    function toggleCollaborationSimulation() {
+      collabActive = !collabActive;
+      
+      const collabToggle = document.getElementById('collab-toggle');
+      const collabPing = document.getElementById('collab-ping');
+      const collabDot = document.getElementById('collab-dot');
+      const collabStatus = document.getElementById('collab-status-text');
+      const chatSidebar = document.getElementById('chat-sidebar');
+      const collabAvatars = document.getElementById('collab-avatars');
+      
+      if (collabActive) {
+        collabToggle.classList.remove('bg-white', 'text-slate-700', 'border-slate-200');
+        collabToggle.classList.add('bg-indigo-50', 'text-indigo-600', 'border-indigo-200', 'dark:bg-indigo-950/40', 'dark:border-indigo-900', 'dark:text-indigo-400');
+        collabPing.classList.add('animate-ping', 'bg-emerald-400');
+        collabDot.className = "relative inline-flex rounded-full h-2 w-2 bg-emerald-500";
+        collabStatus.innerText = "Simulation Active";
+        
+        // Show active avatars in headers
+        collabAvatars.classList.remove('hidden');
+        renderAvatarsDOM();
+        
+        // Trigger simulated actions loop
+        collabTimer = setInterval(tickCollaborationSimulation, 4500);
+        
+        // Injected greetings
+        setTimeout(() => {
+          triggerBotInteraction(collabUsers[0], "Hey team! Beautiful day to design some layouts!");
+        }, 800);
+        
+        showNotification("Collaboration Simulator Enabled! Check chat panel.", "success");
+      } else {
+        collabToggle.classList.add('bg-white', 'text-slate-700', 'border-slate-200');
+        collabToggle.classList.remove('bg-indigo-50', 'text-indigo-600', 'border-indigo-200', 'dark:bg-indigo-950/40', 'dark:border-indigo-900', 'dark:text-indigo-400');
+        collabPing.classList.remove('animate-ping', 'bg-emerald-400');
+        collabDot.className = "relative inline-flex rounded-full h-2 w-2 bg-slate-400";
+        collabStatus.innerText = "Simulate Team";
+        
+        collabAvatars.classList.add('hidden');
+        clearInterval(collabTimer);
+        collabTimer = null;
+        
+        removeAllRemoteCursorsDOM();
+        draw();
+        
+        showNotification("Collaboration Simulator Disabled", "info");
+      }
+    }
+
+    function renderAvatarsDOM() {
+      const container = document.getElementById('collab-avatars');
+      container.innerHTML = '';
+      collabUsers.forEach(u => {
+        const el = document.createElement('div');
+        el.className = `w-7 h-7 rounded-full border-2 border-white dark:border-slate-900 flex items-center justify-center text-[10px] font-black text-white shadow shadow-black/20`;
+        el.style.backgroundColor = u.color;
+        el.innerText = u.initials;
+        el.title = u.name;
+        container.appendChild(el);
+      });
+    }
+
+    function tickCollaborationSimulation() {
+      // Pick random bot user to perform action
+      const user = collabUsers[Math.floor(Math.random() * collabUsers.length)];
+      if (user.isDrawing) return;
+      
+      const actions = ['move', 'rect', 'circle', 'sticky', 'text', 'line', 'arrow', 'chat'];
+      const action = actions[Math.floor(Math.random() * actions.length)];
+      
+      // Target random coordinate closer to board centers
+      const scrollCenter = screenToCanvas(width/2, height/2);
+      const targetPt = {
+        x: scrollCenter.x + (Math.random() * 450 - 225),
+        y: scrollCenter.y + (Math.random() * 350 - 175)
+      };
+      
+      user.targetX = targetPt.x;
+      user.targetY = targetPt.y;
+      
+      if (action === 'move') {
+        // Just move cursors around
+        return;
+      }
+      
+      // Delay action drawing until cursor smoothly reaches position
+      setTimeout(() => {
+        if (!collabActive) return;
+        
+        if (action === 'chat') {
+          const texts = {
+            'user-aria': [
+              "Let's look at the layout on Board 1",
+              "Maybe we can add another sticky card",
+              "This color theme feels incredibly modern!",
+              "Does the alignment look proper to you?"
+            ],
+            'user-leo': [
+              "Drawing components using vector layers is so quick.",
+              "The speed of this canvas zoom engine is impressive.",
+              "I am checking standard database models.",
+              "Let's export this canvas as high resolution PNG to slack."
+            ],
+            'user-marcus': [
+              "I'm scheduling user testing sessions this Friday.",
+              "Let's place our core priorities in pastel boxes.",
+              "Amazing canvas drawing controls!",
+              "Could we change the grid background style to Dot grids?"
+            ]
+          };
+          const textList = texts[user.id];
+          const text = textList[Math.floor(Math.random() * textList.length)];
+          triggerBotInteraction(user, text);
+        } else {
+          // Trigger drawing shapes on canvas
+          drawShapeSimulated(user, action);
+        }
+      }, 1000);
+    }
+
+    function drawShapeSimulated(user, type) {
+      user.isDrawing = true;
+      const page = getCurrentPage();
+      
+      const strokeClr = user.color;
+      const fillClr = type === 'rect' || type === 'circle' ? user.color + '1a' : 'transparent';
+      
+      const s = new Shape(type, user.x, user.y, {
+        strokeColor: strokeClr,
+        fillColor: fillClr,
+        strokeWidth: 2
+      });
+      
+      page.shapes.push(s);
+      
+      let stepCount = 0;
+      const totalSteps = 15;
+      
+      let targetW = Math.random() * 120 + 60;
+      let targetH = Math.random() * 100 + 60;
+      
+      if (type === 'sticky') {
+        const botComments = {
+          'user-aria': [
+            "Review UI Flows\n- Add User Profile\n- Fix sidebar alignments",
+            "Design feedback:\n- Margins look crisp\n- Increase hero sizing",
+            "Color ideas:\n- Pastel gradients\n- Slate border shadows"
+          ],
+          'user-leo': [
+            "Tech Specs\n- Client-side storage\n- Export PNG high DPI\n- Clean imports",
+            "Database Schema\n- Whiteboard table\n- Shape layers array\n- Page collections"
+          ],
+          'user-marcus': [
+            "MVP Priorities\n- High fidelity drawing\n- Drag and resize shapes\n- Save backups"
+          ]
+        };
+        const commentList = botComments[user.id] || ["Mock task"];
+        s.text = commentList[Math.floor(Math.random() * commentList.length)];
+        s.fontSize = 12;
+        s.fillColor = user.id === 'user-aria' ? '#fbcfe8' : user.id === 'user-leo' ? '#bfdbfe' : '#fed7aa'; // Pastel colors
+        targetW = 150;
+        targetH = 150;
+      } else if (type === 'text') {
+        s.text = user.id === 'user-aria' ? "Aria's Layout Sketches" : user.id === 'user-leo' ? "Leo's Component Blocks" : "Marcus's Priorities";
+        s.fontSize = 15;
+        targetW = 200;
+        targetH = 40;
+      }
+      
+      const drawTimer = setInterval(() => {
+        if (!collabActive) {
+          clearInterval(drawTimer);
+          return;
+        }
+        
+        stepCount++;
+        const factor = stepCount / totalSteps;
+        
+        s.x2 = s.x1 + targetW * factor;
+        s.y2 = s.y1 + targetH * factor;
+        
+        // Move remote cursor following shape bounds
+        user.x = s.x2;
+        user.y = s.y2;
+        user.targetX = s.x2;
+        user.targetY = s.y2;
+        
+        draw();
+        
+        if (stepCount >= totalSteps) {
+          clearInterval(drawTimer);
+          user.isDrawing = false;
+          saveState();
+          
+          if (type === 'sticky') {
+            triggerBotInteraction(user, `I dropped a sticky card on the workspace: "${s.text.split('\n')[0]}..."`);
+          }
+        }
+      }, 45);
+    }
+
+    // Append speech and append messages into chat Side panel
+    function triggerBotInteraction(user, text) {
+      showSpeechBubble(user, text);
+      appendChatMessage(user.name, text, user.color);
+    }
+
+    // --- CHAT DOM APPENDS ---
+    function appendChatMessage(sender, text, color) {
+      const feed = document.getElementById('chat-messages');
+      const el = document.createElement('div');
+      el.className = "flex flex-col bg-slate-50 dark:bg-slate-950 p-2.5 rounded-xl border border-slate-100 dark:border-slate-850 transform translate-y-2 opacity-0 transition-all duration-300";
+      
+      const initials = sender.split(' ').map(n => n[0]).join('').substr(0, 2);
+      
+      el.innerHTML = `
+        <div class="flex items-center gap-1.5 mb-1">
+          <div class="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-black text-white shadow-sm" style="background-color: ${color}">
+            ${initials}
+          </div>
+          <span class="font-bold text-[10px] text-slate-500">${sender}</span>
+        </div>
+        <p class="text-slate-700 dark:text-slate-300 font-medium leading-relaxed pl-1">${text}</p>
+      `;
+      
+      feed.appendChild(el);
+      
+      // Trigger animations
+      setTimeout(() => {
+        el.classList.remove('translate-y-2', 'opacity-0');
+      }, 10);
+      
+      // Scroll to bottom
+      feed.scrollTop = feed.scrollHeight;
+      
+      // Glow/Unread indicators
+      if (document.getElementById('chat-sidebar').classList.contains('hidden')) {
+        const badge = document.getElementById('chat-badge');
+        badge.classList.remove('hidden');
+      }
+    }
+
+    function toggleChatSidebar() {
+      const sidebar = document.getElementById('chat-sidebar');
+      const badge = document.getElementById('chat-badge');
+      
+      sidebar.classList.toggle('hidden');
+      if (!sidebar.classList.contains('hidden')) {
+        badge.classList.add('hidden');
+        sidebar.classList.remove('opacity-0', 'translate-y-4');
+        sidebar.classList.add('opacity-100', 'translate-y-0');
+      }
+    }
+
+    function handleUserChatSubmit(e) {
+      e.preventDefault();
+      const input = document.getElementById('chat-input');
+      const text = input.value.trim();
+      if (!text) return;
+      
+      appendChatMessage("You", text, "#6366f1");
+      input.value = '';
+      
+      // Auto reply trigger based on text query parsing
+      if (collabActive) {
+        setTimeout(() => {
+          triggerBotReactionToUser(text);
+        }, 1500);
+      }
+    }
+
+    function triggerBotReactionToUser(msg) {
+      const bot = collabUsers[Math.floor(Math.random() * collabUsers.length)];
+      const query = msg.toLowerCase();
+      
+      let reply = "That sounds super clean! Let's build a concept diagram right here.";
+      
+      if (query.includes('circle') || query.includes('round')) {
+        reply = "I agree! Let me draw a quick circle element.";
+        triggerBotInteraction(bot, reply);
+        setTimeout(() => drawShapeSimulated(bot, 'circle'), 1200);
+      } else if (query.includes('rect') || query.includes('square') || query.includes('box')) {
+        reply = "Perfect. Dragging out a nice rectangular block block now.";
+        triggerBotInteraction(bot, reply);
+        setTimeout(() => drawShapeSimulated(bot, 'rect'), 1200);
+      } else if (query.includes('sticky') || query.includes('card') || query.includes('note')) {
+        reply = "Good thinking! Let's drop a yellow sticky note here.";
+        triggerBotInteraction(bot, reply);
+        setTimeout(() => drawShapeSimulated(bot, 'sticky'), 1200);
+      } else if (query.includes('clear') || query.includes('delete') || query.includes('trash')) {
+        reply = "Wait, let's keep the core ideas on the board first!";
+        triggerBotInteraction(bot, reply);
+      } else if (query.includes('zoom') || query.includes('pan') || query.includes('scale')) {
+        reply = "The zoom makes panning on high resolutions so easy.";
+        triggerBotInteraction(bot, reply);
+      } else {
+        const genericReplies = [
+          "I think that fits our design constraints perfectly.",
+          "Good catch! Let's check Board page 1 to verify.",
+          "Awesome. Marcus, what's your priority on this checklist?",
+          "Sketching that out would make it much easier to discuss.",
+          "Agreed! I will add a sticky block later to verify that model."
+        ];
+        reply = genericReplies[Math.floor(Math.random() * genericReplies.length)];
+        triggerBotInteraction(bot, reply);
+      }
+    }
+
+    // --- INTERACTION HELPER UTILITIES ---
+    function getPointersDistance() {
+      const pts = Array.from(activePointers.values());
+      if (pts.length < 2) return 0;
+      return Math.hypot(pts[0].current.x - pts[1].current.x, pts[0].current.y - pts[1].current.y);
+    }
+
+    function getPointersCenter() {
+      const pts = Array.from(activePointers.values());
+      if (pts.length < 2) return { x: 0, y: 0 };
+      return {
+        x: (pts[0].current.x + pts[1].current.x) / 2,
+        y: (pts[0].current.y + pts[1].current.y) / 2
+      };
+    }
+
+    // System Alert modal drawer
+    let modalActionCallback = null;
+    function showConfirmationModal(title, desc, onConfirm) {
+      document.getElementById('modal-title').innerText = title;
+      document.getElementById('modal-desc').innerText = desc;
+      modalActionCallback = onConfirm;
+      
+      const overlay = document.getElementById('modal-overlay');
+      overlay.classList.remove('hidden');
+    }
+
+    document.getElementById('modal-cancel-btn').addEventListener('click', () => {
+      document.getElementById('modal-overlay').classList.add('hidden');
+      modalActionCallback = null;
+    });
+
+    document.getElementById('modal-confirm-btn').addEventListener('click', () => {
+      if (modalActionCallback) modalActionCallback();
+      document.getElementById('modal-overlay').classList.add('hidden');
+      modalActionCallback = null;
+    });
+
+    // Elegant custom notification banner triggers
+    function showNotification(msg, type = 'info') {
+      const container = document.getElementById('notification-container');
+      const notification = document.createElement('div');
+      
+      let baseStyle = "flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold border shadow-xl backdrop-blur-md transform translate-y-4 opacity-0 transition duration-300 pointer-events-auto ";
+      
+      if (type === 'success') {
+        baseStyle += "bg-emerald-500/90 border-emerald-400 text-white";
+      } else if (type === 'error') {
+        baseStyle += "bg-rose-500/90 border-rose-400 text-white";
+      } else {
+        baseStyle += "bg-slate-800/95 border-slate-700 text-slate-100 dark:bg-slate-900/95";
+      }
+      
+      notification.className = baseStyle;
+      
+      let icon = '<i data-lucide="info" class="w-3.5 h-3.5"></i>';
+      if (type === 'success') icon = '<i data-lucide="check" class="w-3.5 h-3.5"></i>';
+      if (type === 'error') icon = '<i data-lucide="alert-circle" class="w-3.5 h-3.5"></i>';
+      
+      notification.innerHTML = `${icon}<span>${msg}</span>`;
+      container.appendChild(notification);
+      lucide.createIcons();
+      
+      setTimeout(() => {
+        notification.classList.remove('translate-y-4', 'opacity-0');
+      }, 10);
+      
+      setTimeout(() => {
+        notification.classList.add('opacity-0', '-translate-y-2');
+        setTimeout(() => {
+          if (notification.parentNode) container.removeChild(notification);
+        }, 300);
+      }, 3500);
+    }
+  </script>
+</body>
+</html>
