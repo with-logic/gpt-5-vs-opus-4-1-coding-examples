@@ -1,0 +1,1508 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom QR Code Generator - Premium Designer Tool</title>
+    
+    <!-- React & ReactDOM (v18) via CDN -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- Babel Standalone for inlined JSX compiling -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS with custom styling and dark mode support -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f5f3ff',
+                            100: '#ede9fe',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                            900: '#312e81',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- qrcode.js (node-qrcode) CDN for generating QR matrices -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.1/build/qrcode.min.js"></script>
+
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Custom Keyframe Animations */
+        @keyframes slide-up {
+            from { transform: translateY(1rem); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        @keyframes fade-in {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .animate-slide-up {
+            animation: slide-up 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        .animate-fade-in {
+            animation: fade-in 0.2s ease-out forwards;
+        }
+
+        /* Custom styled range input */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: transparent;
+            cursor: pointer;
+        }
+        input[type="range"]::-webkit-slider-runnable-track {
+            background: #e2e8f0;
+            border-radius: 9999px;
+            height: 6px;
+        }
+        .dark input[type="range"]::-webkit-slider-runnable-track {
+            background: #334155;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            background-color: #6366f1;
+            border-radius: 9999px;
+            height: 18px;
+            width: 18px;
+            margin-top: -6px;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            transition: all 0.1s ease;
+        }
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.15);
+            background-color: #4f46e5;
+        }
+        
+        /* Custom styled color input */
+        input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+        input[type="color"]::-webkit-color-swatch {
+            border: none;
+            border-radius: 6px;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-50 transition-colors duration-300 min-h-full flex flex-col">
+
+    <div id="root" class="flex flex-col flex-grow"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        // Custom high-quality SVG Paths for beautiful inline presets
+        const PRESET_LOGOS = {
+            none: null,
+            web: `<svg viewBox="0 0 24 24" width="100" height="100" fill="none" stroke="#1e1b4b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`,
+            wifi: `<svg viewBox="0 0 24 24" width="100" height="100" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20" stroke-width="3"></line></svg>`,
+            email: `<svg viewBox="0 0 24 24" width="100" height="100" fill="none" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>`,
+            github: `<svg viewBox="0 0 24 24" width="100" height="100" fill="#181717" xmlns="http://www.w3.org/2000/svg"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>`,
+            linkedin: `<svg viewBox="0 0 24 24" width="100" height="100" fill="#0077B5" xmlns="http://www.w3.org/2000/svg"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0z"/></svg>`,
+            twitter: `<svg viewBox="0 0 24 24" width="100" height="100" fill="#000000" xmlns="http://www.w3.org/2000/svg"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>`,
+            instagram: `<svg viewBox="0 0 24 24" width="100" height="100" fill="#e1306c" xmlns="http://www.w3.org/2000/svg"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.051.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>`,
+            youtube: `<svg viewBox="0 0 24 24" width="100" height="100" fill="#FF0000" xmlns="http://www.w3.org/2000/svg"><path d="M23.498 6.163a3.003 3.003 0 00-2.11-2.11C19.517 3.545 12 3.545 12 3.545s-7.517 0-9.388.507a3.003 3.003 0 00-2.11 2.11C0 8.033 0 12 0 12s0 3.967.502 5.837a3.003 3.003 0 002.11 2.11c1.871.507 9.388.507 9.388.507s7.517 0 9.388-.507a3.003 3.003 0 002.11-2.11C24 15.967 24 12 24 12s0-3.967-.502-5.837zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>`,
+            whatsapp: `<svg viewBox="0 0 24 24" width="100" height="100" fill="#25D366" xmlns="http://www.w3.org/2000/svg"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L0 24l6.335-1.662c1.746.953 3.71 1.458 5.704 1.459h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>`,
+        };
+
+        const THEME_PRESETS = [
+            { name: "Classic Mono", fg: "#000000", fgEnd: "#000000", fgType: "solid", bg: "#FFFFFF", bgEnd: "#FFFFFF", bgType: "solid", dark: false },
+            { name: "Midnight Glow", fg: "#06b6d4", fgEnd: "#3b82f6", fgType: "linear", bg: "#0f172a", bgEnd: "#1e293b", bgType: "solid", dark: true },
+            { name: "Sunset Horizon", fg: "#f43f5e", fgEnd: "#fb7185", fgType: "linear", bg: "#0f172a", bgEnd: "#1e293b", bgType: "solid", dark: true },
+            { name: "Forest Emerald", fg: "#10b981", fgEnd: "#34d399", fgType: "linear", bg: "#0f172a", bgEnd: "#1e293b", bgType: "solid", dark: true },
+            { name: "Royal Velvet", fg: "#8b5cf6", fgEnd: "#ec4899", fgType: "linear", bg: "#090514", bgEnd: "#090514", bgType: "solid", dark: true },
+            { name: "Golden Cyber", fg: "#f97316", fgEnd: "#eab308", fgType: "linear", bg: "#030712", bgEnd: "#111827", bgType: "solid", dark: true },
+            { name: "Sakura Breeze", fg: "#ec4899", fgEnd: "#f43f5e", fgType: "linear", bg: "#ffffff", bgEnd: "#fdf2f8", bgType: "linear", dark: false },
+        ];
+
+        // Color helper functions
+        function hexToRgb(hex) {
+            const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
+            const fullHex = hex.replace(shorthandRegex, (m, r, g, b) => r + r + g + g + b + b);
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(fullHex);
+            return result ? {
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
+            } : { r: 0, g: 0, b: 0 };
+        }
+
+        function getRelativeLuminance(rgb) {
+            const rs = rgb.r / 255;
+            const gs = rgb.g / 255;
+            const bs = rgb.b / 255;
+
+            const R = rs <= 0.03928 ? rs / 12.92 : Math.pow((rs + 0.055) / 1.055, 2.4);
+            const G = gs <= 0.03928 ? gs / 12.92 : Math.pow((gs + 0.055) / 1.055, 2.4);
+            const B = bs <= 0.03928 ? bs / 12.92 : Math.pow((bs + 0.055) / 1.055, 2.4);
+
+            return 0.2126 * R + 0.7152 * G + 0.0722 * B;
+        }
+
+        function getContrastRatio(fgHex, bgHex, bgType) {
+            if (bgType === 'transparent') {
+                bgHex = '#ffffff'; // assume white bg for contrast calculations
+            }
+            const fgRgb = hexToRgb(fgHex);
+            const bgRgb = hexToRgb(bgHex);
+
+            const fgL = getRelativeLuminance(fgRgb);
+            const bgL = getRelativeLuminance(bgRgb);
+
+            const L1 = Math.max(fgL, bgL);
+            const L2 = Math.min(fgL, bgL);
+
+            return (L1 + 0.05) / (L2 + 0.05);
+        }
+
+        function App() {
+            // App settings state
+            const [theme, setTheme] = useState('dark');
+            const [activeTab, setActiveTab] = useState('content');
+            
+            // Content fields state
+            const [contentType, setContentType] = useState('url');
+            const [rawText, setRawText] = useState('https://github.com');
+            const [wifiSSID, setWifiSSID] = useState('MyHomeWiFi');
+            const [wifiPassword, setWifiPassword] = useState('SuperSecretPass');
+            const [wifiSecurity, setWifiSecurity] = useState('WPA');
+            const [wifiHidden, setWifiHidden] = useState(false);
+            const [emailTo, setEmailTo] = useState('hello@domain.com');
+            const [emailSubject, setEmailSubject] = useState('Inquiry');
+            const [emailBody, setEmailBody] = useState('Hello, I am interested in...');
+            const [phoneNum, setPhoneNum] = useState('+1234567890');
+            const [smsBody, setSmsBody] = useState('Prefilled SMS text');
+            const [vcardFirst, setVcardFirst] = useState('John');
+            const [vcardLast, setVcardLast] = useState('Doe');
+            const [vcardOrg, setVcardOrg] = useState('Innovate Corp');
+            const [vcardTitle, setVcardTitle] = useState('Lead Architect');
+            const [vcardPhone, setVcardPhone] = useState('+1555123456');
+            const [vcardEmail, setVcardEmail] = useState('john.doe@innovate.com');
+            const [vcardUrl, setVcardUrl] = useState('https://innovate.com');
+            const [vcardAddress, setVcardAddress] = useState('123 Tech Way, SF, CA');
+
+            // Style configuration states
+            const [dotsStyle, setDotsStyle] = useState('rounded'); // 'square', 'dots', 'rounded', 'extra-rounded', 'classy-lines'
+            const [cornerOuterStyle, setCornerOuterStyle] = useState('rounded'); // 'square', 'rounded', 'circle', 'leaf', 'shield'
+            const [cornerInnerStyle, setCornerInnerStyle] = useState('rounded'); // 'square', 'rounded', 'circle', 'leaf', 'star'
+            const [ecl, setEcl] = useState('H'); // L, M, Q, H
+
+            // Colors state
+            const [bgColorType, setBgColorType] = useState('solid'); // 'solid', 'linear', 'radial', 'transparent'
+            const [bgColor, setBgColor] = useState('#0f172a');
+            const [bgColorEnd, setBgColorEnd] = useState('#1e293b');
+            const [bgAngle, setBgAngle] = useState(135);
+
+            const [fgColorType, setFgColorType] = useState('linear'); // 'solid', 'linear', 'radial'
+            const [fgColor, setFgColor] = useState('#06b6d4');
+            const [fgColorEnd, setFgColorEnd] = useState('#3b82f6');
+            const [fgAngle, setFgAngle] = useState(135);
+
+            const [customCornerColors, setCustomCornerColors] = useState(false);
+            const [cornerOuterColor, setCornerOuterColor] = useState('#06b6d4');
+            const [cornerInnerColor, setCornerInnerColor] = useState('#3b82f6');
+
+            // Logo Branding state
+            const [logoType, setLogoType] = useState('preset'); // 'none', 'preset', 'upload'
+            const [logoPreset, setLogoPreset] = useState('github');
+            const [logoUploadDataUrl, setLogoUploadDataUrl] = useState('');
+            const [logoScale, setLogoScale] = useState(0.18);
+            const [logoClearSpace, setLogoClearSpace] = useState(true);
+
+            // Export options state
+            const [exportSize, setExportSize] = useState(1024); // 1024, 2048, 4096
+
+            // UI helper state
+            const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+            
+            const canvasRef = useRef(null);
+
+            // Trigger Toast notifications
+            const showToast = (message, type = 'success') => {
+                setToast({ show: true, message, type });
+                setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
+            };
+
+            // Dynamic Dark Theme Handler
+            useEffect(() => {
+                if (theme === 'dark') {
+                    document.documentElement.classList.add('dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                }
+            }, [theme]);
+
+            // Compose raw QR content based on selection
+            const generatedQRContent = useMemo(() => {
+                switch (contentType) {
+                    case 'wifi':
+                        const hiddenPart = wifiHidden ? 'H:true;' : '';
+                        const passwordPart = wifiSecurity !== 'nopass' ? `P:${wifiPassword};` : '';
+                        return `WIFI:S:${wifiSSID};T:${wifiSecurity};${passwordPart}${hiddenPart};`;
+                    case 'email':
+                        return `mailto:${emailTo}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
+                    case 'phone':
+                        if (smsBody) {
+                            return `SMSTO:${phoneNum}:${smsBody}`;
+                        }
+                        return `tel:${phoneNum}`;
+                    case 'vcard':
+                        return `BEGIN:VCARD\nVERSION:3.0\nN:${vcardLast};${vcardFirst};;;\nFN:${vcardFirst} ${vcardLast}\nORG:${vcardOrg}\nTITLE:${vcardTitle}\nTEL;TYPE=CELL:${vcardPhone}\nEMAIL;TYPE=PREF,INTERNET:${vcardEmail}\nURL:${vcardUrl}\nADR;TYPE=WORK:;;${vcardAddress};;;;\nEND:VCARD`;
+                    case 'url':
+                    default:
+                        return rawText;
+                }
+            }, [contentType, rawText, wifiSSID, wifiPassword, wifiSecurity, wifiHidden, emailTo, emailSubject, emailBody, phoneNum, smsBody, vcardFirst, vcardLast, vcardOrg, vcardTitle, vcardPhone, vcardEmail, vcardUrl, vcardAddress]);
+
+            // Calculate WCAG contrast score & live scan safety feedback
+            const contrastMetrics = useMemo(() => {
+                const ratio = getContrastRatio(fgColor, bgColor, bgColorType);
+                let score = "Excellent";
+                let colorClass = "text-emerald-500 dark:text-emerald-400";
+                let bgClass = "bg-emerald-500/15 border-emerald-500/30";
+
+                if (ratio < 3.0) {
+                    score = "Poor Scan Risk";
+                    colorClass = "text-rose-500 dark:text-rose-400";
+                    bgClass = "bg-rose-500/15 border-rose-500/30";
+                } else if (ratio < 4.5) {
+                    score = "Good (Medium Contrast)";
+                    colorClass = "text-amber-500 dark:text-amber-400";
+                    bgClass = "bg-amber-500/15 border-amber-500/30";
+                }
+
+                const warnings = [];
+                if (ratio < 4.5 && bgColorType !== 'transparent') {
+                    warnings.push("Contrast ratio is low. Consider darkening foreground or lightening background for reliable outdoor scanning.");
+                }
+                if (logoType !== 'none' && ecl !== 'H') {
+                    warnings.push("You are using a center logo. Set Error Correction to 'High (30%)' in the Style tab to ensure perfect scannability!");
+                }
+                if ((dotsStyle === 'dots' || dotsStyle === 'classy-lines') && ecl === 'L') {
+                    warnings.push("Rounded module styles reduce scanning density tolerance. Recommend raising Error Correction level.");
+                }
+
+                return { ratio, score, colorClass, bgClass, warnings };
+            }, [fgColor, bgColor, bgColorType, logoType, ecl, dotsStyle]);
+
+            // Apply Theme Preset helper
+            const applyPreset = (preset) => {
+                setBgColor(preset.bg);
+                setBgColorEnd(preset.bgEnd);
+                setBgColorType(preset.bgType);
+                setFgColor(preset.fg);
+                setFgColorEnd(preset.fgEnd);
+                setFgColorType(preset.fgType);
+                setTheme(preset.dark ? 'dark' : 'light');
+                showToast(`Applied preset: ${preset.name}`);
+            };
+
+            // Custom local image file uploader
+            const handleLogoUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        setLogoUploadDataUrl(event.target.result);
+                        setLogoType('upload');
+                        showToast("Logo uploaded successfully!");
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            // Live high-fidelity rendering pipeline using canvas API
+            useEffect(() => {
+                if (!canvasRef.current) return;
+
+                // Load appropriate logo image if configured
+                let logoImage = null;
+                const renderWithLogo = () => {
+                    try {
+                        const qr = QRCode.create(generatedQRContent, { errorCorrectionLevel: ecl });
+                        drawQRCodeOnCanvas(canvasRef.current, qr, logoImage);
+                    } catch (err) {
+                        console.error("QR drawing failure: ", err);
+                    }
+                };
+
+                if (logoType === 'preset' && PRESET_LOGOS[logoPreset]) {
+                    logoImage = new Image();
+                    logoImage.onload = renderWithLogo;
+                    logoImage.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(PRESET_LOGOS[logoPreset]);
+                } else if (logoType === 'upload' && logoUploadDataUrl) {
+                    logoImage = new Image();
+                    logoImage.onload = renderWithLogo;
+                    logoImage.src = logoUploadDataUrl;
+                } else {
+                    renderWithLogo();
+                }
+            }, [
+                generatedQRContent, dotsStyle, cornerOuterStyle, cornerInnerStyle, ecl,
+                bgColorType, bgColor, bgColorEnd, bgAngle,
+                fgColorType, fgColor, fgColorEnd, fgAngle,
+                customCornerColors, cornerOuterColor, cornerInnerColor,
+                logoType, logoPreset, logoUploadDataUrl, logoScale, logoClearSpace, exportSize
+            ]);
+
+            // The main high-fidelity drawing logic
+            const drawQRCodeOnCanvas = (canvas, qr, logoImg) => {
+                const ctx = canvas.getContext('2d');
+                const size = qr.modules.size;
+                
+                // Set high internal dimensions for crisp exports and display
+                canvas.width = exportSize;
+                canvas.height = exportSize;
+
+                // Clear entire canvas
+                ctx.clearRect(0, 0, exportSize, exportSize);
+
+                // 1. Render Background
+                if (bgColorType !== 'transparent') {
+                    ctx.fillStyle = bgColor;
+                    ctx.fillRect(0, 0, exportSize, exportSize);
+
+                    if (bgColorType === 'linear') {
+                        const angleRad = (bgAngle * Math.PI) / 180;
+                        const x1 = exportSize / 2 - (Math.cos(angleRad) * exportSize) / 2;
+                        const y1 = exportSize / 2 - (Math.sin(angleRad) * exportSize) / 2;
+                        const x2 = exportSize / 2 + (Math.cos(angleRad) * exportSize) / 2;
+                        const y2 = exportSize / 2 + (Math.sin(angleRad) * exportSize) / 2;
+                        const grad = ctx.createLinearGradient(x1, y1, x2, y2);
+                        grad.addColorStop(0, bgColor);
+                        grad.addColorStop(1, bgColorEnd);
+                        ctx.fillStyle = grad;
+                        ctx.fillRect(0, 0, exportSize, exportSize);
+                    } else if (bgColorType === 'radial') {
+                        const grad = ctx.createRadialGradient(
+                            exportSize / 2, exportSize / 2, 0,
+                            exportSize / 2, exportSize / 2, exportSize * 0.7
+                        );
+                        grad.addColorStop(0, bgColor);
+                        grad.addColorStop(1, bgColorEnd);
+                        ctx.fillStyle = grad;
+                        ctx.fillRect(0, 0, exportSize, exportSize);
+                    }
+                }
+
+                // 2. Setup Foreground/Module Brush
+                const padding = exportSize * 0.08; // dynamic padding
+                const qrSize = exportSize - padding * 2;
+                const cellSize = qrSize / size;
+
+                let fgBrush = fgColor;
+                if (fgColorType === 'linear') {
+                    const angleRad = (fgAngle * Math.PI) / 180;
+                    const x1 = padding + qrSize / 2 - (Math.cos(angleRad) * qrSize) / 2;
+                    const y1 = padding + qrSize / 2 - (Math.sin(angleRad) * qrSize) / 2;
+                    const x2 = padding + qrSize / 2 + (Math.cos(angleRad) * qrSize) / 2;
+                    const y2 = padding + qrSize / 2 + (Math.sin(angleRad) * qrSize) / 2;
+                    const grad = ctx.createLinearGradient(x1, y1, x2, y2);
+                    grad.addColorStop(0, fgColor);
+                    grad.addColorStop(1, fgColorEnd);
+                    fgBrush = grad;
+                } else if (fgColorType === 'radial') {
+                    const grad = ctx.createRadialGradient(
+                        padding + qrSize / 2, padding + qrSize / 2, 0,
+                        padding + qrSize / 2, padding + qrSize / 2, qrSize * 0.7
+                    );
+                    grad.addColorStop(0, fgColor);
+                    grad.addColorStop(1, fgColorEnd);
+                    fgBrush = grad;
+                }
+
+                // Utility: Draw Round Rect path
+                const drawRoundRect = (cPath, rx, ry, w, h, r) => {
+                    let rObj = typeof r === 'number' ? { tl: r, tr: r, br: r, bl: r } : r;
+                    cPath.moveTo(rx + rObj.tl, ry);
+                    cPath.lineTo(rx + w - rObj.tr, ry);
+                    cPath.arcTo(rx + w, ry, rx + w, ry + rObj.tr, rObj.tr);
+                    cPath.lineTo(rx + w, ry + h - rObj.br);
+                    cPath.arcTo(rx + w, ry + h, rx + w - rObj.br, ry + h, rObj.br);
+                    cPath.lineTo(rx + rObj.bl, ry + h);
+                    cPath.arcTo(rx, ry + h, rx, ry + h - rObj.bl, rObj.bl);
+                    cPath.lineTo(rx, ry + rObj.tl);
+                    cPath.arcTo(rx, ry, rx + rObj.tl, ry, rObj.tl);
+                    cPath.closePath();
+                };
+
+                // 3. Draw Data Grid
+                for (let r = 0; r < size; r++) {
+                    for (let c = 0; c < size; c++) {
+                        // Skip Finder Patterns - we style and render them separately
+                        const isTopLeft = r < 7 && c < 7;
+                        const isTopRight = r < 7 && c >= size - 7;
+                        const isBottomLeft = r >= size - 7 && c < 7;
+                        if (isTopLeft || isTopRight || isBottomLeft) continue;
+
+                        // Check module state (active / inactive)
+                        const isActive = typeof qr.modules.get === 'function' 
+                            ? qr.modules.get(r, c) 
+                            : qr.modules.data[r * size + c];
+                        if (!isActive) continue;
+
+                        // Background subtraction zone for center logo
+                        if (logoClearSpace && logoImg) {
+                            const centerMin = (size * (1 - logoScale)) / 2 - 0.7;
+                            const centerMax = (size * (1 + logoScale)) / 2 - 0.3;
+                            if (r >= centerMin && r <= centerMax && c >= centerMin && c <= centerMax) {
+                                continue;
+                            }
+                        }
+
+                        // Coordinates on canvas
+                        const x = padding + c * cellSize;
+                        const y = padding + r * cellSize;
+
+                        ctx.fillStyle = fgBrush;
+                        ctx.beginPath();
+
+                        if (dotsStyle === 'dots') {
+                            ctx.arc(x + cellSize / 2, y + cellSize / 2, cellSize * 0.42, 0, Math.PI * 2);
+                            ctx.fill();
+                        } else if (dotsStyle === 'rounded') {
+                            drawRoundRect(ctx, x + cellSize * 0.05, y + cellSize * 0.05, cellSize * 0.9, cellSize * 0.9, cellSize * 0.25);
+                            ctx.fill();
+                        } else if (dotsStyle === 'extra-rounded') {
+                            drawRoundRect(ctx, x + cellSize * 0.05, y + cellSize * 0.05, cellSize * 0.9, cellSize * 0.9, cellSize * 0.45);
+                            ctx.fill();
+                        } else if (dotsStyle === 'classy-lines') {
+                            // Connected neighbors drawing pipeline
+                            const checkCell = (row, col) => {
+                                if (row < 0 || row >= size || col < 0 || col >= size) return false;
+                                if (row < 7 && col < 7) return false;
+                                if (row < 7 && col >= size - 7) return false;
+                                if (row >= size - 7 && col < 7) return false;
+                                return typeof qr.modules.get === 'function' 
+                                    ? qr.modules.get(row, col) 
+                                    : qr.modules.data[row * size + col];
+                            };
+
+                            const hasTop = checkCell(r - 1, c);
+                            const hasBottom = checkCell(r + 1, c);
+                            const hasLeft = checkCell(r, c - 1);
+                            const hasRight = checkCell(r, c + 1);
+
+                            const radius = cellSize * 0.45;
+                            const rTopLeft = (hasTop || hasLeft) ? 0 : radius;
+                            const rTopRight = (hasTop || hasRight) ? 0 : radius;
+                            const rBottomLeft = (hasBottom || hasLeft) ? 0 : radius;
+                            const rBottomRight = (hasBottom || hasRight) ? 0 : radius;
+
+                            drawRoundRect(ctx, x, y, cellSize, cellSize, {
+                                tl: rTopLeft, tr: rTopRight, bl: rBottomLeft, br: rBottomRight
+                            });
+                            ctx.fill();
+                        } else {
+                            // Classic crisp block
+                            ctx.fillRect(x, y, cellSize, cellSize);
+                        }
+                    }
+                }
+
+                // 4. Draw Customized Corners Finder
+                const drawCornerFinder = (colOffset, rowOffset) => {
+                    const cx = padding + colOffset * cellSize;
+                    const cy = padding + rowOffset * cellSize;
+                    const fWidth = cellSize * 7;
+                    const strokeWidth = cellSize;
+                    
+                    ctx.save();
+                    
+                    // Outer frame style
+                    ctx.strokeStyle = customCornerColors ? cornerOuterColor : fgBrush;
+                    ctx.lineWidth = strokeWidth;
+
+                    const rx = cx + strokeWidth / 2;
+                    const ry = cy + strokeWidth / 2;
+                    const rw = fWidth - strokeWidth;
+                    const rh = fWidth - strokeWidth;
+
+                    ctx.beginPath();
+                    if (cornerOuterStyle === 'rounded') {
+                        drawRoundRect(ctx, rx, ry, rw, rh, cellSize * 1.5);
+                    } else if (cornerOuterStyle === 'circle') {
+                        ctx.arc(cx + fWidth / 2, cy + fWidth / 2, (fWidth - strokeWidth) / 2, 0, Math.PI * 2);
+                    } else if (cornerOuterStyle === 'leaf') {
+                        const r = rw / 2;
+                        ctx.moveTo(rx, ry); // Sharp top-left
+                        ctx.lineTo(rx + rw - r, ry);
+                        ctx.arcTo(rx + rw, ry, rx + rw, ry + r, r);
+                        ctx.lineTo(rx + rw, ry + rh); // Sharp bottom-right
+                        ctx.lineTo(rx + r, ry + rh);
+                        ctx.arcTo(rx, ry + rh, rx, ry + rh - r, r);
+                        ctx.lineTo(rx, ry);
+                        ctx.closePath();
+                    } else if (cornerOuterStyle === 'shield') {
+                        const rSmall = rw * 0.15;
+                        const rLarge = rw * 0.45;
+                        ctx.moveTo(rx + rSmall, ry);
+                        ctx.lineTo(rx + rw - rSmall, ry);
+                        ctx.arcTo(rx + rw, ry, rx + rw, ry + rSmall, rSmall);
+                        ctx.lineTo(rx + rw, ry + rh - rLarge);
+                        ctx.arcTo(rx + rw, ry + rh, rx + rw - rLarge, ry + rh, rLarge);
+                        ctx.lineTo(rx + rLarge, ry + rh);
+                        ctx.arcTo(rx, ry + rh, rx, ry + rh - rLarge, rLarge);
+                        ctx.lineTo(rx, ry + rSmall);
+                        ctx.arcTo(rx, ry, rx + rSmall, ry, rSmall);
+                        ctx.closePath();
+                    } else {
+                        // Standard Square Frame
+                        ctx.rect(rx, ry, rw, rh);
+                    }
+                    ctx.stroke();
+
+                    // Inner Dot style
+                    ctx.fillStyle = customCornerColors ? cornerInnerColor : fgBrush;
+                    const ix = cx + cellSize * 2;
+                    const iy = cy + cellSize * 2;
+                    const iw = cellSize * 3;
+
+                    ctx.beginPath();
+                    if (cornerInnerStyle === 'rounded') {
+                        drawRoundRect(ctx, ix, iy, iw, iw, cellSize * 0.8);
+                        ctx.fill();
+                    } else if (cornerInnerStyle === 'circle') {
+                        ctx.arc(ix + iw / 2, iy + iw / 2, iw / 2, 0, Math.PI * 2);
+                        ctx.fill();
+                    } else if (cornerInnerStyle === 'leaf') {
+                        const r = iw / 2;
+                        ctx.moveTo(ix, iy); // Sharp top-left
+                        ctx.lineTo(ix + iw - r, iy);
+                        ctx.arcTo(ix + iw, iy, ix + iw, iy + r, r);
+                        ctx.lineTo(ix + iw, iy + iw); // Sharp bottom-right
+                        ctx.lineTo(ix + r, iy + iw);
+                        ctx.arcTo(ix, iy + iw, ix, iy + iw - r, r);
+                        ctx.lineTo(ix, iy);
+                        ctx.closePath();
+                        ctx.fill();
+                    } else if (cornerInnerStyle === 'star') {
+                        // Diamond cut
+                        ctx.moveTo(ix + iw / 2, iy);
+                        ctx.lineTo(ix + iw, iy + iw / 2);
+                        ctx.lineTo(ix + iw / 2, iy + iw);
+                        ctx.lineTo(ix, iy + iw / 2);
+                        ctx.closePath();
+                        ctx.fill();
+                    } else {
+                        // Square Inner Dot
+                        ctx.fillRect(ix, iy, iw, iw);
+                    }
+
+                    ctx.restore();
+                };
+
+                drawCornerFinder(0, 0); // Top-Left
+                drawCornerFinder(size - 7, 0); // Top-Right
+                drawCornerFinder(0, size - 7); // Bottom-Left
+
+                // 5. Draw Branding Logo overlay
+                if (logoImg) {
+                    const lSize = qrSize * logoScale;
+                    const lx = padding + (qrSize - lSize) / 2;
+                    const ly = padding + (qrSize - lSize) / 2;
+
+                    if (logoClearSpace) {
+                        ctx.fillStyle = bgColorType === 'transparent' ? '#ffffff' : bgColor;
+                        if (bgColorType === 'linear' || bgColorType === 'radial') {
+                            // Draw background matching gradient or just use BgColor for simplicity
+                            ctx.fillStyle = bgColor;
+                        }
+
+                        const borderPadding = cellSize * 0.75;
+                        const bx = lx - borderPadding;
+                        const by = ly - borderPadding;
+                        const bw = lSize + borderPadding * 2;
+                        
+                        ctx.beginPath();
+                        drawRoundRect(ctx, bx, by, bw, bw, bw * 0.22);
+                        ctx.fill();
+
+                        // Aesthetic thin border around logo container
+                        ctx.lineWidth = cellSize * 0.2;
+                        ctx.strokeStyle = customCornerColors ? cornerOuterColor : fgBrush;
+                        ctx.beginPath();
+                        drawRoundRect(ctx, bx, by, bw, bw, bw * 0.22);
+                        ctx.stroke();
+                    }
+
+                    try {
+                        ctx.drawImage(logoImg, lx, ly, lSize, lSize);
+                    } catch (err) {
+                        console.error("Image render crash: ", err);
+                    }
+                }
+            };
+
+            // Download Trigger
+            const downloadPNG = () => {
+                if (!canvasRef.current) return;
+                const url = canvasRef.current.toDataURL("image/png");
+                const link = document.createElement('a');
+                link.download = `custom_qr_${contentType}_${exportSize}px.png`;
+                link.href = url;
+                link.click();
+                showToast(`Downloaded PNG (${exportSize}x${exportSize}px)`);
+            };
+
+            // Copy PNG to Clipboard
+            const copyToClipboard = () => {
+                if (!canvasRef.current) return;
+                try {
+                    canvasRef.current.toBlob((blob) => {
+                        if (blob) {
+                            navigator.clipboard.write([
+                                new ClipboardItem({ 'image/png': blob })
+                            ]).then(() => {
+                                showToast("QR Code copied to clipboard!");
+                            }).catch((err) => {
+                                console.error("Clipboard blocked: ", err);
+                                showToast("Clipboard write error. Please try downloading.", "error");
+                            });
+                        }
+                    });
+                } catch (e) {
+                    showToast("Browser block or mismatch. Try downloading.", "error");
+                }
+            };
+
+            // Settings reset
+            const handleReset = () => {
+                setDotsStyle('rounded');
+                setCornerOuterStyle('rounded');
+                setCornerInnerStyle('rounded');
+                setEcl('H');
+                setBgColorType('solid');
+                setBgColor('#0f172a');
+                setFgColorType('linear');
+                setFgColor('#06b6d4');
+                setFgColorEnd('#3b82f6');
+                setCustomCornerColors(false);
+                setLogoType('none');
+                showToast("Configuration reset to default.");
+            };
+
+            return (
+                <div className="flex-grow flex flex-col bg-slate-900 text-slate-100 transition-colors duration-200">
+                    
+                    {/* Header */}
+                    <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-50 px-6 py-4 flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 bg-gradient-to-tr from-brand-600 to-indigo-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h2M4 8h16M4 16h16" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                                    QRCraft <span className="text-xs bg-indigo-500/15 text-indigo-400 font-semibold px-2 py-0.5 rounded-full border border-indigo-500/30">PRO</span>
+                                </h1>
+                                <p className="text-xs text-slate-400 hidden sm:block">Custom Designer QR Code Platform</p>
+                            </div>
+                        </div>
+
+                        {/* Top controls */}
+                        <div className="flex items-center space-x-4">
+                            <button 
+                                onClick={() => applyPreset(THEME_PRESETS[Math.floor(Math.random() * THEME_PRESETS.length)])}
+                                className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium px-3 py-2 rounded-lg transition border border-slate-700 flex items-center space-x-1.5"
+                            >
+                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                                </svg>
+                                <span>Random Preset</span>
+                            </button>
+                            <button 
+                                onClick={handleReset}
+                                className="text-xs hover:text-white text-slate-400 font-medium px-2 py-2 rounded-lg transition"
+                                title="Reset to Defaults"
+                            >
+                                Reset
+                            </button>
+                        </div>
+                    </header>
+
+                    {/* Main workspace */}
+                    <main className="flex-grow max-w-7xl w-full mx-auto px-4 py-8 lg:px-8 flex flex-col lg:grid lg:grid-cols-12 gap-8">
+                        
+                        {/* LEFT COLUMN: Controls Accordion */}
+                        <div className="lg:col-span-7 flex flex-col space-y-6">
+                            
+                            {/* Preset color shortcuts slider */}
+                            <div className="bg-slate-800/60 border border-slate-700/60 rounded-2xl p-4">
+                                <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Quick Aesthetic Themes</h3>
+                                <div className="flex space-x-2.5 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-slate-700">
+                                    {THEME_PRESETS.map((p, idx) => (
+                                        <button
+                                            key={idx}
+                                            onClick={() => applyPreset(p)}
+                                            className="flex-shrink-0 bg-slate-900 hover:bg-slate-950/80 border border-slate-700/80 px-3 py-2 rounded-xl text-xs font-medium flex items-center space-x-2 transition hover:border-slate-500"
+                                        >
+                                            <span 
+                                                className="w-3.5 h-3.5 rounded-full inline-block shadow-sm"
+                                                style={{ background: p.fgType === 'linear' ? `linear-gradient(${p.fgAngle}deg, ${p.fg}, ${p.fgEnd})` : p.fg }}
+                                            />
+                                            <span>{p.name}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Main Tabs Navigation */}
+                            <div className="flex border-b border-slate-800 space-x-6">
+                                {[
+                                    { id: 'content', label: '1. Content', icon: 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z' },
+                                    { id: 'style', label: '2. Shapes', icon: 'M4 5a1 1 0 01.707-.293l12 12a1 1 0 01-.32 1.586l-12-12A1 1 0 014 5zm1.586 16.586L18 9.172l1.414 1.414L7 23H5.586z' },
+                                    { id: 'colors', label: '3. Colors', icon: 'M7 21a4 4 0 01-4-4c0-2.39 2.5-5.338 4.7-8.1C8.2 8.2 9 8 9 8s-.2.8-1.1 1.7C5.1 12.5 5 14.8 5 17a2 2 0 002 2h10a2 2 0 002-2c0-3.3-3.3-6.1-5-8.1a.7.7 0 010-1c.9-1.1 2.5-3 3-5h.5a1.5 1.5 0 011.5 1.5V17a4 4 0 01-4 4H7z' },
+                                    { id: 'logo', label: '4. Logo', icon: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z' },
+                                    { id: 'export', label: '5. Export', icon: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4' },
+                                ].map((t) => (
+                                    <button
+                                        key={t.id}
+                                        onClick={() => setActiveTab(t.id)}
+                                        className={`pb-3.5 text-sm font-semibold border-b-2 transition flex items-center gap-2 ${activeTab === t.id ? 'border-brand-500 text-brand-400' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+                                    >
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d={t.icon} />
+                                        </svg>
+                                        {t.label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* TAB PANELS */}
+                            <div className="bg-slate-800/40 border border-slate-800 rounded-2xl p-6 min-h-[360px] flex flex-col justify-between">
+                                
+                                {/* TAB 1: Content Fields */}
+                                {activeTab === 'content' && (
+                                    <div className="space-y-5 animate-fade-in">
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Select QR Type</label>
+                                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                                                {[
+                                                    { id: 'url', name: 'Web/URL' },
+                                                    { id: 'wifi', name: 'WiFi' },
+                                                    { id: 'email', name: 'Email' },
+                                                    { id: 'phone', name: 'Phone/SMS' },
+                                                    { id: 'vcard', name: 'vCard (Contact)' }
+                                                ].map((t) => (
+                                                    <button
+                                                        key={t.id}
+                                                        onClick={() => setContentType(t.id)}
+                                                        className={`py-2 px-3 text-xs rounded-xl font-medium border transition ${contentType === t.id ? 'bg-indigo-600 border-indigo-500 text-white shadow-md shadow-indigo-600/10' : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'}`}
+                                                    >
+                                                        {t.name}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="border-t border-slate-800 pt-4">
+                                            {/* URL Content TYPE */}
+                                            {contentType === 'url' && (
+                                                <div className="space-y-2">
+                                                    <label className="block text-sm font-medium text-slate-300">Target Website or Plain Text</label>
+                                                    <textarea 
+                                                        value={rawText} 
+                                                        onChange={(e) => setRawText(e.target.value)}
+                                                        placeholder="Enter URL (e.g., https://example.com) or custom text here..."
+                                                        className="w-full h-24 bg-slate-900 border border-slate-700/80 rounded-xl px-4 py-3 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition text-sm resize-none"
+                                                    />
+                                                </div>
+                                            )}
+
+                                            {/* WIFI Content TYPE */}
+                                            {contentType === 'wifi' && (
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                    <div className="space-y-1.5">
+                                                        <label className="block text-sm font-medium text-slate-300">Network Name (SSID)</label>
+                                                        <input 
+                                                            type="text" 
+                                                            value={wifiSSID} 
+                                                            onChange={(e) => setWifiSSID(e.target.value)}
+                                                            className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-4 py-2.5 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                                            placeholder="Home-Network"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1.5">
+                                                        <label className="block text-sm font-medium text-slate-300">Security Type</label>
+                                                        <select 
+                                                            value={wifiSecurity} 
+                                                            onChange={(e) => setWifiSecurity(e.target.value)}
+                                                            className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-4 py-2.5 text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                                        >
+                                                            <option value="WPA">WPA / WPA2 (Recommended)</option>
+                                                            <option value="WEP">WEP (Legacy)</option>
+                                                            <option value="nopass">Unsecured (None)</option>
+                                                        </select>
+                                                    </div>
+                                                    {wifiSecurity !== 'nopass' && (
+                                                        <div className="space-y-1.5 sm:col-span-2">
+                                                            <label className="block text-sm font-medium text-slate-300">Network Password</label>
+                                                            <input 
+                                                                type="text" 
+                                                                value={wifiPassword} 
+                                                                onChange={(e) => setWifiPassword(e.target.value)}
+                                                                className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-4 py-2.5 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                                                placeholder="••••••••••••"
+                                                            />
+                                                        </div>
+                                                    )}
+                                                    <div className="flex items-center space-x-2 pt-2 sm:col-span-2">
+                                                        <input 
+                                                            type="checkbox" 
+                                                            id="wifiHidden" 
+                                                            checked={wifiHidden} 
+                                                            onChange={(e) => setWifiHidden(e.target.checked)}
+                                                            className="w-4 h-4 text-indigo-600 bg-slate-900 border-slate-700 rounded focus:ring-indigo-500"
+                                                        />
+                                                        <label htmlFor="wifiHidden" className="text-sm text-slate-300 select-none cursor-pointer">Hidden Network</label>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* EMAIL Content TYPE */}
+                                            {contentType === 'email' && (
+                                                <div className="space-y-3">
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                        <div className="space-y-1">
+                                                            <label className="block text-sm font-medium text-slate-300">Email Recipient</label>
+                                                            <input 
+                                                                type="email" 
+                                                                value={emailTo} 
+                                                                onChange={(e) => setEmailTo(e.target.value)}
+                                                                className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-4 py-2.5 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                                                placeholder="user@domain.com"
+                                                            />
+                                                        </div>
+                                                        <div className="space-y-1">
+                                                            <label className="block text-sm font-medium text-slate-300">Subject Line</label>
+                                                            <input 
+                                                                type="text" 
+                                                                value={emailSubject} 
+                                                                onChange={(e) => setEmailSubject(e.target.value)}
+                                                                className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-4 py-2.5 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                                                placeholder="Hello There"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="block text-sm font-medium text-slate-300">Email Body</label>
+                                                        <textarea 
+                                                            value={emailBody} 
+                                                            onChange={(e) => setEmailBody(e.target.value)}
+                                                            className="w-full h-20 bg-slate-900 border border-slate-700/80 rounded-xl px-4 py-2.5 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm resize-none"
+                                                            placeholder="Message body copy..."
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* PHONE SMS Content TYPE */}
+                                            {contentType === 'phone' && (
+                                                <div className="space-y-3">
+                                                    <div className="space-y-1">
+                                                        <label className="block text-sm font-medium text-slate-300">Phone Number (with country code)</label>
+                                                        <input 
+                                                            type="text" 
+                                                            value={phoneNum} 
+                                                            onChange={(e) => setPhoneNum(e.target.value)}
+                                                            className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-4 py-2.5 text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                                                            placeholder="+15550199"
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="block text-sm font-medium text-slate-300">Prefilled SMS Message (Optional)</label>
+                                                        <textarea 
+                                                            value={smsBody} 
+                                                            onChange={(e) => setSmsBody(e.target.value)}
+                                                            className="w-full h-20 bg-slate-900 border border-slate-700/80 rounded-xl px-4 py-2.5 text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm resize-none"
+                                                            placeholder="Type SMS text..."
+                                                        />
+                                                        <p className="text-xs text-slate-500">Leaving this blank generates a standard tap-to-dial phone number link.</p>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* VCARD Content TYPE */}
+                                            {contentType === 'vcard' && (
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-64 overflow-y-auto pr-1">
+                                                    <div className="space-y-1">
+                                                        <label className="block text-xs text-slate-400">First Name</label>
+                                                        <input type="text" value={vcardFirst} onChange={(e) => setVcardFirst(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-slate-100 text-xs" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="block text-xs text-slate-400">Last Name</label>
+                                                        <input type="text" value={vcardLast} onChange={(e) => setVcardLast(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-slate-100 text-xs" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="block text-xs text-slate-400">Company</label>
+                                                        <input type="text" value={vcardOrg} onChange={(e) => setVcardOrg(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-slate-100 text-xs" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="block text-xs text-slate-400">Job Title</label>
+                                                        <input type="text" value={vcardTitle} onChange={(e) => setVcardTitle(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-slate-100 text-xs" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="block text-xs text-slate-400">Phone</label>
+                                                        <input type="text" value={vcardPhone} onChange={(e) => setVcardPhone(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-slate-100 text-xs" />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="block text-xs text-slate-400">Email</label>
+                                                        <input type="email" value={vcardEmail} onChange={(e) => setVcardEmail(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-slate-100 text-xs" />
+                                                    </div>
+                                                    <div className="space-y-1 sm:col-span-2">
+                                                        <label className="block text-xs text-slate-400">Website</label>
+                                                        <input type="text" value={vcardUrl} onChange={(e) => setVcardUrl(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-slate-100 text-xs" />
+                                                    </div>
+                                                    <div className="space-y-1 sm:col-span-2">
+                                                        <label className="block text-xs text-slate-400">Office Address</label>
+                                                        <input type="text" value={vcardAddress} onChange={(e) => setVcardAddress(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-slate-100 text-xs" />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* TAB 2: Style Shapes */}
+                                {activeTab === 'style' && (
+                                    <div className="space-y-5 animate-fade-in">
+                                        {/* Dots style */}
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2.5">Data Modules Shape</label>
+                                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                                                {[
+                                                    { id: 'square', name: 'Classic' },
+                                                    { id: 'rounded', name: 'Rounded' },
+                                                    { id: 'extra-rounded', name: 'Pill Round' },
+                                                    { id: 'dots', name: 'Circle Dots' },
+                                                    { id: 'classy-lines', name: 'Connected' }
+                                                ].map((s) => (
+                                                    <button
+                                                        key={s.id}
+                                                        onClick={() => setDotsStyle(s.id)}
+                                                        className={`py-2.5 px-3 text-xs rounded-xl font-medium border text-center transition ${dotsStyle === s.id ? 'bg-indigo-600 border-indigo-500 text-white shadow-md' : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'}`}
+                                                    >
+                                                        {s.name}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* Corner Finders Ring and Dot style */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-800/80 pt-4">
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Corner Outer Ring</label>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    {[
+                                                        { id: 'square', name: 'Square' },
+                                                        { id: 'rounded', name: 'Rounded' },
+                                                        { id: 'circle', name: 'Circle' },
+                                                        { id: 'leaf', name: 'Leaf Arc' },
+                                                        { id: 'shield', name: 'Shield' }
+                                                    ].map((s) => (
+                                                        <button
+                                                            key={s.id}
+                                                            onClick={() => setCornerOuterStyle(s.id)}
+                                                            className={`py-2 px-3 text-xs rounded-xl font-medium border transition ${cornerOuterStyle === s.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'}`}
+                                                        >
+                                                            {s.name}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Corner Inner Dot</label>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    {[
+                                                        { id: 'square', name: 'Square' },
+                                                        { id: 'rounded', name: 'Rounded' },
+                                                        { id: 'circle', name: 'Circle' },
+                                                        { id: 'leaf', name: 'Leaf Arc' },
+                                                        { id: 'star', name: 'Diamond' }
+                                                    ].map((s) => (
+                                                        <button
+                                                            key={s.id}
+                                                            onClick={() => setCornerInnerStyle(s.id)}
+                                                            className={`py-2 px-3 text-xs rounded-xl font-medium border transition ${cornerInnerStyle === s.id ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'}`}
+                                                        >
+                                                            {s.name}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Error Correction Level */}
+                                        <div className="border-t border-slate-800/80 pt-4">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">Error Correction Level (ECL)</label>
+                                                <span className="text-xs text-indigo-400 font-semibold">{ecl === 'L' ? 'L (7%)' : ecl === 'M' ? 'M (15%)' : ecl === 'Q' ? 'Q (25%)' : 'H (30% - Highly Recommended)'}</span>
+                                            </div>
+                                            <div className="grid grid-cols-4 gap-2">
+                                                {[
+                                                    { id: 'L', desc: 'L (7% Density)' },
+                                                    { id: 'M', desc: 'M (15% Density)' },
+                                                    { id: 'Q', desc: 'Q (25% Density)' },
+                                                    { id: 'H', desc: 'H (30% High Density)' }
+                                                ].map((e) => (
+                                                    <button
+                                                        key={e.id}
+                                                        onClick={() => setEcl(e.id)}
+                                                        className={`py-2 px-2 text-xs rounded-xl font-medium border transition ${ecl === e.id ? 'bg-indigo-600 border-indigo-500 text-white shadow-md' : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'}`}
+                                                    >
+                                                        {e.id}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            <p className="text-[11px] text-slate-500 mt-1.5">Higher error correction enables code recovery even if up to 30% of modules are damaged, stained, or blocked by a logo.</p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* TAB 3: Colors Editor */}
+                                {activeTab === 'colors' && (
+                                    <div className="space-y-4 animate-fade-in">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            
+                                            {/* Foreground controls */}
+                                            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-3">
+                                                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wide">Foreground Styling</h4>
+                                                
+                                                <div className="space-y-1">
+                                                    <label className="block text-xs text-slate-400">Color Palette Mode</label>
+                                                    <select 
+                                                        value={fgColorType} 
+                                                        onChange={(e) => setFgColorType(e.target.value)}
+                                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-100 focus:outline-none"
+                                                    >
+                                                        <option value="solid">Solid Color</option>
+                                                        <option value="linear">Linear Gradient</option>
+                                                        <option value="radial">Radial Gradient</option>
+                                                    </select>
+                                                </div>
+
+                                                <div className="flex items-center gap-3">
+                                                    <div className="space-y-1">
+                                                        <label className="block text-[10px] text-slate-500">Color 1</label>
+                                                        <div className="flex items-center gap-2 bg-slate-950 rounded-lg p-1 px-2 border border-slate-800">
+                                                            <input type="color" value={fgColor} onChange={(e) => setFgColor(e.target.value)} className="w-7 h-7 bg-transparent cursor-pointer" />
+                                                            <span className="text-xs font-mono uppercase text-slate-300">{fgColor}</span>
+                                                        </div>
+                                                    </div>
+                                                    {fgColorType !== 'solid' && (
+                                                        <div className="space-y-1">
+                                                            <label className="block text-[10px] text-slate-500">Color 2</label>
+                                                            <div className="flex items-center gap-2 bg-slate-950 rounded-lg p-1 px-2 border border-slate-800">
+                                                                <input type="color" value={fgColorEnd} onChange={(e) => setFgColorEnd(e.target.value)} className="w-7 h-7 bg-transparent cursor-pointer" />
+                                                                <span className="text-xs font-mono uppercase text-slate-300">{fgColorEnd}</span>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {fgColorType === 'linear' && (
+                                                    <div className="space-y-1 pt-1">
+                                                        <div className="flex justify-between text-[11px] text-slate-400">
+                                                            <span>Gradient Angle</span>
+                                                            <span>{fgAngle}°</span>
+                                                        </div>
+                                                        <input type="range" min="0" max="360" value={fgAngle} onChange={(e) => setFgAngle(parseInt(e.target.value))} className="w-full" />
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Background controls */}
+                                            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-3">
+                                                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wide">Background Styling</h4>
+                                                
+                                                <div className="space-y-1">
+                                                    <label className="block text-xs text-slate-400">Color Palette Mode</label>
+                                                    <select 
+                                                        value={bgColorType} 
+                                                        onChange={(e) => setBgColorType(e.target.value)}
+                                                        className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-100 focus:outline-none"
+                                                    >
+                                                        <option value="solid">Solid Color</option>
+                                                        <option value="linear">Linear Gradient</option>
+                                                        <option value="radial">Radial Gradient</option>
+                                                        <option value="transparent">Transparent Background</option>
+                                                    </select>
+                                                </div>
+
+                                                {bgColorType !== 'transparent' && (
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="space-y-1">
+                                                            <label className="block text-[10px] text-slate-500">Color 1</label>
+                                                            <div className="flex items-center gap-2 bg-slate-950 rounded-lg p-1 px-2 border border-slate-800">
+                                                                <input type="color" value={bgColor} onChange={(e) => setBgColor(e.target.value)} className="w-7 h-7 bg-transparent cursor-pointer" />
+                                                                <span className="text-xs font-mono uppercase text-slate-300">{bgColor}</span>
+                                                            </div>
+                                                        </div>
+                                                        {bgColorType !== 'solid' && (
+                                                            <div className="space-y-1">
+                                                                <label className="block text-[10px] text-slate-500">Color 2</label>
+                                                                <div className="flex items-center gap-2 bg-slate-950 rounded-lg p-1 px-2 border border-slate-800">
+                                                                    <input type="color" value={bgColorEnd} onChange={(e) => setBgColorEnd(e.target.value)} className="w-7 h-7 bg-transparent cursor-pointer" />
+                                                                    <span className="text-xs font-mono uppercase text-slate-300">{bgColorEnd}</span>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {bgColorType === 'linear' && (
+                                                    <div className="space-y-1 pt-1">
+                                                        <div className="flex justify-between text-[11px] text-slate-400">
+                                                            <span>Gradient Angle</span>
+                                                            <span>{bgAngle}°</span>
+                                                        </div>
+                                                        <input type="range" min="0" max="360" value={bgAngle} onChange={(e) => setBgAngle(parseInt(e.target.value))} className="w-full" />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Corner customized overrides */}
+                                        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wide">Custom Corner Ring & Dot Colors</h4>
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={customCornerColors} 
+                                                    onChange={(e) => setCustomCornerColors(e.target.checked)}
+                                                    className="w-4 h-4 text-indigo-600 bg-slate-950 border-slate-800 rounded focus:ring-indigo-500"
+                                                />
+                                            </div>
+
+                                            {customCornerColors && (
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 border-t border-slate-800">
+                                                    <div className="space-y-1">
+                                                        <label className="block text-xs text-slate-400">Outer Frame Color</label>
+                                                        <div className="flex items-center gap-2 bg-slate-950 rounded-lg p-1 px-2 border border-slate-800">
+                                                            <input type="color" value={cornerOuterColor} onChange={(e) => setCornerOuterColor(e.target.value)} className="w-7 h-7 bg-transparent cursor-pointer" />
+                                                            <span className="text-xs font-mono uppercase text-slate-300">{cornerOuterColor}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="block text-xs text-slate-400">Inner Eye Color</label>
+                                                        <div className="flex items-center gap-2 bg-slate-950 rounded-lg p-1 px-2 border border-slate-800">
+                                                            <input type="color" value={cornerInnerColor} onChange={(e) => setCornerInnerColor(e.target.value)} className="w-7 h-7 bg-transparent cursor-pointer" />
+                                                            <span className="text-xs font-mono uppercase text-slate-300">{cornerInnerColor}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* TAB 4: Logo Branding */}
+                                {activeTab === 'logo' && (
+                                    <div className="space-y-5 animate-fade-in">
+                                        {/* Logo Source Selector */}
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2.5">Logo Source Type</label>
+                                            <div className="grid grid-cols-3 gap-3">
+                                                {[
+                                                    { id: 'none', label: 'No Logo' },
+                                                    { id: 'preset', label: 'Popular Presets' },
+                                                    { id: 'upload', label: 'Custom File' },
+                                                ].map((t) => (
+                                                    <button
+                                                        key={t.id}
+                                                        onClick={() => setLogoType(t.id)}
+                                                        className={`py-2 px-3 text-xs rounded-xl font-medium border text-center transition ${logoType === t.id ? 'bg-indigo-600 border-indigo-500 text-white shadow-md' : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'}`}
+                                                    >
+                                                        {t.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* Sub panel: Presets list */}
+                                        {logoType === 'preset' && (
+                                            <div className="border-t border-slate-800/80 pt-4 animate-fade-in">
+                                                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Select Preset Logo</label>
+                                                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2.5">
+                                                    {[
+                                                        { id: 'github', label: 'GitHub' },
+                                                        { id: 'linkedin', label: 'LinkedIn' },
+                                                        { id: 'twitter', label: 'Twitter/X' },
+                                                        { id: 'instagram', label: 'Instagram' },
+                                                        { id: 'youtube', label: 'YouTube' },
+                                                        { id: 'whatsapp', label: 'WhatsApp' },
+                                                        { id: 'web', label: 'Web/Link' },
+                                                        { id: 'wifi', label: 'WiFi Icon' },
+                                                        { id: 'email', label: 'Email Icon' }
+                                                    ].map((p) => (
+                                                        <button
+                                                            key={p.id}
+                                                            onClick={() => setLogoPreset(p.id)}
+                                                            className={`py-2 px-2 text-xs rounded-xl font-semibold border flex flex-col items-center justify-center space-y-1.5 transition ${logoPreset === p.id && logoType === 'preset' ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+                                                        >
+                                                            <div 
+                                                                className="w-6 h-6 flex items-center justify-center filter dark:invert-0" 
+                                                                dangerouslySetInnerHTML={{ __html: PRESET_LOGOS[p.id]?.replace('width="100"', 'width="18"').replace('height="100"', 'height="18"').replace('stroke="#1e1b4b"', 'stroke="currentColor"').replace('stroke="#2563eb"', 'stroke="currentColor"').replace('stroke="#4f46e5"', 'stroke="currentColor"').replace('fill="#181717"', 'fill="currentColor"').replace('fill="#0077B5"', 'fill="currentColor"').replace('fill="#000000"', 'fill="currentColor"').replace('fill="#e1306c"', 'fill="currentColor"').replace('fill="#FF0000"', 'fill="currentColor"').replace('fill="#25D366"', 'fill="currentColor"') }}
+                                                            />
+                                                            <span className="text-[10px] tracking-tight">{p.label}</span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Sub panel: Custom Upload */}
+                                        {logoType === 'upload' && (
+                                            <div className="border-t border-slate-800/80 pt-4 animate-fade-in space-y-3">
+                                                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider">Upload Custom Logo File</label>
+                                                <div className="flex items-center justify-center w-full">
+                                                    <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-slate-700 border-dashed rounded-xl cursor-pointer bg-slate-900/60 hover:bg-slate-900 hover:border-slate-500 transition">
+                                                        <div className="flex flex-col items-center justify-center pt-4 pb-4 text-center px-4">
+                                                            <svg className="w-6 h-6 text-slate-400 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                                            </svg>
+                                                            <p className="text-xs font-medium text-slate-300">Click to upload, or drag logo image here</p>
+                                                            <p className="text-[10px] text-slate-500 mt-0.5">PNG, JPG or SVG formats (Square ratio works best)</p>
+                                                        </div>
+                                                        <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+                                                    </label>
+                                                </div>
+                                                {logoUploadDataUrl && (
+                                                    <div className="flex items-center space-x-2 bg-slate-950/80 p-2 rounded-lg border border-slate-800 max-w-xs">
+                                                        <img src={logoUploadDataUrl} className="w-8 h-8 rounded object-cover" alt="Custom upload thumbnail" />
+                                                        <span className="text-[11px] text-slate-400 truncate flex-grow">custom_logo_loaded.png</span>
+                                                        <button onClick={() => setLogoUploadDataUrl('')} className="text-rose-400 hover:text-rose-300 text-xs px-2 py-1">Clear</button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Logo Dimension Controls */}
+                                        {logoType !== 'none' && (
+                                            <div className="border-t border-slate-800/80 pt-4 space-y-3.5">
+                                                <div className="space-y-1">
+                                                    <div className="flex justify-between text-xs font-semibold">
+                                                        <span className="text-slate-400 uppercase tracking-wider">Logo Scale (Center Size)</span>
+                                                        <span className="text-indigo-400">{Math.round(logoScale * 100)}%</span>
+                                                    </div>
+                                                    <input type="range" min="0.08" max="0.26" step="0.01" value={logoScale} onChange={(e) => setLogoScale(parseFloat(e.target.value))} className="w-full" />
+                                                    <p className="text-[11px] text-slate-500">Keep logos below 20% size unless you use High Density (H) error correction to prevent scanning issues.</p>
+                                                </div>
+
+                                                <div className="flex items-center space-x-2.5 bg-slate-900/40 p-3 rounded-xl border border-slate-800/60">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        id="logoClear" 
+                                                        checked={logoClearSpace} 
+                                                        onChange={(e) => setLogoClearSpace(e.target.checked)}
+                                                        className="w-4 h-4 text-indigo-600 bg-slate-950 border-slate-800 rounded focus:ring-indigo-500"
+                                                    />
+                                                    <div className="select-none cursor-pointer">
+                                                        <label htmlFor="logoClear" className="text-xs font-bold text-slate-300 select-none cursor-pointer">Subtract Blocks Behind Logo</label>
+                                                        <p className="text-[10px] text-slate-500">Clears grid squares under the logo container to make it pop and scan flawlessly.</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* TAB 5: Export Settings */}
+                                {activeTab === 'export' && (
+                                    <div className="space-y-5 animate-fade-in">
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2.5">Resolution / Size Selection</label>
+                                            <div className="grid grid-cols-3 gap-3">
+                                                {[
+                                                    { size: 1024, label: 'Standard', desc: '1024 x 1024 px' },
+                                                    { size: 2048, label: 'High-Def', desc: '2048 x 2048 px' },
+                                                    { size: 4096, label: 'Print Quality', desc: '4096 x 4096 px' }
+                                                ].map((opt) => (
+                                                    <button
+                                                        key={opt.size}
+                                                        onClick={() => setExportSize(opt.size)}
+                                                        className={`py-3 px-3 rounded-xl font-semibold border flex flex-col items-center justify-center space-y-1 transition ${exportSize === opt.size ? 'bg-indigo-600 border-indigo-500 text-white shadow-md' : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'}`}
+                                                    >
+                                                        <span className="text-xs">{opt.label}</span>
+                                                        <span className="text-[9px] font-normal text-slate-400 truncate">{opt.desc}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="border-t border-slate-800/80 pt-4 space-y-3">
+                                            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Export Recommendations</h4>
+                                            <ul className="text-[11px] text-slate-400 space-y-2 list-disc pl-4 leading-relaxed">
+                                                <li><strong>Standard (1024px)</strong> is optimal for emails, social media posts, and websites.</li>
+                                                <li><strong>High-Def (2048px)</strong> is highly recommended for high-res presentations, billboards, or menu boards.</li>
+                                                <li><strong>Print Quality (4096px)</strong> provides pixel-perfect high-dpi density, perfect for printing on business cards, clothing, flyers, or merchandise with zero pixelation.</li>
+                                                <li>Transparent backgrounds work beautifully but require sufficient contrast on whichever surface they are placed.</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Help & Footer within Tab box */}
+                                <div className="border-t border-slate-800 pt-4 mt-6 flex items-center justify-between text-[11px] text-slate-500">
+                                    <span>Built fully self-contained offline</span>
+                                    <span>v1.2 Premium</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* RIGHT COLUMN: Sticky Live Preview Panel */}
+                        <div className="lg:col-span-5 flex flex-col items-center space-y-6 lg:sticky lg:top-[92px] lg:self-start">
+                            
+                            {/* The Floating Glass Phone Frame */}
+                            <div className="w-full max-w-xs sm:max-w-sm bg-gradient-to-b from-slate-900 to-slate-950 p-6 rounded-[36px] shadow-2xl shadow-indigo-500/10 border border-slate-800 relative overflow-hidden group">
+                                
+                                {/* Top mobile camera notch design element */}
+                                <div className="absolute top-2 left-1/2 transform -translate-x-1/2 w-28 h-4 bg-slate-950 rounded-full flex items-center justify-center border border-slate-800">
+                                    <div className="w-3 h-3 rounded-full bg-indigo-900/60 mr-1.5" />
+                                    <div className="w-1.5 h-1.5 rounded-full bg-slate-900" />
+                                </div>
+
+                                {/* Blinking Live scanning badge */}
+                                <div className="flex justify-between items-center mt-2.5 mb-5 px-1 text-[11px] font-semibold text-slate-400">
+                                    <span className="flex items-center gap-1.5 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2.5 py-1 rounded-full">
+                                        <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse inline-block" />
+                                        LIVE PREVIEW
+                                    </span>
+                                    <span>{exportSize}px Export ready</span>
+                                </div>
+
+                                {/* Main Canvas Wrapper */}
+                                <div className="aspect-square w-full bg-slate-900 rounded-[28px] p-4 border border-slate-800 flex items-center justify-center shadow-inner relative overflow-hidden">
+                                    <canvas 
+                                        ref={canvasRef}
+                                        className="w-full h-full object-contain rounded-2xl shadow-xl transition-all duration-300 hover:scale-[1.01]"
+                                        style={{ maxWidth: '100%', maxHeight: '100%' }}
+                                    />
+                                </div>
+
+                                {/* Content quick stats summary */}
+                                <div className="mt-4 px-1 text-center space-y-0.5 border-b border-slate-800 pb-3">
+                                    <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wide truncate">
+                                        {contentType === 'url' ? 'Link Content' : contentType === 'wifi' ? 'WiFi Settings' : contentType === 'email' ? 'Email Prompt' : contentType === 'phone' ? 'Phone / SMS' : 'vCard File'}
+                                    </h4>
+                                    <p className="text-[10px] text-slate-500 truncate max-w-[240px] mx-auto font-mono">
+                                        {generatedQRContent}
+                                    </p>
+                                </div>
+
+                                {/* SCANNABILITY & CONTRAST SCORE BOARD */}
+                                <div className={`mt-3 p-3 rounded-xl border text-[11px] space-y-1 transition ${contrastMetrics.bgClass}`}>
+                                    <div className="flex items-center justify-between">
+                                        <span className="font-bold uppercase tracking-wider text-slate-300">Scannability Rating:</span>
+                                        <span className={`font-black uppercase tracking-widest ${contrastMetrics.colorClass}`}>{contrastMetrics.score}</span>
+                                    </div>
+                                    <div className="flex justify-between text-slate-400">
+                                        <span>WCAG Luminance Contrast:</span>
+                                        <span className="font-bold">{contrastMetrics.ratio.toFixed(2)} : 1</span>
+                                    </div>
+                                    {contrastMetrics.warnings.length > 0 && (
+                                        <div className="border-t border-slate-800 pt-1.5 mt-1 text-[10px] text-slate-400 space-y-1 leading-relaxed list-none pl-0">
+                                            {contrastMetrics.warnings.map((warn, i) => (
+                                                <li key={i} className="flex items-start gap-1">
+                                                    <span className="text-amber-500">⚠️</span>
+                                                    <span>{warn}</span>
+                                                </li>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* EXPORT CALL TO ACTIONS */}
+                            <div className="w-full max-w-xs sm:max-w-sm space-y-3">
+                                <button 
+                                    onClick={downloadPNG}
+                                    className="w-full bg-gradient-to-r from-brand-600 to-indigo-500 hover:from-brand-700 hover:to-indigo-600 active:scale-[0.99] text-white font-bold py-3 px-4 rounded-xl shadow-lg shadow-indigo-600/10 hover:shadow-indigo-600/25 transition-all duration-150 flex items-center justify-center space-x-2 text-sm"
+                                >
+                                    <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                    </svg>
+                                    <span>Download high-quality PNG</span>
+                                </button>
+
+                                <div className="grid grid-cols-2 gap-3">
+                                    <button 
+                                        onClick={copyToClipboard}
+                                        className="bg-slate-800 hover:bg-slate-700 active:scale-[0.99] text-slate-200 font-bold py-2.5 px-4 rounded-xl border border-slate-700 transition flex items-center justify-center space-x-1.5 text-xs"
+                                    >
+                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                                        </svg>
+                                        <span>Copy Image</span>
+                                    </button>
+                                    <button 
+                                        onClick={() => {
+                                            if (navigator.share) {
+                                                canvasRef.current.toBlob((blob) => {
+                                                    const file = new File([blob], `qr_code.png`, { type: 'image/png' });
+                                                    navigator.share({
+                                                        title: 'Custom QR Code',
+                                                        text: 'Generated on QRCraft Pro',
+                                                        files: [file]
+                                                    }).catch(console.error);
+                                                });
+                                            } else {
+                                                // fallback copy URL
+                                                navigator.clipboard.writeText(generatedQRContent);
+                                                showToast("Copied QR Raw value to clipboard!");
+                                            }
+                                        }}
+                                        className="bg-slate-800 hover:bg-slate-700 active:scale-[0.99] text-slate-200 font-bold py-2.5 px-4 rounded-xl border border-slate-700 transition flex items-center justify-center space-x-1.5 text-xs"
+                                    >
+                                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M8.684 10.742l4.022-2.012m0 0A3.001 3.001 0 1112 13.25a3.001 3.001 0 01-3.316-2.508zM12 2.25A3.001 3.001 0 118.684 4.258l4.022 2.012m0 0A3.001 3.001 0 1112 2.25zm0 13.5a3.001 3.001 0 11-3.316 2.508l4.022-2.012" />
+                                        </svg>
+                                        <span>Quick Share</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        </main>
+
+                    {/* Toast Notification popup widget */}
+                    {toast.show && (
+                        <div className="fixed bottom-6 right-6 z-50 bg-slate-900/95 border border-indigo-500/25 text-white py-3.5 px-5 rounded-2xl shadow-xl shadow-brand-500/10 flex items-center space-x-3 animate-slide-up duration-200 backdrop-blur-md">
+                            <span className="w-2.5 h-2.5 rounded-full bg-indigo-400 animate-ping" />
+                            <p className="text-xs font-semibold">{toast.message}</p>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

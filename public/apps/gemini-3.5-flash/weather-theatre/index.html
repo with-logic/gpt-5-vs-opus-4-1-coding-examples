@@ -1,0 +1,2256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Weather Theatre: Atmospheric Stage Remixer</title>
+  
+  <!-- Tailwind CSS v3 CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Google Fonts: Cinzel, Playfair Display, Courier Prime, Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            velvet: {
+              light: '#c2233f',
+              DEFAULT: '#800c1e',
+              dark: '#4c040d',
+            },
+            brass: {
+              light: '#f5d77f',
+              DEFAULT: '#d4af37',
+              dark: '#997a1d',
+            },
+            wood: {
+              light: '#5c3a21',
+              DEFAULT: '#3b2211',
+              dark: '#1f1007',
+            },
+            parchment: {
+              light: '#fcf8f0',
+              DEFAULT: '#f3ebd9',
+              dark: '#e3d4b6',
+            }
+          },
+          fontFamily: {
+            cinzel: ['Cinzel', 'serif'],
+            playfair: ['Playfair Display', 'serif'],
+            typewriter: ['Courier Prime', 'monospace'],
+            sans: ['Inter', 'sans-serif'],
+          },
+          boxShadow: {
+            'gilded': '0 4px 20px rgba(0, 0, 0, 0.4), inset 0 0 0 2px #d4af37, 0 0 0 4px #800c1e',
+            'brass-inset': 'inset 0 2px 4px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.1)',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Custom organic scrollbars */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #1f1007;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #997a1d;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #d4af37;
+    }
+
+    /* Custom styles for range sliders to look brassy and heavy */
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      background: #1f1007;
+      height: 8px;
+      border-radius: 4px;
+      outline: none;
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.8);
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #f5d77f 0%, #d4af37 70%, #997a1d 100%);
+      border: 2px solid #1f1007;
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+      transition: transform 0.1s ease;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.15);
+    }
+    
+    /* Neon indicators for atmospheric blend */
+    .indicator-cosy { box-shadow: 0 0 8px #f59e0b; }
+    .indicator-eerie { box-shadow: 0 0 8px #a855f7; }
+    .indicator-heroic { box-shadow: 0 0 8px #3b82f6; }
+
+    /* Keyframes for the stage curtain strings */
+    @keyframes sway {
+      0%, 100% { transform: rotate(-1deg); }
+      50% { transform: rotate(1deg); }
+    }
+    .rope-sway {
+      transform-origin: top center;
+      animation: sway 4s ease-in-out infinite;
+    }
+  </style>
+
+  <!-- React 18 & ReactDOM CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+
+  <!-- Babel CDN for inline JSX transpilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-wood-dark text-stone-100 min-h-screen flex flex-col font-sans transition-colors duration-500 overflow-x-hidden select-none">
+
+  <!-- Main Root Container -->
+  <div id="root" class="w-full flex-grow flex flex-col"></div>
+
+  <!-- React App Scripts -->
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo } = React;
+
+    // --- PROCEDURAL AUDIO SYNTHESIZER (WEB AUDIO API) ---
+    class WeatherTheatreSynth {
+      constructor() {
+        this.ctx = null;
+        this.masterGain = null;
+        this.initialized = false;
+        this.nodes = {};
+        this.chordIdx = 0;
+        this.synthNodes = [];
+      }
+
+      init() {
+        if (this.initialized) return;
+        try {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioContextClass();
+          this.masterGain = this.ctx.createGain();
+          this.masterGain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+          this.masterGain.connect(this.ctx.destination);
+
+          // 1. Generate White Noise Buffer
+          const bufferSize = 2 * this.ctx.sampleRate;
+          const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+          const output = noiseBuffer.getChannelData(0);
+          for (let i = 0; i < bufferSize; i++) {
+            output[i] = Math.random() * 2 - 1;
+          }
+          this.noiseBuffer = noiseBuffer;
+
+          // 2. Set up sub-synthesizer channels
+          this.setupRain();
+          this.setupWind();
+          this.setupFireCrackle();
+          this.setupHeroicMusic();
+
+          this.initialized = true;
+          console.log("Web Audio Synthesizer Initialized Successfully.");
+        } catch (e) {
+          console.error("Failed to initialize Web Audio API:", e);
+        }
+      }
+
+      setupRain() {
+        const source = this.ctx.createBufferSource();
+        source.buffer = this.noiseBuffer;
+        source.loop = true;
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(1400, this.ctx.currentTime);
+        filter.Q.setValueAtTime(1.2, this.ctx.currentTime);
+
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0, this.ctx.currentTime);
+
+        source.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.masterGain);
+        source.start(0);
+
+        this.nodes.rainSource = source;
+        this.nodes.rainGain = gain;
+      }
+
+      setupWind() {
+        const source = this.ctx.createBufferSource();
+        source.buffer = this.noiseBuffer;
+        source.loop = true;
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(320, this.ctx.currentTime);
+        filter.Q.setValueAtTime(14, this.ctx.currentTime); // Highly resonant whistling
+
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0, this.ctx.currentTime);
+
+        source.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.masterGain);
+        source.start(0);
+
+        this.nodes.windSource = source;
+        this.nodes.windFilter = filter;
+        this.nodes.windGain = gain;
+
+        this.animateWindHowl();
+      }
+
+      animateWindHowl() {
+        if (!this.ctx) return;
+        const filter = this.nodes.windFilter;
+        if (filter) {
+          const t = this.ctx.currentTime;
+          // Drifting wind whistles
+          const freq = 340 + Math.sin(t * 0.35) * 140 + Math.cos(t * 1.25) * 80;
+          filter.frequency.setValueAtTime(freq, t);
+        }
+        setTimeout(() => this.animateWindHowl(), 100);
+      }
+
+      setupFireCrackle() {
+        // Soft low rumble
+        const rumble = this.ctx.createBufferSource();
+        rumble.buffer = this.noiseBuffer;
+        rumble.loop = true;
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(90, this.ctx.currentTime);
+
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0, this.ctx.currentTime);
+
+        rumble.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.masterGain);
+        rumble.start(0);
+
+        this.nodes.fireRumbleSource = rumble;
+        this.nodes.fireRumbleGain = gain;
+
+        // Snaps Scheduler
+        this.nodes.fireIntensity = 0;
+        this.scheduleCrackle();
+      }
+
+      scheduleCrackle() {
+        if (this.ctx && this.nodes.fireIntensity > 0) {
+          const intensity = this.nodes.fireIntensity;
+          if (Math.random() < intensity * 0.45) {
+            this.triggerCrackleSnap();
+          }
+        }
+        setTimeout(() => this.scheduleCrackle(), 120 + Math.random() * 220);
+      }
+
+      triggerCrackleSnap() {
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const filter = this.ctx.createBiquadFilter();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(180 + Math.random() * 800, now);
+
+        filter.type = 'highpass';
+        filter.frequency.setValueAtTime(1400, now);
+
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(0.01 + Math.random() * 0.09, now + 0.003);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.01 + Math.random() * 0.025);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.masterGain);
+
+        osc.start(now);
+        osc.stop(now + 0.08);
+      }
+
+      setupHeroicMusic() {
+        // Beautiful, resonant theater chords in G Lydian / G Major cinematic motifs
+        this.musicChords = [
+          [97.99, 146.83, 196.00, 246.94, 293.66],  // G2, D3, G3, B3, D4 (G Major)
+          [110.00, 164.81, 220.00, 261.63, 329.63], // A2, E3, A3, C4, E4 (A Minor 7)
+          [130.81, 196.00, 261.63, 329.63, 392.00], // C3, G3, C4, E4, G4 (C Major 9)
+          [116.54, 174.61, 233.08, 293.66, 349.23], // Bb2, F3, Bb3, D4, F4 (Bb Majestic)
+          [146.83, 220.00, 293.66, 369.99, 440.00], // D3, A3, D4, F#4, A4 (D Major)
+          [130.81, 196.00, 293.66, 392.00, 493.88], // C3, G3, D4, G4, B4 (C Lydian majestic)
+        ];
+
+        this.musicGain = this.ctx.createGain();
+        this.musicGain.connect(this.masterGain);
+        this.musicGain.gain.setValueAtTime(0, this.ctx.currentTime);
+
+        this.nodes.musicGain = this.musicGain;
+        this.scheduleNextChord();
+      }
+
+      scheduleNextChord() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const duration = 5.5; // Seconds per chord
+
+        const chord = this.musicChords[this.chordIdx];
+        this.chordIdx = (this.chordIdx + 1) % this.musicChords.length;
+
+        const chordGain = this.ctx.createGain();
+        chordGain.connect(this.musicGain);
+
+        chordGain.gain.setValueAtTime(0, now);
+        chordGain.gain.linearRampToValueAtTime(0.16, now + 1.2); // Smooth pad swell
+        chordGain.gain.setValueAtTime(0.16, now + duration - 1.2);
+        chordGain.gain.linearRampToValueAtTime(0, now + duration); // Smooth fade
+
+        chord.forEach((freq, idx) => {
+          const osc = this.ctx.createOscillator();
+          osc.type = idx === 0 ? 'sine' : 'triangle'; // Warm sub-sine, rich upper triangle
+          osc.frequency.setValueAtTime(freq, now);
+
+          // Subtle pitch vibrato to mimic string orchestra ensemble
+          osc.detune.setValueAtTime(Math.sin(idx * 1.8) * 6, now);
+
+          osc.connect(chordGain);
+          osc.start(now);
+          osc.stop(now + duration + 0.1);
+        });
+
+        setTimeout(() => {
+          this.scheduleNextChord();
+        }, (duration - 1.0) * 1000); // Overlay slightly for a gapless wash
+      }
+
+      updateVolumes(sliders, forecast, isNight, masterVolume, curtainsOpen) {
+        if (!this.initialized) return;
+
+        const now = this.ctx.currentTime;
+        // Adjust master volume (curtains closed dampens volume slightly!)
+        const damper = 0.2 + 0.8 * curtainsOpen; 
+        this.masterGain.gain.setTargetAtTime(masterVolume * damper * 0.45, now, 0.1);
+
+        const cosy = sliders.cosy / 100;
+        const eerie = sliders.eerie / 100;
+        const heroic = sliders.heroic / 100;
+
+        // 1. Fire rumble & crackle
+        let fireTarget = cosy * 1.0;
+        if (forecast === 'snow') fireTarget += 0.25;
+        this.nodes.fireRumbleGain.gain.setTargetAtTime(Math.min(1.0, fireTarget * 0.75), now, 0.2);
+        this.nodes.fireIntensity = fireTarget;
+
+        // 2. Wind howling
+        let windTarget = eerie * 0.5 + heroic * 0.5;
+        if (forecast === 'tempest') windTarget += 0.5;
+        if (forecast === 'mist') windTarget += 0.15;
+        this.nodes.windGain.gain.setTargetAtTime(Math.min(1.0, windTarget * 0.8), now, 0.25);
+
+        // 3. Rain crackling
+        let rainTarget = 0;
+        if (forecast === 'tempest') rainTarget = 0.8;
+        else if (forecast === 'mist') rainTarget = 0.25;
+        rainTarget += (eerie * 0.15); // eerie storm
+        this.nodes.rainGain.gain.setTargetAtTime(Math.min(1.0, rainTarget * 0.65), now, 0.2);
+
+        // 4. Music chords
+        let musicTarget = heroic * 1.0 + cosy * 0.2;
+        if (forecast === 'sun') musicTarget += 0.15;
+        this.nodes.musicGain.gain.setTargetAtTime(Math.min(1.0, musicTarget * 0.6), now, 0.35);
+      }
+
+      triggerThunderCrash(intensity) {
+        if (!this.initialized) return;
+        const now = this.ctx.currentTime;
+
+        // Low frequency explosion
+        const rumbleSource = this.ctx.createBufferSource();
+        rumbleSource.buffer = this.noiseBuffer;
+
+        const rumbleFilter = this.ctx.createBiquadFilter();
+        rumbleFilter.type = 'lowpass';
+        rumbleFilter.frequency.setValueAtTime(180, now);
+
+        const rumbleGain = this.ctx.createGain();
+        rumbleGain.gain.setValueAtTime(0, now);
+        rumbleGain.gain.linearRampToValueAtTime(intensity * 1.2, now + 0.02);
+        rumbleGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.8);
+
+        rumbleSource.connect(rumbleFilter);
+        rumbleFilter.connect(rumbleGain);
+        rumbleGain.connect(this.masterGain);
+        rumbleSource.start(now);
+        rumbleSource.stop(now + 2.0);
+
+        // High frequency lightning snap
+        const snapSource = this.ctx.createBufferSource();
+        snapSource.buffer = this.noiseBuffer;
+
+        const snapFilter = this.ctx.createBiquadFilter();
+        snapFilter.type = 'bandpass';
+        snapFilter.frequency.setValueAtTime(900, now);
+        snapFilter.Q.setValueAtTime(1.0, now);
+
+        const snapGain = this.ctx.createGain();
+        snapGain.gain.setValueAtTime(0, now);
+        snapGain.gain.linearRampToValueAtTime(intensity * 0.7, now + 0.003);
+        snapGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.18);
+
+        snapSource.connect(snapFilter);
+        snapFilter.connect(snapGain);
+        snapGain.connect(this.masterGain);
+        snapSource.start(now);
+        snapSource.stop(now + 0.25);
+      }
+
+      triggerCurtainSwoosh() {
+        if (!this.initialized) return;
+        const now = this.ctx.currentTime;
+
+        const osc = this.ctx.createOscillator();
+        const filter = this.ctx.createBiquadFilter();
+        const gain = this.ctx.createGain();
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(100, now);
+        osc.frequency.exponentialRampToValueAtTime(40, now + 0.6);
+
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(150, now);
+
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(0.25, now + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.65);
+
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.masterGain);
+
+        osc.start(now);
+        osc.stop(now + 0.7);
+      }
+    }
+
+    // Single static Audio Instance
+    const synthInstance = new WeatherTheatreSynth();
+
+    // --- SUBTITLE TYPEWRITER COMPONENT ---
+    const TypewriterSubtitle = ({ text, speed = 18 }) => {
+      const [displayedText, setDisplayedText] = useState("");
+      const [isDeleting, setIsDeleting] = useState(false);
+      const targetTextRef = useRef(text);
+
+      useEffect(() => {
+        targetTextRef.current = text;
+        setIsDeleting(true);
+      }, [text]);
+
+      useEffect(() => {
+        let timer;
+        const tick = () => {
+          const current = displayedText;
+          const target = targetTextRef.current;
+
+          if (isDeleting) {
+            if (current.length > 0) {
+              // Rapid deletion
+              setDisplayedText(current.substring(0, Math.max(0, current.length - 3)));
+            } else {
+              setIsDeleting(false);
+            }
+          } else {
+            if (current.length < target.length) {
+              setDisplayedText(target.substring(0, current.length + 1));
+            }
+          }
+        };
+
+        timer = setTimeout(tick, isDeleting ? 6 : speed);
+        return () => clearTimeout(timer);
+      }, [displayedText, isDeleting, speed]);
+
+      return (
+        <div className="font-typewriter bg-[url('data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 fill=%22%23fcf8f0%22/><path d=%22M0,0 H100 V100 H0 Z%22 fill=%22none%22 stroke=%22%23dfd1be%22 stroke-width=%221%22/></svg>')] text-stone-900 border-2 border-parchment-dark p-4 rounded-md shadow-inner text-sm md:text-base leading-relaxed tracking-wide min-h-[4.5rem] relative">
+          <span class="absolute top-1 left-3 text-[10px] text-brass-dark font-cinzel font-bold tracking-wider select-none uppercase">Scene Notes:</span>
+          <div className="pt-2 pl-1 select-text">
+            {displayedText}
+            <span className="inline-block w-2.5 h-4 bg-brass-dark ml-1 animate-pulse align-middle"></span>
+          </div>
+        </div>
+      );
+    };
+
+    // --- MAIN WEATHER THEATRE APP ---
+    function WeatherTheatreApp() {
+      // Sliders state
+      const [sliders, setSliders] = useState({ cosy: 50, eerie: 20, heroic: 30 });
+      const [forecast, setForecast] = useState('tempest'); // tempest, mist, sun, snow
+      const [isNight, setIsNight] = useState(false);
+      const [curtainTarget, setCurtainTarget] = useState(0); // 0 = Closed, 1 = Open
+      const [audioEnabled, setAudioEnabled] = useState(false);
+      const [masterVolume, setMasterVolume] = useState(0.5);
+      const [volumetricLight, setVolumetricLight] = useState(true);
+
+      // Smooth state sliders (for fluid interpolation in drawing context)
+      const slidersRef = useRef({ cosy: 50, eerie: 20, heroic: 30 });
+      const nightRatioRef = useRef(0);
+      const curtainOpenRef = useRef(0);
+
+      // DOM Ref to Canvas
+      const canvasRef = useRef(null);
+      const mouseRef = useRef({ x: 0, y: 0, active: false });
+
+      // Weather state trigger: lightning flash intensity
+      const [lightningFlash, setLightningFlash] = useState(null); // { id, x, intensity, color }
+      const lastLightningTimeRef = useRef(0);
+
+      // Particles systems on reference (so we don't recreate them every frame)
+      const particlesRef = useRef({
+        rain: [],
+        snow: [],
+        leaves: [],
+        smoke: [],
+        embers: [],
+        fog: [],
+        flyers: [],
+        footlightsSway: [0, 1.2, 2.5, 3.8, 4.9, 6.1]
+      });
+
+      // Synchronize slider state values quickly to ref for the 60fps canvas animation loop
+      useEffect(() => {
+        slidersRef.current = sliders;
+      }, [sliders]);
+
+      // Handle slider changes safely so that they sum nicely
+      const handleSliderChange = (type, val) => {
+        const numVal = parseInt(val, 10);
+        setSliders(prev => {
+          const next = { ...prev, [type]: numVal };
+          // Keep sliders within bounds, normalize or just keep independent as they blend perfectly
+          return next;
+        });
+      };
+
+      // Playbill metadata
+      const sceneData = useMemo(() => {
+        const { cosy, eerie, heroic } = sliders;
+        const total = cosy + eerie + heroic || 1;
+        const c = cosy / total;
+        const e = eerie / total;
+        const h = heroic / total;
+
+        let dominant = 'balanced';
+        if (c > 0.48) dominant = 'cosy';
+        else if (e > 0.48) dominant = 'eerie';
+        else if (h > 0.48) dominant = 'heroic';
+
+        let title = "Act I: ";
+        if (forecast === 'tempest') title += "The Tempest's Soliloquy";
+        else if (forecast === 'mist') title += "Whispers in the Shrouded Vale";
+        else if (forecast === 'sun') title += "The Golden Sunburst Act";
+        else if (forecast === 'snow') title += "A Nocturne of Drifting Crystal";
+
+        const prefix = isNight ? "Under a heavy, starlight-speckled midnight canopy, " : "In the soft, warm glow of a matinée afternoon, ";
+
+        let subtitle = "";
+        if (forecast === 'tempest') {
+          if (dominant === 'cosy') {
+            subtitle = prefix + "a comforting warm rain patters softly against small window panes. Inside a snug wooden cabin, a warm hearth crackles merrily, casting golden flakes of embers into the room, reducing the raging gale outside to a tranquil, protective melody.";
+          } else if (dominant === 'eerie') {
+            subtitle = prefix + "the tempest takes on a sinister posture. Howling, cold purple wind squalls sweep sideways through skeletal birch groves, while sudden flashes of toxic violet lightning silhouette a twisted gothic ruin resting ominously in the deep.";
+          } else if (dominant === 'heroic') {
+            subtitle = prefix + "an epic thunderstorm clashes against towering mountain towers. High-velocity winds roar like victorious horns, while monumental shafts of golden thunderbolts pierce the cloud layers, illuminating a defiant stone fortress cresting the peaks.";
+          } else {
+            subtitle = prefix + "a grand thunderstorm weaves across the stage. Rolling sheets of thunder rumble beneath the scenic clouds, offering a dynamic theatrical performance of rain, breeze, and atmospheric friction.";
+          }
+        } else if (forecast === 'mist') {
+          if (dominant === 'cosy') {
+            subtitle = prefix + "a soft, pearlescent fog descends like a woven blanket, cushioning the forest floor. The bright windows of a tiny chalet glow with welcoming orange light, painting a safe refuge amidst the dreamlike, quiet mist.";
+          } else if (dominant === 'eerie') {
+            subtitle = prefix + "a heavy, chartreuse-purple vapor creeps between dead trunks. Skeletal trees stretch claw-like fingers into the eerie haze, as shadows and wispy, glowing entities drift around the crumbling spires of a long-abandoned hollow spire.";
+          } else if (dominant === 'heroic') {
+            subtitle = prefix + "celestial sea-mists roll majestically against sheer cliffs. Brilliant searchlights of golden sunburst cut through the fog banks, crowning the towering battlements of a prideful stone keep as it rises undefeated above the clouds.";
+          } else {
+            subtitle = prefix + "mysterious grey vapors weave quietly across the landscape, blurring the shapes of castle and cottage alike, leaving the stage set shrouded in a dense, quiet atmosphere of hidden secrets.";
+          }
+        } else if (forecast === 'sun') {
+          if (dominant === 'cosy') {
+            subtitle = prefix + "gentle golden sunlight washes over rolling hills. Lush autumn maple trees spin bright amber leaves on a tranquil breeze, while the smoking chimney of a nearby cabin signals a peaceful twilight of absolute calm.";
+          } else if (dominant === 'eerie') {
+            subtitle = prefix + "a sickly, pale disc of a sun hangs frozen in an ominous chartreuse sky. Barren skeletal boughs cast long, unnerving shadows across a cracked, dry plain, invoking a hollow feeling of beautiful, gothic desolation.";
+          } else if (dominant === 'heroic') {
+            subtitle = prefix + "magnificent, volumetric god rays stream directly from the heavens like golden lances. Towering granite peaks are crowned with blinding solar fire, as an ancient castle banner waves proudly in the roaring alpine updrafts.";
+          } else {
+            subtitle = prefix + "the stage is bathed in a brilliant daylight. Sunbeams slide slowly across the scenery, highlighting the intricate theatrical details of a dynamic, custom-remixed meteorological set.";
+          }
+        } else { // snow
+          if (dominant === 'cosy') {
+            subtitle = prefix + "puffy snowflakes drift down lazily, blanket-thick, settling on the glowing windows of a cozy cottage. A thin wisp of hearth smoke curls up into the quiet winter sky, creating a peaceful, fairytale-like festive evening.";
+          } else if (dominant === 'eerie') {
+            subtitle = prefix + "a stinging, icy blizzard howls through dead branches, swallowing everything in a frozen white shroud. Shivering blue shadows stretch from the jagged arches of a crumbling tomb, cold and abandoned in the storm.";
+          } else if (dominant === 'heroic') {
+            subtitle = prefix + "scintillating frost crystals fall like celestial stardust. A grand castle keep rises triumphantly against a rich royal-blue sky, and high-altitude winds sweep sparkling flurries across the ancient stone walls.";
+          } else {
+            subtitle = prefix + "snow falls with quiet grace across the stage. A pristine, sparkling white blanket envelopes the set, bringing a peaceful dramatic stillness that blends cozy shelter with cold, majestic wilderness.";
+          }
+        }
+
+        return { title, subtitle };
+      }, [sliders, forecast, isNight]);
+
+      // Toggle Curtain state (with synthetic Audio swoop)
+      const toggleCurtains = () => {
+        const next = curtainTarget === 0 ? 1 : 0;
+        setCurtainTarget(next);
+        if (audioEnabled) {
+          synthInstance.triggerCurtainSwoosh();
+        }
+      };
+
+      // Sound Engine toggles
+      const toggleAudio = () => {
+        if (!audioEnabled) {
+          synthInstance.init();
+          setAudioEnabled(true);
+        } else {
+          // Master Volume mute is handled inside update loop
+          setAudioEnabled(false);
+        }
+      };
+
+      // Set volume
+      const handleVolumeChange = (e) => {
+        const vol = parseFloat(e.target.value);
+        setMasterVolume(vol);
+      };
+
+      // Trigger Lightning manually via button or randomly
+      const triggerLightning = () => {
+        if (curtainTarget === 0) return; // Don't lightning with curtain closed
+        const now = Date.now();
+        if (now - lastLightningTimeRef.current < 800) return; // Debounce
+        lastLightningTimeRef.current = now;
+
+        const total = sliders.cosy + sliders.eerie + sliders.heroic || 1;
+        const e = sliders.eerie / total;
+        const h = sliders.heroic / total;
+
+        let col = '#ffffff';
+        let intensity = 0.5 + Math.random() * 0.5;
+        if (e > 0.45) {
+          col = '#d8b4fe'; // Purple
+        } else if (h > 0.45) {
+          col = '#fde047'; // Vivid Gold
+        } else {
+          col = '#bae6fd'; // Light blue
+        }
+
+        setLightningFlash({
+          id: Math.random(),
+          x: 0.2 + Math.random() * 0.6, // Relative X target on stage
+          intensity,
+          color: col
+        });
+
+        if (audioEnabled) {
+          synthInstance.triggerThunderCrash(intensity);
+        }
+      };
+
+      // Update synth volumes when slider changes
+      useEffect(() => {
+        if (audioEnabled) {
+          synthInstance.updateVolumes(sliders, forecast, isNight, masterVolume, curtainOpenRef.current);
+        }
+      }, [sliders, forecast, isNight, audioEnabled, masterVolume, curtainTarget]);
+
+      // --- THE CORE ANIMATION CANVAS LOOP ---
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        let animationFrameId;
+
+        // Ensure proper retina display rendering
+        const resize = () => {
+          const rect = canvas.parentNode.getBoundingClientRect();
+          // Keep standard ratio 5:3
+          const baseWidth = 800;
+          const baseHeight = 480;
+          const scale = Math.min(rect.width / baseWidth, 1.2); 
+          
+          canvas.width = baseWidth * window.devicePixelRatio;
+          canvas.height = baseHeight * window.devicePixelRatio;
+          canvas.style.width = `${baseWidth * scale}px`;
+          canvas.style.height = `${baseHeight * scale}px`;
+          
+          ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        };
+        resize();
+        window.addEventListener('resize', resize);
+
+        // Populate initial elements if empty
+        const particles = particlesRef.current;
+        if (particles.rain.length === 0) {
+          for (let i = 0; i < 150; i++) {
+            particles.rain.push({
+              x: Math.random() * 800,
+              y: Math.random() * 480 - 480,
+              vy: 6 + Math.random() * 6,
+              len: 10 + Math.random() * 15,
+              opacity: 0.1 + Math.random() * 0.4
+            });
+          }
+          for (let i = 0; i < 80; i++) {
+            particles.snow.push({
+              x: Math.random() * 800,
+              y: Math.random() * 480 - 480,
+              r: 1 + Math.random() * 3,
+              vy: 0.8 + Math.random() * 1.5,
+              swing: Math.random() * Math.PI * 2,
+              swingSpeed: 0.02 + Math.random() * 0.03,
+              wiggle: 10 + Math.random() * 20
+            });
+          }
+          for (let i = 0; i < 40; i++) {
+            particles.leaves.push({
+              x: Math.random() * 800,
+              y: Math.random() * 320 - 320,
+              r: 3 + Math.random() * 5,
+              vy: 1 + Math.random() * 1.8,
+              vx: -0.5 + Math.random() * 1.0,
+              rot: Math.random() * 360,
+              rotSpeed: -2 + Math.random() * 4,
+              color: ['#e75a10', '#d97706', '#ca8a04', '#b45309', '#f59e0b'][Math.floor(Math.random() * 5)]
+            });
+          }
+          for (let i = 0; i < 35; i++) {
+            particles.embers.push({
+              x: 238 + Math.random() * 14, // above chimney
+              y: 200 + Math.random() * 200,
+              r: 1 + Math.random() * 2,
+              vy: -(0.5 + Math.random() * 1.2),
+              vx: -0.3 + Math.random() * 0.6,
+              alpha: 0.8 + Math.random() * 0.2,
+              life: 1.0,
+              decay: 0.005 + Math.random() * 0.012
+            });
+          }
+          for (let i = 0; i < 4; i++) {
+            particles.fog.push({
+              x: Math.random() * 800,
+              y: 340 + Math.random() * 50,
+              r: 60 + Math.random() * 50,
+              vx: 0.1 + Math.random() * 0.3
+            });
+          }
+          // Dynamic flyer birds/bats/phoenixes
+          for (let i = 0; i < 3; i++) {
+            particles.flyers.push({
+              x: -100 - Math.random() * 200,
+              y: 60 + Math.random() * 100,
+              vx: 1.5 + Math.random() * 1.5,
+              type: 'bat', // bat, phoenix, eagle
+              wingAngle: 0,
+              wingDir: 1,
+              size: 15
+            });
+          }
+        }
+
+        // --- HELPER COLOR BLENDER (LERP) ---
+        const lerpColor = (color1, color2, ratio) => {
+          const r1 = parseInt(color1.substring(1,3), 16);
+          const g1 = parseInt(color1.substring(3,5), 16);
+          const b1 = parseInt(color1.substring(5,7), 16);
+
+          const r2 = parseInt(color2.substring(1,3), 16);
+          const g2 = parseInt(color2.substring(3,5), 16);
+          const b2 = parseInt(color2.substring(5,7), 16);
+
+          const r = Math.round(r1 + (r2 - r1) * ratio);
+          const g = Math.round(g1 + (g2 - g1) * ratio);
+          const b = Math.round(b1 + (b2 - b1) * ratio);
+
+          // Return hex padding safely
+          const rHex = r.toString(16).padStart(2, '0');
+          const gHex = g.toString(16).padStart(2, '0');
+          const bHex = b.toString(16).padStart(2, '0');
+
+          return `#${rHex}${gHex}${bHex}`;
+        };
+
+        const profiles = {
+          cosy: {
+            day:   { top: '#fed7aa', bottom: '#fdba74', mountains: '#6b3c2e', trees: '#a15c38', cottage: '#4a2511' },
+            night: { top: '#1c102b', bottom: '#e11d48', mountains: '#30182b', trees: '#4c1d24', cottage: '#200509' }
+          },
+          eerie: {
+            day:   { top: '#3b5446', bottom: '#a3b19b', mountains: '#28362e', trees: '#1a231d', cottage: '#141a16' },
+            night: { top: '#080112', bottom: '#1e093b', mountains: '#110221', trees: '#06010d', cottage: '#08010d' }
+          },
+          heroic: {
+            day:   { top: '#2563eb', bottom: '#ffedd5', mountains: '#1d3557', trees: '#1d3557', cottage: '#0c1a30' },
+            night: { top: '#071630', bottom: '#1d4ed8', mountains: '#051124', trees: '#020d1c', cottage: '#010612' }
+          }
+        };
+
+        const getBlendedColor = (key, nRatio, slidersWeight) => {
+          // 1. Resolve Day vs Night for each profile
+          const cCosy = lerpColor(profiles.cosy.day[key], profiles.cosy.night[key], nRatio);
+          const cEerie = lerpColor(profiles.eerie.day[key], profiles.eerie.night[key], nRatio);
+          const cHeroic = lerpColor(profiles.heroic.day[key], profiles.heroic.night[key], nRatio);
+
+          const { wC, wE, wH } = slidersWeight;
+
+          // 2. Blend Cosy and Eerie based on relative ratio
+          const relEerie = wE / (wC + wE || 1);
+          const cosyEerieBlend = lerpColor(cCosy, cEerie, relEerie);
+
+          // 3. Blend result with Heroic
+          const finalBlend = lerpColor(cosyEerieBlend, cHeroic, wH);
+          return finalBlend;
+        };
+
+        let lastTime = 0;
+        let lightningTicks = 0;
+
+        // --- RENDER FUNCTION LOOP ---
+        const render = (time) => {
+          const dt = (time - lastTime) / 1000 || 0.016;
+          lastTime = time;
+
+          const width = 800;
+          const height = 480;
+
+          // Clear stage canvas
+          ctx.clearRect(0, 0, width, height);
+
+          // 1. Interpolate continuous Night-Ratio & Curtain-Open state
+          const targetNightRatio = isNight ? 1.0 : 0.0;
+          nightRatioRef.current += (targetNightRatio - nightRatioRef.current) * 0.06; // Smooth slide
+          
+          curtainOpenRef.current += (curtainTarget - curtainOpenRef.current) * 0.08; // Spring curtain easing
+
+          const nRatio = nightRatioRef.current;
+          const cOpen = curtainOpenRef.current;
+
+          // Get relative weights
+          const s = slidersRef.current;
+          const totalSliders = s.cosy + s.eerie + s.heroic || 1;
+          const slidersWeight = {
+            wC: s.cosy / totalSliders,
+            wE: s.eerie / totalSliders,
+            wH: s.heroic / totalSliders
+          };
+
+          const skyTop = getBlendedColor('top', nRatio, slidersWeight);
+          const skyBottom = getBlendedColor('bottom', nRatio, slidersWeight);
+          const mtCol = getBlendedColor('mountains', nRatio, slidersWeight);
+          const trCol = getBlendedColor('trees', nRatio, slidersWeight);
+          const ctCol = getBlendedColor('cottage', nRatio, slidersWeight);
+
+          // Capture mouse offset for parallax
+          const mX = mouseRef.current.active ? mouseRef.current.x : Math.sin(time * 0.0005) * 0.3;
+          const mY = mouseRef.current.active ? mouseRef.current.y : Math.sin(time * 0.0002) * 0.1;
+
+          // --- DRAW STAGE BACKSTAGE / THE SKY ---
+          const skyGrad = ctx.createLinearGradient(0, 0, 0, height * 0.8);
+          skyGrad.addColorStop(0, skyTop);
+          skyGrad.addColorStop(1, skyBottom);
+          ctx.fillStyle = skyGrad;
+          ctx.fillRect(0, 0, width, height * 0.82);
+
+          // Draw Stars if Night ratio > 0
+          if (nRatio > 0.02) {
+            ctx.save();
+            ctx.globalAlpha = nRatio;
+            ctx.fillStyle = '#ffffff';
+            // Simple deterministic star placements based on indices
+            for (let i = 0; i < 40; i++) {
+              const starX = (i * 19.5 + 47) % width;
+              const starY = (i * 11.2 + 23) % (height * 0.4);
+              const starR = 0.5 + Math.abs(Math.sin(time * 0.001 + i)) * 1.5;
+              ctx.beginPath();
+              ctx.arc(starX, starY, starR, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.restore();
+          }
+
+          // Draw Sun (Day)
+          if (nRatio < 0.98) {
+            ctx.save();
+            ctx.globalAlpha = 1.0 - nRatio;
+            
+            const sunX = width * 0.72 + mX * 10;
+            const sunY = height * 0.2 + mY * 6;
+            
+            // Draw celestial beams (God rays) for Heroic slider
+            if (slidersWeight.wH > 0.05) {
+              ctx.save();
+              ctx.globalAlpha = slidersWeight.wH * 0.2 * (1.0 - nRatio);
+              ctx.fillStyle = '#fef08a';
+              ctx.translate(sunX, sunY);
+              ctx.rotate(time * 0.0002);
+              for (let r = 0; r < 12; r++) {
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(-20, 400);
+                ctx.lineTo(20, 400);
+                ctx.closePath();
+                ctx.fill();
+                ctx.rotate((Math.PI * 2) / 12);
+              }
+              ctx.restore();
+            }
+
+            // Draw beautiful sun orb
+            const sunGlow = ctx.createRadialGradient(sunX, sunY, 5, sunX, sunY, 40);
+            sunGlow.addColorStop(0, '#fffbeb');
+            // If cosy is high, sun gets warm golden orange. If eerie, sun gets pale chartreuse green.
+            const outerSunColor = lerpColor('#fcd34d', '#bef264', slidersWeight.wE);
+            sunGlow.addColorStop(0.5, outerSunColor);
+            sunGlow.addColorStop(1, 'rgba(253, 224, 71, 0)');
+            ctx.fillStyle = sunGlow;
+            ctx.beginPath();
+            ctx.arc(sunX, sunY, 50, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+
+          // Draw Moon (Night)
+          if (nRatio > 0.02) {
+            ctx.save();
+            ctx.globalAlpha = nRatio;
+            const moonX = width * 0.25 + mX * 8;
+            const moonY = height * 0.18 + mY * 5;
+
+            // Spooky lunar halo if eerie is high
+            if (slidersWeight.wE > 0.05) {
+              const lunarHalo = ctx.createRadialGradient(moonX, moonY, 15, moonX, moonY, 65);
+              lunarHalo.addColorStop(0, 'rgba(216, 180, 254, 0.3)');
+              lunarHalo.addColorStop(0.6, 'rgba(168, 85, 247, 0.08)');
+              lunarHalo.addColorStop(1, 'rgba(168, 85, 247, 0)');
+              ctx.fillStyle = lunarHalo;
+              ctx.beginPath();
+              ctx.arc(moonX, moonY, 70, 0, Math.PI * 2);
+              ctx.fill();
+            }
+
+            // Crescent Pearl Moon
+            ctx.fillStyle = '#fefefe';
+            ctx.beginPath();
+            ctx.arc(moonX, moonY, 20, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Mask crescent
+            ctx.fillStyle = skyTop; // match upper background
+            ctx.beginPath();
+            ctx.arc(moonX + 8, moonY - 3, 18, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+
+          // --- PARALLAX LAYER 1: THE SILHOUETTE MOUNTAINS ---
+          ctx.save();
+          ctx.fillStyle = mtCol;
+          ctx.beginPath();
+          ctx.moveTo(0, height * 0.8);
+          
+          // Generate peaks dynamically by interpolating mathematical paths (Cosy rolling hills, eerie volcanic, heroic alpines)
+          const mParallaxX = mX * 12;
+          for (let x = 0; x <= width + 40; x += 10) {
+            const rx = x - mParallaxX;
+
+            // 1. Cosy profile: Rounded gentle sinusoidal hills
+            const yCosy = height * 0.58 + Math.sin(rx * 0.012) * 25 + Math.cos(rx * 0.004) * 15;
+
+            // 2. Eerie profile: Spiky, steep gothic teeth
+            const yEerie = height * 0.52 + Math.sin(rx * 0.035) * 40 + (Math.sin(rx * 0.01) > 0.6 ? -25 : 5);
+
+            // 3. Heroic profile: Towering alpine mountains
+            const peakCycle = Math.abs((rx % 220) - 110) * 0.95;
+            const yHeroic = height * 0.44 - peakCycle + 60;
+
+            // Blend paths
+            const blendedY = yCosy * slidersWeight.wC + yEerie * slidersWeight.wE + yHeroic * slidersWeight.wH;
+            ctx.lineTo(x, blendedY);
+          }
+          ctx.lineTo(width, height * 0.8);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+
+          // --- PARALLAX LAYER 2: THE MIDGROUND FOREST & SCENERY ---
+          const fParallaxX = mX * 24;
+          
+          // Draw Midground Trees (fading visibility groups based on dominant sliders)
+          // Tree coordinates
+          const treeSpots = [
+            { x: 75, baseSize: 40, offset: 5 },
+            { x: 135, baseSize: 55, offset: -8 },
+            { x: 180, baseSize: 35, offset: 12 },
+            { x: 620, baseSize: 45, offset: -5 },
+            { x: 680, baseSize: 50, offset: 8 },
+            { x: 740, baseSize: 38, offset: -10 },
+          ];
+
+          treeSpots.forEach(tree => {
+            const finalX = tree.x + fParallaxX + tree.offset;
+            const baseY = height * 0.72;
+
+            // 1. Cosy tree: lush round maple
+            if (slidersWeight.wC > 0.01) {
+              ctx.save();
+              ctx.globalAlpha = slidersWeight.wC;
+              ctx.fillStyle = trCol;
+              ctx.beginPath();
+              ctx.arc(finalX, baseY - tree.baseSize * 0.6, tree.baseSize * 0.45, 0, Math.PI * 2);
+              ctx.arc(finalX - tree.baseSize * 0.25, baseY - tree.baseSize * 0.4, tree.baseSize * 0.35, 0, Math.PI * 2);
+              ctx.arc(finalX + tree.baseSize * 0.25, baseY - tree.baseSize * 0.4, tree.baseSize * 0.35, 0, Math.PI * 2);
+              ctx.closePath();
+              ctx.fill();
+              
+              // Soft wood trunk
+              ctx.fillStyle = ctCol;
+              ctx.fillRect(finalX - 3, baseY - tree.baseSize * 0.2, 6, tree.baseSize * 0.25);
+              ctx.restore();
+            }
+
+            // 2. Eerie tree: Crooked gnarled leafless claws
+            if (slidersWeight.wE > 0.01) {
+              ctx.save();
+              ctx.globalAlpha = slidersWeight.wE;
+              ctx.strokeStyle = trCol;
+              ctx.lineWidth = 3;
+              ctx.lineCap = 'round';
+              
+              // Trunk
+              ctx.beginPath();
+              ctx.moveTo(finalX, baseY);
+              ctx.quadraticCurveTo(finalX - 5, baseY - tree.baseSize * 0.4, finalX - 8, baseY - tree.baseSize * 0.75);
+              ctx.stroke();
+
+              // Branch 1
+              ctx.beginPath();
+              ctx.moveTo(finalX - 4, baseY - tree.baseSize * 0.3);
+              ctx.quadraticCurveTo(finalX - 15, baseY - tree.baseSize * 0.5, finalX - 25, baseY - tree.baseSize * 0.62);
+              ctx.stroke();
+
+              // Branch 2
+              ctx.beginPath();
+              ctx.moveTo(finalX - 6, baseY - tree.baseSize * 0.55);
+              ctx.quadraticCurveTo(finalX + 8, baseY - tree.baseSize * 0.7, finalX + 15, baseY - tree.baseSize * 0.85);
+              ctx.stroke();
+
+              ctx.restore();
+            }
+
+            // 3. Heroic tree: Geometric tall pointed pines
+            if (slidersWeight.wH > 0.01) {
+              ctx.save();
+              ctx.globalAlpha = slidersWeight.wH;
+              ctx.fillStyle = trCol;
+              
+              const pineH = tree.baseSize * 1.25;
+              ctx.beginPath();
+              ctx.moveTo(finalX, baseY - pineH);
+              ctx.lineTo(finalX - tree.baseSize * 0.35, baseY - pineH * 0.65);
+              ctx.lineTo(finalX - tree.baseSize * 0.2, baseY - pineH * 0.65);
+              ctx.lineTo(finalX - tree.baseSize * 0.45, baseY - pineH * 0.3);
+              ctx.lineTo(finalX - tree.baseSize * 0.25, baseY - pineH * 0.3);
+              ctx.lineTo(finalX - tree.baseSize * 0.55, baseY);
+              ctx.lineTo(finalX + tree.baseSize * 0.55, baseY);
+              ctx.lineTo(finalX + tree.baseSize * 0.25, baseY - pineH * 0.3);
+              ctx.lineTo(finalX + tree.baseSize * 0.45, baseY - pineH * 0.3);
+              ctx.lineTo(finalX + tree.baseSize * 0.2, baseY - pineH * 0.65);
+              ctx.lineTo(finalX + tree.baseSize * 0.35, baseY - pineH * 0.65);
+              ctx.closePath();
+              ctx.fill();
+
+              ctx.restore();
+            }
+          });
+
+          // --- THE MORPHING STRUCTURES LAYER ---
+          // Based on slider weight crossfading
+
+          // A. COSY COTTAGE (around X=240)
+          if (slidersWeight.wC > 0.01) {
+            ctx.save();
+            ctx.globalAlpha = slidersWeight.wC;
+            const cotX = 220 + fParallaxX;
+            const cotY = height * 0.73;
+
+            // Cottage Base
+            ctx.fillStyle = ctCol;
+            ctx.beginPath();
+            ctx.rect(cotX, cotY - 45, 60, 45);
+            ctx.fill();
+
+            // Slanted Roof
+            ctx.fillStyle = lerpColor('#92400e', '#78350f', nRatio);
+            ctx.beginPath();
+            ctx.moveTo(cotX - 8, cotY - 43);
+            ctx.lineTo(cotX + 30, cotY - 72);
+            ctx.lineTo(cotX + 68, cotY - 43);
+            ctx.closePath();
+            ctx.fill();
+
+            // Chimney
+            ctx.fillStyle = '#4b5563';
+            ctx.fillRect(cotX + 45, cotY - 68, 10, 20);
+
+            // Door
+            ctx.fillStyle = '#78350f';
+            ctx.fillRect(cotX + 12, cotY - 26, 15, 26);
+            ctx.beginPath();
+            ctx.arc(cotX + 23, cotY - 13, 1.5, 0, Math.PI * 2);
+            ctx.fillStyle = '#f59e0b';
+            ctx.fill();
+
+            // Glowing Windows (brightens with cosy & night!)
+            const windowGlow = ctx.createRadialGradient(cotX + 42, cotY - 24, 2, cotX + 42, cotY - 24, 12);
+            windowGlow.addColorStop(0, '#fffbeb');
+            windowGlow.addColorStop(0.3, '#f59e0b');
+            windowGlow.addColorStop(1, 'rgba(245, 158, 11, 0)');
+            
+            ctx.fillStyle = windowGlow;
+            ctx.beginPath();
+            ctx.arc(cotX + 42, cotY - 24, 15, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#fef08a';
+            ctx.fillRect(cotX + 38, cotY - 28, 8, 8); // actual window pane
+
+            ctx.restore();
+          }
+
+          // B. EERIE CASTLE RUINS (around X=370)
+          if (slidersWeight.wE > 0.01) {
+            ctx.save();
+            ctx.globalAlpha = slidersWeight.wE;
+            const ruinX = 360 + fParallaxX;
+            const ruinY = height * 0.74;
+
+            // Jagged wall
+            ctx.fillStyle = ctCol;
+            ctx.beginPath();
+            ctx.moveTo(ruinX, ruinY);
+            ctx.lineTo(ruinX, ruinY - 60);
+            ctx.lineTo(ruinX + 12, ruinY - 60);
+            ctx.lineTo(ruinX + 12, ruinY - 50);
+            ctx.lineTo(ruinX + 24, ruinY - 50);
+            ctx.lineTo(ruinX + 24, ruinY - 72); // tall jagged peak
+            ctx.lineTo(ruinX + 36, ruinY - 72);
+            ctx.lineTo(ruinX + 36, ruinY - 45);
+            ctx.lineTo(ruinX + 48, ruinY - 45);
+            ctx.lineTo(ruinX + 54, ruinY);
+            ctx.closePath();
+            ctx.fill();
+
+            // Gothic hollow archway
+            ctx.fillStyle = '#110221';
+            ctx.beginPath();
+            ctx.moveTo(ruinX + 16, ruinY);
+            ctx.lineTo(ruinX + 16, ruinY - 25);
+            ctx.quadraticCurveTo(ruinX + 25, ruinY - 35, ruinX + 34, ruinY - 25);
+            ctx.lineTo(ruinX + 34, ruinY);
+            ctx.closePath();
+            ctx.fill();
+
+            // Ghostly green glow coming from inside the ruin
+            const eerieGlow = ctx.createRadialGradient(ruinX + 25, ruinY - 22, 2, ruinX + 25, ruinY - 22, 15);
+            eerieGlow.addColorStop(0, '#c084fc');
+            eerieGlow.addColorStop(0.5, 'rgba(168, 85, 247, 0.4)');
+            eerieGlow.addColorStop(1, 'rgba(168, 85, 247, 0)');
+            ctx.fillStyle = eerieGlow;
+            ctx.beginPath();
+            ctx.arc(ruinX + 25, ruinY - 22, 15, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+          }
+
+          // C. HEROIC BATTLE CASTLE KEEP (around X=480)
+          if (slidersWeight.wH > 0.01) {
+            ctx.save();
+            ctx.globalAlpha = slidersWeight.wH;
+            const casX = 470 + fParallaxX;
+            const casY = height * 0.73;
+
+            // Main Stone Tower
+            ctx.fillStyle = ctCol;
+            ctx.beginPath();
+            ctx.rect(casX, casY - 65, 55, 65);
+            ctx.fill();
+
+            // Crenellations
+            ctx.beginPath();
+            ctx.fillRect(casX - 4, casY - 73, 12, 10);
+            ctx.fillRect(casX + 16, casY - 73, 10, 10);
+            ctx.fillRect(casX + 36, casY - 73, 10, 10);
+            ctx.fillRect(casX + 47, casY - 73, 12, 10);
+
+            // Tall Flagstaff waving a gold banner
+            ctx.strokeStyle = '#9ca3af';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.moveTo(casX + 26, casY - 65);
+            ctx.lineTo(casX + 26, casY - 110);
+            ctx.stroke();
+
+            // Waving Standard Flag
+            ctx.fillStyle = '#1d4ed8'; // Blue banner
+            const wave = Math.sin(time * 0.006) * 4;
+            ctx.beginPath();
+            ctx.moveTo(casX + 26, casY - 110);
+            ctx.quadraticCurveTo(casX + 38, casY - 110 - wave, casX + 50, casY - 105);
+            ctx.quadraticCurveTo(casX + 38, casY - 100 + wave, casX + 26, casY - 100);
+            ctx.closePath();
+            ctx.fill();
+
+            // Gold Standard Cross symbol
+            ctx.fillStyle = '#fbbf24';
+            ctx.beginPath();
+            ctx.arc(casX + 36, casY - 105 + wave * 0.2, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Glowing blue window of courage
+            ctx.fillStyle = '#60a5fa';
+            ctx.fillRect(casX + 21, casY - 45, 13, 20);
+            ctx.beginPath();
+            ctx.arc(casX + 27.5, casY - 45, 6.5, Math.PI, 0);
+            ctx.fill();
+
+            ctx.restore();
+          }
+
+          // --- FOREGROUND: THE THEATRE STAGE FLOOR ---
+          const fgParallaxX = mX * 36;
+          const stageY = height * 0.72;
+
+          // Shiny dark floorboard reflection zone
+          ctx.save();
+          const floorGrad = ctx.createLinearGradient(0, stageY, 0, height);
+          floorGrad.addColorStop(0, '#2e190d');
+          floorGrad.addColorStop(1, '#0c0502');
+          ctx.fillStyle = floorGrad;
+          ctx.fillRect(0, stageY, width, height - stageY);
+
+          // Draw gloss reflection of sky and silhouettes
+          ctx.save();
+          ctx.globalCompositeOperation = 'screen';
+          ctx.globalAlpha = 0.12 + (0.05 * slidersWeight.wE); // spookier reflections
+          const reflectionGrad = ctx.createLinearGradient(0, stageY, 0, height);
+          reflectionGrad.addColorStop(0, skyBottom);
+          reflectionGrad.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = reflectionGrad;
+          ctx.fillRect(0, stageY, width, height - stageY);
+          ctx.restore();
+
+          // Floorboards lines
+          ctx.strokeStyle = '#140b06';
+          ctx.lineWidth = 1.5;
+          // Vertical perspective cracks
+          for (let p = -100; p <= width + 100; p += 80) {
+            const rx1 = p + fgParallaxX * 0.4;
+            const rx2 = p * 1.25 + fgParallaxX * 0.8;
+            ctx.beginPath();
+            ctx.moveTo(rx1, stageY);
+            ctx.lineTo(rx2, height);
+            ctx.stroke();
+          }
+          // Horizontal planks
+          for (let py = stageY; py < height; py += 28) {
+            ctx.beginPath();
+            ctx.moveTo(0, py);
+            ctx.lineTo(width, py);
+            ctx.stroke();
+          }
+          ctx.restore();
+
+          // --- INTERACTIVE METEOROLOGICAL PARTICLES ---
+          ctx.save();
+
+          // A. CHIMNEY SMOKE (Cosy)
+          if (slidersWeight.wC > 0.15) {
+            particles.smoke.forEach((smoke, idx) => {
+              // Reset if dead
+              if (smoke.y < 0 || smoke.life <= 0) {
+                smoke.x = 270 + fParallaxX; // exact cottage chimney placement
+                smoke.y = stageY - 68;
+                smoke.vy = -(0.5 + Math.random() * 0.8);
+                smoke.vx = -0.3 + Math.random() * 0.6;
+                smoke.life = 1.0;
+                smoke.r = 3 + Math.random() * 5;
+              }
+
+              // Update
+              const windSpeed = (slidersWeight.wE * 1.2) + (slidersWeight.wH * 2.0); // eerie/heroic wind pushes smoke
+              smoke.x += smoke.vx - windSpeed * dt * 30;
+              smoke.y += smoke.vy;
+              smoke.life -= 0.0035;
+              smoke.r += 0.08;
+
+              // Draw soft smoke puff
+              ctx.save();
+              ctx.globalAlpha = smoke.life * slidersWeight.wC * 0.35;
+              ctx.fillStyle = nRatio > 0.5 ? '#9ca3af' : '#d1d5db';
+              ctx.beginPath();
+              ctx.arc(smoke.x, smoke.y, smoke.r, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.restore();
+            });
+          }
+
+          // B. HEARTH EMBER SPARKS (Cosy / Heroic sparks of fire)
+          const sparkActive = slidersWeight.wC > 0.2 || slidersWeight.wH > 0.2;
+          if (sparkActive) {
+            particles.embers.forEach(ember => {
+              ember.x += ember.vx + (Math.sin(time * 0.005 + ember.y) * 0.15);
+              ember.y += ember.vy;
+              ember.alpha -= ember.decay;
+
+              if (ember.alpha <= 0 || ember.y < 50) {
+                ember.x = (slidersWeight.wC > slidersWeight.wH) 
+                  ? 270 + fParallaxX + (Math.random() * 5 - 2.5) // chimney
+                  : Math.random() * width; // heroic celestial embers anywhere
+                ember.y = (slidersWeight.wC > slidersWeight.wH) ? stageY - 68 : stageY + 20;
+                ember.vy = -(0.7 + Math.random() * 1.5);
+                ember.alpha = 0.8 + Math.random() * 0.2;
+              }
+
+              ctx.save();
+              // Golden orange sparks
+              ctx.fillStyle = (slidersWeight.wH > slidersWeight.wC) ? '#fef08a' : '#f97316';
+              ctx.globalAlpha = ember.alpha * Math.max(slidersWeight.wC, slidersWeight.wH) * 0.9;
+              ctx.shadowColor = '#fb923c';
+              ctx.shadowBlur = 4;
+              ctx.fillRect(ember.x, ember.y, ember.r * 1.5, ember.r * 1.5);
+              ctx.restore();
+            });
+          }
+
+          // C. GHOSTLY CREEPING FOG (Eerie)
+          if (slidersWeight.wE > 0.1) {
+            particles.fog.forEach(cloud => {
+              cloud.x += cloud.vx;
+              if (cloud.x - cloud.r > width) {
+                cloud.x = -cloud.r;
+              }
+
+              ctx.save();
+              ctx.globalAlpha = slidersWeight.wE * 0.22;
+              // Greenish/Purple eerie mist
+              const fogColor = lerpColor('#86efac', '#c084fc', nRatio);
+              const fogGrad = ctx.createRadialGradient(cloud.x, cloud.y, 10, cloud.x, cloud.y, cloud.r);
+              fogGrad.addColorStop(0, fogColor);
+              fogGrad.addColorStop(0.5, 'rgba(134, 239, 172, 0.1)');
+              fogGrad.addColorStop(1, 'rgba(0,0,0,0)');
+              ctx.fillStyle = fogGrad;
+              ctx.beginPath();
+              ctx.arc(cloud.x, cloud.y, cloud.r, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.restore();
+            });
+          }
+
+          // D. WEATHER PARTICLES: RAIN / SNOW / LEAVES (Depends on Forecast)
+          if (forecast === 'tempest') {
+            // Draw Rain
+            ctx.strokeStyle = nRatio > 0.5 ? '#bae6fd' : '#7dd3fc';
+            ctx.lineWidth = 1.0;
+            // Angle rain sideways if Eerie or Heroic wind is high
+            const windAngle = -2 - (slidersWeight.wE * 3) - (slidersWeight.wH * 4);
+            
+            particles.rain.forEach(r => {
+              r.x += windAngle;
+              r.y += r.vy;
+
+              if (r.y > stageY) {
+                // Splash on stage floor
+                if (Math.random() < 0.15) {
+                  ctx.beginPath();
+                  ctx.ellipse(r.x, stageY + (height - stageY) * Math.random(), 3, 1, 0, 0, Math.PI * 2);
+                  ctx.stroke();
+                }
+                r.x = Math.random() * (width + 200);
+                r.y = -20;
+              }
+
+              ctx.save();
+              ctx.globalAlpha = r.opacity;
+              ctx.beginPath();
+              ctx.moveTo(r.x, r.y);
+              ctx.lineTo(r.x + windAngle, r.y + r.len);
+              ctx.stroke();
+              ctx.restore();
+            });
+          } 
+          else if (forecast === 'snow') {
+            // Draw Snow
+            ctx.fillStyle = '#ffffff';
+            const snowWind = -0.5 - (slidersWeight.wE * 1.5) - (slidersWeight.wH * 2.0);
+            
+            particles.snow.forEach(s => {
+              s.swing += s.swingSpeed;
+              s.x += snowWind + Math.sin(s.swing) * 0.4;
+              s.y += s.vy;
+
+              if (s.y > stageY + 30) {
+                s.x = Math.random() * (width + 200);
+                s.y = -20;
+              }
+
+              ctx.save();
+              ctx.globalAlpha = 0.4 + Math.random() * 0.6;
+              ctx.beginPath();
+              ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.restore();
+            });
+          } 
+          else if (forecast === 'sun') {
+            // Draw warm Autumn Leaves floating down if cosy is active
+            if (slidersWeight.wC > 0.1) {
+              particles.leaves.forEach(leaf => {
+                leaf.x += leaf.vx + Math.sin(time * 0.002 + leaf.y) * 0.3;
+                leaf.y += leaf.vy;
+                leaf.rot += leaf.rotSpeed;
+
+                if (s.y > stageY + 20 || leaf.x < -20 || leaf.x > width + 20) {
+                  leaf.x = Math.random() * width;
+                  leaf.y = -20;
+                  leaf.vy = 0.8 + Math.random() * 1.5;
+                }
+
+                ctx.save();
+                ctx.translate(leaf.x, leaf.y);
+                ctx.rotate(leaf.rot * Math.PI / 180);
+                ctx.globalAlpha = slidersWeight.wC * 0.85;
+                ctx.fillStyle = leaf.color;
+                
+                // Draw leaf shape
+                ctx.beginPath();
+                ctx.moveTo(0, -leaf.r);
+                ctx.quadraticCurveTo(leaf.r * 0.6, 0, 0, leaf.r);
+                ctx.quadraticCurveTo(-leaf.r * 0.6, 0, 0, -leaf.r);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+              });
+            }
+          }
+
+          // E. SCENIC FLYER (Bats for Eerie, Golden Phoenix for Heroic, butterflies/lanterns for Cosy)
+          particles.flyers.forEach((f, idx) => {
+            f.x += f.vx;
+            f.wingAngle += 0.22 * f.wingDir;
+            if (Math.abs(f.wingAngle) > 0.6) f.wingDir *= -1;
+
+            // Type dynamic determination
+            if (slidersWeight.wE > 0.5) f.type = 'bat';
+            else if (slidersWeight.wH > 0.5) f.type = 'phoenix';
+            else f.type = 'butterfly';
+
+            // Wrap boundaries
+            if (f.x > width + 100) {
+              f.x = -150 - Math.random() * 200;
+              f.y = 50 + Math.random() * 140;
+              f.vx = 1.2 + Math.random() * 1.5;
+            }
+
+            ctx.save();
+            ctx.translate(f.x, f.y);
+            
+            if (f.type === 'bat') {
+              ctx.fillStyle = '#1e1b4b'; // dark indigo
+              ctx.globalAlpha = slidersWeight.wE * 0.9;
+              // Simple vector bat
+              ctx.beginPath();
+              ctx.moveTo(0, 0);
+              ctx.lineTo(-8, -4 - f.wingAngle * 10);
+              ctx.lineTo(-3, 2);
+              ctx.lineTo(0, 5);
+              ctx.lineTo(3, 2);
+              ctx.lineTo(8, -4 - f.wingAngle * 10);
+              ctx.closePath();
+              ctx.fill();
+            } 
+            else if (f.type === 'phoenix') {
+              ctx.fillStyle = '#f59e0b';
+              ctx.shadowColor = '#f97316';
+              ctx.shadowBlur = 10;
+              ctx.globalAlpha = slidersWeight.wH * 0.95;
+              // Golden eagle/phoenix soaring
+              ctx.beginPath();
+              ctx.moveTo(0, 0);
+              ctx.lineTo(-12, -8 - f.wingAngle * 8);
+              ctx.lineTo(-4, 0);
+              ctx.lineTo(0, 4);
+              ctx.lineTo(4, 0);
+              ctx.lineTo(12, -8 - f.wingAngle * 8);
+              ctx.closePath();
+              ctx.fill();
+            } 
+            else { // butterfly (Cosy)
+              ctx.fillStyle = '#f472b6'; // pink
+              ctx.globalAlpha = slidersWeight.wC * 0.8;
+              ctx.beginPath();
+              ctx.ellipse(-3, -f.wingAngle * 4, 4, 6, Math.PI / 4, 0, Math.PI * 2);
+              ctx.ellipse(3, -f.wingAngle * 4, 4, 6, -Math.PI / 4, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.restore();
+          });
+
+          // F. MANUAL / RANDOM LIGHTNING FORK BOLT
+          if (lightningFlash) {
+            lightningTicks++;
+            if (lightningTicks < 18) {
+              // Sky flash effect
+              ctx.save();
+              ctx.globalAlpha = (1.0 - (lightningTicks / 18)) * lightningFlash.intensity * 0.5;
+              ctx.fillStyle = lightningFlash.color;
+              ctx.fillRect(0, 0, width, height * 0.72);
+              ctx.restore();
+
+              // Drawing the actual lightning branches
+              ctx.save();
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth = 3.5;
+              ctx.shadowColor = lightningFlash.color;
+              ctx.shadowBlur = 15;
+              
+              const startX = lightningFlash.x * width;
+              let currentX = startX;
+              let currentY = 10;
+              
+              ctx.beginPath();
+              ctx.moveTo(startX, currentY);
+
+              // Bolt zigzag logic
+              while (currentY < stageY - 10) {
+                const nextY = currentY + 30 + Math.random() * 40;
+                const nextX = currentX + (Math.random() * 60 - 30);
+                ctx.lineTo(nextX, nextY);
+
+                // Little fork branch
+                if (Math.random() < 0.25) {
+                  ctx.lineTo(nextX + (Math.random() * 40 - 20), nextY + 30);
+                  ctx.moveTo(nextX, nextY); // Return to trunk
+                }
+
+                currentX = nextX;
+                currentY = nextY;
+              }
+              ctx.stroke();
+              ctx.restore();
+            } else {
+              setLightningFlash(null);
+              lightningTicks = 0;
+            }
+          }
+
+          ctx.restore(); // End weather particles
+
+          // --- THEATRE VOLUMETRIC LIGHTING / SPOTLIGHTS ---
+          if (volumetricLight && cOpen > 0.01) {
+            ctx.save();
+            ctx.globalAlpha = cOpen; // matches curtain open
+
+            // Create offscreen canvas overlay
+            const maskCanvas = document.createElement('canvas');
+            maskCanvas.width = width;
+            maskCanvas.height = height;
+            const maskCtx = maskCanvas.getContext('2d');
+
+            // 1. Fill completely with darkness (denser at night)
+            maskCtx.fillStyle = nRatio > 0.5 ? 'rgba(8, 5, 12, 0.74)' : 'rgba(30, 30, 42, 0.44)';
+            maskCtx.fillRect(0, 0, width, height);
+
+            // 2. Cut out spotlights with destination-out clipping
+            maskCtx.globalCompositeOperation = 'destination-out';
+
+            // Automatic sweeping spotlight
+            const spot1X = width * 0.5 + Math.sin(time * 0.0008) * 220;
+            const spot1Y = stageY - 15;
+            const grad1 = maskCtx.createRadialGradient(spot1X, spot1Y, 15, spot1X, spot1Y, 150);
+            grad1.addColorStop(0, 'rgba(0,0,0,1.0)');
+            grad1.addColorStop(1, 'rgba(0,0,0,0)');
+            maskCtx.fillStyle = grad1;
+            maskCtx.beginPath();
+            maskCtx.arc(spot1X, spot1Y, 150, 0, Math.PI * 2);
+            maskCtx.fill();
+
+            // Interactive mouse focus spotlight (if inside canvas)
+            if (mouseRef.current.active) {
+              const spot2X = (mouseRef.current.x + 1) * 0.5 * width;
+              const spot2Y = (mouseRef.current.y + 1) * 0.5 * height;
+              const grad2 = maskCtx.createRadialGradient(spot2X, spot2Y, 10, spot2X, spot2Y, 95);
+              grad2.addColorStop(0, 'rgba(0,0,0,1.0)');
+              grad2.addColorStop(1, 'rgba(0,0,0,0)');
+              maskCtx.fillStyle = grad2;
+              maskCtx.beginPath();
+              maskCtx.arc(spot2X, spot2Y, 95, 0, Math.PI * 2);
+              maskCtx.fill();
+            }
+
+            // Draw masked overlay onto the stage
+            ctx.drawImage(maskCanvas, 0, 0);
+
+            // 3. Draw volumetric soft white scattering cones (Screen overlay)
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            ctx.fillStyle = 'rgba(253, 251, 230, 0.06)'; // very warm scattering
+
+            // Draw volumetric cone 1 (from top left down to sweep spot)
+            ctx.beginPath();
+            ctx.moveTo(width * 0.4, 0);
+            ctx.lineTo(width * 0.6, 0);
+            ctx.lineTo(spot1X + 110, spot1Y);
+            ctx.lineTo(spot1X - 110, spot1Y);
+            ctx.closePath();
+            ctx.fill();
+
+            // Cone 2 (Interactive cursor spot)
+            if (mouseRef.current.active) {
+              const curX = (mouseRef.current.x + 1) * 0.5 * width;
+              const curY = (mouseRef.current.y + 1) * 0.5 * height;
+              ctx.fillStyle = 'rgba(253, 251, 230, 0.04)';
+              ctx.beginPath();
+              ctx.moveTo(width * 0.5 - 20, 0);
+              ctx.moveTo(width * 0.5 + 20, 0);
+              ctx.lineTo(curX + 65, curY);
+              ctx.lineTo(curX - 65, curY);
+              ctx.closePath();
+              ctx.fill();
+            }
+
+            ctx.restore();
+            ctx.restore();
+          }
+
+          // --- THE PHYSICAL STAGE CURTAIN REVEAL LAYER ---
+          // Drawn directly on Canvas for high performance, shading, and dynamic folding compression!
+          if (cOpen < 0.99) {
+            ctx.save();
+
+            // Scalloped Top Valance Drapery (Fixed at top)
+            const drawValance = () => {
+              ctx.save();
+              // Deep crimson gradient
+              const drapeGrad = ctx.createLinearGradient(0, 0, 0, 80);
+              drapeGrad.addColorStop(0, '#4a040d');
+              drapeGrad.addColorStop(0.5, '#800c1e');
+              drapeGrad.addColorStop(1, '#3b020a');
+              ctx.fillStyle = drapeGrad;
+
+              ctx.beginPath();
+              ctx.rect(0, 0, width, 55);
+              ctx.fill();
+
+              // Scallop arches
+              ctx.fillStyle = '#800c1e';
+              ctx.beginPath();
+              const scallops = 8;
+              const sWidth = width / scallops;
+              for (let i = 0; i < scallops; i++) {
+                const sx = i * sWidth;
+                ctx.moveTo(sx, 55);
+                ctx.quadraticCurveTo(sx + sWidth/2, 75, sx + sWidth, 55);
+              }
+              ctx.closePath();
+              ctx.fill();
+
+              // Golden scalloped fringe border
+              ctx.strokeStyle = '#d4af37';
+              ctx.lineWidth = 3.5;
+              ctx.shadowColor = '#ffe082';
+              ctx.shadowBlur = 5;
+              ctx.beginPath();
+              for (let i = 0; i < scallops; i++) {
+                const sx = i * sWidth;
+                ctx.moveTo(sx, 56);
+                ctx.quadraticCurveTo(sx + sWidth/2, 76, sx + sWidth, 56);
+              }
+              ctx.stroke();
+              ctx.restore();
+            };
+
+            // Draw drapes left and right (compressing sideways as they open!)
+            const curtainW = width * 0.5 * (1.0 - cOpen);
+            const leftCurtainEnd = curtainW;
+            const rightCurtainStart = width - curtainW;
+
+            // Render Left Curtain drapes
+            if (leftCurtainEnd > 0) {
+              ctx.save();
+              
+              // Shadow behind curtain edge to give depth
+              ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+              ctx.shadowBlur = 12;
+              ctx.shadowOffsetX = 6;
+
+              const drapeCount = 14;
+              const foldW = leftCurtainEnd / drapeCount;
+              
+              for (let f = 0; f < drapeCount; f++) {
+                const fx1 = f * foldW;
+                const fx2 = fx1 + foldW;
+                
+                // Alternate gradients for folding fabric creases
+                const foldGrad = ctx.createLinearGradient(fx1, 0, fx2, 0);
+                if (f % 2 === 0) {
+                  foldGrad.addColorStop(0, '#5f030d');
+                  foldGrad.addColorStop(0.7, '#8e1226');
+                  foldGrad.addColorStop(1, '#a81c32');
+                } else {
+                  foldGrad.addColorStop(0, '#a81c32');
+                  foldGrad.addColorStop(0.3, '#740512');
+                  foldGrad.addColorStop(1, '#3c0106');
+                }
+                
+                ctx.fillStyle = foldGrad;
+                ctx.beginPath();
+                ctx.rect(fx1, 0, foldW + 0.5, height - 12);
+                ctx.fill();
+              }
+              
+              // Gold Trim with scallops at the base of left curtain
+              ctx.strokeStyle = '#d4af37';
+              ctx.lineWidth = 4;
+              ctx.beginPath();
+              ctx.moveTo(0, height - 16);
+              ctx.lineTo(leftCurtainEnd, height - 16);
+              ctx.stroke();
+
+              ctx.restore();
+            }
+
+            // Render Right Curtain drapes
+            if (rightCurtainStart < width) {
+              ctx.save();
+              ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+              ctx.shadowBlur = 12;
+              ctx.shadowOffsetX = -6;
+
+              const drapeCount = 14;
+              const foldW = curtainW / drapeCount;
+
+              for (let f = 0; f < drapeCount; f++) {
+                const fx1 = rightCurtainStart + f * foldW;
+                const fx2 = fx1 + foldW;
+
+                const foldGrad = ctx.createLinearGradient(fx1, 0, fx2, 0);
+                if (f % 2 === 0) {
+                  foldGrad.addColorStop(0, '#3c0106');
+                  foldGrad.addColorStop(0.4, '#740512');
+                  foldGrad.addColorStop(1, '#a81c32');
+                } else {
+                  foldGrad.addColorStop(0, '#a81c32');
+                  foldGrad.addColorStop(0.7, '#8e1226');
+                  foldGrad.addColorStop(1, '#5f030d');
+                }
+
+                ctx.fillStyle = foldGrad;
+                ctx.beginPath();
+                ctx.rect(fx1, 0, foldW + 0.5, height - 12);
+                ctx.fill();
+              }
+
+              // Gold Trim at base
+              ctx.strokeStyle = '#d4af37';
+              ctx.lineWidth = 4;
+              ctx.beginPath();
+              ctx.moveTo(rightCurtainStart, height - 16);
+              ctx.lineTo(width, height - 16);
+              ctx.stroke();
+
+              ctx.restore();
+            }
+
+            // Draw valance on top of curtains
+            drawValance();
+
+            ctx.restore();
+          }
+
+          // --- FOOTLIGHTS GLOW BULBS ---
+          const numLights = 6;
+          for (let i = 0; i < numLights; i++) {
+            const fx = (width / (numLights + 1)) * (i + 1);
+            const fy = height - 14;
+            
+            // Sway light cones slightly
+            const swayOffset = Math.sin(time * 0.0008 + i * 1.5) * 12;
+
+            // Determine spotlight color depending on active blend
+            let lightColor = '#fcd34d'; // Warm Cosy gold
+            let glowColor = 'rgba(251, 146, 60, 0.45)';
+            if (slidersWeight.wE > 0.45) {
+              lightColor = '#c084fc'; // Purple Eerie
+              glowColor = 'rgba(168, 85, 247, 0.5)';
+            } else if (slidersWeight.wH > 0.45) {
+              lightColor = '#93c5fd'; // Courageous Blue Heroic
+              glowColor = 'rgba(59, 130, 246, 0.45)';
+            }
+
+            ctx.save();
+            ctx.globalAlpha = 0.15 + (0.85 * cOpen); // lights dim when curtains close
+
+            // Volumetric Cone upwards
+            const lightCone = ctx.createLinearGradient(fx, fy, fx + swayOffset, fy - 140);
+            lightCone.addColorStop(0, glowColor);
+            lightCone.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = lightCone;
+
+            ctx.beginPath();
+            ctx.moveTo(fx - 10, fy);
+            ctx.lineTo(fx + 10, fy);
+            ctx.lineTo(fx + swayOffset + 60, fy - 150);
+            ctx.lineTo(fx + swayOffset - 60, fy - 150);
+            ctx.closePath();
+            ctx.fill();
+
+            // Actual physical brass bulb holder & glowing bulb
+            ctx.fillStyle = '#1e1b4b'; // dark base
+            ctx.fillRect(fx - 8, fy, 16, 12);
+            ctx.fillStyle = '#d4af37'; // gold trim
+            ctx.fillRect(fx - 6, fy, 12, 4);
+
+            // Glowing glass orb
+            ctx.fillStyle = lightColor;
+            ctx.beginPath();
+            ctx.arc(fx, fy - 2, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+
+          // --- STAGE DECORATION FRAME (THE GILDED INNER ARCH) ---
+          ctx.strokeStyle = '#d4af37';
+          ctx.lineWidth = 4;
+          ctx.strokeRect(2, 2, width - 4, height - 4);
+
+          // Wood grain texture borders around canvas edge
+          ctx.strokeStyle = '#1f1007';
+          ctx.lineWidth = 4;
+          ctx.strokeRect(6, 6, width - 12, height - 12);
+
+          animationFrameId = requestAnimationFrame(render);
+        };
+
+        animationFrameId = requestAnimationFrame(render);
+
+        return () => {
+          cancelAnimationFrame(animationFrameId);
+          window.removeEventListener('resize', resize);
+        };
+      }, [isNight, forecast, curtainTarget, volumetricLight, lightningFlash]);
+
+      // Handle Mouse Move inside canvas for spotlight tracker & parallax
+      const handleMouseMove = (e) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const x = ((e.clientX - rect.left) / rect.width) * 2 - 1; // -1 to 1
+        const y = ((e.clientY - rect.top) / rect.height) * 2 - 1; // -1 to 1
+        mouseRef.current = { x, y, active: true };
+      };
+
+      const handleMouseLeave = () => {
+        mouseRef.current.active = false;
+      };
+
+      return (
+        <div className={`w-full flex-grow flex flex-col transition-colors duration-700 ${isNight ? 'bg-stone-950 text-stone-100' : 'bg-stone-100 text-stone-900'}`}>
+          
+          {/* HEADER BAR */}
+          <header className={`py-4 px-6 border-b transition-colors duration-500 flex flex-col md:flex-row items-center justify-between gap-4 ${isNight ? 'bg-stone-900 border-stone-800' : 'bg-parchment-light border-parchment-dark'}`}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-velvet rounded-full border-2 border-brass flex items-center justify-center text-brass font-bold text-xl font-cinzel shadow-lg">
+                W
+              </div>
+              <div>
+                <h1 className="font-cinzel font-black text-2xl tracking-widest bg-gradient-to-r from-brass via-brass-light to-brass-dark bg-clip-text text-transparent">
+                  WEATHER THEATRE
+                </h1>
+                <p className={`text-[10px] tracking-wider font-cinzel font-semibold uppercase ${isNight ? 'text-stone-400' : 'text-stone-600'}`}>
+                  Meteorological Stage & Remixer Block
+                </p>
+              </div>
+            </div>
+
+            {/* QUICK ACTIONS ROW */}
+            <div className="flex items-center gap-4">
+              
+              {/* Audio Enable Bell */}
+              <button 
+                onClick={toggleAudio}
+                className={`px-4 py-2 rounded-full font-cinzel text-xs font-bold border flex items-center gap-2 shadow-md transition-all duration-300 ${
+                  audioEnabled 
+                    ? 'bg-brass text-wood-dark border-brass-dark ring-2 ring-brass/50' 
+                    : 'bg-transparent text-stone-500 border-stone-400 dark:border-stone-700 dark:text-stone-400 hover:border-brass hover:text-brass'
+                }`}
+              >
+                {audioEnabled ? (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    </svg>
+                    Sound On
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                    </svg>
+                    Unmute Atmospheric Synth
+                  </>
+                )}
+              </button>
+
+              {/* Matinee / Night Toggle Switch */}
+              <div className="flex items-center gap-2">
+                <span className={`font-cinzel text-xs font-bold ${!isNight ? 'text-brass' : 'text-stone-400'}`}>Matinée</span>
+                <button
+                  onClick={() => setIsNight(prev => !prev)}
+                  className={`w-14 h-7 rounded-full transition-colors duration-300 relative border border-brass-dark ${isNight ? 'bg-velvet-dark' : 'bg-amber-100'}`}
+                >
+                  <div className={`w-5 h-5 rounded-full absolute top-1 transition-all duration-300 shadow-md ${
+                    isNight 
+                      ? 'left-8 bg-brass text-velvet-dark' 
+                      : 'left-1 bg-amber-500 text-stone-100'
+                  } flex items-center justify-center text-[10px] font-bold`}>
+                    {isNight ? '☾' : '☼'}
+                  </div>
+                </button>
+                <span className={`font-cinzel text-xs font-bold ${isNight ? 'text-brass' : 'text-stone-400'}`}>Night</span>
+              </div>
+            </div>
+          </header>
+
+          {/* MAIN COLUMN BODY LAYOUT */}
+          <main className="flex-grow p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 max-w-7xl w-full mx-auto">
+            
+            {/* LEFT COLUMN: THE CONDUCTOR'S MIXER DESK */}
+            <div className="lg:col-span-3 flex flex-col gap-5">
+              <div className={`p-5 rounded-lg border shadow-lg transition-colors duration-500 h-full flex flex-col ${
+                isNight ? 'bg-stone-900 border-stone-800' : 'bg-parchment border-parchment-dark'
+              }`}>
+                <h2 className="font-cinzel font-black text-sm md:text-base border-b pb-2 mb-4 tracking-wider flex items-center gap-2">
+                  <span className="text-brass">🎛</span> ATMOSPHERIC STAGE REMIXER
+                </h2>
+
+                {/* SLIDERS STACK */}
+                <div className="flex-grow flex flex-col gap-6 justify-center">
+                  
+                  {/* COSY REMIX SLIDER */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex justify-between items-center">
+                      <label className="font-cinzel font-bold text-xs tracking-wide flex items-center gap-1.5 text-amber-500">
+                        <span className="text-base">🔥</span> Cosy Atmosphere
+                      </label>
+                      <span className="font-typewriter text-xs bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded-full border border-amber-500/20 shadow-sm font-bold">
+                        {sliders.cosy}%
+                      </span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="0" 
+                      max="100" 
+                      value={sliders.cosy}
+                      onChange={(e) => handleSliderChange('cosy', e.target.value)}
+                      className="w-full"
+                    />
+                    <p className={`text-[10px] italic leading-tight ${isNight ? 'text-stone-400' : 'text-stone-600'}`}>
+                      Fades in chimney smoke, glowing golden windows, warm fire sounds, and falling leaves.
+                    </p>
+                  </div>
+
+                  {/* EERIE REMIX SLIDER */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex justify-between items-center">
+                      <label className="font-cinzel font-bold text-xs tracking-wide flex items-center gap-1.5 text-purple-500">
+                        <span className="text-base">👻</span> Eerie Atmosphere
+                      </label>
+                      <span className="font-typewriter text-xs bg-purple-500/10 text-purple-500 px-2 py-0.5 rounded-full border border-purple-500/20 shadow-sm font-bold">
+                        {sliders.eerie}%
+                      </span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="0" 
+                      max="100" 
+                      value={sliders.eerie}
+                      onChange={(e) => handleSliderChange('eerie', e.target.value)}
+                      className="w-full"
+                    />
+                    <p className={`text-[10px] italic leading-tight ${isNight ? 'text-stone-400' : 'text-stone-600'}`}>
+                      Spawns a ruined gothic spire, creepy mist, flying bats, and howling wind.
+                    </p>
+                  </div>
+
+                  {/* HEROIC REMIX SLIDER */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex justify-between items-center">
+                      <label className="font-cinzel font-bold text-xs tracking-wide flex items-center gap-1.5 text-blue-500">
+                        <span className="text-base">⚡</span> Heroic Atmosphere
+                      </label>
+                      <span className="font-typewriter text-xs bg-blue-500/10 text-blue-500 px-2 py-0.5 rounded-full border border-blue-500/20 shadow-sm font-bold">
+                        {sliders.heroic}%
+                      </span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="0" 
+                      max="100" 
+                      value={sliders.heroic}
+                      onChange={(e) => handleSliderChange('heroic', e.target.value)}
+                      className="w-full"
+                    />
+                    <p className={`text-[10px] italic leading-tight ${isNight ? 'text-stone-400' : 'text-stone-600'}`}>
+                      Summons castle spires, waving flags, epic stardust sparks, and orchestral strings.
+                    </p>
+                  </div>
+
+                </div>
+
+                {/* AUDIO CONTROLLER IN DEPTH */}
+                {audioEnabled && (
+                  <div className="mt-6 pt-4 border-t border-stone-300 dark:border-stone-800 flex flex-col gap-3">
+                    <div className="flex justify-between items-center">
+                      <span className="font-cinzel text-xs font-bold tracking-wider">Orchestra Volume</span>
+                      <span className="font-typewriter text-xs font-bold">{Math.round(masterVolume * 100)}%</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="0" 
+                      max="1" 
+                      step="0.05" 
+                      value={masterVolume}
+                      onChange={handleVolumeChange}
+                      className="w-full accent-brass"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* CENTER COLUMN: THE MAIN STAGE AND PULL CORD */}
+            <div className="lg:col-span-6 flex flex-col gap-5">
+              
+              {/* STAGE CONTAINER WITH PROSCENIUM BORDERS */}
+              <div className="relative">
+                
+                {/* VELVET FRAME AND CAST SHADOW */}
+                <div className="relative overflow-hidden rounded-xl border-[16px] border-velvet shadow-gilded bg-black aspect-[5/3] md:aspect-[5/3] w-full flex items-center justify-center">
+                  
+                  {/* CANVAS LAYERS */}
+                  <canvas 
+                    ref={canvasRef} 
+                    onMouseMove={handleMouseMove}
+                    onMouseLeave={handleMouseLeave}
+                    className="w-full h-full cursor-crosshair relative block"
+                  />
+
+                  {/* LARGE CENTER CLOSED CURTAIN ENTER PROMPT */}
+                  {curtainTarget === 0 && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 pointer-events-none text-center px-6">
+                      <div className="bg-wood-dark/95 border-2 border-brass px-6 py-4 rounded-lg shadow-2xl animate-bounce max-w-xs pointer-events-auto cursor-pointer" onClick={toggleCurtains}>
+                        <h3 className="font-cinzel text-brass font-black text-lg tracking-wider mb-1">
+                          WEATHER MATINÉE
+                        </h3>
+                        <p className="font-sans text-xs text-stone-300">
+                          Click to Pull Drawstring and Open Curtains
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* STAGE CORDS / DRAWSTRING PULL ROPE */}
+                {/* Clickable cord hanging on the right outside proscenium */}
+                <div 
+                  onClick={toggleCurtains}
+                  className="absolute right-[-4px] top-[15px] bottom-[25px] w-6 flex flex-col items-center cursor-pointer group pointer-events-auto"
+                  title="Pull Stage Cord"
+                >
+                  {/* Drawstring rope */}
+                  <div className="w-1 bg-amber-800/80 group-hover:bg-amber-600 h-full shadow-md rope-sway transition-colors duration-300"></div>
+                  
+                  {/* Hanging Tassel */}
+                  <div className="w-4 h-9 bg-gradient-to-b from-brass-light via-brass to-brass-dark border border-wood-dark rounded shadow-lg group-hover:scale-125 transition-transform duration-300 flex items-center justify-center text-[8px] font-bold text-wood-dark font-cinzel">
+                    🔔
+                  </div>
+                </div>
+
+              </div>
+
+              {/* SCENE TYPEWRITER TICKER */}
+              <TypewriterSubtitle text={sceneData.subtitle} />
+
+            </div>
+
+            {/* RIGHT COLUMN: THE THEATRE PLAYBILL */}
+            <div className="lg:col-span-3 flex flex-col gap-5">
+              <div className={`p-5 rounded-lg border shadow-lg transition-colors duration-500 h-full flex flex-col ${
+                isNight ? 'bg-stone-900 border-stone-800' : 'bg-parchment border-parchment-dark'
+              }`}>
+                <h2 className="font-cinzel font-black text-sm md:text-base border-b pb-2 mb-4 tracking-wider flex items-center gap-2">
+                  <span className="text-brass">📜</span> DAILY PLAYBILL
+                </h2>
+
+                <div className="flex-grow flex flex-col gap-5">
+                  
+                  {/* PLAY DETAILS */}
+                  <div className="border border-stone-300 dark:border-stone-800 p-3 rounded bg-black/10">
+                    <span className="font-cinzel text-[10px] text-brass-dark dark:text-brass uppercase font-bold tracking-wider">Now Performing:</span>
+                    <h3 className="font-playfair font-bold text-lg leading-tight mt-1 text-velvet-light dark:text-brass-light">
+                      {sceneData.title}
+                    </h3>
+                  </div>
+
+                  {/* FORECAST baseline selector (Remixes scenery types) */}
+                  <div className="flex flex-col gap-1.5">
+                    <span className="font-cinzel text-xs font-bold tracking-wider">Meteorological Script:</span>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      
+                      {/* TEMPEST */}
+                      <button 
+                        onClick={() => setForecast('tempest')}
+                        className={`py-2 px-1 text-center font-cinzel font-bold border rounded transition-all ${
+                          forecast === 'tempest' 
+                            ? 'bg-velvet border-velvet text-stone-100 ring-2 ring-brass/30' 
+                            : 'bg-black/10 border-stone-300 dark:border-stone-800 hover:border-brass'
+                        }`}
+                      >
+                        ⛈ Tempest
+                      </button>
+
+                      {/* MIST */}
+                      <button 
+                        onClick={() => setForecast('mist')}
+                        className={`py-2 px-1 text-center font-cinzel font-bold border rounded transition-all ${
+                          forecast === 'mist' 
+                            ? 'bg-velvet border-velvet text-stone-100 ring-2 ring-brass/30' 
+                            : 'bg-black/10 border-stone-300 dark:border-stone-800 hover:border-brass'
+                        }`}
+                      >
+                        🌫 Mist
+                      </button>
+
+                      {/* SUN */}
+                      <button 
+                        onClick={() => setForecast('sun')}
+                        className={`py-2 px-1 text-center font-cinzel font-bold border rounded transition-all ${
+                          forecast === 'sun' 
+                            ? 'bg-velvet border-velvet text-stone-100 ring-2 ring-brass/30' 
+                            : 'bg-black/10 border-stone-300 dark:border-stone-800 hover:border-brass'
+                        }`}
+                      >
+                        ☀️ Sunburst
+                      </button>
+
+                      {/* SNOW */}
+                      <button 
+                        onClick={() => setForecast('snow')}
+                        className={`py-2 px-1 text-center font-cinzel font-bold border rounded transition-all ${
+                          forecast === 'snow' 
+                            ? 'bg-velvet border-velvet text-stone-100 ring-2 ring-brass/30' 
+                            : 'bg-black/10 border-stone-300 dark:border-stone-800 hover:border-brass'
+                        }`}
+                      >
+                        ❄️ Winter
+                      </button>
+
+                    </div>
+                  </div>
+
+                  {/* SPECIAL STAGE TRIGGER COMMANDS */}
+                  <div className="flex flex-col gap-2 pt-2 border-t border-stone-300 dark:border-stone-800">
+                    <span className="font-cinzel text-xs font-bold tracking-wider">Special Stage Trigger:</span>
+                    
+                    {/* Lightning Strike Button */}
+                    <button
+                      onClick={triggerLightning}
+                      disabled={curtainTarget === 0}
+                      className={`py-2 px-4 rounded font-cinzel text-xs font-black shadow transition-all flex items-center justify-center gap-2 ${
+                        curtainTarget === 0
+                          ? 'bg-stone-400 dark:bg-stone-800 text-stone-500 cursor-not-allowed border border-transparent'
+                          : 'bg-gradient-to-r from-brass to-brass-dark hover:from-brass-light hover:to-brass text-wood-dark border-b-4 border-brass-dark hover:border-b-2 hover:translate-y-[2px]'
+                      }`}
+                    >
+                      ⚡️ CAST JAGGED LIGHTNING
+                    </button>
+
+                    {/* Spotlight toggler */}
+                    <button
+                      onClick={() => setVolumetricLight(prev => !prev)}
+                      className={`py-2 px-4 rounded font-cinzel text-xs border tracking-wider transition-all ${
+                        volumetricLight 
+                          ? 'bg-brass/10 border-brass text-brass font-bold' 
+                          : 'bg-black/10 border-stone-300 dark:border-stone-800 text-stone-400'
+                      }`}
+                    >
+                      💡 {volumetricLight ? "Disable Atmospheric Volumetrics" : "Enable Atmospheric Volumetrics"}
+                    </button>
+                  </div>
+
+                </div>
+
+                {/* THEATRE CREDITS */}
+                <div className="mt-6 border-t border-dashed border-stone-400 dark:border-stone-800 pt-3 text-center">
+                  <span className="font-cinzel text-[9px] uppercase tracking-widest text-stone-400 block">
+                    Scenic Production Block
+                  </span>
+                  <span className="font-cinzel text-[10px] text-brass block font-bold mt-1">
+                    No External API Dependents
+                  </span>
+                </div>
+              </div>
+            </div>
+
+          </main>
+
+          {/* FOOTER BAR */}
+          <footer className={`py-4 px-6 border-t text-center font-cinzel text-[10px] tracking-wider transition-colors duration-500 mt-auto ${
+            isNight ? 'bg-stone-900 border-stone-800 text-stone-400' : 'bg-parchment-light border-parchment-dark text-stone-500'
+          }`}>
+            <p>© 2026 Weather Theatre Corp. Handcrafted with HTML5, React, Canvas, and Web Audio API.</p>
+          </footer>
+
+        </div>
+      );
+    }
+
+    // Render App into DOM
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<WeatherTheatreApp />);
+  </script>
+
+</body>
+</html>

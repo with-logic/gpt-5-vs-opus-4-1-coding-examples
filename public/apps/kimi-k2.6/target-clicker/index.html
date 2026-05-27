@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Target Clicker</title>
+  <style>
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #f8fafc;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+      user-select: none;
+      -webkit-user-select: none;
+      cursor: crosshair;
+    }
+
+    #game-area {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+    }
+
+    /* Scoreboard */
+    .scoreboard {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      padding: 1rem;
+      z-index: 100;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .scoreboard.visible {
+      opacity: 1;
+    }
+
+    .stat-box {
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(12px);
+      border-radius: 16px;
+      padding: 0.6rem 1.4rem;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-width: 80px;
+      transition: transform 0.15s ease;
+    }
+
+    .stat-box .label {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #94a3b8;
+      font-weight: 700;
+    }
+
+    .stat-box .value {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: #1e293b;
+      line-height: 1.3;
+    }
+
+    .stat-box.timer .value {
+      color: #ef4444;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .stat-box.accuracy .value {
+      color: #3b82f6;
+    }
+
+    .stat-box.score .value {
+      color: #10b981;
+    }
+
+    /* Target */
+    .target {
+      position: absolute;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: auto;
+      will-change: transform;
+      animation: target-pop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    .target::before {
+      content: '';
+      position: absolute;
+      inset: -4px;
+      border-radius: 50%;
+      border: 2px solid currentColor;
+      opacity: 0.5;
+      animation: target-ring 1.5s ease-out infinite;
+    }
+
+    .target::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, rgba(255,255,255,0.4), transparent 60%);
+    }
+
+    .target-inner {
+      width: 40%;
+      height: 40%;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.85);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+
+    @keyframes target-pop {
+      from { transform: scale(0); }
+      to { transform: scale(1); }
+    }
+
+    @keyframes target-ring {
+      0% { transform: scale(1); opacity: 0.5; }
+      100% { transform: scale(1.6); opacity: 0; }
+    }
+
+    @keyframes target-shrink {
+      from { transform: scale(1); }
+      to { transform: scale(0.3); }
+    }
+
+    @keyframes target-miss {
+      0% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.3); opacity: 0.5; }
+      100% { transform: scale(0); opacity: 0; }
+    }
+
+    /* Hit Effects */
+    .hit-flash {
+      position: absolute;
+      border-radius: 50%;
+      pointer-events: none;
+      animation: hit-expand 0.4s ease-out forwards;
+    }
+
+    @keyframes hit-expand {
+      0% { transform: scale(0.5); opacity: 0.8; }
+      100% { transform: scale(2.5); opacity: 0; }
+    }
+
+    .score-popup {
+      position: absolute;
+      font-size: 1.2rem;
+      font-weight: 800;
+      color: #10b981;
+      pointer-events: none;
+      animation: score-float 0.7s ease-out forwards;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+
+    @keyframes score-float {
+      0% { transform: translateY(0) scale(1); opacity: 1; }
+      100% { transform: translateY(-50px) scale(1.3); opacity: 0; }
+    }
+
+    .particle {
+      position: absolute;
+      border-radius: 50%;
+      pointer-events: none;
+      will-change: transform, opacity;
+    }
+
+    /* Miss indicator */
+    .miss-ripple {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: 2px solid #ef4444;
+      pointer-events: none;
+      animation: miss-ripple-anim 0.4s ease-out forwards;
+      transform: translate(-50%, -50%);
+    }
+
+    @keyframes miss-ripple-anim {
+      0% { width: 10px; height: 10px; opacity: 1; }
+      100% { width: 50px; height: 50px; opacity: 0; }
+    }
+
+    /* Start / End Screens */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      background: rgba(248, 250, 252, 0.85);
+      backdrop-filter: blur(8px);
+      transition: opacity 0.4s ease;
+    }
+
+    .overlay.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .overlay-card {
+      background: white;
+      border-radius: 24px;
+      padding: 2.5rem 3rem;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.1), 0 8px 20px rgba(0,0,0,0.06);
+      text-align: center;
+      max-width: 420px;
+      width: 90%;
+      animation: card-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    @keyframes card-in {
+      from { transform: translateY(20px) scale(0.95); opacity: 0; }
+      to { transform: translateY(0) scale(1); opacity: 1; }
+    }
+
+    .overlay-card h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      color: #1e293b;
+      margin-bottom: 0.3rem;
+      letter-spacing: -0.02em;
+    }
+
+    .overlay-card .subtitle {
+      color: #64748b;
+      font-size: 1rem;
+      margin-bottom: 1.8rem;
+    }
+
+    .overlay-card .instructions {
+      background: #f1f5f9;
+      border-radius: 12px;
+      padding: 1rem 1.2rem;
+      margin-bottom: 1.8rem;
+      text-align: left;
+    }
+
+    .overlay-card .instructions p {
+      color: #475569;
+      font-size: 0.9rem;
+      line-height: 1.6;
+      margin: 0.3rem 0;
+    }
+
+    .overlay-card .instructions p::before {
+      content: '• ';
+      color: #3b82f6;
+      font-weight: 700;
+    }
+
+    .btn {
+      display: inline-block;
+      background: #3b82f6;
+      color: white;
+      font-size: 1.1rem;
+      font-weight: 700;
+      padding: 0.9rem 2.5rem;
+      border: none;
+      border-radius: 14px;
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+      box-shadow: 0 4px 16px rgba(59, 130, 246, 0.35);
+      letter-spacing: 0.01em;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 24px rgba(59, 130, 246, 0.45);
+      background: #2563eb;
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .btn-accent {
+      background: #10b981;
+      box-shadow: 0 4px 16px rgba(16, 185, 129, 0.35);
+    }
+
+    .btn-accent:hover {
+      background: #059669;
+      box-shadow: 0 6px 24px rgba(16, 185, 129, 0.45);
+    }
+
+    /* Results */
+    .results-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .result-item {
+      background: #f8fafc;
+      border-radius: 14px;
+      padding: 1rem;
+      border: 1px solid #e2e8f0;
+    }
+
+    .result-item .res-value {
+      font-size: 1.6rem;
+      font-weight: 800;
+      color: #1e293b;
+      display: block;
+    }
+
+    .result-item .res-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #94a3b8;
+      font-weight: 700;
+      margin-top: 0.2rem;
+    }
+
+    .result-item:nth-child(1) .res-value { color: #10b981; }
+    .result-item:nth-child(2) .res-value { color: #3b82f6; }
+    .result-item:nth-child(3) .res-value { color: #f59e0b; }
+
+    .rating {
+      font-size: 1.4rem;
+      font-weight: 800;
+      margin-bottom: 0.5rem;
+      color: #1e293b;
+    }
+
+    .rating-text {
+      font-size: 0.9rem;
+      color: #64748b;
+      margin-bottom: 1.5rem;
+    }
+
+    /* Floating background shapes for ambience */
+    .bg-shape {
+      position: fixed;
+      border-radius: 50%;
+      opacity: 0.04;
+      pointer-events: none;
+      z-index: 0;
+      animation: bg-float 20s ease-in-out infinite;
+    }
+
+    @keyframes bg-float {
+      0%, 100% { transform: translateY(0) rotate(0deg); }
+      50% { transform: translateY(-30px) rotate(180deg); }
+    }
+
+    /* Combo multiplier indicator */
+    .combo-indicator {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 3rem;
+      font-weight: 900;
+      color: #f59e0b;
+      pointer-events: none;
+      opacity: 0;
+      z-index: 150;
+      text-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+      transition: opacity 0.15s ease;
+    }
+
+    .combo-indicator.show {
+      opacity: 1;
+      animation: combo-bounce 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    @keyframes combo-bounce {
+      0% { transform: translate(-50%, -50%) scale(0.5); }
+      50% { transform: translate(-50%, -50%) scale(1.3); }
+      100% { transform: translate(-50%, -50%) scale(1); }
+    }
+
+    /* Time warning */
+    .time-warning .stat-box.timer .value {
+      animation: pulse-red 0.5s ease-in-out infinite alternate;
+    }
+
+    @keyframes pulse-red {
+      from { transform: scale(1); }
+      to { transform: scale(1.15); }
+    }
+  </style>
+</head>
+<body>
+  <!-- Background ambience shapes -->
+  <div id="bg-shapes"></div>
+
+  <!-- Game Area -->
+  <div id="game-area"></div>
+
+  <!-- Scoreboard -->
+  <div class="scoreboard" id="scoreboard">
+    <div class="stat-box timer">
+      <span class="label">Time</span>
+      <span class="value" id="timer-display">20.0</span>
+    </div>
+    <div class="stat-box score">
+      <span class="label">Score</span>
+      <span class="value" id="score-display">0</span>
+    </div>
+    <div class="stat-box accuracy">
+      <span class="label">Accuracy</span>
+      <span class="value" id="accuracy-display">100%</span>
+    </div>
+  </div>
+
+  <!-- Combo Indicator -->
+  <div class="combo-indicator" id="combo-indicator"></div>
+
+  <!-- Start Screen -->
+  <div class="overlay" id="start-screen">
+    <div class="overlay-card">
+      <h1>Target Clicker</h1>
+      <p class="subtitle">How fast are your reflexes?</p>
+      <div class="instructions">
+        <p>Click the colorful targets as fast as you can</p>
+        <p>Targets shrink over time — hurry up!</p>
+        <p>Build combos by hitting targets quickly</p>
+      </div>
+      <button class="btn" id="start-btn" onclick="startGame()">Start Game</button>
+    </div>
+  </div>
+
+  <!-- End Screen -->
+  <div class="overlay hidden" id="end-screen">
+    <div class="overlay-card">
+      <h1>Time's Up!</h1>
+      <p class="subtitle" id="end-subtitle">Great effort!</p>
+      <div class="results-grid">
+        <div class="result-item">
+          <span class="res-value" id="end-score">0</span>
+          <span class="res-label">Score</span>
+        </div>
+        <div class="result-item">
+          <span class="res-value" id="end-accuracy">0%</span>
+          <span class="res-label">Accuracy</span>
+        </div>
+        <div class="result-item">
+          <span class="res-value" id="end-targets">0</span>
+          <span class="res-label">Targets</span>
+        </div>
+      </div>
+      <div class="rating" id="rating">Nice!</div>
+      <p class="rating-text" id="rating-text">Keep practicing to improve.</p>
+      <button class="btn btn-accent" id="restart-btn" onclick="startGame()">Play Again</button>
+    </div>
+  </div>
+
+  <script>
+    // Game State
+    const GAME_DURATION = 20;
+    const TARGET_BASE_SIZE = 80;
+    const TARGET_MIN_SIZE = 35;
+    const TARGET_COLORS = [
+      { bg: '#ef4444', ring: '#ef4444' },
+      { bg: '#f97316', ring: '#f97316' },
+      { bg: '#f59e0b', ring: '#f59e0b' },
+      { bg: '#10b981', ring: '#10b981' },
+      { bg: '#06b6d4', ring: '#06b6d4' },
+      { bg: '#3b82f6', ring: '#3b82f6' },
+      { bg: '#8b5cf6', ring: '#8b5cf6' },
+      { bg: '#ec4899', ring: '#ec4899' },
+    ];
+
+    let state = {
+      isPlaying: false,
+      timeLeft: GAME_DURATION,
+      score: 0,
+      clicks: 0,
+      hits: 0,
+      targetsSpawned: 0,
+      combo: 0,
+      lastHitTime: 0,
+      spawnTimer: null,
+      countdownTimer: null,
+      animFrame: null,
+    };
+
+    const gameArea = document.getElementById('game-area');
+    const scoreboard = document.getElementById('scoreboard');
+    const timerDisplay = document.getElementById('timer-display');
+    const scoreDisplay = document.getElementById('score-display');
+    const accuracyDisplay = document.getElementById('accuracy-display');
+    const startScreen = document.getElementById('start-screen');
+    const endScreen = document.getElementById('end-screen');
+    const comboIndicator = document.getElementById('combo-indicator');
+
+    // Ambient background shapes
+    function initBgShapes() {
+      const container = document.getElementById('bg-shapes');
+      for (let i = 0; i < 8; i++) {
+        const shape = document.createElement('div');
+        shape.className = 'bg-shape';
+        const size = 100 + Math.random() * 200;
+        shape.style.width = size + 'px';
+        shape.style.height = size + 'px';
+        shape.style.left = Math.random() * 100 + '%';
+        shape.style.top = Math.random() * 100 + '%';
+        shape.style.background = TARGET_COLORS[Math.floor(Math.random() * TARGET_COLORS.length)].bg;
+        shape.style.animationDelay = -Math.random() * 20 + 's';
+        shape.style.animationDuration = (15 + Math.random() * 15) + 's';
+        container.appendChild(shape);
+      }
+    }
+    initBgShapes();
+
+    function formatTime(t) {
+      return Math.max(0, t).toFixed(1);
+    }
+
+    function updateAccuracy() {
+      const acc = state.clicks > 0 ? Math.round((state.hits / state.clicks) * 100) : 100;
+      accuracyDisplay.textContent = acc + '%';
+    }
+
+    function updateCombo() {
+      const now = performance.now();
+      if (now - state.lastHitTime < 800) {
+        state.combo++;
+      } else {
+        state.combo = 1;
+      }
+      state.lastHitTime = now;
+
+      if (state.combo >= 3) {
+        comboIndicator.textContent = state.combo + 'x COMBO!';
+        comboIndicator.classList.remove('show');
+        void comboIndicator.offsetWidth;
+        comboIndicator.classList.add('show');
+        setTimeout(() => comboIndicator.classList.remove('show'), 600);
+      }
+    }
+
+    function getComboMultiplier() {
+      if (state.combo >= 10) return 3;
+      if (state.combo >= 5) return 2;
+      if (state.combo >= 3) return 1.5;
+      return 1;
+    }
+
+    function getRating(score, accuracy) {
+      if (score >= 40 && accuracy >= 90) return { title: 'Legendary!', text: 'Absolutely incredible precision and speed!' };
+      if (score >= 30 && accuracy >= 80) return { title: 'Amazing!', text: 'Your reflexes are top-tier.' };
+      if (score >= 20 && accuracy >= 70) return { title: 'Great Job!', text: 'Solid performance, keep it up!' };
+      if (score >= 10) return { title: 'Good Effort!', text: 'You\'re getting the hang of it.' };
+      return { title: 'Keep Trying!', text: 'Practice makes perfect.' };
+    }
+
+    function spawnTarget() {
+      if (!state.isPlaying) return;
+
+      const targets = gameArea.querySelectorAll('.target');
+      if (targets.length >= 5) return; // cap concurrent targets
+
+      state.targetsSpawned++;
+      const color = TARGET_COLORS[Math.floor(Math.random() * TARGET_COLORS.length)];
+      const size = TARGET_BASE_SIZE + Math.random() * 20;
+      const maxX = window.innerWidth - size - 40;
+      const maxY = window.innerHeight - size - 40;
+      const x = 20 + Math.random() * maxX;
+      const y = 20 + Math.random() * maxY;
+      const lifetime = 1.2 + Math.random() * 1.0; // seconds
+
+      const target = document.createElement('div');
+      target.className = 'target';
+      target.style.width = size + 'px';
+      target.style.height = size + 'px';
+      target.style.left = x + 'px';
+      target.style.top = y + 'px';
+      target.style.background = color.bg;
+      target.style.color = color.ring;
+      target.style.boxShadow = `0 4px 20px ${color.bg}40`;
+
+      const inner = document.createElement('div');
+      inner.className = 'target-inner';
+      target.appendChild(inner);
+
+      // Shrink animation
+      target.style.animation = `target-pop 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) forwards, target-shrink ${lifetime}s linear forwards`;
+
+      // Click handler
+      target.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        if (!state.isPlaying) return;
+
+        const rect = target.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+
+        state.clicks++;
+        state.hits++;
+        updateCombo();
+        const mult = getComboMultiplier();
+        const points = Math.round(10 * mult);
+        state.score += points;
+        scoreDisplay.textContent = state.score;
+        updateAccuracy();
+
+        // Hit flash
+        const flash = document.createElement('div');
+        flash.className = 'hit-flash';
+        flash.style.left = centerX + 'px';
+        flash.style.top = centerY + 'px';
+        flash.style.width = size + 'px';
+        flash.style.height = size + 'px';
+        flash.style.transform = 'translate(-50%, -50%)';
+        flash.style.background = color.bg;
+        gameArea.appendChild(flash);
+        setTimeout(() => flash.remove(), 400);
+
+        // Score popup
+        const popup = document.createElement('div');
+        popup.className = 'score-popup';
+        popup.textContent = '+' + points;
+        if (mult > 1) popup.style.color = '#f59e0b';
+        popup.style.left = centerX + 'px';
+        popup.style.top = (centerY - 20) + 'px';
+        popup.style.transform = 'translate(-50%, -50%)';
+        gameArea.appendChild(popup);
+        setTimeout(() => popup.remove(), 700);
+
+        // Particles
+        for (let i = 0; i < 8; i++) {
+          const p = document.createElement('div');
+          p.className = 'particle';
+          const ps = 4 + Math.random() * 6;
+          p.style.width = ps + 'px';
+          p.style.height = ps + 'px';
+          p.style.background = color.bg;
+          p.style.left = centerX + 'px';
+          p.style.top = centerY + 'px';
+          const angle = (Math.PI * 2 * i) / 8 + (Math.random() - 0.5) * 0.5;
+          const dist = 40 + Math.random() * 40;
+          const duration = 300 + Math.random() * 200;
+          p.style.transition = `transform ${duration}ms ease-out, opacity ${duration}ms ease-out`;
+          gameArea.appendChild(p);
+
+          requestAnimationFrame(() => {
+            p.style.transform = `translate(${Math.cos(angle) * dist}px, ${Math.sin(angle) * dist}px) scale(0)`;
+            p.style.opacity = '0';
+          });
+          setTimeout(() => p.remove(), duration);
+        }
+
+        target.remove();
+      });
+
+      // Auto-remove if missed
+      setTimeout(() => {
+        if (target.parentNode) {
+          target.style.animation = 'target-miss 0.3s ease-out forwards';
+          setTimeout(() => target.remove(), 300);
+          state.combo = 0;
+        }
+      }, lifetime * 1000);
+
+      gameArea.appendChild(target);
+    }
+
+    function handleMiss(e) {
+      if (!state.isPlaying) return;
+      if (e.target.closest('.target')) return;
+
+      state.clicks++;
+      state.combo = 0;
+      updateAccuracy();
+
+      const ripple = document.createElement('div');
+      ripple.className = 'miss-ripple';
+      ripple.style.left = e.clientX + 'px';
+      ripple.style.top = e.clientY + 'px';
+      gameArea.appendChild(ripple);
+      setTimeout(() => ripple.remove(), 400);
+    }
+
+    function startGame() {
+      // Reset state
+      state.isPlaying = true;
+      state.timeLeft = GAME_DURATION;
+      state.score = 0;
+      state.clicks = 0;
+      state.hits = 0;
+      state.targetsSpawned = 0;
+      state.combo = 0;
+      state.lastHitTime = 0;
+
+      // Clear board
+      gameArea.innerHTML = '';
+      timerDisplay.textContent = formatTime(GAME_DURATION);
+      scoreDisplay.textContent = '0';
+      accuracyDisplay.textContent = '100%';
+      scoreboard.classList.add('visible');
+      startScreen.classList.add('hidden');
+      endScreen.classList.add('hidden');
+
+      // Spawn targets
+      let spawnInterval = 400;
+      function doSpawn() {
+        if (!state.isPlaying) return;
+        spawnTarget();
+        // Increase difficulty over time
+        const progress = 1 - (state.timeLeft / GAME_DURATION);
+        spawnInterval = Math.max(250, 400 - progress * 150);
+        state.spawnTimer = setTimeout(doSpawn, spawnInterval + Math.random() * 200);
+      }
+      doSpawn();
+
+      // Countdown
+      let lastTime = performance.now();
+      function tick(now) {
+        if (!state.isPlaying) return;
+        const dt = (now - lastTime) / 1000;
+        lastTime = now;
+        state.timeLeft -= dt;
+
+        if (state.timeLeft <= 3 && state.timeLeft > 0) {
+          scoreboard.classList.add('time-warning');
+        } else {
+          scoreboard.classList.remove('time-warning');
+        }
+
+        timerDisplay.textContent = formatTime(state.timeLeft);
+
+        if (state.timeLeft <= 0) {
+          endGame();
+          return;
+        }
+        state.animFrame = requestAnimationFrame(tick);
+      }
+      state.animFrame = requestAnimationFrame(tick);
+    }
+
+    function endGame() {
+      state.isPlaying = false;
+      clearTimeout(state.spawnTimer);
+      cancelAnimationFrame(state.animFrame);
+      scoreboard.classList.remove('visible', 'time-warning');
+
+      // Clear remaining targets with animation
+      const targets = gameArea.querySelectorAll('.target');
+      targets.forEach((t, i) => {
+        setTimeout(() => {
+          t.style.animation = 'target-miss 0.3s ease-out forwards';
+          setTimeout(() => t.remove(), 300);
+        }, i * 50);
+      });
+
+      const accuracy = state.clicks > 0 ? Math.round((state.hits / state.clicks) * 100) : 0;
+      const rating = getRating(state.score, accuracy);
+
+      document.getElementById('end-score').textContent = state.score;
+      document.getElementById('end-accuracy').textContent = accuracy + '%';
+      document.getElementById('end-targets').textContent = state.hits;
+      document.getElementById('rating').textContent = rating.title;
+      document.getElementById('rating-text').textContent = rating.text;
+      document.getElementById('end-subtitle').textContent = state.score >= 30 ? 'You crushed it!' : state.score >= 15 ? 'Well done!' : 'Keep practicing!';
+
+      setTimeout(() => {
+        endScreen.classList.remove('hidden');
+      }, 600);
+    }
+
+    gameArea.addEventListener('mousedown', handleMiss);
+
+    // Keyboard: Enter / Space to start/restart
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        if (!state.isPlaying && !startScreen.classList.contains('hidden')) {
+          startGame();
+        } else if (!state.isPlaying && !endScreen.classList.contains('hidden')) {
+          startGame();
+        }
+      }
+    });
+  </script>
+</body>
+</html>
