@@ -74,6 +74,14 @@ export const models: ModelConfig[] = [
     provider: "openai",
   },
   {
+    id: "gpt-5.5",
+    name: "GPT-5.5",
+    cli: "codex",
+    model: "gpt-5.5",
+    color: "bg-blue-600",
+    provider: "openai",
+  },
+  {
     id: "opus-4.1",
     name: "Opus 4.1",
     cli: "claude",
@@ -103,6 +111,14 @@ export const models: ModelConfig[] = [
     cli: "claude",
     model: "claude-opus-4-7",
     color: "bg-pink-500",
+    provider: "anthropic",
+  },
+  {
+    id: "opus-4.8",
+    name: "Opus 4.8",
+    cli: "claude",
+    model: "claude-opus-4-8",
+    color: "bg-yellow-600",
     provider: "anthropic",
   },
   {

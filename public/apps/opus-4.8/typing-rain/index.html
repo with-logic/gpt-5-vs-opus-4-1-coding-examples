@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Typing Rain</title>
+<style>
+  :root {
+    --sky-top: #0a0e2a;
+    --sky-mid: #1a2456;
+    --sky-low: #2d3a7a;
+    --accent: #6ee7ff;
+    --accent-2: #b388ff;
+    --danger: #ff5c7a;
+    --good: #6effb0;
+    --ink: #e8ecff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: #05060f;
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--ink);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  #game {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ===== Sky / background ===== */
+  .sky {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg,
+      var(--sky-top) 0%,
+      var(--sky-mid) 45%,
+      var(--sky-low) 78%,
+      #3a2a5a 100%);
+    z-index: 0;
+  }
+
+  .stars {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    opacity: 0.9;
+  }
+  .star {
+    position: absolute;
+    width: 2px;
+    height: 2px;
+    background: #fff;
+    border-radius: 50%;
+    animation: twinkle var(--tw, 4s) ease-in-out infinite;
+  }
+  @keyframes twinkle {
+    0%, 100% { opacity: 0.2; }
+    50% { opacity: 1; }
+  }
+
+  .moon {
+    position: absolute;
+    top: 7%;
+    right: 12%;
+    width: 84px;
+    height: 84px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #fff8e6, #d9d2b8);
+    box-shadow: 0 0 60px 12px rgba(255,248,230,0.35), inset -14px -10px 0 0 rgba(0,0,0,0.06);
+    z-index: 1;
+  }
+
+  /* ===== City skyline ===== */
+  .city {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    z-index: 2;
+    pointer-events: none;
+  }
+  .city svg { display: block; width: 100%; height: auto; }
+
+  .city-far  { opacity: 0.55; filter: blur(0.4px); }
+  .city-near { }
+
+  .win {
+    fill: #ffd479;
+    opacity: 0.85;
+    animation: flicker var(--fl, 6s) steps(1) infinite;
+  }
+  @keyframes flicker {
+    0%, 92%, 100% { opacity: 0.85; }
+    94% { opacity: 0.25; }
+    96% { opacity: 0.9; }
+  }
+
+  /* ===== Rain (ambient) ===== */
+  .rain-canvas {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    pointer-events: none;
+    opacity: 0.5;
+  }
+
+  /* ===== Falling words ===== */
+  .words-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    pointer-events: none;
+  }
+
+  .word {
+    position: absolute;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: 0.5px;
+    padding: 7px 14px;
+    border-radius: 10px;
+    background: rgba(10, 16, 40, 0.55);
+    border: 1px solid rgba(110, 231, 255, 0.25);
+    backdrop-filter: blur(3px);
+    box-shadow: 0 4px 18px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.03) inset;
+    will-change: top;
+  }
+  .word .drop {
+    position: absolute;
+    top: -14px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 8px; height: 12px;
+    background: linear-gradient(180deg, rgba(110,231,255,0.0), rgba(110,231,255,0.8));
+    border-radius: 0 0 50% 50% / 0 0 60% 60%;
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+    opacity: 0.7;
+  }
+  .word .typed { color: var(--good); }
+  .word .rest  { color: var(--ink); }
+
+  .word.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent), 0 6px 26px rgba(110,231,255,0.35);
+    background: rgba(15, 28, 64, 0.78);
+  }
+  .word.danger {
+    border-color: var(--danger);
+    color: var(--danger);
+    animation: shake 0.4s ease-in-out infinite;
+  }
+  .word.danger .rest { color: #ffd0da; }
+  @keyframes shake {
+    0%,100% { transform: translateX(-50%) rotate(0deg); }
+    25% { transform: translateX(-52%) rotate(-1.5deg); }
+    75% { transform: translateX(-48%) rotate(1.5deg); }
+  }
+
+  .word.pop {
+    animation: pop 0.28s ease-out forwards;
+  }
+  @keyframes pop {
+    0% { transform: translateX(-50%) scale(1); opacity: 1; }
+    100% { transform: translateX(-50%) scale(1.5); opacity: 0; }
+  }
+  .word.splash {
+    animation: splash 0.45s ease-out forwards;
+  }
+  @keyframes splash {
+    0% { transform: translateX(-50%) scale(1) translateY(0); opacity: 1; }
+    100% { transform: translateX(-50%) scale(0.7) translateY(20px); opacity: 0; }
+  }
+
+  /* ===== HUD ===== */
+  .hud {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 10;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 18px 22px;
+    pointer-events: none;
+  }
+  .stat-group { display: flex; gap: 14px; }
+  .stat {
+    background: rgba(10, 16, 40, 0.5);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 8px 16px;
+    min-width: 86px;
+    backdrop-filter: blur(6px);
+  }
+  .stat .label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    opacity: 0.6;
+  }
+  .stat .value {
+    font-size: 24px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.15;
+  }
+  .stat.score .value { color: var(--accent); }
+  .stat.acc .value { color: var(--good); }
+  .stat.level .value { color: var(--accent-2); }
+
+  /* lives */
+  .lives { display: flex; gap: 6px; margin-top: 4px; }
+  .heart {
+    width: 18px; height: 18px;
+    background: var(--danger);
+    clip-path: path('M9 16 L1.5 8.5 A4 4 0 1 1 9 3 A4 4 0 1 1 16.5 8.5 Z');
+    filter: drop-shadow(0 0 4px rgba(255,92,122,0.6));
+    transition: transform 0.2s, opacity 0.3s;
+  }
+  .heart.lost { opacity: 0.15; background: #555; filter: none; transform: scale(0.8); }
+
+  /* combo */
+  .combo-wrap {
+    position: absolute;
+    top: 84px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    text-align: center;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.25s;
+  }
+  .combo-wrap.show { opacity: 1; }
+  .combo-num {
+    font-size: 40px; font-weight: 800;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: 0 0 30px rgba(110,231,255,0.4);
+  }
+  .combo-label { font-size: 12px; letter-spacing: 3px; opacity: 0.7; text-transform: uppercase; }
+
+  /* danger line */
+  .danger-line {
+    position: absolute;
+    left: 0; right: 0;
+    bottom: 14%;
+    height: 2px;
+    z-index: 4;
+    background: repeating-linear-gradient(90deg, var(--danger) 0 18px, transparent 18px 34px);
+    opacity: 0.3;
+    box-shadow: 0 0 12px var(--danger);
+  }
+
+  /* flash on miss */
+  .flash {
+    position: absolute; inset: 0; z-index: 20;
+    background: radial-gradient(circle, rgba(255,92,122,0.0) 40%, rgba(255,92,122,0.35) 100%);
+    opacity: 0; pointer-events: none;
+  }
+  .flash.hit { animation: flashHit 0.5s ease-out; }
+  @keyframes flashHit { 0% { opacity: 1; } 100% { opacity: 0; } }
+
+  /* ===== Overlays ===== */
+  .overlay {
+    position: absolute; inset: 0;
+    z-index: 30;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+    background: rgba(5, 8, 22, 0.78);
+    backdrop-filter: blur(8px);
+    padding: 24px;
+  }
+  .overlay.hidden { display: none; }
+
+  .title {
+    font-size: clamp(44px, 9vw, 88px);
+    font-weight: 800;
+    line-height: 1;
+    background: linear-gradient(120deg, var(--accent) 0%, var(--accent-2) 60%, #ff9cf0 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 6px 30px rgba(110,231,255,0.3));
+    margin-bottom: 6px;
+  }
+  .subtitle { font-size: 16px; opacity: 0.7; max-width: 460px; margin-bottom: 28px; line-height: 1.5; }
+
+  .btn {
+    pointer-events: auto;
+    cursor: pointer;
+    font-size: 18px; font-weight: 700;
+    letter-spacing: 1px;
+    color: #061018;
+    background: linear-gradient(120deg, var(--accent), var(--accent-2));
+    border: none;
+    padding: 14px 40px;
+    border-radius: 40px;
+    box-shadow: 0 8px 30px rgba(110,231,255,0.35);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 12px 38px rgba(110,231,255,0.5); }
+  .btn:active { transform: translateY(0); }
+
+  .hint {
+    margin-top: 18px; font-size: 13px; opacity: 0.5;
+  }
+  .hint kbd {
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 5px; padding: 2px 7px; font-family: monospace; font-size: 12px;
+  }
+
+  .final-stats {
+    display: flex; gap: 28px; margin: 22px 0 30px;
+    flex-wrap: wrap; justify-content: center;
+  }
+  .fs { min-width: 90px; }
+  .fs .v { font-size: 34px; font-weight: 800; }
+  .fs .l { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; opacity: 0.6; margin-top: 2px; }
+  .fs.s .v { color: var(--accent); }
+  .fs.a .v { color: var(--good); }
+  .fs.w .v { color: var(--accent-2); }
+  .fs.l2 .v { color: #ffd479; }
+
+  .gameover-title { color: var(--danger); }
+  @media (max-width: 520px) {
+    .word { font-size: 17px; padding: 5px 10px; }
+    .stat { min-width: 70px; padding: 6px 10px; }
+    .stat .value { font-size: 19px; }
+  }
+
+  /* focus input (hidden, captures mobile keyboard) */
+  #capture {
+    position: absolute; opacity: 0; pointer-events: none;
+    left: -9999px; top: 0;
+  }
+</style>
+</head>
+<body>
+<div id="game">
+  <div class="sky"></div>
+  <div class="stars" id="stars"></div>
+  <div class="moon"></div>
+
+  <!-- Far skyline -->
+  <div class="city city-far" id="cityFar"></div>
+  <!-- Near skyline -->
+  <div class="city city-near" id="cityNear"></div>
+
+  <canvas class="rain-canvas" id="rain"></canvas>
+  <div class="danger-line"></div>
+
+  <div class="words-layer" id="words"></div>
+
+  <div class="hud">
+    <div class="stat-group">
+      <div class="stat score"><div class="label">Score</div><div class="value" id="score">0</div></div>
+      <div class="stat acc"><div class="label">Accuracy</div><div class="value" id="acc">100%</div></div>
+    </div>
+    <div class="stat-group">
+      <div class="stat level"><div class="label">Level</div><div class="value" id="level">1</div>
+        <div class="lives" id="lives"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="combo-wrap" id="comboWrap">
+    <div class="combo-num" id="comboNum">x2</div>
+    <div class="combo-label">Combo</div>
+  </div>
+
+  <div class="flash" id="flash"></div>
+
+  <!-- Start overlay -->
+  <div class="overlay" id="startOverlay">
+    <div class="title">Typing Rain</div>
+    <div class="subtitle">Words fall like rain over the city. Type them before they hit the streets below. Survive the storm — accuracy and speed are everything.</div>
+    <button class="btn" id="startBtn">Start Game</button>
+    <div class="hint">Just start typing — no need to click words. Press <kbd>Esc</kbd> to pause.</div>
+  </div>
+
+  <!-- Pause overlay -->
+  <div class="overlay hidden" id="pauseOverlay">
+    <div class="title" style="font-size:clamp(32px,6vw,56px)">Paused</div>
+    <button class="btn" id="resumeBtn">Resume</button>
+    <div class="hint">Press <kbd>Esc</kbd> to resume</div>
+  </div>
+
+  <!-- Game over overlay -->
+  <div class="overlay hidden" id="overOverlay">
+    <div class="title gameover-title">Game Over</div>
+    <div class="final-stats">
+      <div class="fs s"><div class="v" id="fScore">0</div><div class="l">Score</div></div>
+      <div class="fs a"><div class="v" id="fAcc">0%</div><div class="l">Accuracy</div></div>
+      <div class="fs w"><div class="v" id="fWords">0</div><div class="l">Words</div></div>
+      <div class="fs l2"><div class="v" id="fLevel">1</div><div class="l">Level</div></div>
+    </div>
+    <button class="btn" id="restartBtn">Play Again</button>
+    <div class="hint" id="bestLine"></div>
+  </div>
+
+  <input id="capture" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- Word bank (grouped by difficulty) ----------
+  const WORDS = {
+    easy: "rain city dawn fog wind dusk neon lamp street cloud storm dark glow drip wet cool calm tide pool ash dim mist".split(" "),
+    med:  "puddle skyline shadow flicker drizzle traffic lantern thunder horizon avenue marquee asphalt subway window concrete reflect torrent monsoon downpour twilight".split(" "),
+    hard: "metropolis silhouette downpouring electricity precipitation cumulonimbus reverberation cobblestone phosphorescent kaleidoscope incandescent thunderstorm".split(" "),
+  };
+
+  // ---------- DOM ----------
+  const $ = (id) => document.getElementById(id);
+  const wordsLayer = $("words");
+  const scoreEl = $("score"), accEl = $("acc"), levelEl = $("level"), livesEl = $("lives");
+  const comboWrap = $("comboWrap"), comboNum = $("comboNum");
+  const flashEl = $("flash");
+  const startOverlay = $("startOverlay"), pauseOverlay = $("pauseOverlay"), overOverlay = $("overOverlay");
+  const capture = $("capture");
+  const gameEl = $("game");
+
+  // ---------- State ----------
+  const state = {
+    running: false,
+    paused: false,
+    score: 0,
+    level: 1,
+    lives: 5,
+    maxLives: 5,
+    wordsCleared: 0,
+    keystrokes: 0,
+    correct: 0,
+    combo: 0,
+    bestCombo: 0,
+    activeWord: null,   // the word object the player is currently typing
+    words: [],          // active falling word objects
+    lastSpawn: 0,
+    lastTime: 0,
+    spawnInterval: 2200,
+    spawnTimer: 0,
+  };
+
+  let BEST = 0;
+  try { BEST = parseInt(localStorage.getItem("typingRainBest") || "0", 10) || 0; } catch (e) {}
+
+  // ---------- Build starfield ----------
+  (function buildStars() {
+    const stars = $("stars");
+    let html = "";
+    for (let i = 0; i < 90; i++) {
+      const x = Math.random() * 100, y = Math.random() * 62;
+      const tw = (2 + Math.random() * 5).toFixed(1);
+      const d = (Math.random() * 5).toFixed(1);
+      const s = (1 + Math.random() * 1.6).toFixed(1);
+      html += `<div class="star" style="left:${x}%;top:${y}%;--tw:${tw}s;animation-delay:${d}s;width:${s}px;height:${s}px"></div>`;
+    }
+    stars.innerHTML = html;
+  })();
+
+  // ---------- Build skyline (procedural SVG) ----------
+  function buildCity(el, opts) {
+    const W = 1600, H = opts.h;
+    let buildings = "";
+    let x = -20;
+    let seed = opts.seed;
+    const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+    while (x < W) {
+      const bw = opts.minW + rnd() * (opts.maxW - opts.minW);
+      const bh = opts.minH + rnd() * (opts.maxH - opts.minH);
+      const bx = x, by = H - bh;
+      buildings += `<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" fill="${opts.color}"/>`;
+      // rooftop antenna sometimes
+      if (rnd() > 0.7) {
+        const ax = bx + bw * 0.5;
+        buildings += `<rect x="${(ax-1).toFixed(1)}" y="${(by-18).toFixed(1)}" width="2" height="18" fill="${opts.color}"/>`;
+      }
+      // windows
+      if (opts.windows) {
+        const cols = Math.max(2, Math.floor(bw / 22));
+        const rows = Math.max(2, Math.floor(bh / 26));
+        const padX = (bw - (cols * 10)) / (cols + 1);
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            if (rnd() > 0.45) continue;
+            const wx = bx + padX + c * (10 + padX);
+            const wy = by + 14 + r * 24;
+            if (wy > H - 8) continue;
+            const fl = (4 + rnd() * 8).toFixed(1);
+            buildings += `<rect class="win" x="${wx.toFixed(1)}" y="${wy.toFixed(1)}" width="7" height="11" rx="1" style="--fl:${fl}s;animation-delay:${(rnd()*6).toFixed(1)}s"/>`;
+          }
+        }
+      }
+      x += bw - 1;
+    }
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMax meet" xmlns="http://www.w3.org/2000/svg">${buildings}</svg>`;
+  }
+  buildCity($("cityFar"),  { h: 220, minW: 70, maxW: 140, minH: 80,  maxH: 200, color: "#161d40", windows: true, seed: 4821 });
+  buildCity($("cityNear"), { h: 300, minW: 90, maxW: 180, minH: 120, maxH: 290, color: "#0c1130", windows: true, seed: 9173 });
+
+  // ---------- Ambient rain canvas ----------
+  const rainCanvas = $("rain");
+  const rctx = rainCanvas.getContext("2d");
+  let drops = [];
+  function sizeRain() {
+    rainCanvas.width = window.innerWidth;
+    rainCanvas.height = window.innerHeight;
+    const count = Math.floor((rainCanvas.width * rainCanvas.height) / 9000);
+    drops = [];
+    for (let i = 0; i < count; i++) {
+      drops.push({
+        x: Math.random() * rainCanvas.width,
+        y: Math.random() * rainCanvas.height,
+        len: 8 + Math.random() * 16,
+        spd: 6 + Math.random() * 8,
+        op: 0.1 + Math.random() * 0.3,
+      });
+    }
+  }
+  sizeRain();
+  window.addEventListener("resize", sizeRain);
+
+  function drawRain() {
+    rctx.clearRect(0, 0, rainCanvas.width, rainCanvas.height);
+    rctx.strokeStyle = "rgba(150, 200, 255, 0.5)";
+    rctx.lineWidth = 1;
+    for (const d of drops) {
+      rctx.globalAlpha = d.op;
+      rctx.beginPath();
+      rctx.moveTo(d.x, d.y);
+      rctx.lineTo(d.x - 1.5, d.y + d.len);
+      rctx.stroke();
+      d.y += d.spd;
+      d.x -= 0.6;
+      if (d.y > rainCanvas.height) { d.y = -d.len; d.x = Math.random() * rainCanvas.width; }
+    }
+    rctx.globalAlpha = 1;
+    requestAnimationFrame(drawRain);
+  }
+  drawRain();
+
+  // ---------- Lives UI ----------
+  function renderLives() {
+    let html = "";
+    for (let i = 0; i < state.maxLives; i++) {
+      html += `<div class="heart ${i >= state.lives ? "lost" : ""}"></div>`;
+    }
+    livesEl.innerHTML = html;
+  }
+
+  // ---------- Difficulty curve ----------
+  // Returns fall speed (px/sec) and word pool based on level.
+  function levelConfig(level) {
+    const baseSpeed = 34 + (level - 1) * 8;      // px/sec
+    const spawn = Math.max(700, 2200 - (level - 1) * 150); // ms between spawns
+    let pools;
+    if (level <= 2) pools = ["easy"];
+    else if (level <= 4) pools = ["easy", "med"];
+    else if (level <= 7) pools = ["med", "med", "hard"];
+    else pools = ["med", "hard", "hard"];
+    return { baseSpeed, spawn, pools };
+  }
+
+  function pickWord(level) {
+    const cfg = levelConfig(level);
+    const pool = cfg.pools[Math.floor(Math.random() * cfg.pools.length)];
+    const list = WORDS[pool];
+    return list[Math.floor(Math.random() * list.length)];
+  }
+
+  // ---------- Spawn a falling word ----------
+  function spawnWord() {
+    const cfg = levelConfig(state.level);
+    const text = pickWord(state.level);
+
+    const el = document.createElement("div");
+    el.className = "word";
+    el.innerHTML = `<span class="drop"></span><span class="typed"></span><span class="rest">${text}</span>`;
+
+    // position: keep within margins so long words stay visible
+    const margin = 12; // percent
+    const xPct = margin + Math.random() * (100 - margin * 2);
+    el.style.left = xPct + "%";
+    el.style.top = "-40px";
+
+    wordsLayer.appendChild(el);
+
+    // randomize speed slightly
+    const speed = cfg.baseSpeed * (0.85 + Math.random() * 0.4);
+
+    const word = {
+      el,
+      text,
+      typedSpan: el.querySelector(".typed"),
+      restSpan: el.querySelector(".rest"),
+      typedCount: 0,
+      y: -40,
+      speed,
+      dead: false,
+    };
+    state.words.push(word);
+  }
+
+  // ---------- Typing handling ----------
+  function handleChar(ch) {
+    if (!state.running || state.paused) return;
+    ch = ch.toLowerCase();
+
+    // If no active word, find one that starts with this char (prefer lowest/most urgent)
+    if (!state.activeWord || state.activeWord.dead) {
+      let best = null, bestY = -Infinity;
+      for (const w of state.words) {
+        if (w.dead) continue;
+        if (w.text[0] === ch && w.y > bestY) { best = w; bestY = w.y; }
+      }
+      if (best) {
+        state.activeWord = best;
+        setActiveStyles();
+      } else {
+        // no word starts with this char -> miss keystroke
+        registerKeystroke(false);
+        breakCombo();
+        return;
+      }
+    }
+
+    const w = state.activeWord;
+    const expected = w.text[w.typedCount];
+    if (ch === expected) {
+      w.typedCount++;
+      registerKeystroke(true);
+      updateWordText(w);
+      if (w.typedCount >= w.text.length) {
+        clearWord(w);
+      }
+    } else {
+      registerKeystroke(false);
+      breakCombo();
+      // brief visual wobble
+      w.el.classList.add("wrong");
+      setTimeout(() => w.el && w.el.classList.remove("wrong"), 120);
+    }
+  }
+
+  function setActiveStyles() {
+    for (const w of state.words) w.el.classList.toggle("active", w === state.activeWord && !w.dead);
+  }
+
+  function updateWordText(w) {
+    w.typedSpan.textContent = w.text.slice(0, w.typedCount);
+    w.restSpan.textContent = w.text.slice(w.typedCount);
+  }
+
+  function registerKeystroke(correct) {
+    state.keystrokes++;
+    if (correct) state.correct++;
+    updateAccuracy();
+  }
+
+  function updateAccuracy() {
+    const acc = state.keystrokes === 0 ? 100 : Math.round((state.correct / state.keystrokes) * 100);
+    accEl.textContent = acc + "%";
+  }
+
+  function breakCombo() {
+    state.combo = 0;
+    hideCombo();
+  }
+
+  function showCombo() {
+    if (state.combo >= 2) {
+      comboNum.textContent = "x" + state.combo;
+      comboWrap.classList.add("show");
+    }
+  }
+  let comboHideT = null;
+  function hideCombo() {
+    comboWrap.classList.remove("show");
+  }
+
+  // ---------- Clear (completed) word ----------
+  function clearWord(w) {
+    if (w.dead) return;
+    w.dead = true;
+    state.wordsCleared++;
+    state.combo++;
+    if (state.combo > state.bestCombo) state.bestCombo = state.combo;
+
+    // scoring: base on length * level, with combo multiplier
+    const comboMult = 1 + Math.min(state.combo, 10) * 0.1;
+    const heightBonus = w.y < window.innerHeight * 0.5 ? 1 : 1; // could reward early clears
+    const gained = Math.round(w.text.length * 10 * state.level * comboMult * heightBonus);
+    state.score += gained;
+    scoreEl.textContent = state.score.toLocaleString();
+    pulse(scoreEl);
+
+    floatScore(w, gained);
+    showCombo();
+
+    if (state.activeWord === w) { state.activeWord = null; }
+
+    // pop animation then remove
+    w.el.classList.remove("active");
+    w.el.classList.add("pop");
+    const el = w.el;
+    setTimeout(() => { el.remove(); }, 280);
+    state.words = state.words.filter((x) => x !== w);
+
+    // level up by words cleared
+    maybeLevelUp();
+  }
+
+  function floatScore(w, amount) {
+    const f = document.createElement("div");
+    f.textContent = "+" + amount.toLocaleString();
+    f.style.cssText = `position:absolute;left:${w.el.style.left};top:${w.y}px;transform:translateX(-50%);
+      z-index:9;font-weight:800;font-size:18px;color:#6effb0;pointer-events:none;
+      text-shadow:0 0 12px rgba(110,255,176,0.6);transition:all 0.7s ease-out;`;
+    wordsLayer.appendChild(f);
+    requestAnimationFrame(() => {
+      f.style.top = (w.y - 50) + "px";
+      f.style.opacity = "0";
+    });
+    setTimeout(() => f.remove(), 720);
+  }
+
+  // ---------- Word reaches bottom (missed) ----------
+  function missWord(w) {
+    if (w.dead) return;
+    w.dead = true;
+    state.lives--;
+    breakCombo();
+    renderLives();
+
+    flashEl.classList.remove("hit");
+    void flashEl.offsetWidth;
+    flashEl.classList.add("hit");
+
+    if (state.activeWord === w) state.activeWord = null;
+
+    w.el.classList.remove("active", "danger");
+    w.el.classList.add("splash");
+    const el = w.el;
+    setTimeout(() => el.remove(), 450);
+    state.words = state.words.filter((x) => x !== w);
+
+    if (state.lives <= 0) {
+      gameOver();
+    }
+  }
+
+  // ---------- Level up ----------
+  function maybeLevelUp() {
+    // every 8 cleared words = +1 level
+    const targetLevel = 1 + Math.floor(state.wordsCleared / 8);
+    if (targetLevel > state.level) {
+      state.level = targetLevel;
+      levelEl.textContent = state.level;
+      pulse(levelEl);
+      announceLevel();
+    }
+  }
+
+  let levelMsgT = null;
+  function announceLevel() {
+    let m = $("levelMsg");
+    if (!m) {
+      m = document.createElement("div");
+      m.id = "levelMsg";
+      m.style.cssText = `position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);
+        z-index:11;font-size:48px;font-weight:800;pointer-events:none;text-align:center;
+        background:linear-gradient(90deg,#6ee7ff,#b388ff);-webkit-background-clip:text;background-clip:text;color:transparent;
+        text-shadow:0 0 40px rgba(110,231,255,0.4);opacity:0;transition:opacity 0.3s,transform 0.3s;`;
+      gameEl.appendChild(m);
+    }
+    m.innerHTML = `LEVEL ${state.level}<div style="font-size:14px;letter-spacing:3px;opacity:0.7;color:#e8ecff;-webkit-text-fill-color:#e8ecff;margin-top:4px">THE STORM INTENSIFIES</div>`;
+    m.style.opacity = "1";
+    m.style.transform = "translate(-50%,-50%) scale(1)";
+    clearTimeout(levelMsgT);
+    levelMsgT = setTimeout(() => {
+      m.style.opacity = "0";
+      m.style.transform = "translate(-50%,-58%) scale(0.9)";
+    }, 1400);
+  }
+
+  function pulse(el) {
+    el.style.transition = "transform 0.12s";
+    el.style.transform = "scale(1.25)";
+    setTimeout(() => { el.style.transform = "scale(1)"; }, 120);
+  }
+
+  // ---------- Main loop ----------
+  function loop(t) {
+    if (!state.running) return;
+    if (!state.lastTime) state.lastTime = t;
+    let dt = (t - state.lastTime) / 1000;
+    state.lastTime = t;
+    if (dt > 0.1) dt = 0.1; // clamp after tab switch
+
+    if (!state.paused) {
+      // spawn
+      const cfg = levelConfig(state.level);
+      state.spawnTimer += dt * 1000;
+      if (state.spawnTimer >= cfg.spawn) {
+        state.spawnTimer = 0;
+        spawnWord();
+      }
+
+      const dangerY = window.innerHeight * 0.86;
+      const bottomY = window.innerHeight * 0.86; // streets line
+
+      for (const w of state.words) {
+        if (w.dead) continue;
+        w.y += w.speed * dt;
+        w.el.style.top = w.y + "px";
+        // danger styling near bottom
+        if (w.y > dangerY * 0.78) {
+          w.el.classList.add("danger");
+        } else {
+          w.el.classList.remove("danger");
+        }
+        if (w.y >= bottomY) {
+          missWord(w);
+        }
+      }
+    }
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- Game lifecycle ----------
+  function resetState() {
+    // clear existing words
+    for (const w of state.words) w.el.remove();
+    state.words = [];
+    state.activeWord = null;
+    state.running = false;
+    state.paused = false;
+    state.score = 0;
+    state.level = 1;
+    state.lives = state.maxLives;
+    state.wordsCleared = 0;
+    state.keystrokes = 0;
+    state.correct = 0;
+    state.combo = 0;
+    state.bestCombo = 0;
+    state.lastTime = 0;
+    state.spawnTimer = 0;
+    scoreEl.textContent = "0";
+    accEl.textContent = "100%";
+    levelEl.textContent = "1";
+    renderLives();
+    hideCombo();
+  }
+
+  function startGame() {
+    resetState();
+    state.running = true;
+    startOverlay.classList.add("hidden");
+    overOverlay.classList.add("hidden");
+    pauseOverlay.classList.add("hidden");
+    capture.focus();
+    // first word quickly
+    state.spawnTimer = 1600;
+    requestAnimationFrame(loop);
+  }
+
+  function togglePause() {
+    if (!state.running) return;
+    state.paused = !state.paused;
+    pauseOverlay.classList.toggle("hidden", !state.paused);
+    if (!state.paused) { state.lastTime = 0; capture.focus(); }
+  }
+
+  function gameOver() {
+    state.running = false;
+    const acc = state.keystrokes === 0 ? 100 : Math.round((state.correct / state.keystrokes) * 100);
+    $("fScore").textContent = state.score.toLocaleString();
+    $("fAcc").textContent = acc + "%";
+    $("fWords").textContent = state.wordsCleared;
+    $("fLevel").textContent = state.level;
+
+    if (state.score > BEST) {
+      BEST = state.score;
+      try { localStorage.setItem("typingRainBest", String(BEST)); } catch (e) {}
+      $("bestLine").innerHTML = "🏆 New best score!";
+    } else {
+      $("bestLine").innerHTML = "Best: " + BEST.toLocaleString() + " &nbsp;•&nbsp; Longest combo: x" + state.bestCombo;
+    }
+
+    // splash remaining words
+    for (const w of state.words) {
+      w.el.classList.add("splash");
+      const el = w.el;
+      setTimeout(() => el.remove(), 450);
+    }
+    state.words = [];
+    overOverlay.classList.remove("hidden");
+  }
+
+  // ---------- Input ----------
+  // Use keydown for reliable single-char capture on desktop.
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      togglePause();
+      return;
+    }
+    if (!state.running) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)) {
+      e.preventDefault();
+      handleChar(e.key);
+    }
+  });
+
+  // Mobile: capture via hidden input
+  capture.addEventListener("input", (e) => {
+    const val = capture.value;
+    for (const ch of val) {
+      if (/[a-zA-Z]/.test(ch)) handleChar(ch);
+    }
+    capture.value = "";
+  });
+  // refocus capture on tap (mobile keyboard)
+  gameEl.addEventListener("pointerdown", () => {
+    if (state.running && !state.paused) capture.focus();
+  });
+
+  // ---------- Buttons ----------
+  $("startBtn").addEventListener("click", startGame);
+  $("restartBtn").addEventListener("click", startGame);
+  $("resumeBtn").addEventListener("click", togglePause);
+
+  // initial best line
+  if (BEST > 0) $("bestLine").innerHTML = "Best: " + BEST.toLocaleString();
+
+})();
+</script>
+</body>
+</html>
