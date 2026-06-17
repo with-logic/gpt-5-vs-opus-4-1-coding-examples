@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Cloud Painter ☁️</title>
+<style>
+  :root {
+    --panel-bg: rgba(255, 255, 255, 0.55);
+    --panel-stroke: rgba(255, 255, 255, 0.8);
+    --ink: #5b6b8c;
+    --accent: #ffb3d1;
+    --accent2: #a8d8ff;
+    --shadow: 0 10px 30px rgba(108, 140, 200, 0.25);
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    font-family: "Baloo 2", "Comic Sans MS", "Trebuchet MS", system-ui, sans-serif;
+    user-select: none;
+    touch-action: none;
+  }
+
+  #app {
+    position: fixed;
+    inset: 0;
+  }
+
+  /* Sky canvas fills the screen */
+  #sky {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    cursor: none;
+  }
+
+  /* ===== Top bar (title + sun) ===== */
+  #topbar {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    pointer-events: none;
+    z-index: 20;
+  }
+  .title {
+    font-weight: 800;
+    font-size: clamp(20px, 4.5vw, 34px);
+    color: #fff;
+    letter-spacing: 0.5px;
+    text-shadow: 0 3px 0 rgba(120,150,210,0.35), 0 6px 14px rgba(120,150,210,0.4);
+    pointer-events: none;
+  }
+  .title .puff { display: inline-block; animation: bob 3s ease-in-out infinite; }
+  @keyframes bob { 0%,100%{ transform: translateY(0);} 50%{ transform: translateY(-5px);} }
+
+  /* ===== Bottom toolbar ===== */
+  #toolbar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+    z-index: 30;
+    pointer-events: none;
+  }
+
+  .group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 12px;
+    background: var(--panel-bg);
+    border: 2px solid var(--panel-stroke);
+    border-radius: 26px;
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    pointer-events: auto;
+  }
+  .group .label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--ink);
+    opacity: 0.7;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-right: 2px;
+  }
+
+  .btn {
+    border: none;
+    background: rgba(255,255,255,0.7);
+    border-radius: 18px;
+    width: 46px;
+    height: 46px;
+    display: grid;
+    place-items: center;
+    font-size: 22px;
+    cursor: pointer;
+    transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.15s ease;
+    box-shadow: 0 3px 0 rgba(150,170,220,0.3);
+    color: var(--ink);
+  }
+  .btn:hover { transform: translateY(-2px); }
+  .btn:active { transform: translateY(1px); box-shadow: 0 1px 0 rgba(150,170,220,0.3); }
+  .btn.active {
+    background: #fff;
+    box-shadow: 0 0 0 3px var(--accent), 0 3px 10px rgba(255,140,190,0.4);
+    transform: translateY(-2px);
+  }
+  .btn.wide { width: auto; padding: 0 16px; font-size: 15px; font-weight: 800; gap: 6px; }
+
+  /* color swatches */
+  .swatch {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 3px solid rgba(255,255,255,0.9);
+    box-shadow: 0 2px 6px rgba(120,140,200,0.35);
+    transition: transform 0.12s ease;
+  }
+  .swatch:hover { transform: scale(1.1); }
+  .swatch.active { transform: scale(1.18); box-shadow: 0 0 0 3px #fff, 0 3px 8px rgba(120,140,200,0.5); }
+
+  /* size slider */
+  .sizewrap { display: flex; align-items: center; gap: 8px; }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 90px; height: 8px; border-radius: 8px;
+    background: rgba(255,255,255,0.8);
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: #fff; border: 3px solid var(--accent);
+    cursor: pointer; box-shadow: 0 2px 6px rgba(255,140,190,0.5);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: #fff; border: 3px solid var(--accent);
+    cursor: pointer; box-shadow: 0 2px 6px rgba(255,140,190,0.5);
+  }
+
+  /* tooltip on hover */
+  .btn[data-tip], .swatch[data-tip] { position: relative; }
+
+  /* sparkle toast */
+  #toast {
+    position: absolute;
+    top: 70px; left: 50%;
+    transform: translateX(-50%) translateY(-20px);
+    background: #fff;
+    color: var(--ink);
+    font-weight: 800;
+    padding: 10px 22px;
+    border-radius: 30px;
+    box-shadow: var(--shadow);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    z-index: 40;
+    font-size: 15px;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* custom brush cursor preview */
+  #cursorDot {
+    position: absolute;
+    border-radius: 50%;
+    border: 2px dashed rgba(255,255,255,0.9);
+    pointer-events: none;
+    z-index: 15;
+    transform: translate(-50%, -50%);
+    display: none;
+    box-shadow: 0 0 0 1px rgba(120,140,200,0.25) inset;
+  }
+
+  /* intro hint */
+  #hint {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    color: #fff;
+    font-weight: 800;
+    font-size: clamp(18px, 4vw, 28px);
+    text-shadow: 0 3px 14px rgba(100,130,200,0.5);
+    text-align: center;
+    pointer-events: none;
+    z-index: 12;
+    animation: floaty 3.5s ease-in-out infinite;
+    transition: opacity 0.6s ease;
+  }
+  #hint small { display:block; font-size: 0.6em; opacity:0.9; margin-top:6px; font-weight:700;}
+  @keyframes floaty { 0%,100%{transform:translate(-50%,-50%);} 50%{transform:translate(-50%,calc(-50% - 10px));} }
+  @keyframes bob { 0%,100%{ transform: translateY(0);} 50%{ transform: translateY(-5px);} }
+
+  @media (max-width: 560px) {
+    .group .label { display: none; }
+    .btn { width: 42px; height: 42px; font-size: 19px; }
+    .swatch { width: 32px; height: 32px; }
+    input[type=range] { width: 70px; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="sky"></canvas>
+
+  <div id="topbar">
+    <div class="title"><span class="puff">☁️</span> Cloud Painter</div>
+    <div></div>
+  </div>
+
+  <div id="cursorDot"></div>
+  <div id="hint">Paint the sky with fluffy clouds!<small>drag your finger or mouse anywhere ✨</small></div>
+  <div id="toast">Saved! 🎉</div>
+
+  <div id="toolbar">
+    <div class="group" id="brushGroup">
+      <span class="label">Brush</span>
+      <button class="btn active" data-brush="fluffy" title="Fluffy Cloud">☁️</button>
+      <button class="btn" data-brush="puffy" title="Puffy Cloud">🌥️</button>
+      <button class="btn" data-brush="cotton" title="Cotton Candy">🍥</button>
+      <button class="btn" data-brush="rainbow" title="Rainbow Cloud">🌈</button>
+      <button class="btn" data-brush="star" title="Sparkle Trail">✨</button>
+    </div>
+
+    <div class="group" id="colorGroup">
+      <span class="label">Color</span>
+    </div>
+
+    <div class="group">
+      <span class="label">Size</span>
+      <div class="sizewrap">
+        <input type="range" id="size" min="20" max="160" value="70" />
+      </div>
+    </div>
+
+    <div class="group">
+      <button class="btn" id="planeBtn" title="Send a plane!">✈️</button>
+      <button class="btn" id="undoBtn" title="Erase a little">🧽</button>
+      <button class="btn" id="clearBtn" title="Fresh sky">🧹</button>
+      <button class="btn wide" id="saveBtn" title="Save your art">💾 Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const sky = document.getElementById("sky");
+  const ctx = sky.getContext("2d");
+  const cursorDot = document.getElementById("cursorDot");
+  const hint = document.getElementById("hint");
+  const toast = document.getElementById("toast");
+
+  let W = 0, H = 0, DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+  // ===== Sky gradient (drawn each frame as the base) =====
+  // We keep painting on an offscreen "paint" canvas so the animated
+  // drift layer (planes, drifting decorative clouds) can be redrawn
+  // over a stable gradient + the child's painting.
+  const paint = document.createElement("canvas");
+  const pctx = paint.getContext("2d");
+
+  function resize() {
+    W = window.innerWidth;
+    H = window.innerHeight;
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+    // preserve the painting on resize
+    const prev = document.createElement("canvas");
+    prev.width = paint.width; prev.height = paint.height;
+    if (paint.width) prev.getContext("2d").drawImage(paint, 0, 0);
+
+    sky.width = W * DPR; sky.height = H * DPR;
+    paint.width = W * DPR; paint.height = H * DPR;
+    pctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+    if (prev.width) {
+      pctx.save();
+      pctx.setTransform(1, 0, 0, 1, 0, 0);
+      pctx.drawImage(prev, 0, 0);
+      pctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    }
+  }
+  window.addEventListener("resize", resize);
+
+  // ===== Palette =====
+  const colors = [
+    { name: "Snow White", hex: "#ffffff" },
+    { name: "Cotton Pink", hex: "#ffc6e0" },
+    { name: "Sky Blue", hex: "#bfe3ff" },
+    { name: "Lemon", hex: "#fff3b0" },
+    { name: "Mint", hex: "#c4f5d8" },
+    { name: "Lavender", hex: "#dcc9ff" },
+    { name: "Peach", hex: "#ffd2b0" },
+    { name: "Sunset", hex: "#ff9aa2" },
+  ];
+  let currentColor = colors[0].hex;
+
+  const colorGroup = document.getElementById("colorGroup");
+  colors.forEach((c, i) => {
+    const s = document.createElement("div");
+    s.className = "swatch" + (i === 0 ? " active" : "");
+    s.style.background = c.hex;
+    s.title = c.name;
+    s.addEventListener("click", () => {
+      document.querySelectorAll(".swatch").forEach(x => x.classList.remove("active"));
+      s.classList.add("active");
+      currentColor = c.hex;
+    });
+    colorGroup.appendChild(s);
+  });
+
+  // ===== Brush selection =====
+  let currentBrush = "fluffy";
+  document.querySelectorAll("#brushGroup .btn").forEach(b => {
+    b.addEventListener("click", () => {
+      document.querySelectorAll("#brushGroup .btn").forEach(x => x.classList.remove("active"));
+      b.classList.add("active");
+      currentBrush = b.dataset.brush;
+    });
+  });
+
+  const sizeEl = document.getElementById("size");
+  let brushSize = +sizeEl.value;
+  sizeEl.addEventListener("input", () => { brushSize = +sizeEl.value; });
+
+  // ===== Helpers =====
+  function hexToRgb(hex) {
+    const n = parseInt(hex.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  function shade(hex, amt) {
+    const [r, g, b] = hexToRgb(hex);
+    const f = (v) => Math.max(0, Math.min(255, Math.round(v + amt)));
+    return `rgb(${f(r)},${f(g)},${f(b)})`;
+  }
+
+  // pseudo-random but deterministic per stroke segment isn't needed;
+  // we use plain randoms for organic puffs.
+  function rand(a, b) { return a + Math.random() * (b - a); }
+
+  // ===== Cloud puff stamp =====
+  function softBlob(c, x, y, r, color, alpha) {
+    const g = c.createRadialGradient(x, y, r * 0.1, x, y, r);
+    const [cr, cg, cb] = hexToRgb(color);
+    g.addColorStop(0, `rgba(${cr},${cg},${cb},${alpha})`);
+    g.addColorStop(0.55, `rgba(${cr},${cg},${cb},${alpha * 0.85})`);
+    g.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+    c.fillStyle = g;
+    c.beginPath();
+    c.arc(x, y, r, 0, Math.PI * 2);
+    c.fill();
+  }
+
+  function rainbowColorAt(t) {
+    const hues = ["#ff9aa2", "#ffd2a0", "#fff3b0", "#c4f5d8", "#bfe3ff", "#dcc9ff"];
+    const idx = Math.floor(t) % hues.length;
+    return hues[(idx + hues.length) % hues.length];
+  }
+
+  let rainbowPhase = 0;
+  let sparkles = []; // transient sparkle particles for the star brush
+
+  function stampCloud(x, y, brush) {
+    const r = brushSize / 2;
+    pctx.save();
+    pctx.globalCompositeOperation = "source-over";
+
+    if (brush === "fluffy") {
+      // big soft body + a few satellite puffs => classic cumulus
+      softBlob(pctx, x, y, r, currentColor, 0.5);
+      for (let i = 0; i < 5; i++) {
+        const a = rand(0, Math.PI * 2);
+        const d = rand(0, r * 0.7);
+        softBlob(pctx, x + Math.cos(a) * d, y + Math.sin(a) * d, rand(r * 0.5, r * 0.85), currentColor, 0.4);
+      }
+      // bright highlight on top
+      softBlob(pctx, x - r * 0.2, y - r * 0.3, r * 0.5, shade(currentColor, 30), 0.45);
+    }
+    else if (brush === "puffy") {
+      // tighter, denser ball of puffs
+      for (let i = 0; i < 7; i++) {
+        const a = rand(0, Math.PI * 2);
+        const d = rand(0, r * 0.45);
+        softBlob(pctx, x + Math.cos(a) * d, y + Math.sin(a) * d, rand(r * 0.45, r * 0.7), currentColor, 0.5);
+      }
+    }
+    else if (brush === "cotton") {
+      // cotton candy: layered pinks/lavender swirl regardless of color
+      const cottonCols = ["#ffc6e0", "#ffd9ec", "#dcc9ff"];
+      for (let i = 0; i < 6; i++) {
+        const a = rand(0, Math.PI * 2);
+        const d = rand(0, r * 0.6);
+        softBlob(pctx, x + Math.cos(a) * d, y + Math.sin(a) * d,
+          rand(r * 0.4, r * 0.7), cottonCols[i % cottonCols.length], 0.45);
+      }
+    }
+    else if (brush === "rainbow") {
+      rainbowPhase += 0.35;
+      const col = rainbowColorAt(rainbowPhase);
+      softBlob(pctx, x, y, r, col, 0.55);
+      for (let i = 0; i < 4; i++) {
+        const a = rand(0, Math.PI * 2);
+        const d = rand(0, r * 0.6);
+        softBlob(pctx, x + Math.cos(a) * d, y + Math.sin(a) * d, rand(r * 0.4, r * 0.7), rainbowColorAt(rainbowPhase + i), 0.4);
+      }
+    }
+    else if (brush === "star") {
+      // sparkle trail: small soft cloud + emit transient sparkles
+      softBlob(pctx, x, y, r * 0.5, "#ffffff", 0.35);
+      for (let i = 0; i < 3; i++) {
+        sparkles.push({
+          x: x + rand(-r, r),
+          y: y + rand(-r, r),
+          life: 1,
+          size: rand(6, 14),
+          spin: rand(0, Math.PI),
+          color: ["#fff3b0", "#ffffff", "#ffc6e0", "#bfe3ff"][Math.floor(rand(0, 4))]
+        });
+      }
+    }
+    pctx.restore();
+  }
+
+  // ===== Painting input (interpolated strokes) =====
+  let painting = false;
+  let lastX = 0, lastY = 0;
+  let hintHidden = false;
+
+  function hideHint() {
+    if (hintHidden) return;
+    hintHidden = true;
+    hint.style.opacity = "0";
+    setTimeout(() => hint.remove(), 700);
+  }
+
+  function getPos(e) {
+    const rect = sky.getBoundingClientRect();
+    const p = e.touches ? e.touches[0] : e;
+    return { x: p.clientX - rect.left, y: p.clientY - rect.top };
+  }
+
+  function paintTo(x, y) {
+    const dx = x - lastX, dy = y - lastY;
+    const dist = Math.hypot(dx, dy);
+    const spacing = Math.max(4, brushSize * 0.18);
+    const steps = Math.max(1, Math.floor(dist / spacing));
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      stampCloud(lastX + dx * t, lastY + dy * t, currentBrush);
+    }
+    lastX = x; lastY = y;
+  }
+
+  function start(e) {
+    e.preventDefault();
+    hideHint();
+    painting = true;
+    const { x, y } = getPos(e);
+    lastX = x; lastY = y;
+    stampCloud(x, y, currentBrush);
+  }
+  function move(e) {
+    const { x, y } = getPos(e);
+    // cursor preview
+    cursorDot.style.display = "block";
+    cursorDot.style.left = x + "px";
+    cursorDot.style.top = y + "px";
+    cursorDot.style.width = cursorDot.style.height = brushSize + "px";
+    if (!painting) return;
+    e.preventDefault();
+    paintTo(x, y);
+  }
+  function end() { painting = false; }
+
+  sky.addEventListener("mousedown", start);
+  window.addEventListener("mousemove", move);
+  window.addEventListener("mouseup", end);
+  sky.addEventListener("mouseleave", () => { cursorDot.style.display = "none"; });
+
+  sky.addEventListener("touchstart", start, { passive: false });
+  sky.addEventListener("touchmove", (e) => { move(e); }, { passive: false });
+  window.addEventListener("touchend", end);
+
+  // ===== Eraser (sponge) =====
+  document.getElementById("undoBtn").addEventListener("click", () => {
+    // gentle fade of the whole painting — like a sponge softening it
+    pctx.save();
+    pctx.setTransform(1, 0, 0, 1, 0, 0);
+    pctx.globalCompositeOperation = "destination-out";
+    pctx.fillStyle = "rgba(0,0,0,0.35)";
+    pctx.fillRect(0, 0, paint.width, paint.height);
+    pctx.restore();
+  });
+
+  document.getElementById("clearBtn").addEventListener("click", () => {
+    pctx.save();
+    pctx.setTransform(1, 0, 0, 1, 0, 0);
+    pctx.clearRect(0, 0, paint.width, paint.height);
+    pctx.restore();
+    sparkles = [];
+  });
+
+  // ===== Airplanes =====
+  const planes = [];
+  const planeColors = ["#ff6f91", "#5bc0eb", "#ffd166", "#9b7ede", "#06d6a0"];
+  let planeColorIdx = 0;
+
+  function launchPlane() {
+    const fromLeft = Math.random() < 0.5;
+    const y = rand(H * 0.12, H * 0.55);
+    const speed = rand(70, 130) * (fromLeft ? 1 : -1);
+    planes.push({
+      x: fromLeft ? -80 : W + 80,
+      y,
+      vx: speed,
+      color: planeColors[planeColorIdx++ % planeColors.length],
+      trail: [],
+      scale: rand(0.8, 1.2),
+      bob: rand(0, Math.PI * 2),
+    });
+  }
+  document.getElementById("planeBtn").addEventListener("click", launchPlane);
+
+  function drawPlane(c, p) {
+    const dir = p.vx >= 0 ? 1 : -1;
+    const bobY = Math.sin(p.bob) * 6;
+    c.save();
+    c.translate(p.x, p.y + bobY);
+    c.scale(dir * p.scale, p.scale);
+
+    // banner trail (puffy contrail dots) already drawn separately
+    // body
+    c.fillStyle = p.color;
+    c.strokeStyle = "rgba(255,255,255,0.9)";
+    c.lineWidth = 2;
+
+    // fuselage
+    c.beginPath();
+    c.moveTo(-22, 0);
+    c.quadraticCurveTo(-4, -9, 22, -3);
+    c.quadraticCurveTo(28, 0, 22, 3);
+    c.quadraticCurveTo(-4, 9, -22, 0);
+    c.closePath();
+    c.fill();
+
+    // tail fin
+    c.beginPath();
+    c.moveTo(-22, 0);
+    c.lineTo(-30, -11);
+    c.lineTo(-16, -3);
+    c.closePath();
+    c.fillStyle = shade(p.color, -25);
+    c.fill();
+
+    // wing
+    c.beginPath();
+    c.moveTo(0, 2);
+    c.lineTo(-6, 14);
+    c.lineTo(8, 4);
+    c.closePath();
+    c.fillStyle = shade(p.color, -15);
+    c.fill();
+
+    // window
+    c.beginPath();
+    c.fillStyle = "rgba(255,255,255,0.95)";
+    c.arc(8, -2, 3.2, 0, Math.PI * 2);
+    c.fill();
+
+    c.restore();
+  }
+
+  // ===== Decorative drifting background clouds (parallax, behind paint) =====
+  const driftClouds = [];
+  function seedDriftClouds() {
+    driftClouds.length = 0;
+    const count = Math.max(4, Math.round(W / 320));
+    for (let i = 0; i < count; i++) {
+      driftClouds.push({
+        x: rand(0, W),
+        y: rand(H * 0.08, H * 0.7),
+        s: rand(0.5, 1.3),
+        v: rand(6, 16),
+        alpha: rand(0.12, 0.3),
+      });
+    }
+  }
+
+  function drawDriftCloud(c, cl) {
+    const r = 26 * cl.s;
+    c.save();
+    c.globalAlpha = cl.alpha;
+    c.fillStyle = "#ffffff";
+    const puffs = [[0,0,1],[-1.1,0.15,0.8],[1.1,0.15,0.8],[-0.55,-0.4,0.75],[0.6,-0.35,0.85]];
+    for (const [dx,dy,sc] of puffs) {
+      c.beginPath();
+      c.arc(cl.x + dx*r, cl.y + dy*r, r*sc, 0, Math.PI*2);
+      c.fill();
+    }
+    // flat bottom
+    c.fillRect(cl.x - r*1.6, cl.y, r*3.2, r*0.6);
+    c.restore();
+  }
+
+  // ===== Animation loop =====
+  let lastT = performance.now();
+
+  function drawSkyGradient(c) {
+    const g = c.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#aedcff");
+    g.addColorStop(0.45, "#cfeaff");
+    g.addColorStop(0.8, "#ffe6f2");
+    g.addColorStop(1, "#fff4dc");
+    c.fillStyle = g;
+    c.fillRect(0, 0, W, H);
+
+    // soft sun glow top-right
+    const sg = c.createRadialGradient(W * 0.85, H * 0.16, 10, W * 0.85, H * 0.16, Math.max(W, H) * 0.5);
+    sg.addColorStop(0, "rgba(255,250,210,0.9)");
+    sg.addColorStop(0.15, "rgba(255,245,190,0.45)");
+    sg.addColorStop(0.4, "rgba(255,245,190,0)");
+    c.fillStyle = sg;
+    c.fillRect(0, 0, W, H);
+
+    // the sun itself
+    c.save();
+    c.beginPath();
+    c.arc(W * 0.85, H * 0.16, 34, 0, Math.PI * 2);
+    c.fillStyle = "#fff6c8";
+    c.shadowColor = "rgba(255,240,170,0.9)";
+    c.shadowBlur = 40;
+    c.fill();
+    c.restore();
+  }
+
+  function loop(now) {
+    const dt = Math.min(0.05, (now - lastT) / 1000);
+    lastT = now;
+
+    // clear and rebuild the visible frame
+    ctx.clearRect(0, 0, W, H);
+    drawSkyGradient(ctx);
+
+    // drifting background clouds (behind the painting)
+    for (const cl of driftClouds) {
+      cl.x += cl.v * dt;
+      if (cl.x - 60 > W) { cl.x = -60; cl.y = rand(H * 0.08, H * 0.7); }
+      drawDriftCloud(ctx, cl);
+    }
+
+    // the child's painting on top
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(paint, 0, 0);
+    ctx.restore();
+
+    // sparkles (star brush) — animated twinkle, baked nowhere, purely live
+    for (let i = sparkles.length - 1; i >= 0; i--) {
+      const sp = sparkles[i];
+      sp.life -= dt * 0.8;
+      if (sp.life <= 0) { sparkles.splice(i, 1); continue; }
+      drawSparkle(ctx, sp.x, sp.y, sp.size * (0.6 + sp.life * 0.6), sp.life, sp.spin, sp.color);
+    }
+
+    // planes fly above everything
+    for (let i = planes.length - 1; i >= 0; i--) {
+      const p = planes[i];
+      p.x += p.vx * dt;
+      p.bob += dt * 4;
+
+      // contrail puffs
+      if (!p._acc) p._acc = 0;
+      p._acc += dt;
+      if (p._acc > 0.05) {
+        p._acc = 0;
+        p.trail.push({ x: p.x - (p.vx >= 0 ? 24 : -24), y: p.y + Math.sin(p.bob) * 6, r: 3, a: 0.6 });
+        if (p.trail.length > 40) p.trail.shift();
+      }
+      for (const t of p.trail) {
+        t.r += dt * 14; t.a -= dt * 0.5;
+        if (t.a <= 0) continue;
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(255,255,255,${Math.max(0, t.a)})`;
+        ctx.arc(t.x, t.y, t.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      drawPlane(ctx, p);
+
+      if ((p.vx > 0 && p.x > W + 120) || (p.vx < 0 && p.x < -120)) {
+        planes.splice(i, 1);
+      }
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  function drawSparkle(c, x, y, size, alpha, rot, color) {
+    c.save();
+    c.translate(x, y);
+    c.rotate(rot);
+    c.globalAlpha = Math.max(0, alpha);
+    c.fillStyle = color;
+    c.shadowColor = color;
+    c.shadowBlur = 10;
+    // 4-point sparkle
+    c.beginPath();
+    const o = size, n = size * 0.28;
+    c.moveTo(0, -o);
+    c.quadraticCurveTo(n, -n, o, 0);
+    c.quadraticCurveTo(n, n, 0, o);
+    c.quadraticCurveTo(-n, n, -o, 0);
+    c.quadraticCurveTo(-n, -n, 0, -o);
+    c.closePath();
+    c.fill();
+    c.restore();
+  }
+
+  // ===== Save image (composite gradient + drift + paint into a flat PNG) =====
+  document.getElementById("saveBtn").addEventListener("click", () => {
+    const out = document.createElement("canvas");
+    out.width = W * DPR;
+    out.height = H * DPR;
+    const oc = out.getContext("2d");
+    oc.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+    drawSkyGradient(oc);
+    for (const cl of driftClouds) drawDriftCloud(oc, cl);
+    oc.setTransform(1, 0, 0, 1, 0, 0);
+    oc.drawImage(paint, 0, 0);
+
+    out.toBlob((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "my-cloud-sky.png";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }, "image/png");
+
+    showToast("Saved! 🎉 Look in your downloads!");
+  });
+
+  let toastTimer = null;
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove("show"), 2200);
+  }
+
+  // ===== Boot =====
+  resize();
+  seedDriftClouds();
+  window.addEventListener("resize", seedDriftClouds);
+
+  // a gentle welcome: launch a plane shortly after load
+  setTimeout(launchPlane, 1400);
+
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

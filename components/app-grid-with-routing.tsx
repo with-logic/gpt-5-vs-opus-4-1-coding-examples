@@ -15,9 +15,9 @@ type PageMode = "apps" | "stats-by-app" | "stats-by-model";
 
 export function AppGridWithRouting({ apps }: AppGridWithRoutingProps) {
   const [selectedApp, setSelectedApp] = useState<CodeExample | null>(null);
-  const [initialModels, setInitialModels] = useState<string[]>(["gpt-5.4", "opus-4.7", "gemini-3"]);
+  const [initialModels, setInitialModels] = useState<string[]>(["gpt-5.5", "opus-4.8", "gemini-3"]);
   const [initialView, setInitialView] = useState<"side-by-side" | "tabs">("side-by-side");
-  const [initialTab, setInitialTab] = useState<string>("gpt-5.4");
+  const [initialTab, setInitialTab] = useState<string>("gpt-5.5");
   const [initialContentMode, setInitialContentMode] = useState<"demo" | "stats">("demo");
   const [pageMode, setPageMode] = useState<PageMode>("apps");
 
@@ -80,9 +80,9 @@ export function AppGridWithRouting({ apps }: AppGridWithRoutingProps) {
     // Let middle-click, ctrl+click, cmd+click open in new tab naturally
     if (e.button !== 0 || e.ctrlKey || e.metaKey) return;
     e.preventDefault();
-    setInitialModels(["gpt-5.4", "opus-4.7", "gemini-3"]); // Reset to defaults
+    setInitialModels(["gpt-5.5", "opus-4.8", "gemini-3"]); // Reset to defaults
     setInitialView("side-by-side");
-    setInitialTab("gpt-5.4");
+    setInitialTab("gpt-5.5");
     setInitialContentMode(pageMode !== "apps" ? "stats" : "demo");
     setSelectedApp(app);
   }, [pageMode]);

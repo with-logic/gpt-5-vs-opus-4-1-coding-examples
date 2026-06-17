@@ -1,0 +1,899 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Webcam Filter Playground</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --panel: rgba(20, 20, 30, 0.72);
+    --panel-solid: #14141e;
+    --border: rgba(255, 255, 255, 0.08);
+    --text: #f0f0f5;
+    --muted: #8b8b9a;
+    --accent: #7c5cff;
+    --accent2: #00e5c0;
+    --danger: #ff4d6d;
+    --radius: 16px;
+    --shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  body {
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(124, 92, 255, 0.18), transparent 60%),
+      radial-gradient(1000px 600px at 110% 110%, rgba(0, 229, 192, 0.12), transparent 55%),
+      var(--bg);
+  }
+
+  .app {
+    height: 100%;
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 18px;
+    padding: 18px;
+  }
+
+  /* ---------- Stage ---------- */
+  .stage-wrap {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  header.brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 6px 14px;
+    flex-shrink: 0;
+  }
+  .logo {
+    width: 34px; height: 34px;
+    border-radius: 10px;
+    background: conic-gradient(from 200deg, var(--accent), var(--accent2), var(--accent));
+    box-shadow: 0 0 24px rgba(124, 92, 255, 0.5);
+    display: grid; place-items: center;
+    font-size: 18px;
+  }
+  .brand h1 {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .brand p {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 1px;
+  }
+
+  .stage {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: #000;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    display: grid;
+    place-items: center;
+  }
+
+  #view {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  video { display: none; }
+
+  .stage-overlay {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    text-align: center;
+    background: rgba(8, 8, 14, 0.85);
+    padding: 28px;
+    transition: opacity 0.4s ease;
+    z-index: 5;
+  }
+  .stage-overlay.hidden { opacity: 0; pointer-events: none; }
+  .stage-overlay .big { font-size: 46px; margin-bottom: 14px; }
+  .stage-overlay h2 { font-size: 19px; margin-bottom: 8px; font-weight: 650; }
+  .stage-overlay p { color: var(--muted); font-size: 13.5px; max-width: 340px; line-height: 1.5; margin: 0 auto 20px; }
+
+  .spinner {
+    width: 34px; height: 34px;
+    border: 3px solid rgba(255,255,255,0.12);
+    border-top-color: var(--accent2);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* FPS / filter badge */
+  .hud {
+    position: absolute;
+    top: 12px; left: 12px;
+    display: flex; gap: 8px;
+    z-index: 4;
+    pointer-events: none;
+  }
+  .badge {
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 5px 11px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--text);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .badge .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent2); box-shadow: 0 0 8px var(--accent2); }
+  .badge.rec .dot { background: var(--danger); box-shadow: 0 0 8px var(--danger); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: 0.35; } }
+
+  /* Bottom control bar */
+  .controlbar {
+    position: absolute;
+    bottom: 14px; left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: rgba(10,10,18,0.55);
+    backdrop-filter: blur(14px);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 8px 10px;
+    z-index: 6;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+  }
+  .icon-btn {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.04);
+    color: var(--text);
+    cursor: pointer;
+    display: grid; place-items: center;
+    font-size: 17px;
+    transition: transform 0.12s ease, background 0.2s ease, border-color 0.2s;
+  }
+  .icon-btn:hover { background: rgba(255,255,255,0.12); transform: translateY(-1px); }
+  .icon-btn:active { transform: scale(0.92); }
+  .icon-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+  .icon-btn.toggled { background: var(--accent); border-color: var(--accent); }
+
+  .shutter {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    border: 3px solid rgba(255,255,255,0.85);
+    background: #fff;
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.1s ease;
+    box-shadow: 0 0 0 4px rgba(255,255,255,0.08);
+  }
+  .shutter:hover { transform: scale(1.05); }
+  .shutter:active { transform: scale(0.9); }
+  .shutter::after {
+    content: "";
+    position: absolute; inset: 5px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #fff, #d8d8e2);
+  }
+  .shutter:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* flash */
+  .flash {
+    position: absolute; inset: 0;
+    background: #fff;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 8;
+  }
+  .flash.go { animation: flash 0.5s ease; }
+  @keyframes flash { 0% { opacity: 0.9; } 100% { opacity: 0; } }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .card {
+    background: var(--panel);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+  }
+  .card h3 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 12px;
+    font-weight: 700;
+  }
+
+  .filters {
+    flex: 1;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+  .filters::-webkit-scrollbar { width: 6px; }
+  .filters::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+
+  .filter-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 9px;
+  }
+  .filter {
+    position: relative;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.03);
+    padding: 11px 9px;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.15s ease;
+    overflow: hidden;
+  }
+  .filter:hover { background: rgba(255,255,255,0.08); transform: translateY(-2px); }
+  .filter.active {
+    border-color: var(--accent);
+    background: linear-gradient(160deg, rgba(124,92,255,0.28), rgba(0,229,192,0.12));
+    box-shadow: 0 0 0 1px var(--accent), 0 6px 18px rgba(124,92,255,0.25);
+  }
+  .filter .emoji { font-size: 22px; display: block; margin-bottom: 5px; }
+  .filter .name { font-size: 11.5px; font-weight: 600; }
+
+  /* slider */
+  .control-row { margin-bottom: 14px; }
+  .control-row:last-child { margin-bottom: 0; }
+  .control-row label {
+    display: flex; justify-content: space-between;
+    font-size: 12px; color: var(--muted);
+    margin-bottom: 7px;
+  }
+  .control-row label .val { color: var(--accent2); font-weight: 600; }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none;
+    width: 100%; height: 5px; border-radius: 3px;
+    background: rgba(255,255,255,0.12);
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    box-shadow: 0 0 0 4px rgba(124,92,255,0.2);
+    transition: transform 0.1s;
+  }
+  input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.15); }
+  input[type=range]::-moz-range-thumb {
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--accent); border: none; cursor: pointer;
+  }
+
+  /* Gallery */
+  .gallery-card { flex-shrink: 0; }
+  .gallery-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .gallery-head h3 { margin: 0; }
+  .gallery {
+    display: flex;
+    gap: 9px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    min-height: 64px;
+    align-items: center;
+  }
+  .gallery::-webkit-scrollbar { height: 6px; }
+  .gallery::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+  .gallery .empty { color: var(--muted); font-size: 12px; padding: 18px 4px; }
+  .thumb {
+    position: relative;
+    flex-shrink: 0;
+    width: 78px; height: 58px;
+    border-radius: 9px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: transform 0.12s;
+  }
+  .thumb:hover { transform: scale(1.05); border-color: var(--accent2); }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb .dl {
+    position: absolute; inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: grid; place-items: center;
+    opacity: 0; transition: opacity 0.15s;
+    font-size: 16px;
+  }
+  .thumb:hover .dl { opacity: 1; }
+
+  .small-btn {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 11px;
+    padding: 4px 9px;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .small-btn:hover { color: var(--text); background: rgba(255,255,255,0.12); }
+
+  .tip {
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
+    margin-top: 2px;
+  }
+  kbd {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 5px;
+    padding: 1px 6px;
+    font-size: 10.5px;
+    font-family: inherit;
+  }
+
+  /* toast */
+  .toast {
+    position: fixed;
+    bottom: 24px; left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--panel-solid);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 11px 18px;
+    border-radius: 12px;
+    font-size: 13px;
+    box-shadow: var(--shadow);
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.3s cubic-bezier(.2,.9,.3,1);
+    z-index: 50;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* Lightbox */
+  .lightbox {
+    position: fixed; inset: 0;
+    background: rgba(5,5,10,0.92);
+    display: none;
+    place-items: center;
+    z-index: 60;
+    padding: 30px;
+    backdrop-filter: blur(6px);
+  }
+  .lightbox.show { display: grid; }
+  .lightbox img { max-width: 90vw; max-height: 78vh; border-radius: 12px; box-shadow: var(--shadow); }
+  .lightbox-actions { display: flex; gap: 12px; margin-top: 18px; justify-content: center; }
+  .btn-primary {
+    background: var(--accent); color: #fff; border: none;
+    padding: 10px 20px; border-radius: 10px; font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: transform 0.1s, filter 0.2s;
+  }
+  .btn-primary:hover { filter: brightness(1.1); }
+  .btn-primary:active { transform: scale(0.96); }
+  .btn-ghost {
+    background: rgba(255,255,255,0.06); color: var(--text); border: 1px solid var(--border);
+    padding: 10px 20px; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .btn-ghost:hover { background: rgba(255,255,255,0.12); }
+
+  @media (max-width: 880px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: 1fr auto; overflow-y: auto; }
+    .sidebar { overflow: visible; max-height: none; }
+    .filters { max-height: 240px; }
+    html, body { overflow: auto; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- ====== STAGE ====== -->
+  <section class="stage-wrap">
+    <header class="brand">
+      <div class="logo">🎬</div>
+      <div>
+        <h1>Webcam Filter Playground</h1>
+        <p>Live effects · snapshots · instant save</p>
+      </div>
+    </header>
+
+    <div class="stage" id="stage">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="view"></canvas>
+      <div class="flash" id="flash"></div>
+
+      <div class="hud">
+        <div class="badge"><span class="dot"></span><span id="fps">– fps</span></div>
+        <div class="badge" id="filterBadge">✨ Normal</div>
+      </div>
+
+      <div class="stage-overlay" id="overlay">
+        <div>
+          <div class="big">📷</div>
+          <h2>Camera ready when you are</h2>
+          <p>Grant webcam access to start playing with live filters. Everything runs locally in your browser — nothing is uploaded.</p>
+          <button class="btn-primary" id="startBtn">Enable Camera</button>
+        </div>
+      </div>
+
+      <div class="controlbar">
+        <button class="icon-btn" id="mirrorBtn" title="Mirror (M)">🔁</button>
+        <button class="shutter" id="shutterBtn" title="Take snapshot (Space)"></button>
+        <button class="icon-btn" id="randomBtn" title="Random filter (R)">🎲</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====== SIDEBAR ====== -->
+  <aside class="sidebar">
+    <div class="card filters">
+      <h3>Filters</h3>
+      <div class="filter-grid" id="filterGrid"></div>
+    </div>
+
+    <div class="card" id="adjustCard">
+      <h3>Adjust</h3>
+      <div class="control-row">
+        <label>Intensity <span class="val" id="intensityVal">100%</span></label>
+        <input type="range" id="intensity" min="0" max="100" value="100" />
+      </div>
+      <div class="control-row">
+        <label>Brightness <span class="val" id="brightVal">0</span></label>
+        <input type="range" id="brightness" min="-100" max="100" value="0" />
+      </div>
+    </div>
+
+    <div class="card gallery-card">
+      <div class="gallery-head">
+        <h3>Snapshots</h3>
+        <button class="small-btn" id="clearBtn">Clear</button>
+      </div>
+      <div class="gallery" id="gallery">
+        <span class="empty">No snapshots yet — hit the shutter 📸</span>
+      </div>
+      <div class="tip" style="margin-top:10px;"><kbd>Space</kbd> snap · <kbd>R</kbd> random · <kbd>M</kbd> mirror</div>
+    </div>
+  </aside>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="lightbox" id="lightbox">
+  <div style="text-align:center;">
+    <img id="lightboxImg" src="" alt="snapshot" />
+    <div class="lightbox-actions">
+      <button class="btn-primary" id="lbDownload">⬇ Save Image</button>
+      <button class="btn-ghost" id="lbClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const video = document.getElementById("video");
+  const canvas = document.getElementById("view");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const overlay = document.getElementById("overlay");
+  const startBtn = document.getElementById("startBtn");
+  const shutterBtn = document.getElementById("shutterBtn");
+  const mirrorBtn = document.getElementById("mirrorBtn");
+  const randomBtn = document.getElementById("randomBtn");
+  const filterGrid = document.getElementById("filterGrid");
+  const filterBadge = document.getElementById("filterBadge");
+  const gallery = document.getElementById("gallery");
+  const clearBtn = document.getElementById("clearBtn");
+  const fpsEl = document.getElementById("fps");
+  const flash = document.getElementById("flash");
+  const toast = document.getElementById("toast");
+  const lightbox = document.getElementById("lightbox");
+  const lightboxImg = document.getElementById("lightboxImg");
+
+  const intensityEl = document.getElementById("intensity");
+  const brightnessEl = document.getElementById("brightness");
+  const intensityVal = document.getElementById("intensityVal");
+  const brightVal = document.getElementById("brightVal");
+
+  let mirror = true;
+  let running = false;
+  let current = "normal";
+  let snaps = [];
+
+  // offscreen buffer for pixel work
+  const buf = document.createElement("canvas");
+  const bctx = buf.getContext("2d", { willReadFrequently: true });
+
+  // ---------- Filters ----------
+  // Each filter: per-pixel function (data, i, w, h, x, y, t) operating in place,
+  // or a "frame" function that gets the whole ctx for geometric effects.
+  const filters = {
+    normal:    { emoji: "✨", name: "Normal" },
+    grayscale: { emoji: "⚫", name: "Noir", px: (d,i)=>{const g=d[i]*.299+d[i+1]*.587+d[i+2]*.114;d[i]=d[i+1]=d[i+2]=g;} },
+    sepia:     { emoji: "🟤", name: "Sepia", px:(d,i)=>{const r=d[i],g=d[i+1],b=d[i+2];
+                   d[i]=Math.min(255,r*.393+g*.769+b*.189);
+                   d[i+1]=Math.min(255,r*.349+g*.686+b*.168);
+                   d[i+2]=Math.min(255,r*.272+g*.534+b*.131);} },
+    invert:    { emoji: "🔃", name: "Invert", px:(d,i)=>{d[i]=255-d[i];d[i+1]=255-d[i+1];d[i+2]=255-d[i+2];} },
+    neon:      { emoji: "💜", name: "Neon", px:(d,i)=>{const r=d[i],g=d[i+1],b=d[i+2];
+                   d[i]=Math.min(255,b*1.4+30);d[i+1]=Math.min(255,r*0.4);d[i+2]=Math.min(255,g*1.5+40);} },
+    thermal:   { emoji: "🌡️", name: "Thermal", px:(d,i)=>{const v=(d[i]*.299+d[i+1]*.587+d[i+2]*.114)/255;
+                   const c=heat(v);d[i]=c[0];d[i+1]=c[1];d[i+2]=c[2];} },
+    posterize: { emoji: "🎨", name: "Poster", px:(d,i)=>{const lv=5;const q=255/(lv-1);
+                   d[i]=Math.round(d[i]/q)*q;d[i+1]=Math.round(d[i+1]/q)*q;d[i+2]=Math.round(d[i+2]/q)*q;} },
+    vapor:     { emoji: "🌴", name: "Vaporwave", px:(d,i)=>{d[i]=Math.min(255,d[i]*1.15+25);
+                   d[i+1]=Math.min(255,d[i+1]*0.85);d[i+2]=Math.min(255,d[i+2]*1.2+30);} },
+    glitch:    { emoji: "📺", name: "Glitch", frame: glitchFrame },
+    pixelate:  { emoji: "🟦", name: "Pixelate", frame: pixelFrame },
+    mirror2:   { emoji: "🪞", name: "Kaleido", frame: kaleidoFrame },
+    cartoon:   { emoji: "🖍️", name: "Cartoon", frame: cartoonFrame },
+    ascii:     { emoji: "🔤", name: "ASCII", frame: asciiFrame },
+    rainbow:   { emoji: "🌈", name: "Rainbow", px:(d,i,w,h,x,y,t)=>{
+                   const hue=(x/ w *360 + t*40)%360; const c=hsl(hue,0.55,(d[i]*.299+d[i+1]*.587+d[i+2]*.114)/255);
+                   d[i]=c[0];d[i+1]=c[1];d[i+2]=c[2];} },
+    dream:     { emoji: "😶‍🌫️", name: "Dream", frame: dreamFrame },
+    edge:      { emoji: "✏️", name: "Edges", frame: edgeFrame },
+  };
+
+  // ---- color helpers ----
+  function heat(v){
+    // 0..1 -> blue-red-yellow-white thermal map
+    const stops=[[0,0,30],[0,0,255],[255,0,180],[255,60,0],[255,200,0],[255,255,255]];
+    const s=v*(stops.length-1);const i=Math.floor(s);const f=s-i;
+    const a=stops[Math.min(i,stops.length-1)],b=stops[Math.min(i+1,stops.length-1)];
+    return [a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f,a[2]+(b[2]-a[2])*f];
+  }
+  function hsl(h,s,l){
+    h/=360;const q=l<0.5?l*(1+s):l+s-l*s;const p=2*l-q;
+    const t=[h+1/3,h,h-1/3].map(x=>{x=(x+1)%1;
+      if(x<1/6)return p+(q-p)*6*x;if(x<1/2)return q;if(x<2/3)return p+(q-p)*(2/3-x)*6;return p;});
+    return [t[0]*255,t[1]*255,t[2]*255];
+  }
+
+  // ---------- Build filter UI ----------
+  Object.entries(filters).forEach(([key,f])=>{
+    const el=document.createElement("div");
+    el.className="filter"+(key==="normal"?" active":"");
+    el.dataset.key=key;
+    el.innerHTML=`<span class="emoji">${f.emoji}</span><span class="name">${f.name}</span>`;
+    el.addEventListener("click",()=>setFilter(key));
+    filterGrid.appendChild(el);
+  });
+
+  function setFilter(key){
+    current=key;
+    document.querySelectorAll(".filter").forEach(e=>e.classList.toggle("active",e.dataset.key===key));
+    const f=filters[key];
+    filterBadge.textContent=`${f.emoji} ${f.name}`;
+  }
+
+  // ---------- Camera ----------
+  async function startCamera(){
+    startBtn.disabled=true;
+    startBtn.textContent="Requesting…";
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({
+        video:{ width:{ideal:1280}, height:{ideal:720}, facingMode:"user" }, audio:false
+      });
+      video.srcObject=stream;
+      await video.play();
+      running=true;
+      overlay.classList.add("hidden");
+      requestAnimationFrame(loop);
+      showToast("Camera live — start filtering! 🎉");
+    }catch(err){
+      startBtn.disabled=false;
+      startBtn.textContent="Enable Camera";
+      let msg="Couldn't access the camera.";
+      if(err.name==="NotAllowedError") msg="Camera permission denied. Check your browser settings.";
+      else if(err.name==="NotFoundError") msg="No camera found on this device.";
+      overlay.querySelector("h2").textContent="Camera unavailable";
+      overlay.querySelector("p").textContent=msg;
+      showToast(msg);
+    }
+  }
+
+  // ---------- Render loop ----------
+  let lastT=0, fpsAccum=0, fpsCount=0, fpsTimer=0;
+  function loop(ts){
+    if(!running) return;
+    if(!video.videoWidth){ requestAnimationFrame(loop); return; }
+
+    const vw=video.videoWidth, vh=video.videoHeight;
+    if(canvas.width!==vw){ canvas.width=vw; canvas.height=vh; buf.width=vw; buf.height=vh; }
+
+    const t=ts/1000;
+    // draw raw frame (mirrored if needed) into buffer
+    bctx.save();
+    if(mirror){ bctx.translate(vw,0); bctx.scale(-1,1); }
+    bctx.drawImage(video,0,0,vw,vh);
+    bctx.restore();
+
+    const f=filters[current];
+    const intensity=+intensityEl.value/100;
+    const bright=+brightnessEl.value;
+
+    if(f.frame){
+      f.frame(bctx,vw,vh,t,intensity);
+    }
+
+    if(f.px || bright!==0 || (f.frame && false)){
+      const img=bctx.getImageData(0,0,vw,vh);
+      const d=img.data;
+      if(f.px){
+        for(let y=0;y<vh;y++){
+          for(let x=0;x<vw;x++){
+            const i=(y*vw+x)*4;
+            const r0=d[i],g0=d[i+1],b0=d[i+2];
+            f.px(d,i,vw,vh,x,y,t);
+            if(intensity<1){
+              d[i]=r0+(d[i]-r0)*intensity;
+              d[i+1]=g0+(d[i+1]-g0)*intensity;
+              d[i+2]=b0+(d[i+2]-b0)*intensity;
+            }
+          }
+        }
+      }
+      if(bright!==0){
+        for(let i=0;i<d.length;i+=4){
+          d[i]+=bright; d[i+1]+=bright; d[i+2]+=bright;
+        }
+      }
+      bctx.putImageData(img,0,0);
+    }
+
+    // composite to visible canvas
+    ctx.drawImage(buf,0,0);
+
+    // fps
+    const dt=ts-lastT; lastT=ts;
+    fpsAccum+=dt; fpsCount++;
+    if(ts-fpsTimer>500){
+      const fps=Math.round(1000/(fpsAccum/fpsCount));
+      fpsEl.textContent=fps+" fps";
+      fpsAccum=0; fpsCount=0; fpsTimer=ts;
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- Frame-level filters ----------
+  function glitchFrame(c,w,h,t){
+    const img=c.getImageData(0,0,w,h);
+    c.putImageData(img,0,0);
+    // RGB split + random slice shifts
+    const shift=Math.round(4+Math.sin(t*9)*6);
+    c.globalCompositeOperation="lighter";
+    c.globalAlpha=0.5;
+    c.drawImage(buf,shift,0); // red-ish ghost via tint
+    c.drawImage(buf,-shift,0);
+    c.globalAlpha=1; c.globalCompositeOperation="source-over";
+    // horizontal slices
+    const slices=6;
+    for(let s=0;s<slices;s++){
+      const sy=Math.floor(((Math.sin(t*3+s*1.7)+1)/2)*h);
+      const sh=8+((s*53)%20);
+      const off=Math.round(Math.sin(t*11+s)*22);
+      const part=c.getImageData(0,Math.min(sy,h-sh),w,sh);
+      c.putImageData(part,off,Math.min(sy,h-sh));
+    }
+  }
+
+  function pixelFrame(c,w,h){
+    const size=Math.max(6,Math.round(w/72));
+    c.imageSmoothingEnabled=false;
+    const tw=Math.ceil(w/size), th=Math.ceil(h/size);
+    c.drawImage(buf,0,0,tw,th);
+    c.drawImage(c.canvas,0,0,tw,th,0,0,w,h);
+    c.imageSmoothingEnabled=true;
+  }
+
+  function kaleidoFrame(c,w,h){
+    const hw=w/2;
+    c.clearRect(0,0,w,h);
+    c.drawImage(buf,0,0,hw,h,0,0,hw,h);
+    c.save();
+    c.translate(w,0); c.scale(-1,1);
+    c.drawImage(buf,0,0,hw,h,0,0,hw,h);
+    c.restore();
+  }
+
+  function dreamFrame(c,w,h){
+    c.globalAlpha=0.6;
+    c.drawImage(buf,0,0);
+    c.globalAlpha=0.4;
+    const o=4;
+    c.drawImage(buf,o,o,w-o*2,h-o*2,0,0,w,h);
+    c.drawImage(buf,-o,-o,w+o*2,h+o*2,0,0,w,h);
+    c.globalAlpha=1;
+    // soft brighten
+    const img=c.getImageData(0,0,w,h),d=img.data;
+    for(let i=0;i<d.length;i+=4){d[i]=Math.min(255,d[i]*1.08+12);d[i+1]=Math.min(255,d[i+1]*1.05+12);d[i+2]=Math.min(255,d[i+2]*1.1+18);}
+    c.putImageData(img,0,0);
+  }
+
+  function cartoonFrame(c,w,h){
+    const img=c.getImageData(0,0,w,h),d=img.data;
+    const q=255/3;
+    for(let i=0;i<d.length;i+=4){
+      d[i]=Math.round(d[i]/q)*q;
+      d[i+1]=Math.round(d[i+1]/q)*q;
+      d[i+2]=Math.round(d[i+2]/q)*q;
+    }
+    // edge darkening (cheap sobel-ish on luminance, sampled)
+    const src=new Uint8ClampedArray(d);
+    for(let y=1;y<h-1;y+=1){
+      for(let x=1;x<w-1;x+=1){
+        const i=(y*w+x)*4;
+        const l=(a)=>src[a]*.299+src[a+1]*.587+src[a+2]*.114;
+        const gx=l(i+4)-l(i-4);
+        const gy=l(i+w*4)-l(i-w*4);
+        if(Math.abs(gx)+Math.abs(gy)>42){ d[i]=d[i+1]=d[i+2]=10; }
+      }
+    }
+    c.putImageData(img,0,0);
+  }
+
+  function edgeFrame(c,w,h){
+    const img=c.getImageData(0,0,w,h),d=img.data;
+    const src=new Uint8ClampedArray(d);
+    for(let y=1;y<h-1;y++){
+      for(let x=1;x<w-1;x++){
+        const i=(y*w+x)*4;
+        const l=(a)=>src[a]*.299+src[a+1]*.587+src[a+2]*.114;
+        const gx=-l(i-4-w*4)-2*l(i-4)-l(i-4+w*4)+l(i+4-w*4)+2*l(i+4)+l(i+4+w*4);
+        const gy=-l(i-w*4-4)-2*l(i-w*4)-l(i-w*4+4)+l(i+w*4-4)+2*l(i+w*4)+l(i+w*4+4);
+        const m=Math.min(255,Math.sqrt(gx*gx+gy*gy));
+        const v=255-m;
+        d[i]=v;d[i+1]=v;d[i+2]=v;
+      }
+    }
+    c.putImageData(img,0,0);
+  }
+
+  const ASCII_CHARS="@%#*+=-:. ";
+  function asciiFrame(c,w,h){
+    const cell=Math.max(6,Math.round(w/120));
+    const img=c.getImageData(0,0,w,h),d=img.data;
+    c.fillStyle="#0a0a0f";
+    c.fillRect(0,0,w,h);
+    c.fillStyle="#7CFFB0";
+    c.font=`${cell}px monospace`;
+    c.textBaseline="top";
+    for(let y=0;y<h;y+=cell){
+      for(let x=0;x<w;x+=cell){
+        const i=(y*w+x)*4;
+        const lum=(d[i]*.299+d[i+1]*.587+d[i+2]*.114)/255;
+        const ch=ASCII_CHARS[Math.floor((1-lum)*(ASCII_CHARS.length-1))];
+        if(ch!==" "){
+          // tint by source color, boosted
+          c.fillStyle=`rgb(${Math.min(255,d[i]+40)},${Math.min(255,d[i+1]+60)},${Math.min(255,d[i+2]+40)})`;
+          c.fillText(ch,x,y);
+        }
+      }
+    }
+  }
+
+  // ---------- Snapshot ----------
+  function snapshot(){
+    if(!running){ showToast("Start the camera first 📷"); return; }
+    flash.classList.remove("go"); void flash.offsetWidth; flash.classList.add("go");
+    const data=canvas.toDataURL("image/png");
+    const snap={ id:Date.now(), data, filter:filters[current].name };
+    snaps.unshift(snap);
+    if(snaps.length>30) snaps.pop();
+    renderGallery();
+    showToast(`Snapshot saved (${filters[current].name}) — click to view 🖼️`);
+  }
+
+  function renderGallery(){
+    if(snaps.length===0){
+      gallery.innerHTML='<span class="empty">No snapshots yet — hit the shutter 📸</span>';
+      return;
+    }
+    gallery.innerHTML="";
+    snaps.forEach(s=>{
+      const t=document.createElement("div");
+      t.className="thumb";
+      t.innerHTML=`<img src="${s.data}" alt="${s.filter}"/><div class="dl">🔍</div>`;
+      t.addEventListener("click",()=>openLightbox(s));
+      gallery.appendChild(t);
+    });
+  }
+
+  // ---------- Lightbox / download ----------
+  let lbCurrent=null;
+  function openLightbox(s){
+    lbCurrent=s;
+    lightboxImg.src=s.data;
+    lightbox.classList.add("show");
+  }
+  function download(s){
+    const a=document.createElement("a");
+    a.href=s.data;
+    a.download=`playground-${s.filter.toLowerCase()}-${s.id}.png`;
+    a.click();
+    showToast("Image downloaded ⬇");
+  }
+  document.getElementById("lbDownload").addEventListener("click",()=>lbCurrent&&download(lbCurrent));
+  document.getElementById("lbClose").addEventListener("click",()=>lightbox.classList.remove("show"));
+  lightbox.addEventListener("click",e=>{ if(e.target===lightbox) lightbox.classList.remove("show"); });
+
+  clearBtn.addEventListener("click",()=>{
+    if(snaps.length===0) return;
+    snaps=[]; renderGallery(); showToast("Snapshots cleared");
+  });
+
+  // ---------- Toast ----------
+  let toastTimer;
+  function showToast(msg){
+    toast.textContent=msg;
+    toast.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer=setTimeout(()=>toast.classList.remove("show"),2600);
+  }
+
+  // ---------- Controls ----------
+  startBtn.addEventListener("click",startCamera);
+  shutterBtn.addEventListener("click",snapshot);
+  mirrorBtn.addEventListener("click",()=>{
+    mirror=!mirror;
+    mirrorBtn.classList.toggle("toggled",!mirror);
+    showToast(mirror?"Mirror on 🔁":"Mirror off");
+  });
+  mirrorBtn.classList.toggle("toggled",false);
+
+  randomBtn.addEventListener("click",()=>{
+    const keys=Object.keys(filters).filter(k=>k!==current);
+    setFilter(keys[Math.floor(Math.random()*keys.length)]);
+  });
+
+  intensityEl.addEventListener("input",()=>intensityVal.textContent=intensityEl.value+"%");
+  brightnessEl.addEventListener("input",()=>brightVal.textContent=(brightnessEl.value>0?"+":"")+brightnessEl.value);
+
+  // keyboard
+  document.addEventListener("keydown",e=>{
+    if(e.target.tagName==="INPUT") return;
+    if(e.code==="Space"){ e.preventDefault(); snapshot(); }
+    else if(e.key==="r"||e.key==="R"){ randomBtn.click(); }
+    else if(e.key==="m"||e.key==="M"){ mirrorBtn.click(); }
+    else if(e.key==="Escape"){ lightbox.classList.remove("show"); }
+  });
+
+  renderGallery();
+})();
+</script>
+</body>
+</html>

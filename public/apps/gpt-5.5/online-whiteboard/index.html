@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Online Whiteboard</title>
+  <style>
+    :root {
+      --ink: #1d252f;
+      --muted: #657080;
+      --line: #d9dee7;
+      --paper: #fbfcfd;
+      --panel: rgba(255, 255, 255, 0.88);
+      --panel-strong: rgba(255, 255, 255, 0.96);
+      --accent: #0f766e;
+      --accent-dark: #0a5c55;
+      --warn: #b42318;
+      --shadow: 0 20px 60px rgba(29, 37, 47, 0.13);
+      --radius: 8px;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      color: var(--ink);
+      background: #eef1f5;
+    }
+
+    body {
+      overscroll-behavior: none;
+      user-select: none;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    .app {
+      position: fixed;
+      inset: 0;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      background:
+        radial-gradient(circle at 16% 14%, rgba(15, 118, 110, 0.08), transparent 28%),
+        linear-gradient(135deg, #f3f6f9, #e8edf2 48%, #f6f4ee);
+    }
+
+    .topbar {
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 64px;
+      padding: 10px 16px;
+      background: var(--panel);
+      border-bottom: 1px solid rgba(120, 130, 146, 0.28);
+      backdrop-filter: blur(14px);
+      box-shadow: 0 8px 30px rgba(29, 37, 47, 0.06);
+    }
+
+    .brand {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .mark {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      color: white;
+      background: linear-gradient(135deg, #0f766e, #155e75);
+      box-shadow: 0 10px 24px rgba(15, 118, 110, 0.25);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: clamp(1rem, 2vw, 1.24rem);
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    .status {
+      margin-top: 3px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      white-space: nowrap;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #22a06b;
+      box-shadow: 0 0 0 4px rgba(34, 160, 107, 0.13);
+    }
+
+    .actions,
+    .toolrail,
+    .controlbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .action-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px;
+      border: 1px solid rgba(120, 130, 146, 0.24);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.64);
+    }
+
+    .icon-button {
+      position: relative;
+      width: 40px;
+      height: 40px;
+      display: inline-grid;
+      place-items: center;
+      border: 0;
+      border-radius: 8px;
+      color: var(--ink);
+      background: transparent;
+      cursor: pointer;
+      transition: background 150ms ease, color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+    }
+
+    .icon-button svg {
+      width: 20px;
+      height: 20px;
+      stroke-width: 2;
+      stroke: currentColor;
+      fill: none;
+      pointer-events: none;
+    }
+
+    .icon-button:hover {
+      background: rgba(15, 118, 110, 0.1);
+      color: var(--accent-dark);
+    }
+
+    .icon-button:active {
+      transform: translateY(1px) scale(0.98);
+    }
+
+    .icon-button:focus-visible,
+    .swatch:focus-visible,
+    .size-control input:focus-visible,
+    .color-field:focus-visible {
+      outline: 3px solid rgba(15, 118, 110, 0.28);
+      outline-offset: 2px;
+    }
+
+    .icon-button.is-active {
+      color: white;
+      background: var(--accent);
+      box-shadow: 0 8px 20px rgba(15, 118, 110, 0.28);
+    }
+
+    .icon-button:disabled {
+      opacity: 0.38;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .save-button {
+      min-width: 104px;
+      padding: 0 14px;
+      grid-template-columns: auto auto;
+      gap: 8px;
+      color: white;
+      background: var(--ink);
+    }
+
+    .save-button:hover {
+      color: white;
+      background: #111820;
+    }
+
+    .workspace {
+      position: relative;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: auto 1fr;
+    }
+
+    .toolrail {
+      z-index: 15;
+      width: 64px;
+      flex-direction: column;
+      align-self: start;
+      margin: 16px 0 0 16px;
+      padding: 8px;
+      border: 1px solid rgba(120, 130, 146, 0.28);
+      border-radius: 12px;
+      background: var(--panel-strong);
+      backdrop-filter: blur(14px);
+      box-shadow: var(--shadow);
+    }
+
+    .divider {
+      width: 28px;
+      height: 1px;
+      margin: 2px 0;
+      background: var(--line);
+    }
+
+    .board-wrap {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      margin: 16px 16px 16px 10px;
+      overflow: hidden;
+      border: 1px solid rgba(120, 130, 146, 0.32);
+      border-radius: 8px;
+      background-color: var(--paper);
+      background-image:
+        linear-gradient(rgba(95, 111, 130, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(95, 111, 130, 0.08) 1px, transparent 1px);
+      background-size: 24px 24px;
+      box-shadow: var(--shadow);
+    }
+
+    canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+    }
+
+    #board {
+      z-index: 1;
+    }
+
+    #preview {
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    .cursor-ring {
+      position: absolute;
+      z-index: 5;
+      width: 16px;
+      height: 16px;
+      border: 1.5px solid var(--ink);
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      opacity: 0;
+      pointer-events: none;
+      mix-blend-mode: multiply;
+      transition: width 90ms ease, height 90ms ease, opacity 120ms ease;
+    }
+
+    .hud {
+      position: absolute;
+      left: 14px;
+      bottom: 14px;
+      z-index: 6;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      max-width: min(520px, calc(100% - 28px));
+      padding: 9px 11px;
+      border: 1px solid rgba(120, 130, 146, 0.24);
+      border-radius: 8px;
+      color: #344054;
+      background: rgba(255, 255, 255, 0.82);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 24px rgba(29, 37, 47, 0.08);
+      font-size: 0.82rem;
+    }
+
+    .hud-swatch {
+      width: 18px;
+      height: 18px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      border: 2px solid white;
+      box-shadow: 0 0 0 1px rgba(29, 37, 47, 0.14);
+      background: #111827;
+    }
+
+    .controlbar {
+      z-index: 20;
+      min-height: 72px;
+      padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+      justify-content: center;
+      flex-wrap: wrap;
+      border-top: 1px solid rgba(120, 130, 146, 0.28);
+      background: var(--panel);
+      backdrop-filter: blur(14px);
+      box-shadow: 0 -8px 30px rgba(29, 37, 47, 0.06);
+    }
+
+    .palette,
+    .size-control,
+    .toggle-control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 44px;
+      padding: 5px 8px;
+      border: 1px solid rgba(120, 130, 146, 0.24);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.62);
+    }
+
+    .swatch {
+      width: 30px;
+      height: 30px;
+      border: 2px solid rgba(255, 255, 255, 0.96);
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: 0 0 0 1px rgba(29, 37, 47, 0.15);
+      transition: transform 140ms ease, box-shadow 140ms ease;
+    }
+
+    .swatch:hover {
+      transform: translateY(-1px);
+    }
+
+    .swatch.is-active {
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.35), 0 0 0 1px rgba(29, 37, 47, 0.1);
+    }
+
+    .color-field {
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .size-control {
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+
+    .size-control input {
+      width: min(28vw, 180px);
+      accent-color: var(--accent);
+    }
+
+    .size-readout {
+      min-width: 42px;
+      color: var(--ink);
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+    }
+
+    .toggle-control {
+      gap: 9px;
+      color: var(--muted);
+      font-size: 0.86rem;
+      cursor: pointer;
+    }
+
+    .toggle-control input {
+      width: 17px;
+      height: 17px;
+      margin: 0;
+      accent-color: var(--accent);
+    }
+
+    .toast {
+      position: fixed;
+      right: 18px;
+      bottom: 92px;
+      z-index: 50;
+      max-width: calc(100vw - 36px);
+      padding: 11px 13px;
+      border-radius: 8px;
+      color: white;
+      background: #17202b;
+      box-shadow: 0 16px 42px rgba(23, 32, 43, 0.24);
+      opacity: 0;
+      transform: translateY(12px);
+      transition: opacity 180ms ease, transform 180ms ease;
+      pointer-events: none;
+    }
+
+    .toast.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (max-width: 720px) {
+      .topbar {
+        min-height: 58px;
+        padding: 8px 10px;
+      }
+
+      .brand h1 {
+        font-size: 1rem;
+      }
+
+      .status {
+        display: none;
+      }
+
+      .mark {
+        width: 32px;
+        height: 32px;
+      }
+
+      .action-group {
+        gap: 2px;
+        padding: 2px;
+      }
+
+      .icon-button {
+        width: 36px;
+        height: 36px;
+      }
+
+      .save-button {
+        min-width: 40px;
+        padding: 0;
+        grid-template-columns: 1fr;
+      }
+
+      .save-button span {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+      }
+
+      .workspace {
+        grid-template-columns: 1fr;
+      }
+
+      .toolrail {
+        position: absolute;
+        left: 10px;
+        top: 10px;
+        width: auto;
+        flex-direction: row;
+        margin: 0;
+        max-width: calc(100vw - 20px);
+        overflow-x: auto;
+      }
+
+      .divider {
+        width: 1px;
+        height: 28px;
+        margin: 0 1px;
+      }
+
+      .board-wrap {
+        margin: 10px;
+      }
+
+      .hud {
+        display: none;
+      }
+
+      .controlbar {
+        justify-content: flex-start;
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        min-height: 66px;
+        padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+      }
+
+      .palette,
+      .size-control,
+      .toggle-control {
+        flex: 0 0 auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand" aria-label="Online Whiteboard">
+        <div class="mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="21" height="21">
+            <path d="M4 19h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+            <path d="M7 16l8.6-8.6a2.1 2.1 0 0 1 3 3L10 19H7v-3z" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"></path>
+          </svg>
+        </div>
+        <div>
+          <h1>Online Whiteboard</h1>
+          <div class="status"><span class="status-dot"></span><span>Local board</span></div>
+        </div>
+      </div>
+
+      <nav class="actions" aria-label="Board actions">
+        <div class="action-group">
+          <button class="icon-button" id="undoBtn" type="button" title="Undo" aria-label="Undo">
+            <svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10a7 7 0 0 1 7 7v1"></path></svg>
+          </button>
+          <button class="icon-button" id="redoBtn" type="button" title="Redo" aria-label="Redo">
+            <svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"></path><path d="M20 9H10a7 7 0 0 0-7 7v1"></path></svg>
+          </button>
+          <button class="icon-button" id="clearBtn" type="button" title="Clear board" aria-label="Clear board">
+            <svg viewBox="0 0 24 24"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="m19 6-1 14H6L5 6"></path><path d="M10 11v5"></path><path d="M14 11v5"></path></svg>
+          </button>
+        </div>
+        <button class="icon-button save-button" id="saveBtn" type="button" title="Save image" aria-label="Save image">
+          <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="M7 10l5 5 5-5"></path><path d="M12 15V3"></path></svg>
+          <span>Save</span>
+        </button>
+      </nav>
+    </header>
+
+    <main class="workspace">
+      <aside class="toolrail" aria-label="Drawing tools">
+        <button class="icon-button is-active" data-tool="pen" type="button" title="Pen" aria-label="Pen">
+          <svg viewBox="0 0 24 24"><path d="M12 19l7-7 2 2-7 7h-2v-2z"></path><path d="m18 13-5-5"></path><path d="m3 21 7.5-7.5"></path><path d="M13 8l2.5-2.5a2.1 2.1 0 0 1 3 3L16 11"></path></svg>
+        </button>
+        <button class="icon-button" data-tool="marker" type="button" title="Highlighter" aria-label="Highlighter">
+          <svg viewBox="0 0 24 24"><path d="m4 20 4-1 10.5-10.5a2.1 2.1 0 0 0-3-3L5 16l-1 4z"></path><path d="M13.5 7.5l3 3"></path><path d="M4 20h12"></path></svg>
+        </button>
+        <button class="icon-button" data-tool="eraser" type="button" title="Eraser" aria-label="Eraser">
+          <svg viewBox="0 0 24 24"><path d="m7 21-5-5L13.5 4.5a2.8 2.8 0 0 1 4 0l2 2a2.8 2.8 0 0 1 0 4L9 21H7z"></path><path d="M9 14l5 5"></path><path d="M14 21h7"></path></svg>
+        </button>
+        <div class="divider" aria-hidden="true"></div>
+        <button class="icon-button" data-tool="line" type="button" title="Line" aria-label="Line">
+          <svg viewBox="0 0 24 24"><path d="M5 19 19 5"></path></svg>
+        </button>
+        <button class="icon-button" data-tool="arrow" type="button" title="Arrow" aria-label="Arrow">
+          <svg viewBox="0 0 24 24"><path d="M5 19 19 5"></path><path d="M9 5h10v10"></path></svg>
+        </button>
+        <button class="icon-button" data-tool="rect" type="button" title="Rectangle" aria-label="Rectangle">
+          <svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1"></rect></svg>
+        </button>
+        <button class="icon-button" data-tool="ellipse" type="button" title="Ellipse" aria-label="Ellipse">
+          <svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8" ry="5"></ellipse></svg>
+        </button>
+      </aside>
+
+      <section class="board-wrap" id="boardWrap" aria-label="Whiteboard canvas">
+        <canvas id="board"></canvas>
+        <canvas id="preview"></canvas>
+        <div class="cursor-ring" id="cursorRing" aria-hidden="true"></div>
+        <div class="hud" aria-live="polite">
+          <span class="hud-swatch" id="hudSwatch"></span>
+          <span id="hudText">Pen - 6 px</span>
+        </div>
+      </section>
+    </main>
+
+    <footer class="controlbar" aria-label="Tool settings">
+      <div class="palette" aria-label="Color palette">
+        <button class="swatch is-active" style="background:#111827" data-color="#111827" type="button" title="Charcoal" aria-label="Charcoal"></button>
+        <button class="swatch" style="background:#d92d20" data-color="#d92d20" type="button" title="Red" aria-label="Red"></button>
+        <button class="swatch" style="background:#1570ef" data-color="#1570ef" type="button" title="Blue" aria-label="Blue"></button>
+        <button class="swatch" style="background:#079455" data-color="#079455" type="button" title="Green" aria-label="Green"></button>
+        <button class="swatch" style="background:#fdb022" data-color="#fdb022" type="button" title="Gold" aria-label="Gold"></button>
+        <input class="color-field" id="colorField" type="color" value="#111827" title="Custom color" aria-label="Custom color">
+      </div>
+      <label class="size-control" for="sizeField">
+        <span>Size</span>
+        <input id="sizeField" type="range" min="2" max="44" value="6">
+        <span class="size-readout" id="sizeReadout">6 px</span>
+      </label>
+      <label class="toggle-control" for="fillField" title="Fill shapes">
+        <input id="fillField" type="checkbox">
+        <span>Fill</span>
+      </label>
+    </footer>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    (() => {
+      const boardWrap = document.getElementById("boardWrap");
+      const board = document.getElementById("board");
+      const preview = document.getElementById("preview");
+      const ctx = board.getContext("2d");
+      const pctx = preview.getContext("2d");
+      const cursorRing = document.getElementById("cursorRing");
+      const hudText = document.getElementById("hudText");
+      const hudSwatch = document.getElementById("hudSwatch");
+      const undoBtn = document.getElementById("undoBtn");
+      const redoBtn = document.getElementById("redoBtn");
+      const clearBtn = document.getElementById("clearBtn");
+      const saveBtn = document.getElementById("saveBtn");
+      const sizeField = document.getElementById("sizeField");
+      const sizeReadout = document.getElementById("sizeReadout");
+      const fillField = document.getElementById("fillField");
+      const colorField = document.getElementById("colorField");
+      const toast = document.getElementById("toast");
+
+      const tools = {
+        pen: "Pen",
+        marker: "Highlighter",
+        eraser: "Eraser",
+        line: "Line",
+        arrow: "Arrow",
+        rect: "Rectangle",
+        ellipse: "Ellipse"
+      };
+
+      const state = {
+        tool: "pen",
+        color: "#111827",
+        size: 6,
+        fill: false,
+        dpr: Math.max(1, window.devicePixelRatio || 1),
+        isDrawing: false,
+        start: null,
+        last: null,
+        pointerId: null,
+        moved: false,
+        history: [],
+        historyIndex: -1,
+        maxHistory: 30
+      };
+
+      function setCanvasTransform() {
+        state.dpr = Math.max(1, window.devicePixelRatio || 1);
+        ctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
+        pctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
+      }
+
+      function resizeCanvases() {
+        const rect = boardWrap.getBoundingClientRect();
+        const width = Math.max(1, Math.floor(rect.width));
+        const height = Math.max(1, Math.floor(rect.height));
+        const old = document.createElement("canvas");
+        old.width = board.width;
+        old.height = board.height;
+        if (board.width && board.height) {
+          old.getContext("2d").drawImage(board, 0, 0);
+        }
+
+        const pixelWidth = Math.floor(width * state.dpr);
+        const pixelHeight = Math.floor(height * state.dpr);
+        [board, preview].forEach((canvas) => {
+          canvas.width = pixelWidth;
+          canvas.height = pixelHeight;
+          canvas.style.width = width + "px";
+          canvas.style.height = height + "px";
+        });
+
+        setCanvasTransform();
+        ctx.clearRect(0, 0, width, height);
+        if (old.width && old.height) {
+          ctx.drawImage(old, 0, 0, old.width / state.dpr, old.height / state.dpr);
+        }
+        clearPreview();
+      }
+
+      function clearPreview() {
+        pctx.clearRect(0, 0, preview.width / state.dpr, preview.height / state.dpr);
+      }
+
+      function pointFromEvent(event) {
+        const rect = board.getBoundingClientRect();
+        return {
+          x: Math.min(Math.max(event.clientX - rect.left, 0), rect.width),
+          y: Math.min(Math.max(event.clientY - rect.top, 0), rect.height),
+          pressure: event.pressure && event.pressure > 0 ? event.pressure : 0.7
+        };
+      }
+
+      function applyStrokeStyle(target, alpha = 1) {
+        target.globalCompositeOperation = "source-over";
+        target.globalAlpha = alpha;
+        target.strokeStyle = state.color;
+        target.fillStyle = state.color;
+        target.lineWidth = state.size;
+        target.lineCap = "round";
+        target.lineJoin = "round";
+      }
+
+      function drawSegment(from, to) {
+        const widthFactor = Math.max(0.68, Math.min(1.35, to.pressure * 1.25));
+        if (state.tool === "eraser") {
+          ctx.save();
+          ctx.globalCompositeOperation = "destination-out";
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = "rgba(0,0,0,1)";
+          ctx.lineWidth = state.size * 1.9;
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+        } else if (state.tool === "marker") {
+          ctx.save();
+          applyStrokeStyle(ctx, 0.28);
+          ctx.lineWidth = state.size * 2.4;
+        } else {
+          ctx.save();
+          applyStrokeStyle(ctx, 1);
+          ctx.lineWidth = state.size * widthFactor;
+        }
+
+        const midX = (from.x + to.x) / 2;
+        const midY = (from.y + to.y) / 2;
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.quadraticCurveTo(from.x, from.y, midX, midY);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawDot(point) {
+        ctx.save();
+        if (state.tool === "eraser") {
+          ctx.globalCompositeOperation = "destination-out";
+          ctx.fillStyle = "rgba(0,0,0,1)";
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, state.size, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          applyStrokeStyle(ctx, state.tool === "marker" ? 0.28 : 1);
+          const radius = state.tool === "marker" ? state.size * 1.2 : state.size / 2;
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      function drawShape(target, start, end) {
+        target.save();
+        applyStrokeStyle(target, target === pctx ? 0.86 : 1);
+        const x = Math.min(start.x, end.x);
+        const y = Math.min(start.y, end.y);
+        const w = Math.abs(end.x - start.x);
+        const h = Math.abs(end.y - start.y);
+
+        target.beginPath();
+        if (state.tool === "line" || state.tool === "arrow") {
+          target.moveTo(start.x, start.y);
+          target.lineTo(end.x, end.y);
+          target.stroke();
+          if (state.tool === "arrow") drawArrowHead(target, start, end);
+        } else if (state.tool === "rect") {
+          target.rect(x, y, w, h);
+          if (state.fill) {
+            target.globalAlpha = target === pctx ? 0.18 : 0.16;
+            target.fill();
+            applyStrokeStyle(target, target === pctx ? 0.86 : 1);
+          }
+          target.stroke();
+        } else if (state.tool === "ellipse") {
+          target.ellipse(x + w / 2, y + h / 2, Math.max(w / 2, 0.5), Math.max(h / 2, 0.5), 0, 0, Math.PI * 2);
+          if (state.fill) {
+            target.globalAlpha = target === pctx ? 0.18 : 0.16;
+            target.fill();
+            applyStrokeStyle(target, target === pctx ? 0.86 : 1);
+          }
+          target.stroke();
+        }
+        target.restore();
+      }
+
+      function drawArrowHead(target, start, end) {
+        const angle = Math.atan2(end.y - start.y, end.x - start.x);
+        const length = Math.max(14, state.size * 3.2);
+        target.beginPath();
+        target.moveTo(end.x, end.y);
+        target.lineTo(end.x - length * Math.cos(angle - Math.PI / 6), end.y - length * Math.sin(angle - Math.PI / 6));
+        target.moveTo(end.x, end.y);
+        target.lineTo(end.x - length * Math.cos(angle + Math.PI / 6), end.y - length * Math.sin(angle + Math.PI / 6));
+        target.stroke();
+      }
+
+      function commitHistory() {
+        const snapshot = board.toDataURL("image/png");
+        if (state.history[state.historyIndex] === snapshot) return;
+        state.history = state.history.slice(0, state.historyIndex + 1);
+        state.history.push(snapshot);
+        if (state.history.length > state.maxHistory) state.history.shift();
+        state.historyIndex = state.history.length - 1;
+        updateHistoryButtons();
+      }
+
+      function restoreHistory(index) {
+        if (index < 0 || index >= state.history.length) return;
+        const image = new Image();
+        image.onload = () => {
+          ctx.clearRect(0, 0, board.width / state.dpr, board.height / state.dpr);
+          ctx.drawImage(image, 0, 0, board.width / state.dpr, board.height / state.dpr);
+        };
+        image.src = state.history[index];
+        state.historyIndex = index;
+        updateHistoryButtons();
+      }
+
+      function updateHistoryButtons() {
+        undoBtn.disabled = state.historyIndex <= 0;
+        redoBtn.disabled = state.historyIndex >= state.history.length - 1;
+      }
+
+      function updateHud() {
+        sizeReadout.textContent = state.size + " px";
+        hudText.textContent = tools[state.tool] + " - " + state.size + " px";
+        hudSwatch.style.background = state.tool === "eraser" ? "#ffffff" : state.color;
+        const ringSize = state.tool === "eraser" ? state.size * 2.2 : state.tool === "marker" ? state.size * 2.4 : state.size;
+        cursorRing.style.width = Math.max(12, ringSize) + "px";
+        cursorRing.style.height = Math.max(12, ringSize) + "px";
+        cursorRing.style.borderColor = state.tool === "eraser" ? "#b42318" : state.color;
+      }
+
+      function setTool(tool) {
+        state.tool = tool;
+        document.querySelectorAll("[data-tool]").forEach((button) => {
+          button.classList.toggle("is-active", button.dataset.tool === tool);
+        });
+        updateHud();
+      }
+
+      function setColor(color) {
+        state.color = color;
+        colorField.value = color;
+        document.querySelectorAll("[data-color]").forEach((button) => {
+          button.classList.toggle("is-active", button.dataset.color.toLowerCase() === color.toLowerCase());
+        });
+        updateHud();
+      }
+
+      function showToast(message) {
+        toast.textContent = message;
+        toast.classList.add("is-visible");
+        window.clearTimeout(showToast.timer);
+        showToast.timer = window.setTimeout(() => toast.classList.remove("is-visible"), 1800);
+      }
+
+      function exportImage() {
+        const width = board.width;
+        const height = board.height;
+        const exportCanvas = document.createElement("canvas");
+        exportCanvas.width = width;
+        exportCanvas.height = height;
+        const exportCtx = exportCanvas.getContext("2d");
+
+        exportCtx.fillStyle = "#fbfcfd";
+        exportCtx.fillRect(0, 0, width, height);
+        exportCtx.strokeStyle = "rgba(95, 111, 130, 0.10)";
+        exportCtx.lineWidth = state.dpr;
+        const step = 24 * state.dpr;
+        for (let x = 0; x <= width; x += step) {
+          exportCtx.beginPath();
+          exportCtx.moveTo(x, 0);
+          exportCtx.lineTo(x, height);
+          exportCtx.stroke();
+        }
+        for (let y = 0; y <= height; y += step) {
+          exportCtx.beginPath();
+          exportCtx.moveTo(0, y);
+          exportCtx.lineTo(width, y);
+          exportCtx.stroke();
+        }
+        exportCtx.drawImage(board, 0, 0);
+
+        const link = document.createElement("a");
+        const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+        link.download = "online-whiteboard-" + stamp + ".png";
+        link.href = exportCanvas.toDataURL("image/png");
+        link.click();
+        showToast("Image saved");
+      }
+
+      board.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        board.setPointerCapture(event.pointerId);
+        state.isDrawing = true;
+        state.pointerId = event.pointerId;
+        state.start = pointFromEvent(event);
+        state.last = state.start;
+        state.moved = false;
+        clearPreview();
+        cursorRing.style.opacity = "1";
+      });
+
+      board.addEventListener("pointermove", (event) => {
+        const point = pointFromEvent(event);
+        cursorRing.style.left = point.x + "px";
+        cursorRing.style.top = point.y + "px";
+        cursorRing.style.opacity = "1";
+        if (!state.isDrawing || event.pointerId !== state.pointerId) return;
+        event.preventDefault();
+        state.moved = true;
+        if (state.tool === "pen" || state.tool === "marker" || state.tool === "eraser") {
+          drawSegment(state.last, point);
+          state.last = point;
+        } else {
+          clearPreview();
+          drawShape(pctx, state.start, point);
+        }
+      });
+
+      board.addEventListener("pointerup", (event) => {
+        if (!state.isDrawing || event.pointerId !== state.pointerId) return;
+        event.preventDefault();
+        const point = pointFromEvent(event);
+        if (state.tool === "pen" || state.tool === "marker" || state.tool === "eraser") {
+          if (!state.moved) drawDot(point);
+        } else {
+          clearPreview();
+          drawShape(ctx, state.start, point);
+        }
+        state.isDrawing = false;
+        state.pointerId = null;
+        commitHistory();
+      });
+
+      board.addEventListener("pointercancel", () => {
+        state.isDrawing = false;
+        state.pointerId = null;
+        clearPreview();
+      });
+
+      board.addEventListener("pointerleave", () => {
+        if (!state.isDrawing) cursorRing.style.opacity = "0";
+      });
+
+      document.querySelectorAll("[data-tool]").forEach((button) => {
+        button.addEventListener("click", () => setTool(button.dataset.tool));
+      });
+
+      document.querySelectorAll("[data-color]").forEach((button) => {
+        button.addEventListener("click", () => setColor(button.dataset.color));
+      });
+
+      colorField.addEventListener("input", (event) => setColor(event.target.value));
+      sizeField.addEventListener("input", (event) => {
+        state.size = Number(event.target.value);
+        updateHud();
+      });
+      fillField.addEventListener("change", (event) => {
+        state.fill = event.target.checked;
+      });
+
+      undoBtn.addEventListener("click", () => restoreHistory(state.historyIndex - 1));
+      redoBtn.addEventListener("click", () => restoreHistory(state.historyIndex + 1));
+      clearBtn.addEventListener("click", () => {
+        if (state.historyIndex > 0 && !window.confirm("Clear the whiteboard?")) return;
+        ctx.clearRect(0, 0, board.width / state.dpr, board.height / state.dpr);
+        clearPreview();
+        commitHistory();
+      });
+      saveBtn.addEventListener("click", exportImage);
+
+      window.addEventListener("keydown", (event) => {
+        const isMac = navigator.platform.toUpperCase().includes("MAC");
+        const mod = isMac ? event.metaKey : event.ctrlKey;
+        if (!mod) return;
+        if (event.key.toLowerCase() === "z" && !event.shiftKey) {
+          event.preventDefault();
+          restoreHistory(state.historyIndex - 1);
+        } else if ((event.key.toLowerCase() === "z" && event.shiftKey) || event.key.toLowerCase() === "y") {
+          event.preventDefault();
+          restoreHistory(state.historyIndex + 1);
+        } else if (event.key.toLowerCase() === "s") {
+          event.preventDefault();
+          exportImage();
+        }
+      });
+
+      const resizeObserver = new ResizeObserver(() => {
+        const previous = state.dpr;
+        state.dpr = Math.max(1, window.devicePixelRatio || 1);
+        resizeCanvases();
+        if (previous !== state.dpr) updateHud();
+      });
+
+      resizeObserver.observe(boardWrap);
+      resizeCanvases();
+      updateHud();
+      commitHistory();
+    })();
+  </script>
+</body>
+</html>

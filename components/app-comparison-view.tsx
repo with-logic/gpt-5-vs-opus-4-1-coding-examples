@@ -29,9 +29,9 @@ export function AppComparisonView({
   apps = [],
   isOpen,
   onClose: _onClose,
-  initialModels = ["gpt-5.4", "opus-4.7", "gemini-3"],
+  initialModels = ["gpt-5.5", "opus-4.8", "gemini-3"],
   initialView = "side-by-side",
-  initialTab = "gpt-5.4",
+  initialTab = "gpt-5.5",
   initialContentMode = "demo",
 }: AppComparisonViewProps) {
   void _onClose; // Required prop for interface but handled via history.back()

@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Escape the Maze</title>
+<style>
+  :root {
+    --bg-0: #0a0e1a;
+    --bg-1: #111729;
+    --wall: #2b3553;
+    --wall-glow: #3d4b78;
+    --path: #161d33;
+    --accent: #5eead4;
+    --accent-2: #818cf8;
+    --gold: #fbbf24;
+    --start: #34d399;
+    --finish: #f472b6;
+    --text: #e2e8f0;
+    --text-dim: #94a3b8;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: radial-gradient(ellipse at top, #131b30 0%, var(--bg-0) 55%, #06080f 100%);
+    color: var(--text);
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  #app {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    gap: 14px;
+  }
+
+  header {
+    text-align: center;
+  }
+  h1 {
+    font-size: clamp(22px, 4vw, 34px);
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    background: linear-gradient(120deg, var(--accent) 0%, var(--accent-2) 60%, var(--finish) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 2px 10px rgba(94,234,212,0.25));
+  }
+  .subtitle {
+    margin-top: 3px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    letter-spacing: 0.4px;
+  }
+
+  /* HUD */
+  .hud {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .stat {
+    background: linear-gradient(180deg, rgba(43,53,83,0.55), rgba(17,23,41,0.55));
+    border: 1px solid rgba(129,140,248,0.25);
+    border-radius: 12px;
+    padding: 8px 16px;
+    min-width: 92px;
+    text-align: center;
+    backdrop-filter: blur(6px);
+    box-shadow: 0 4px 18px rgba(0,0,0,0.3);
+  }
+  .stat .label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--text-dim);
+  }
+  .stat .value {
+    font-size: 20px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    margin-top: 2px;
+  }
+  .stat .value.gold { color: var(--gold); }
+  .stat .value.accent { color: var(--accent); }
+
+  /* Maze */
+  .board-wrap {
+    position: relative;
+    border-radius: 16px;
+    padding: 12px;
+    background: linear-gradient(160deg, rgba(43,53,83,0.35), rgba(10,14,26,0.5));
+    border: 1px solid rgba(129,140,248,0.18);
+    box-shadow: 0 18px 50px rgba(0,0,0,0.5), inset 0 0 60px rgba(94,234,212,0.04);
+  }
+  canvas {
+    display: block;
+    border-radius: 8px;
+    background: var(--path);
+    touch-action: none;
+  }
+
+  /* Win overlay */
+  .overlay {
+    position: absolute;
+    inset: 12px;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: rgba(6,8,15,0.82);
+    backdrop-filter: blur(8px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+    text-align: center;
+    padding: 20px;
+  }
+  .overlay.show { opacity: 1; pointer-events: auto; }
+  .overlay h2 {
+    font-size: 30px;
+    font-weight: 800;
+    background: linear-gradient(120deg, var(--gold), var(--finish));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .overlay .result-line { font-size: 14px; color: var(--text-dim); }
+  .overlay .result-line b { color: var(--text); font-weight: 700; }
+  .badge {
+    margin-top: 2px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+  .badge.perfect { background: rgba(251,191,36,0.15); color: var(--gold); border: 1px solid rgba(251,191,36,0.4); }
+  .badge.good { background: rgba(94,234,212,0.12); color: var(--accent); border: 1px solid rgba(94,234,212,0.35); }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  button {
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+    border-radius: 11px;
+    padding: 11px 22px;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    color: #0a0e1a;
+    background: linear-gradient(120deg, var(--accent), var(--accent-2));
+    box-shadow: 0 6px 18px rgba(94,234,212,0.25);
+    transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+  }
+  button:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(94,234,212,0.35); }
+  button:active { transform: translateY(0); }
+  button.secondary {
+    background: linear-gradient(180deg, rgba(43,53,83,0.8), rgba(17,23,41,0.8));
+    color: var(--text);
+    border: 1px solid rgba(129,140,248,0.3);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+  }
+  button.ghost {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid rgba(148,163,184,0.25);
+    box-shadow: none;
+    padding: 9px 16px;
+  }
+  button.ghost:hover { color: var(--text); border-color: rgba(148,163,184,0.5); }
+
+  .diff-group {
+    display: flex;
+    gap: 4px;
+    background: rgba(17,23,41,0.6);
+    border: 1px solid rgba(129,140,248,0.2);
+    border-radius: 11px;
+    padding: 3px;
+  }
+  .diff-group button {
+    padding: 7px 14px;
+    font-size: 12.5px;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-dim);
+    box-shadow: none;
+  }
+  .diff-group button:hover { transform: none; color: var(--text); }
+  .diff-group button.active {
+    background: linear-gradient(120deg, var(--accent), var(--accent-2));
+    color: #0a0e1a;
+  }
+
+  .hint {
+    font-size: 11.5px;
+    color: var(--text-dim);
+    text-align: center;
+    letter-spacing: 0.3px;
+  }
+  .hint kbd {
+    background: rgba(43,53,83,0.7);
+    border: 1px solid rgba(129,140,248,0.3);
+    border-radius: 5px;
+    padding: 1px 6px;
+    font-family: inherit;
+    font-size: 10.5px;
+    color: var(--text);
+  }
+
+  /* mobile dpad */
+  .dpad {
+    display: none;
+    grid-template-columns: repeat(3, 56px);
+    grid-template-rows: repeat(3, 56px);
+    gap: 6px;
+    margin-top: 2px;
+  }
+  .dpad button {
+    width: 56px; height: 56px;
+    padding: 0;
+    border-radius: 12px;
+    font-size: 22px;
+    display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(180deg, rgba(43,53,83,0.9), rgba(17,23,41,0.9));
+    color: var(--accent);
+    border: 1px solid rgba(129,140,248,0.3);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+  .dpad .up    { grid-area: 1 / 2; }
+  .dpad .left  { grid-area: 2 / 1; }
+  .dpad .right { grid-area: 2 / 3; }
+  .dpad .down  { grid-area: 3 / 2; }
+  .dpad .spacer { visibility: hidden; }
+
+  @media (hover: none) and (pointer: coarse) {
+    .dpad { display: grid; }
+    .hint.kbd-hint { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>Escape the Maze</h1>
+    <div class="subtitle">Reach the finish — match the shortest path for a perfect bonus.</div>
+  </header>
+
+  <div class="hud">
+    <div class="stat"><div class="label">Time</div><div class="value accent" id="time">0.0s</div></div>
+    <div class="stat"><div class="label">Moves</div><div class="value" id="moves">0</div></div>
+    <div class="stat"><div class="label">Optimal</div><div class="value" id="optimal">—</div></div>
+    <div class="stat"><div class="label">Score</div><div class="value gold" id="score">0</div></div>
+  </div>
+
+  <div class="board-wrap">
+    <canvas id="maze"></canvas>
+    <div class="overlay" id="overlay">
+      <h2 id="winTitle">Escaped!</h2>
+      <div class="badge" id="badge"></div>
+      <div class="result-line" id="winStats"></div>
+      <button id="playAgain">Play Again ↻</button>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="replay" class="secondary">↻ New Maze</button>
+    <button id="restart" class="ghost">Reset Run</button>
+    <div class="diff-group" id="diffGroup">
+      <button data-size="11">Easy</button>
+      <button data-size="17" class="active">Medium</button>
+      <button data-size="25">Hard</button>
+      <button data-size="35">Insane</button>
+    </div>
+  </div>
+
+  <div class="hint kbd-hint">Move with <kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> or <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> · <kbd>R</kbd> for new maze</div>
+
+  <div class="dpad" id="dpad">
+    <button class="up" data-dir="up">▲</button>
+    <button class="left" data-dir="left">◀</button>
+    <button class="spacer"></button>
+    <button class="right" data-dir="right">▶</button>
+    <button class="down" data-dir="down">▼</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const canvas = document.getElementById("maze");
+  const ctx = canvas.getContext("2d");
+
+  // UI refs
+  const elTime = document.getElementById("time");
+  const elMoves = document.getElementById("moves");
+  const elOptimal = document.getElementById("optimal");
+  const elScore = document.getElementById("score");
+  const overlay = document.getElementById("overlay");
+  const winTitle = document.getElementById("winTitle");
+  const winStats = document.getElementById("winStats");
+  const badge = document.getElementById("badge");
+
+  // --- State ---
+  let cols, rows;        // grid dimensions (odd)
+  let grid;              // boolean[][] true = open cell, false = wall
+  let cell;              // pixel size of a cell
+  let player = { x: 1, y: 1, px: 0, py: 0 }; // px/py = rendered (animated) position in cell units
+  let start = { x: 1, y: 1 };
+  let finish = { x: 1, y: 1 };
+  let moves = 0;
+  let optimal = 0;
+  let startTime = 0;
+  let elapsed = 0;
+  let started = false;     // timer running (first move made)
+  let finished = false;
+  let visited;             // trail
+  let optimalPath = [];    // array of "x,y" on shortest path
+  let size = 17;           // grid size (odd-ish)
+  let raf = null;
+  let particles = [];
+
+  // ---------- Maze generation (recursive backtracker on cell-grid) ----------
+  // We use a full grid where walls and passages are individual cells.
+  // Dimensions are forced odd so borders are walls.
+  function generateMaze(n) {
+    n = n % 2 === 0 ? n + 1 : n;
+    cols = n; rows = n;
+    grid = Array.from({ length: rows }, () => Array(cols).fill(false));
+
+    // carving works on "cell" coordinates spaced 2 apart
+    const stack = [];
+    const cx = 1, cy = 1;
+    grid[cy][cx] = true;
+    stack.push([cx, cy]);
+
+    const dirs = [[0, -2], [0, 2], [-2, 0], [2, 0]];
+
+    while (stack.length) {
+      const [x, y] = stack[stack.length - 1];
+      const options = [];
+      for (const [dx, dy] of dirs) {
+        const nx = x + dx, ny = y + dy;
+        if (nx > 0 && nx < cols - 1 && ny > 0 && ny < rows - 1 && !grid[ny][nx]) {
+          options.push([nx, ny, dx, dy]);
+        }
+      }
+      if (options.length === 0) { stack.pop(); continue; }
+      const [nx, ny, dx, dy] = options[(Math.random() * options.length) | 0];
+      grid[y + dy / 2][x + dx / 2] = true; // knock down wall between
+      grid[ny][nx] = true;
+      stack.push([nx, ny]);
+    }
+
+    // Add a few loops for variety (braid lightly) on harder mazes
+    const braid = n >= 25 ? 0.08 : n >= 17 ? 0.04 : 0;
+    if (braid > 0) {
+      for (let y = 1; y < rows - 1; y += 2) {
+        for (let x = 1; x < cols - 1; x += 2) {
+          if (Math.random() < braid) {
+            const walls = dirs
+              .map(([dx, dy]) => [x + dx / 2, y + dy / 2])
+              .filter(([wx, wy]) => wx > 0 && wx < cols - 1 && wy > 0 && wy < rows - 1 && !grid[wy][wx]);
+            if (walls.length) {
+              const [wx, wy] = walls[(Math.random() * walls.length) | 0];
+              grid[wy][wx] = true;
+            }
+          }
+        }
+      }
+    }
+
+    start = { x: 1, y: 1 };
+    finish = { x: cols - 2, y: rows - 2 };
+  }
+
+  // BFS shortest path from start to finish
+  function computeOptimal() {
+    const key = (x, y) => y * cols + x;
+    const prev = new Map();
+    const q = [[start.x, start.y]];
+    const seen = new Set([key(start.x, start.y)]);
+    const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+    let found = false;
+    while (q.length) {
+      const [x, y] = q.shift();
+      if (x === finish.x && y === finish.y) { found = true; break; }
+      for (const [dx, dy] of dirs) {
+        const nx = x + dx, ny = y + dy;
+        if (nx >= 0 && ny >= 0 && nx < cols && ny < rows && grid[ny][nx] && !seen.has(key(nx, ny))) {
+          seen.add(key(nx, ny));
+          prev.set(key(nx, ny), key(x, y));
+          q.push([nx, ny]);
+        }
+      }
+    }
+    optimalPath = [];
+    if (found) {
+      let cur = key(finish.x, finish.y);
+      const startKey = key(start.x, start.y);
+      while (cur !== startKey) {
+        const px = cur % cols, py = (cur / cols) | 0;
+        optimalPath.push(px + "," + py);
+        cur = prev.get(cur);
+      }
+      optimalPath.push(start.x + "," + start.y);
+    }
+    optimal = Math.max(0, optimalPath.length - 1); // number of steps
+  }
+
+  // ---------- Layout / sizing ----------
+  function computeCellSize() {
+    const maxW = Math.min(window.innerWidth - 56, 720);
+    const maxH = window.innerHeight - 320;
+    const avail = Math.max(220, Math.min(maxW, maxH, 720));
+    cell = Math.max(8, Math.floor(avail / cols));
+    const px = cell * cols;
+    canvas.width = px * (window.devicePixelRatio || 1);
+    canvas.height = px * (window.devicePixelRatio || 1);
+    canvas.style.width = px + "px";
+    canvas.style.height = px + "px";
+    ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
+  }
+
+  // ---------- Game lifecycle ----------
+  function newGame(keepScoreReset) {
+    cancelAnimationFrame(raf);
+    generateMaze(size);
+    computeOptimal();
+    computeCellSize();
+
+    player = { x: start.x, y: start.y, px: start.x, py: start.y };
+    visited = Array.from({ length: rows }, () => Array(cols).fill(false));
+    visited[start.y][start.x] = true;
+    moves = 0;
+    elapsed = 0;
+    started = false;
+    finished = false;
+    particles = [];
+
+    overlay.classList.remove("show");
+    updateHUD();
+    loop();
+  }
+
+  function updateHUD() {
+    elTime.textContent = elapsed.toFixed(1) + "s";
+    elMoves.textContent = moves;
+    elOptimal.textContent = optimal;
+    elScore.textContent = currentScore();
+  }
+
+  function currentScore() {
+    if (!finished) return 0;
+    const timeSec = elapsed;
+    // Base reward, efficiency bonus for matching optimal, time bonus.
+    const efficiency = optimal / Math.max(moves, optimal); // 1.0 = perfect
+    const base = 1000;
+    const sizeMult = cols / 17;
+    const effBonus = Math.round(1500 * efficiency * efficiency * sizeMult);
+    const timeBonus = Math.max(0, Math.round((600 - timeSec * 12) * sizeMult));
+    const perfectBonus = moves === optimal ? Math.round(1000 * sizeMult) : 0;
+    return Math.max(0, Math.round(base * sizeMult) + effBonus + timeBonus + perfectBonus);
+  }
+
+  // ---------- Movement ----------
+  function tryMove(dx, dy) {
+    if (finished) return;
+    const nx = player.x + dx, ny = player.y + dy;
+    if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) return;
+    if (!grid[ny][nx]) return; // wall
+
+    if (!started) {
+      started = true;
+      startTime = performance.now() - elapsed * 1000;
+    }
+
+    player.x = nx;
+    player.y = ny;
+    moves++;
+    visited[ny][nx] = true;
+
+    if (nx === finish.x && ny === finish.y) {
+      win();
+    }
+    updateHUD();
+  }
+
+  function win() {
+    finished = true;
+    started = false;
+    spawnConfetti();
+    const score = currentScore();
+    const perfect = moves === optimal;
+    winTitle.textContent = perfect ? "Perfect Escape!" : "Escaped!";
+    badge.className = "badge " + (perfect ? "perfect" : "good");
+    badge.textContent = perfect
+      ? "★ Shortest Path Bonus +" + Math.round(1000 * (cols / 17))
+      : (moves <= optimal * 1.15 ? "✦ Efficient run" : "Maze cleared");
+    const extra = moves - optimal;
+    winStats.innerHTML =
+      "<b>" + elapsed.toFixed(1) + "s</b> · <b>" + moves + "</b> moves" +
+      " (optimal <b>" + optimal + "</b>" + (extra > 0 ? ", +" + extra + " extra" : "") + ")<br>" +
+      "Final score <b style='color:var(--gold)'>" + score + "</b>";
+    overlay.classList.add("show");
+    updateHUD();
+  }
+
+  // ---------- Rendering ----------
+  function roundRect(c, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    c.beginPath();
+    c.moveTo(x + r, y);
+    c.arcTo(x + w, y, x + w, y + h, r);
+    c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r);
+    c.arcTo(x, y, x + w, y, r);
+    c.closePath();
+  }
+
+  function draw(now) {
+    const w = cols * cell, h = rows * cell;
+    ctx.clearRect(0, 0, w, h);
+
+    // floor
+    ctx.fillStyle = getCSS("--path");
+    ctx.fillRect(0, 0, w, h);
+
+    // visited trail
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        if (grid[y][x] && visited[y][x]) {
+          ctx.fillStyle = "rgba(94,234,212,0.06)";
+          ctx.fillRect(x * cell, y * cell, cell, cell);
+        }
+      }
+    }
+
+    // optimal path hint after finish
+    if (finished && optimalPath.length) {
+      ctx.strokeStyle = "rgba(251,191,36,0.55)";
+      ctx.lineWidth = Math.max(2, cell * 0.16);
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+      for (let i = 0; i < optimalPath.length; i++) {
+        const [px, py] = optimalPath[i].split(",").map(Number);
+        const cxp = px * cell + cell / 2, cyp = py * cell + cell / 2;
+        if (i === 0) ctx.moveTo(cxp, cyp); else ctx.lineTo(cxp, cyp);
+      }
+      ctx.stroke();
+    }
+
+    // walls
+    const wallColor = getCSS("--wall");
+    const glow = getCSS("--wall-glow");
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        if (!grid[y][x]) {
+          const g = ctx.createLinearGradient(x * cell, y * cell, x * cell, (y + 1) * cell);
+          g.addColorStop(0, glow);
+          g.addColorStop(1, wallColor);
+          ctx.fillStyle = g;
+          const inset = Math.max(0, cell * 0.04);
+          ctx.fillRect(x * cell + inset, y * cell + inset, cell - inset * 2, cell - inset * 2);
+        }
+      }
+    }
+
+    // start marker
+    drawMarker(start.x, start.y, getCSS("--start"), "S");
+    // finish marker (pulsing)
+    const pulse = 0.5 + 0.5 * Math.sin(now / 350);
+    drawFinish(finish.x, finish.y, pulse);
+
+    // animate player toward grid position
+    const ease = 0.28;
+    player.px += (player.x - player.px) * ease;
+    player.py += (player.y - player.py) * ease;
+    if (Math.abs(player.px - player.x) < 0.002) player.px = player.x;
+    if (Math.abs(player.py - player.y) < 0.002) player.py = player.y;
+
+    drawPlayer(player.px, player.py, now);
+
+    // particles
+    drawParticles();
+  }
+
+  function drawMarker(x, y, color, label) {
+    const cx = x * cell + cell / 2, cy = y * cell + cell / 2;
+    ctx.fillStyle = hexA(color, 0.18);
+    ctx.fillRect(x * cell, y * cell, cell, cell);
+    ctx.fillStyle = color;
+    ctx.font = "bold " + Math.floor(cell * 0.5) + "px system-ui";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, cx, cy + cell * 0.02);
+  }
+
+  function drawFinish(x, y, pulse) {
+    const cx = x * cell + cell / 2, cy = y * cell + cell / 2;
+    const color = getCSS("--finish");
+    ctx.save();
+    const r = cell * (0.22 + 0.1 * pulse);
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, cell * 0.7);
+    grad.addColorStop(0, hexA(color, 0.45 * pulse + 0.2));
+    grad.addColorStop(1, hexA(color, 0));
+    ctx.fillStyle = grad;
+    ctx.fillRect(x * cell - cell, y * cell - cell, cell * 3, cell * 3);
+    // flag/diamond
+    ctx.fillStyle = color;
+    ctx.translate(cx, cy);
+    ctx.rotate(Math.PI / 4);
+    roundRect(ctx, -r, -r, r * 2, r * 2, r * 0.35);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawPlayer(px, py, now) {
+    const cx = px * cell + cell / 2, cy = py * cell + cell / 2;
+    const r = cell * 0.3;
+    // glow trail
+    const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, cell * 0.9);
+    glow.addColorStop(0, "rgba(129,140,248,0.5)");
+    glow.addColorStop(1, "rgba(129,140,248,0)");
+    ctx.fillStyle = glow;
+    ctx.fillRect(cx - cell, cy - cell, cell * 2, cell * 2);
+
+    // body
+    const grad = ctx.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
+    grad.addColorStop(0, "#a5b4fc");
+    grad.addColorStop(1, getCSS("--accent-2"));
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // highlight
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.beginPath();
+    ctx.arc(cx - r * 0.3, cy - r * 0.3, r * 0.32, 0, Math.PI * 2);
+    ctx.fill();
+
+    // ring
+    ctx.strokeStyle = "rgba(165,180,252,0.8)";
+    ctx.lineWidth = Math.max(1, cell * 0.05);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + cell * 0.08 + Math.sin(now / 300) * cell * 0.02, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // ---------- Confetti ----------
+  function spawnConfetti() {
+    const cx = finish.x * cell + cell / 2, cy = finish.y * cell + cell / 2;
+    const colors = ["#fbbf24", "#5eead4", "#818cf8", "#f472b6", "#34d399"];
+    for (let i = 0; i < 90; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = 1.5 + Math.random() * 4;
+      particles.push({
+        x: cx, y: cy,
+        vx: Math.cos(a) * sp,
+        vy: Math.sin(a) * sp - 2,
+        life: 1,
+        size: 2 + Math.random() * 4,
+        color: colors[(Math.random() * colors.length) | 0],
+        rot: Math.random() * Math.PI,
+        vr: (Math.random() - 0.5) * 0.3,
+      });
+    }
+  }
+
+  function drawParticles() {
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.vy += 0.12;
+      p.x += p.vx;
+      p.y += p.vy;
+      p.rot += p.vr;
+      p.life -= 0.012;
+      if (p.life <= 0) { particles.splice(i, 1); continue; }
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 1.6);
+      ctx.restore();
+    }
+  }
+
+  // ---------- Helpers ----------
+  const cssCache = {};
+  function getCSS(name) {
+    if (cssCache[name]) return cssCache[name];
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    cssCache[name] = v;
+    return v;
+  }
+  function hexA(hex, a) {
+    hex = hex.replace("#", "");
+    if (hex.length === 3) hex = hex.split("").map(c => c + c).join("");
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    return `rgba(${r},${g},${b},${a})`;
+  }
+
+  // ---------- Loop ----------
+  function loop() {
+    const now = performance.now();
+    if (started && !finished) {
+      elapsed = (now - startTime) / 1000;
+      elTime.textContent = elapsed.toFixed(1) + "s";
+    }
+    draw(now);
+    raf = requestAnimationFrame(loop);
+  }
+
+  // ---------- Input ----------
+  const keyMap = {
+    ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0],
+    w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0],
+    W: [0, -1], S: [0, 1], A: [-1, 0], D: [1, 0],
+  };
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "r" || e.key === "R") { newGame(); e.preventDefault(); return; }
+    const m = keyMap[e.key];
+    if (m) { tryMove(m[0], m[1]); e.preventDefault(); }
+  });
+
+  // D-pad
+  const dpadDirs = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+  document.getElementById("dpad").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-dir]");
+    if (!b) return;
+    const m = dpadDirs[b.dataset.dir];
+    if (m) tryMove(m[0], m[1]);
+  });
+
+  // Swipe support on canvas
+  let touchStart = null;
+  canvas.addEventListener("touchstart", (e) => {
+    touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }, { passive: true });
+  canvas.addEventListener("touchend", (e) => {
+    if (!touchStart) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStart.x, dy = t.clientY - touchStart.y;
+    const adx = Math.abs(dx), ady = Math.abs(dy);
+    if (Math.max(adx, ady) > 24) {
+      if (adx > ady) tryMove(dx > 0 ? 1 : -1, 0);
+      else tryMove(0, dy > 0 ? 1 : -1);
+    }
+    touchStart = null;
+  }, { passive: true });
+
+  // Buttons
+  document.getElementById("replay").addEventListener("click", () => newGame());
+  document.getElementById("playAgain").addEventListener("click", () => newGame());
+  document.getElementById("restart").addEventListener("click", () => {
+    // reset player on the SAME maze
+    cancelAnimationFrame(raf);
+    player = { x: start.x, y: start.y, px: start.x, py: start.y };
+    visited = Array.from({ length: rows }, () => Array(cols).fill(false));
+    visited[start.y][start.x] = true;
+    moves = 0; elapsed = 0; started = false; finished = false; particles = [];
+    overlay.classList.remove("show");
+    updateHUD();
+    loop();
+  });
+
+  // Difficulty
+  document.getElementById("diffGroup").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-size]");
+    if (!b) return;
+    document.querySelectorAll("#diffGroup button").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    size = parseInt(b.dataset.size, 10);
+    newGame();
+  });
+
+  window.addEventListener("resize", () => {
+    computeCellSize();
+  });
+
+  // boot
+  newGame();
+})();
+</script>
+</body>
+</html>

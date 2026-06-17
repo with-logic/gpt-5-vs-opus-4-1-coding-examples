@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Aurora · Interactive World Clock</title>
+<style>
+  /* ============================================================
+     Aurora — Interactive World Clock
+     Vanilla JS · Intl API timezones · time-of-day theming
+     ============================================================ */
+
+  :root {
+    --bg: #0a0b14;
+    --bg-2: #11132099;
+    --text: #f2f4fb;
+    --text-dim: #aab0c8;
+    --text-faint: #707694;
+    --line: #ffffff14;
+    --line-strong: #ffffff26;
+    --accent: #8b7cff;
+    --radius: 22px;
+    --shadow: 0 18px 50px -18px #000000aa;
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body { height: 100%; }
+
+  body {
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background:
+      radial-gradient(1200px 700px at 18% -10%, #1d1b3a 0%, transparent 55%),
+      radial-gradient(1000px 600px at 100% 0%, #161a36 0%, transparent 50%),
+      radial-gradient(900px 700px at 50% 120%, #1a1430 0%, transparent 60%),
+      var(--bg);
+    color: var(--text);
+    min-height: 100%;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    letter-spacing: -0.01em;
+  }
+
+  .app {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: clamp(20px, 4vw, 48px) clamp(16px, 4vw, 40px) 80px;
+  }
+
+  /* ---------- Header ---------- */
+  header.top {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    flex-wrap: wrap;
+    margin-bottom: 30px;
+  }
+
+  .brand { display: flex; flex-direction: column; gap: 6px; }
+
+  .brand .mark {
+    display: flex; align-items: center; gap: 12px;
+  }
+  .brand .orb {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: conic-gradient(from 200deg, #ffd479, #ff8a5b, #8b7cff, #4cc9f0, #ffd479);
+    box-shadow: 0 0 26px -2px #8b7cff88, inset 0 0 10px #00000055;
+    position: relative;
+    flex: none;
+  }
+  .brand .orb::after {
+    content: ""; position: absolute; inset: 6px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #ffffffcc, transparent 60%);
+    opacity: .5;
+  }
+  .brand h1 {
+    font-size: clamp(22px, 3vw, 30px);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1;
+  }
+  .brand p {
+    color: var(--text-dim);
+    font-size: 13.5px;
+    font-weight: 450;
+    letter-spacing: 0;
+  }
+  .brand .local-now {
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+  }
+  .brand .local-now b { color: var(--text-dim); font-weight: 600; }
+
+  /* ---------- Controls ---------- */
+  .controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+  .segmented {
+    display: inline-flex;
+    background: #ffffff0d;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 4px;
+    position: relative;
+  }
+  .segmented button {
+    appearance: none; border: 0; background: transparent;
+    color: var(--text-dim);
+    font: inherit; font-weight: 600; font-size: 13px;
+    padding: 8px 16px;
+    border-radius: 999px;
+    cursor: pointer;
+    position: relative; z-index: 1;
+    transition: color .25s var(--ease);
+  }
+  .segmented button[aria-pressed="true"] { color: #1a1426; }
+  .segmented .thumb {
+    position: absolute; top: 4px; bottom: 4px; left: 4px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #ffffff, #e9e9ff);
+    box-shadow: 0 4px 12px -4px #000000aa;
+    transition: transform .35s var(--ease), width .35s var(--ease);
+    z-index: 0;
+  }
+
+  .btn-add {
+    appearance: none; border: 1px solid var(--line-strong);
+    background: linear-gradient(180deg, #8b7cff, #6f5ff0);
+    color: #fff; font: inherit; font-weight: 650; font-size: 14px;
+    padding: 11px 18px; border-radius: 999px;
+    cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+    box-shadow: 0 10px 26px -10px #6f5ff0cc, inset 0 1px 0 #ffffff55;
+    transition: transform .2s var(--ease), box-shadow .2s var(--ease), filter .2s;
+  }
+  .btn-add:hover { transform: translateY(-1px); filter: brightness(1.06); }
+  .btn-add:active { transform: translateY(0); }
+  .btn-add svg { width: 16px; height: 16px; }
+
+  /* ---------- Grid ---------- */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 18px;
+  }
+
+  /* ---------- Card ---------- */
+  .card {
+    position: relative;
+    border-radius: var(--radius);
+    border: 1px solid var(--line);
+    padding: 22px 22px 20px;
+    overflow: hidden;
+    isolation: isolate;
+    box-shadow: var(--shadow);
+    transition: transform .4s var(--ease), border-color .4s, box-shadow .4s;
+    animation: cardIn .55s var(--ease) backwards;
+  }
+  .card:hover { transform: translateY(-4px); border-color: var(--line-strong); }
+  .card.removing { animation: cardOut .35s var(--ease) forwards; }
+
+  @keyframes cardIn { from { opacity: 0; transform: translateY(14px) scale(.98); } }
+  @keyframes cardOut { to { opacity: 0; transform: scale(.93); } }
+
+  /* sky background layer driven by --sky-a/--sky-b/--sky-c */
+  .card .sky {
+    position: absolute; inset: 0; z-index: -2;
+    background: linear-gradient(160deg, var(--sky-a), var(--sky-b) 55%, var(--sky-c));
+    transition: background 1.2s linear;
+  }
+  .card .glow {
+    position: absolute; z-index: -1;
+    width: 200px; height: 200px; border-radius: 50%;
+    top: -70px; right: -50px;
+    background: var(--sun);
+    filter: blur(8px);
+    opacity: .9;
+    transition: background 1.2s linear, opacity 1.2s linear, transform 1.2s var(--ease);
+  }
+  .card .stars {
+    position: absolute; inset: 0; z-index: -1;
+    opacity: var(--stars, 0);
+    transition: opacity 1.2s linear;
+    background-image:
+      radial-gradient(1px 1px at 20% 30%, #fff, transparent),
+      radial-gradient(1px 1px at 60% 18%, #fff, transparent),
+      radial-gradient(1.4px 1.4px at 80% 40%, #fff, transparent),
+      radial-gradient(1px 1px at 35% 55%, #cfe, transparent),
+      radial-gradient(1.2px 1.2px at 70% 65%, #fff, transparent),
+      radial-gradient(1px 1px at 12% 70%, #fff, transparent),
+      radial-gradient(1px 1px at 90% 12%, #fff, transparent),
+      radial-gradient(1.3px 1.3px at 48% 22%, #fff, transparent);
+  }
+
+  .card-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 12px; margin-bottom: 14px;
+  }
+  .city-meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .city-name {
+    font-size: 19px; font-weight: 700; letter-spacing: -0.02em;
+    line-height: 1.1;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .city-sub {
+    font-size: 12.5px; color: var(--card-dim, #ffffffb0);
+    display: flex; align-items: center; gap: 7px; font-weight: 500;
+  }
+  .city-sub .dot { width: 3px; height: 3px; border-radius: 50%; background: currentColor; opacity: .55; }
+
+  .phase-badge {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: #ffffff1f;
+    border: 1px solid #ffffff2e;
+    backdrop-filter: blur(6px);
+    padding: 6px 11px 6px 8px;
+    border-radius: 999px;
+    font-size: 11.5px; font-weight: 650;
+    letter-spacing: 0.02em;
+    flex: none;
+    color: #fff;
+  }
+  .phase-badge .icon { width: 16px; height: 16px; display: grid; place-items: center; }
+  .phase-badge .icon svg { width: 16px; height: 16px; display: block; }
+
+  .time-block { display: flex; align-items: baseline; gap: 8px; margin: 6px 0 2px; }
+  .time {
+    font-size: clamp(40px, 9vw, 52px);
+    font-weight: 750;
+    letter-spacing: -0.035em;
+    font-variant-numeric: tabular-nums;
+    line-height: 0.95;
+    color: #fff;
+    text-shadow: 0 2px 18px #00000033;
+  }
+  .time .sec {
+    font-size: 0.42em; font-weight: 600;
+    color: var(--card-dim, #ffffffb5);
+    letter-spacing: 0;
+  }
+  .time .ampm {
+    font-size: 0.34em; font-weight: 650; margin-left: 2px;
+    color: var(--card-dim, #ffffffcc);
+  }
+
+  .date-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; margin-top: 12px;
+    color: var(--card-dim, #ffffffc4);
+    font-size: 12.5px; font-weight: 550;
+  }
+  .offset-tag {
+    font-variant-numeric: tabular-nums;
+    background: #00000026; border: 1px solid #ffffff1f;
+    padding: 3px 9px; border-radius: 999px; font-weight: 600;
+    color: #fff;
+  }
+
+  .card .remove {
+    position: absolute; top: 14px; right: 14px;
+    width: 28px; height: 28px; border-radius: 50%;
+    border: 1px solid #ffffff26; background: #00000033;
+    color: #fff; cursor: pointer;
+    display: grid; place-items: center;
+    opacity: 0; transform: scale(.8);
+    transition: opacity .25s, transform .25s, background .2s;
+    z-index: 3;
+    backdrop-filter: blur(4px);
+  }
+  .card:hover .remove, .card:focus-within .remove { opacity: 1; transform: scale(1); }
+  .card .remove:hover { background: #ff5a6e; border-color: #ff5a6e; }
+  .card .remove svg { width: 13px; height: 13px; }
+
+  /* daylight progress bar */
+  .daybar {
+    margin-top: 16px; height: 5px; border-radius: 999px;
+    background: #00000033; overflow: hidden; position: relative;
+    border: 1px solid #ffffff14;
+  }
+  .daybar .fill {
+    position: absolute; inset: 0;
+    background: linear-gradient(90deg, #ffe39e, #ff9a5b);
+    transform-origin: left; transition: transform 1s linear, background 1.2s linear;
+    border-radius: 999px;
+  }
+  .daybar .knob {
+    position: absolute; top: 50%; width: 9px; height: 9px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%; background: #fff;
+    box-shadow: 0 0 8px #ffffffcc; transition: left 1s linear;
+  }
+
+  /* ---------- Empty state ---------- */
+  .empty {
+    grid-column: 1 / -1;
+    text-align: center; padding: 70px 20px;
+    border: 1.5px dashed var(--line-strong); border-radius: var(--radius);
+    color: var(--text-dim);
+  }
+  .empty h3 { font-size: 18px; color: var(--text); margin-bottom: 6px; font-weight: 650; }
+  .empty p { font-size: 13.5px; }
+
+  /* ---------- Modal ---------- */
+  .modal-scrim {
+    position: fixed; inset: 0; z-index: 50;
+    background: #05060c99; backdrop-filter: blur(8px);
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 12vh 16px 16px;
+    opacity: 0; pointer-events: none;
+    transition: opacity .3s var(--ease);
+  }
+  .modal-scrim.open { opacity: 1; pointer-events: auto; }
+
+  .modal {
+    width: 100%; max-width: 480px;
+    background: linear-gradient(180deg, #15172a, #0e0f1c);
+    border: 1px solid var(--line-strong);
+    border-radius: 24px;
+    box-shadow: 0 40px 90px -20px #000;
+    overflow: hidden;
+    transform: translateY(16px) scale(.98);
+    transition: transform .35s var(--ease);
+  }
+  .modal-scrim.open .modal { transform: none; }
+
+  .modal-head { padding: 20px 20px 14px; border-bottom: 1px solid var(--line); }
+  .modal-head h2 { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; }
+  .modal-head p { font-size: 13px; color: var(--text-dim); margin-top: 3px; }
+
+  .search-wrap { position: relative; padding: 14px 20px 0; }
+  .search-wrap svg.s-icon {
+    position: absolute; left: 32px; top: 50%; transform: translateY(-40%);
+    width: 17px; height: 17px; color: var(--text-faint); pointer-events: none;
+  }
+  .search-wrap input {
+    width: 100%; font: inherit; font-size: 15px;
+    padding: 13px 14px 13px 40px;
+    border-radius: 14px;
+    border: 1px solid var(--line-strong);
+    background: #00000040; color: var(--text);
+    outline: none;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .search-wrap input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #8b7cff33; }
+  .search-wrap input::placeholder { color: var(--text-faint); }
+
+  .results { max-height: 46vh; overflow-y: auto; padding: 12px 12px 16px; }
+  .results::-webkit-scrollbar { width: 8px; }
+  .results::-webkit-scrollbar-thumb { background: #ffffff1c; border-radius: 8px; }
+
+  .res-item {
+    display: flex; align-items: center; gap: 13px;
+    width: 100%; text-align: left;
+    padding: 11px 12px; border-radius: 13px;
+    border: 1px solid transparent; background: transparent;
+    color: var(--text); font: inherit; cursor: pointer;
+    transition: background .15s, border-color .15s;
+  }
+  .res-item:hover, .res-item.active { background: #ffffff0f; border-color: var(--line); }
+  .res-item:disabled { opacity: .4; cursor: not-allowed; }
+  .res-mini {
+    width: 38px; height: 38px; border-radius: 11px; flex: none;
+    display: grid; place-items: center; font-size: 17px;
+    border: 1px solid #ffffff1f;
+  }
+  .res-text { flex: 1; min-width: 0; }
+  .res-text .n { font-weight: 620; font-size: 14.5px; }
+  .res-text .c { font-size: 12px; color: var(--text-dim); display:flex; gap:7px; align-items:center; }
+  .res-time { font-size: 13px; color: var(--text-dim); font-variant-numeric: tabular-nums; font-weight: 600; }
+  .res-empty { text-align: center; color: var(--text-faint); padding: 30px; font-size: 13.5px; }
+
+  .modal-foot { padding: 12px 20px 18px; display: flex; justify-content: flex-end; }
+  .btn-ghost {
+    appearance: none; border: 1px solid var(--line-strong); background: transparent;
+    color: var(--text-dim); font: inherit; font-weight: 600; font-size: 13.5px;
+    padding: 9px 16px; border-radius: 999px; cursor: pointer; transition: background .2s, color .2s;
+  }
+  .btn-ghost:hover { background: #ffffff0d; color: var(--text); }
+
+  .added-pill { font-size: 11px; color: #7ee0a8; font-weight: 650; }
+
+  @media (max-width: 540px) {
+    .brand p.tag { display: none; }
+    .time { font-size: clamp(38px, 13vw, 50px); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <div class="mark">
+        <div class="orb"></div>
+        <h1>Aurora</h1>
+      </div>
+      <p class="tag">A living world clock — every city glows with its own light.</p>
+      <p class="local-now" id="localNow"></p>
+    </div>
+    <div class="controls">
+      <div class="segmented" role="group" aria-label="Time format">
+        <span class="thumb" id="thumb"></span>
+        <button id="fmt12" aria-pressed="true">12h</button>
+        <button id="fmt24" aria-pressed="false">24h</button>
+      </div>
+      <button class="btn-add" id="addBtn" aria-label="Add a city">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        Add city
+      </button>
+    </div>
+  </header>
+
+  <main class="grid" id="grid"></main>
+</div>
+
+<!-- Add-city modal -->
+<div class="modal-scrim" id="scrim">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-head">
+      <h2 id="modalTitle">Add a city</h2>
+      <p>Search 100+ cities. Times update live as you browse.</p>
+    </div>
+    <div class="search-wrap">
+      <svg class="s-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="search" type="text" placeholder="Search cities or countries…" autocomplete="off" spellcheck="false" />
+    </div>
+    <div class="results" id="results"></div>
+    <div class="modal-foot">
+      <button class="btn-ghost" id="closeModal">Done</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================================
+   City catalog — name, country, IANA timezone, emoji flag.
+   Timezone math is done entirely with the Intl API so DST is always correct.
+   ========================================================================= */
+const CITIES = [
+  ["Honolulu","United States","Pacific/Honolulu","🇺🇸"],
+  ["Anchorage","United States","America/Anchorage","🇺🇸"],
+  ["Los Angeles","United States","America/Los_Angeles","🇺🇸"],
+  ["San Francisco","United States","America/Los_Angeles","🇺🇸"],
+  ["Vancouver","Canada","America/Vancouver","🇨🇦"],
+  ["Seattle","United States","America/Los_Angeles","🇺🇸"],
+  ["Denver","United States","America/Denver","🇺🇸"],
+  ["Phoenix","United States","America/Phoenix","🇺🇸"],
+  ["Mexico City","Mexico","America/Mexico_City","🇲🇽"],
+  ["Chicago","United States","America/Chicago","🇺🇸"],
+  ["Dallas","United States","America/Chicago","🇺🇸"],
+  ["New York","United States","America/New_York","🇺🇸"],
+  ["Washington","United States","America/New_York","🇺🇸"],
+  ["Toronto","Canada","America/Toronto","🇨🇦"],
+  ["Miami","United States","America/New_York","🇺🇸"],
+  ["Bogotá","Colombia","America/Bogota","🇨🇴"],
+  ["Lima","Peru","America/Lima","🇵🇪"],
+  ["Santiago","Chile","America/Santiago","🇨🇱"],
+  ["Caracas","Venezuela","America/Caracas","🇻🇪"],
+  ["São Paulo","Brazil","America/Sao_Paulo","🇧🇷"],
+  ["Rio de Janeiro","Brazil","America/Sao_Paulo","🇧🇷"],
+  ["Buenos Aires","Argentina","America/Argentina/Buenos_Aires","🇦🇷"],
+  ["Reykjavík","Iceland","Atlantic/Reykjavik","🇮🇸"],
+  ["Lisbon","Portugal","Europe/Lisbon","🇵🇹"],
+  ["London","United Kingdom","Europe/London","🇬🇧"],
+  ["Dublin","Ireland","Europe/Dublin","🇮🇪"],
+  ["Madrid","Spain","Europe/Madrid","🇪🇸"],
+  ["Barcelona","Spain","Europe/Madrid","🇪🇸"],
+  ["Paris","France","Europe/Paris","🇫🇷"],
+  ["Amsterdam","Netherlands","Europe/Amsterdam","🇳🇱"],
+  ["Brussels","Belgium","Europe/Brussels","🇧🇪"],
+  ["Zürich","Switzerland","Europe/Zurich","🇨🇭"],
+  ["Milan","Italy","Europe/Rome","🇮🇹"],
+  ["Rome","Italy","Europe/Rome","🇮🇹"],
+  ["Berlin","Germany","Europe/Berlin","🇩🇪"],
+  ["Munich","Germany","Europe/Berlin","🇩🇪"],
+  ["Frankfurt","Germany","Europe/Berlin","🇩🇪"],
+  ["Copenhagen","Denmark","Europe/Copenhagen","🇩🇰"],
+  ["Oslo","Norway","Europe/Oslo","🇳🇴"],
+  ["Stockholm","Sweden","Europe/Stockholm","🇸🇪"],
+  ["Vienna","Austria","Europe/Vienna","🇦🇹"],
+  ["Prague","Czechia","Europe/Prague","🇨🇿"],
+  ["Warsaw","Poland","Europe/Warsaw","🇵🇱"],
+  ["Budapest","Hungary","Europe/Budapest","🇭🇺"],
+  ["Athens","Greece","Europe/Athens","🇬🇷"],
+  ["Helsinki","Finland","Europe/Helsinki","🇫🇮"],
+  ["Kyiv","Ukraine","Europe/Kyiv","🇺🇦"],
+  ["Bucharest","Romania","Europe/Bucharest","🇷🇴"],
+  ["Istanbul","Türkiye","Europe/Istanbul","🇹🇷"],
+  ["Moscow","Russia","Europe/Moscow","🇷🇺"],
+  ["Cairo","Egypt","Africa/Cairo","🇪🇬"],
+  ["Lagos","Nigeria","Africa/Lagos","🇳🇬"],
+  ["Nairobi","Kenya","Africa/Nairobi","🇰🇪"],
+  ["Johannesburg","South Africa","Africa/Johannesburg","🇿🇦"],
+  ["Cape Town","South Africa","Africa/Johannesburg","🇿🇦"],
+  ["Casablanca","Morocco","Africa/Casablanca","🇲🇦"],
+  ["Tel Aviv","Israel","Asia/Jerusalem","🇮🇱"],
+  ["Riyadh","Saudi Arabia","Asia/Riyadh","🇸🇦"],
+  ["Dubai","United Arab Emirates","Asia/Dubai","🇦🇪"],
+  ["Abu Dhabi","United Arab Emirates","Asia/Dubai","🇦🇪"],
+  ["Doha","Qatar","Asia/Qatar","🇶🇦"],
+  ["Tehran","Iran","Asia/Tehran","🇮🇷"],
+  ["Karachi","Pakistan","Asia/Karachi","🇵🇰"],
+  ["Mumbai","India","Asia/Kolkata","🇮🇳"],
+  ["New Delhi","India","Asia/Kolkata","🇮🇳"],
+  ["Bengaluru","India","Asia/Kolkata","🇮🇳"],
+  ["Colombo","Sri Lanka","Asia/Colombo","🇱🇰"],
+  ["Kathmandu","Nepal","Asia/Kathmandu","🇳🇵"],
+  ["Dhaka","Bangladesh","Asia/Dhaka","🇧🇩"],
+  ["Almaty","Kazakhstan","Asia/Almaty","🇰🇿"],
+  ["Bangkok","Thailand","Asia/Bangkok","🇹🇭"],
+  ["Jakarta","Indonesia","Asia/Jakarta","🇮🇩"],
+  ["Ho Chi Minh City","Vietnam","Asia/Ho_Chi_Minh","🇻🇳"],
+  ["Singapore","Singapore","Asia/Singapore","🇸🇬"],
+  ["Kuala Lumpur","Malaysia","Asia/Kuala_Lumpur","🇲🇾"],
+  ["Manila","Philippines","Asia/Manila","🇵🇭"],
+  ["Hong Kong","Hong Kong","Asia/Hong_Kong","🇭🇰"],
+  ["Shanghai","China","Asia/Shanghai","🇨🇳"],
+  ["Beijing","China","Asia/Shanghai","🇨🇳"],
+  ["Shenzhen","China","Asia/Shanghai","🇨🇳"],
+  ["Taipei","Taiwan","Asia/Taipei","🇹🇼"],
+  ["Seoul","South Korea","Asia/Seoul","🇰🇷"],
+  ["Tokyo","Japan","Asia/Tokyo","🇯🇵"],
+  ["Osaka","Japan","Asia/Tokyo","🇯🇵"],
+  ["Perth","Australia","Australia/Perth","🇦🇺"],
+  ["Adelaide","Australia","Australia/Adelaide","🇦🇺"],
+  ["Brisbane","Australia","Australia/Brisbane","🇦🇺"],
+  ["Sydney","Australia","Australia/Sydney","🇦🇺"],
+  ["Melbourne","Australia","Australia/Melbourne","🇦🇺"],
+  ["Auckland","New Zealand","Pacific/Auckland","🇳🇿"],
+  ["Wellington","New Zealand","Pacific/Auckland","🇳🇿"],
+  ["Suva","Fiji","Pacific/Fiji","🇫🇯"],
+  ["Nuku'alofa","Tonga","Pacific/Tongatapu","🇹🇴"],
+].map((c, i) => ({ id: i, name: c[0], country: c[1], tz: c[2], flag: c[3] }));
+
+/* ---------- SVG phase icons ---------- */
+const ICONS = {
+  sunrise: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v3M4.2 10.2l-1.4-1.4M21.2 8.8l-1.4 1.4M2 18h20M6 18a6 6 0 0 1 12 0M8 6l4 4 4-4"/></svg>',
+  sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v2.5M12 20v2.5M3.5 12H1M23 12h-2.5M5.2 5.2 3.5 3.5M20.5 20.5l-1.7-1.7M18.8 5.2l1.7-1.7M3.5 20.5l1.7-1.7"/></svg>',
+  sunset: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9V2M4.2 10.2l-1.4-1.4M21.2 8.8l-1.4 1.4M2 18h20M6 18a6 6 0 0 1 12 0M8 5l4-3 4 3"/></svg>',
+  moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 7 7 0 1 0 20 14.5Z"/></svg>',
+};
+
+/* ---------- Phase definitions: gradients, accents, label, icon ---------- */
+function phaseFor(hour) {
+  // returns key based on local hour [0..23]
+  if (hour >= 5 && hour < 8)   return "dawn";
+  if (hour >= 8 && hour < 12)  return "morning";
+  if (hour >= 12 && hour < 17) return "afternoon";
+  if (hour >= 17 && hour < 20) return "evening";
+  if (hour >= 20 && hour < 23) return "dusk";
+  return "night";
+}
+
+const PHASES = {
+  dawn:      { label: "Dawn",      icon: "sunrise", sky: ["#3a3a6e","#7d5a8c","#e89b76"], sun: "radial-gradient(circle, #ffd089 0%, #ff9a6b88 45%, transparent 70%)", dim: "#fff0e2cc", stars: .15 },
+  morning:   { label: "Morning",   icon: "sun",     sky: ["#5fa8e8","#7bb8ea","#bfe0f5"], sun: "radial-gradient(circle, #fff6c8 0%, #ffe08866 45%, transparent 72%)", dim: "#0c2a45cc", stars: 0 },
+  afternoon: { label: "Afternoon", icon: "sun",     sky: ["#2f87d6","#4f9fe0","#86c5f0"], sun: "radial-gradient(circle, #fffbe0 0%, #ffe9a066 45%, transparent 72%)", dim: "#072138cc", stars: 0 },
+  evening:   { label: "Evening",   icon: "sunset",  sky: ["#274472","#9c5a8e","#ef8a5b"], sun: "radial-gradient(circle, #ffb178 0%, #ff7e5f88 45%, transparent 72%)", dim: "#fff1e6cc", stars: .1 },
+  dusk:      { label: "Dusk",      icon: "sunset",  sky: ["#1c1f4a","#46336e","#a14a72"], sun: "radial-gradient(circle, #ff9a76 0%, #c14a8c66 45%, transparent 72%)", dim: "#ffe9efcc", stars: .45 },
+  night:     { label: "Night",     icon: "moon",    sky: ["#0a0f2c","#141a44","#202a5c"], sun: "radial-gradient(circle, #dfe6ffaa 0%, #9aa6ff33 45%, transparent 72%)", dim: "#cdd6ffcc", stars: 1 },
+};
+
+/* =========================================================================
+   State + persistence
+   ========================================================================= */
+const STORE_KEY = "aurora.clock.v1";
+let state = loadState();
+
+function loadState() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(STORE_KEY));
+    if (raw && Array.isArray(raw.cities)) {
+      // validate ids still exist
+      const ids = raw.cities.filter(id => CITIES[id]);
+      return { cities: ids, fmt24: !!raw.fmt24 };
+    }
+  } catch (_) {}
+  // default selection — a spread across the globe
+  const defaults = ["San Francisco","New York","London","Paris","Dubai","Tokyo","Sydney"];
+  const ids = defaults.map(n => CITIES.findIndex(c => c.name === n)).filter(i => i >= 0);
+  return { cities: ids, fmt24: false };
+}
+function saveState() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (_) {}
+}
+
+/* =========================================================================
+   Time helpers — all via Intl
+   ========================================================================= */
+function partsFor(tz, date) {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, hour12: false,
+    year: "numeric", month: "short", day: "numeric", weekday: "short",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+  const p = {};
+  for (const { type, value } of dtf.formatToParts(date)) p[type] = value;
+  return p; // hour is "00".."23"
+}
+
+// offset in minutes of tz relative to UTC at given instant
+function tzOffsetMinutes(tz, date) {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+  const p = {};
+  for (const { type, value } of dtf.formatToParts(date)) p[type] = value;
+  const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+  return Math.round((asUTC - date.getTime()) / 60000);
+}
+
+function offsetLabel(min) {
+  const sign = min >= 0 ? "+" : "−";
+  const a = Math.abs(min);
+  const h = Math.floor(a / 60), m = a % 60;
+  return "GMT" + sign + h + (m ? ":" + String(m).padStart(2, "0") : "");
+}
+
+// relative offset vs viewer's local zone
+function relLabel(min) {
+  const localOff = -new Date().getTimezoneOffset();
+  const diff = min - localOff;
+  if (diff === 0) return "Same as you";
+  const sign = diff > 0 ? "+" : "−";
+  const a = Math.abs(diff), h = Math.floor(a / 60), m = a % 60;
+  return sign + h + (m ? ":" + String(m).padStart(2, "0") : "") + "h" + (diff > 0 ? " ahead" : " behind");
+}
+
+/* =========================================================================
+   Rendering
+   ========================================================================= */
+const grid = document.getElementById("grid");
+const cardEls = new Map(); // cityId -> { root, refs }
+
+function buildCard(city) {
+  const root = document.createElement("article");
+  root.className = "card";
+  root.dataset.id = city.id;
+  root.innerHTML = `
+    <div class="sky"></div><div class="glow"></div><div class="stars"></div>
+    <button class="remove" title="Remove ${city.name}" aria-label="Remove ${city.name}">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+    <div class="card-head">
+      <div class="city-meta">
+        <div class="city-name">${city.name}</div>
+        <div class="city-sub"><span class="r-flag">${city.flag}</span> <span class="r-country">${city.country}</span><span class="dot"></span><span class="r-rel"></span></div>
+      </div>
+      <div class="phase-badge"><span class="icon"></span><span class="r-phase"></span></div>
+    </div>
+    <div class="time-block"><div class="time"></div></div>
+    <div class="date-row"><span class="r-date"></span><span class="offset-tag"></span></div>
+    <div class="daybar"><div class="fill"></div><div class="knob"></div></div>
+  `;
+  root.querySelector(".remove").addEventListener("click", () => removeCity(city.id));
+  grid.appendChild(root);
+  const refs = {
+    root,
+    sky: root.querySelector(".sky"),
+    glow: root.querySelector(".glow"),
+    stars: root.querySelector(".stars"),
+    icon: root.querySelector(".icon"),
+    phase: root.querySelector(".r-phase"),
+    rel: root.querySelector(".r-rel"),
+    time: root.querySelector(".time"),
+    date: root.querySelector(".r-date"),
+    offset: root.querySelector(".offset-tag"),
+    fill: root.querySelector(".daybar .fill"),
+    knob: root.querySelector(".daybar .knob"),
+  };
+  cardEls.set(city.id, refs);
+  return refs;
+}
+
+function render() {
+  // remove empty state if present
+  const existingEmpty = grid.querySelector(".empty");
+  if (state.cities.length === 0) {
+    cardEls.forEach(r => r.root.remove());
+    cardEls.clear();
+    if (!existingEmpty) {
+      const e = document.createElement("div");
+      e.className = "empty";
+      e.innerHTML = `<h3>No cities yet</h3><p>Tap “Add city” to start tracking the world.</p>`;
+      grid.appendChild(e);
+    }
+    return;
+  }
+  if (existingEmpty) existingEmpty.remove();
+
+  // drop removed cards
+  for (const [id, refs] of cardEls) {
+    if (!state.cities.includes(id)) { refs.root.remove(); cardEls.delete(id); }
+  }
+  // ensure each city has a card and is in order
+  state.cities.forEach((id, idx) => {
+    let refs = cardEls.get(id);
+    if (!refs) { refs = buildCard(CITIES[id]); refs.root.style.animationDelay = (idx * 0.04) + "s"; }
+    // keep DOM order in sync with state
+    if (grid.children[idx] !== refs.root) grid.insertBefore(refs.root, grid.children[idx] || null);
+  });
+  tick();
+}
+
+function fmtTime(p) {
+  let h = +p.hour;
+  const m = p.minute, s = p.second;
+  if (state.fmt24) {
+    return { main: String(h).padStart(2, "0") + ":" + m, sec: s, ampm: "" };
+  }
+  const ampm = h >= 12 ? "PM" : "AM";
+  let hh = h % 12; if (hh === 0) hh = 12;
+  return { main: hh + ":" + m, sec: s, ampm };
+}
+
+function tick() {
+  const now = new Date();
+  for (const id of state.cities) {
+    const refs = cardEls.get(id);
+    if (!refs) continue;
+    const city = CITIES[id];
+    const p = partsFor(city.tz, now);
+    const hour = +p.hour;
+    const ph = PHASES[phaseFor(hour)];
+
+    // time
+    const t = fmtTime(p);
+    refs.time.innerHTML = `${t.main}<span class="sec">:${t.sec}</span>${t.ampm ? `<span class="ampm">${t.ampm}</span>` : ""}`;
+
+    // date
+    refs.date.textContent = `${p.weekday}, ${p.month} ${p.day}`;
+
+    // phase visuals
+    refs.icon.innerHTML = ICONS[ph.icon];
+    refs.phase.textContent = ph.label;
+    refs.root.style.setProperty("--sky-a", ph.sky[0]);
+    refs.root.style.setProperty("--sky-b", ph.sky[1]);
+    refs.root.style.setProperty("--sky-c", ph.sky[2]);
+    refs.root.style.setProperty("--sun", ph.sun);
+    refs.root.style.setProperty("--stars", ph.stars);
+    refs.root.style.setProperty("--card-dim", ph.dim);
+
+    // offset + relative
+    const off = tzOffsetMinutes(city.tz, now);
+    refs.offset.textContent = offsetLabel(off);
+    refs.rel.textContent = relLabel(off);
+
+    // daylight bar: progress through 24h day, sun arc roughly 6→18
+    const dayFrac = (hour * 3600 + (+p.minute) * 60 + (+p.second)) / 86400;
+    refs.fill.style.transform = `scaleX(${dayFrac})`;
+    refs.knob.style.left = (dayFrac * 100) + "%";
+    // tint the bar by phase
+    const isDay = hour >= 6 && hour < 18;
+    refs.fill.style.background = isDay
+      ? "linear-gradient(90deg,#ffe39e,#ff9a5b)"
+      : "linear-gradient(90deg,#5b6cff,#a78bff)";
+  }
+}
+
+/* ---------- local clock in header ---------- */
+function tickLocal() {
+  const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone || "your zone";
+  const now = new Date();
+  const opts = { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: !state.fmt24 };
+  const tstr = now.toLocaleTimeString([], opts);
+  const city = localTz.split("/").pop().replace(/_/g, " ");
+  document.getElementById("localNow").innerHTML = `Your time · <b>${tstr}</b> · ${city}`;
+}
+
+/* =========================================================================
+   Add / remove
+   ========================================================================= */
+function addCity(id) {
+  if (state.cities.includes(id)) return;
+  state.cities.push(id);
+  saveState();
+  render();
+}
+function removeCity(id) {
+  const refs = cardEls.get(id);
+  if (refs) {
+    refs.root.classList.add("removing");
+    setTimeout(() => {
+      state.cities = state.cities.filter(c => c !== id);
+      saveState();
+      render();
+    }, 320);
+  } else {
+    state.cities = state.cities.filter(c => c !== id);
+    saveState(); render();
+  }
+}
+
+/* =========================================================================
+   Format toggle
+   ========================================================================= */
+const fmt12 = document.getElementById("fmt12");
+const fmt24 = document.getElementById("fmt24");
+const thumb = document.getElementById("thumb");
+
+function syncThumb() {
+  const active = state.fmt24 ? fmt24 : fmt12;
+  fmt12.setAttribute("aria-pressed", String(!state.fmt24));
+  fmt24.setAttribute("aria-pressed", String(state.fmt24));
+  thumb.style.width = active.offsetWidth + "px";
+  thumb.style.transform = `translateX(${active.offsetLeft - 4}px)`;
+}
+function setFmt(is24) {
+  state.fmt24 = is24; saveState(); syncThumb(); tick(); tickLocal();
+}
+fmt12.addEventListener("click", () => setFmt(false));
+fmt24.addEventListener("click", () => setFmt(true));
+
+/* =========================================================================
+   Modal + search
+   ========================================================================= */
+const scrim = document.getElementById("scrim");
+const search = document.getElementById("search");
+const results = document.getElementById("results");
+let activeIdx = -1;
+let currentList = [];
+
+function openModal() {
+  scrim.classList.add("open");
+  search.value = "";
+  renderResults("");
+  setTimeout(() => search.focus(), 60);
+}
+function closeModal() { scrim.classList.remove("open"); }
+
+document.getElementById("addBtn").addEventListener("click", openModal);
+document.getElementById("closeModal").addEventListener("click", closeModal);
+scrim.addEventListener("click", e => { if (e.target === scrim) closeModal(); });
+
+function renderResults(q) {
+  q = q.trim().toLowerCase();
+  const now = new Date();
+  let list = CITIES.map(c => c);
+  if (q) {
+    list = list.filter(c =>
+      c.name.toLowerCase().includes(q) || c.country.toLowerCase().includes(q)
+    );
+  }
+  // sort: matches at start of name first, then alpha
+  list.sort((a, b) => {
+    if (q) {
+      const ai = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+      const bi = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+      if (ai !== bi) return ai - bi;
+    }
+    return a.name.localeCompare(b.name);
+  });
+  list = list.slice(0, 60);
+  currentList = list;
+  activeIdx = -1;
+
+  if (list.length === 0) {
+    results.innerHTML = `<div class="res-empty">No cities match “${q}”.</div>`;
+    return;
+  }
+  results.innerHTML = "";
+  list.forEach((c, i) => {
+    const p = partsFor(c.tz, now);
+    const t = fmtTime(p);
+    const ph = PHASES[phaseFor(+p.hour)];
+    const added = state.cities.includes(c.id);
+    const btn = document.createElement("button");
+    btn.className = "res-item";
+    btn.dataset.idx = i;
+    btn.disabled = added;
+    btn.innerHTML = `
+      <span class="res-mini" style="background:linear-gradient(160deg,${ph.sky[0]},${ph.sky[2]})">${c.flag}</span>
+      <span class="res-text">
+        <span class="n">${c.name}</span>
+        <span class="c">${c.country} · ${ph.label}</span>
+      </span>
+      ${added ? `<span class="added-pill">✓ Added</span>` : `<span class="res-time">${t.main}${t.ampm ? " " + t.ampm : ""}</span>`}
+    `;
+    btn.addEventListener("click", () => {
+      addCity(c.id);
+      btn.disabled = true;
+      btn.querySelector(".res-time, .added-pill").outerHTML = `<span class="added-pill">✓ Added</span>`;
+    });
+    results.appendChild(btn);
+  });
+}
+
+search.addEventListener("input", e => renderResults(e.target.value));
+
+// keyboard nav within modal
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") { closeModal(); return; }
+  if (!scrim.classList.contains("open")) return;
+  const items = [...results.querySelectorAll(".res-item:not(:disabled)")];
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    if (!items.length) return;
+    let pos = items.findIndex(el => el.classList.contains("active"));
+    pos = e.key === "ArrowDown" ? Math.min(items.length - 1, pos + 1) : Math.max(0, pos - 1);
+    items.forEach(el => el.classList.remove("active"));
+    items[pos].classList.add("active");
+    items[pos].scrollIntoView({ block: "nearest" });
+  } else if (e.key === "Enter") {
+    const act = results.querySelector(".res-item.active") || items[0];
+    if (act) act.click();
+  }
+});
+
+/* =========================================================================
+   Boot
+   ========================================================================= */
+render();
+syncThumb();
+tickLocal();
+// align to the second for crisp ticking
+function loop() { tick(); tickLocal(); }
+setInterval(loop, 1000);
+window.addEventListener("resize", syncThumb);
+// re-sync thumb after fonts settle
+window.addEventListener("load", () => setTimeout(syncThumb, 50));
+</script>
+</body>
+</html>

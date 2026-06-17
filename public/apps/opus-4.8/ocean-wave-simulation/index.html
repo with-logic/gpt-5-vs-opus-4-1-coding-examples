@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ocean Wave Simulation</title>
+<style>
+  :root {
+    --panel-bg: rgba(14, 24, 38, 0.55);
+    --panel-border: rgba(255, 255, 255, 0.12);
+    --text: #eaf2fb;
+    --text-dim: #9fb3c8;
+    --accent: #4fc3f7;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #05080f;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #glcanvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  /* Vignette overlay for cinematic depth */
+  #vignette {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse at 50% 40%, transparent 45%, rgba(0, 0, 0, 0.35) 100%);
+    z-index: 2;
+  }
+
+  /* ---- Control Panel ---- */
+  #panel {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    width: 300px;
+    padding: 22px 22px 24px;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 18px;
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    box-shadow: 0 16px 50px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.08);
+    z-index: 5;
+    transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.45s ease;
+  }
+  #panel.collapsed {
+    transform: translateX(calc(100% + 24px));
+    opacity: 0;
+  }
+
+  #panel h1 {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+  #panel h1 .wave-icon {
+    font-size: 18px;
+  }
+  #panel .subtitle {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 20px;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+  }
+
+  .control {
+    margin-bottom: 18px;
+  }
+  .control-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 9px;
+  }
+  .control-head label {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text);
+    letter-spacing: 0.2px;
+  }
+  .control-head .value {
+    font-size: 12px;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 4px;
+    border-radius: 4px;
+    background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--fill, 50%), rgba(255,255,255,0.13) var(--fill, 50%), rgba(255,255,255,0.13) 100%);
+    outline: none;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.15), 0 2px 8px rgba(79,195,247,0.55);
+    cursor: pointer;
+    transition: transform 0.12s ease;
+  }
+  input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.18); }
+  input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border: none;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(79,195,247,0.55);
+    cursor: pointer;
+  }
+
+  /* Lighting / time-of-day chips */
+  .chips {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  .chip {
+    padding: 9px 6px;
+    font-size: 11.5px;
+    font-weight: 500;
+    text-align: center;
+    color: var(--text-dim);
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.22s ease;
+    user-select: none;
+  }
+  .chip:hover { background: rgba(255,255,255,0.1); color: var(--text); }
+  .chip.active {
+    color: #fff;
+    background: linear-gradient(135deg, rgba(79,195,247,0.35), rgba(79,195,247,0.15));
+    border-color: rgba(79,195,247,0.6);
+    box-shadow: 0 2px 14px rgba(79,195,247,0.25);
+  }
+
+  .divider {
+    height: 1px;
+    background: rgba(255,255,255,0.08);
+    margin: 20px 0 18px;
+  }
+
+  .section-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+    font-weight: 600;
+  }
+
+  /* Toggle panel button */
+  #toggle {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    color: var(--text);
+    cursor: pointer;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s ease, background 0.2s ease;
+  }
+  #toggle.show { opacity: 1; pointer-events: auto; }
+  #toggle:hover { background: rgba(30, 45, 65, 0.7); }
+  #toggle svg { width: 20px; height: 20px; }
+
+  /* Title overlay bottom-left */
+  #brand {
+    position: fixed;
+    bottom: 26px;
+    left: 30px;
+    z-index: 3;
+    pointer-events: none;
+  }
+  #brand .big {
+    font-size: 26px;
+    font-weight: 200;
+    letter-spacing: 2px;
+    color: rgba(255,255,255,0.92);
+    text-shadow: 0 2px 20px rgba(0,0,0,0.5);
+  }
+  #brand .big b { font-weight: 600; }
+  #brand .small {
+    font-size: 11px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.5);
+    margin-top: 4px;
+  }
+
+  /* Sea state readout */
+  #seastate {
+    position: fixed;
+    bottom: 26px;
+    right: 30px;
+    z-index: 3;
+    text-align: right;
+    pointer-events: none;
+  }
+  #seastate .label {
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.45);
+  }
+  #seastate .state {
+    font-size: 15px;
+    font-weight: 500;
+    color: rgba(255,255,255,0.85);
+    margin-top: 3px;
+    text-shadow: 0 2px 14px rgba(0,0,0,0.5);
+  }
+
+  .collapse-btn {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    width: 26px;
+    height: 26px;
+    border: none;
+    background: rgba(255,255,255,0.06);
+    border-radius: 8px;
+    color: var(--text-dim);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+  }
+  .collapse-btn:hover { background: rgba(255,255,255,0.14); color: var(--text); }
+
+  @media (max-width: 560px) {
+    #panel { width: calc(100% - 32px); right: 16px; top: 16px; }
+    #toggle { right: 16px; top: 16px; }
+    #brand { left: 18px; bottom: 18px; }
+    #brand .big { font-size: 20px; }
+    #seastate { right: 18px; bottom: 18px; }
+  }
+
+  /* Loading fade */
+  #loader {
+    position: fixed;
+    inset: 0;
+    background: #05080f;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.8s ease;
+  }
+  #loader.hide { opacity: 0; pointer-events: none; }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid rgba(79,195,247,0.2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+  <canvas id="glcanvas"></canvas>
+  <div id="vignette"></div>
+
+  <div id="loader"><div class="spinner"></div></div>
+
+  <button id="toggle" title="Show controls">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="8" x2="20" y2="8"/><line x1="4" y1="16" x2="20" y2="16"/></svg>
+  </button>
+
+  <div id="panel">
+    <button class="collapse-btn" id="collapse" title="Hide">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg>
+    </button>
+    <h1><span class="wave-icon">🌊</span> Ocean Studio</h1>
+    <div class="subtitle">Realtime Wave Simulation</div>
+
+    <div class="control">
+      <div class="control-head">
+        <label for="wind">Wind Speed</label>
+        <span class="value" id="wind-val">12 kn</span>
+      </div>
+      <input type="range" id="wind" min="0" max="40" value="12" step="0.5" />
+    </div>
+
+    <div class="control">
+      <div class="control-head">
+        <label for="height">Wave Height</label>
+        <span class="value" id="height-val">1.4 m</span>
+      </div>
+      <input type="range" id="height" min="0" max="100" value="35" step="1" />
+    </div>
+
+    <div class="control">
+      <div class="control-head">
+        <label for="choppy">Choppiness</label>
+        <span class="value" id="choppy-val">Medium</span>
+      </div>
+      <input type="range" id="choppy" min="0" max="100" value="55" step="1" />
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="section-label">Lighting</div>
+    <div class="chips" id="light-chips">
+      <div class="chip" data-light="dawn">Dawn</div>
+      <div class="chip active" data-light="noon">Midday</div>
+      <div class="chip" data-light="sunset">Sunset</div>
+      <div class="chip" data-light="night">Moonlit</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="control" style="margin-bottom:6px;">
+      <div class="control-head">
+        <label for="sun">Sun Elevation</label>
+        <span class="value" id="sun-val">28°</span>
+      </div>
+      <input type="range" id="sun" min="2" max="80" value="28" step="1" />
+    </div>
+  </div>
+
+  <div id="brand">
+    <div class="big">Ocean <b>Wave</b></div>
+    <div class="small">Simulation</div>
+  </div>
+
+  <div id="seastate">
+    <div class="label">Sea State</div>
+    <div class="state" id="seastate-val">Moderate</div>
+  </div>
+
+<script>
+/* ============================================================
+   Ocean Wave Simulation
+   Raymarched Gerstner-wave ocean rendered in a single WebGL
+   fragment shader. Sum-of-sines water height field, analytic
+   normals, Fresnel reflection, sky gradient, sun specular
+   glints and subsurface scattering for realism.
+   ============================================================ */
+
+const canvas = document.getElementById('glcanvas');
+const gl = canvas.getContext('webgl', { antialias: true, alpha: false, preserveDrawingBuffer: false });
+
+if (!gl) {
+  document.getElementById('loader').innerHTML =
+    '<div style="color:#9fb3c8;font-size:14px;text-align:center;padding:0 30px;">WebGL is not available in this browser.</div>';
+}
+
+/* ---------- Shaders ---------- */
+const vertSrc = `
+attribute vec2 aPos;
+void main() {
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}
+`;
+
+const fragSrc = `
+precision highp float;
+
+uniform vec2  uRes;
+uniform float uTime;
+uniform float uWind;      // 0..1 normalized wind
+uniform float uHeight;    // 0..1 wave height
+uniform float uChoppy;    // 0..1 choppiness
+uniform float uSunElev;   // radians
+uniform vec3  uSunColor;
+uniform vec3  uSkyTop;
+uniform vec3  uSkyHorizon;
+uniform vec3  uWaterDeep;
+uniform vec3  uWaterShallow;
+uniform float uAmbient;   // overall light level
+uniform float uSunAzimuth;
+
+const float PI = 3.14159265359;
+
+// ---- Hash & helpers ----
+mat2 rot(float a){ float s=sin(a), c=cos(a); return mat2(c,-s,s,c); }
+
+// Sum of Gerstner-like waves to compute height at world point p (xz plane)
+// Returns height. We accumulate several octaves moving with the wind.
+float waveHeight(vec2 p, float t, out vec2 deriv) {
+  float h = 0.0;
+  deriv = vec2(0.0);
+
+  // Wind direction
+  vec2 windDir = normalize(vec2(cos(uSunAzimuth*0.0+0.6), sin(0.6)));
+
+  float amp = 1.0;
+  float freq = 0.32;
+  float speed = 1.0;
+  float ampSum = 0.0;
+  vec2 dir = windDir;
+
+  // larger choppiness sharpens crests via the steepness exponent
+  float steep = mix(1.0, 2.6, uChoppy);
+
+  for (int i = 0; i < 7; i++) {
+    float fi = float(i);
+    // rotate each octave's direction a bit for a natural spread
+    vec2 d = rot(fi * 0.5 - 1.0) * dir;
+    float ph = dot(d, p) * freq + t * speed * (0.6 + 0.25*fi);
+    float s = sin(ph) * 0.5 + 0.5;       // 0..1
+    float wave = pow(s, steep) * amp;
+    h += wave;
+
+    // derivative for normal (chain rule on pow(sin))
+    float dWave = steep * pow(s, steep - 1.0) * (0.5 * cos(ph)) * amp * freq;
+    deriv += d * dWave;
+
+    ampSum += amp;
+    amp *= 0.62;
+    freq *= 1.78;
+    speed *= 1.18;
+  }
+
+  // small high-frequency ripples scaling with wind
+  float ripple = 0.0;
+  vec2 rp = p * 3.3;
+  ripple += sin(rp.x*1.3 + t*2.1) * cos(rp.y*1.1 - t*1.7);
+  ripple += sin(rp.x*2.7 - t*2.6 + rp.y*0.6) * 0.5;
+  h += ripple * 0.06 * uWind;
+  ampSum += 0.09;
+
+  h /= ampSum;
+  deriv /= ampSum;
+  return h;
+}
+
+// Surface normal from analytic derivative, scaled by height amplitude
+vec3 getNormal(vec2 p, float t, float amplitude) {
+  vec2 deriv;
+  waveHeight(p, t, deriv);
+  vec3 n = normalize(vec3(-deriv.x * amplitude, 1.0, -deriv.y * amplitude));
+  return n;
+}
+
+// Sky color for a view direction
+vec3 skyColor(vec3 rd, vec3 sunDir) {
+  float t = clamp(rd.y * 1.4 + 0.15, 0.0, 1.0);
+  vec3 col = mix(uSkyHorizon, uSkyTop, pow(t, 0.55));
+
+  // Sun disc + glow
+  float sd = max(dot(rd, sunDir), 0.0);
+  float glow = pow(sd, 24.0) * 0.6 + pow(sd, 5.0) * 0.18;
+  float disc = smoothstep(0.9985, 0.9992, sd);
+  col += uSunColor * glow;
+  col += uSunColor * disc * 6.0;
+
+  // Horizon haze near sun
+  float hz = pow(sd, 2.0) * (1.0 - smoothstep(0.0, 0.35, rd.y));
+  col += uSunColor * hz * 0.25;
+  return col;
+}
+
+void main() {
+  vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
+
+  // ---- Camera ----
+  vec3 ro = vec3(0.0, 2.6, -3.0);                 // camera height above sea
+  vec3 ta = vec3(0.0, 0.4, 6.0);
+  vec3 fwd = normalize(ta - ro);
+  vec3 right = normalize(cross(vec3(0.0,1.0,0.0), fwd));
+  vec3 up = cross(fwd, right);
+  vec3 rd = normalize(uv.x * right + uv.y * up + 1.5 * fwd);
+
+  // Sun direction from elevation + azimuth
+  vec3 sunDir = normalize(vec3(
+      cos(uSunElev) * sin(uSunAzimuth),
+      sin(uSunElev),
+      cos(uSunElev) * cos(uSunAzimuth)));
+
+  vec3 color;
+
+  if (rd.y >= -0.002) {
+    // Looking at the sky
+    color = skyColor(rd, sunDir);
+  } else {
+    // ---- Ray-plane intersection with the mean sea level y=0 ----
+    float dist = -ro.y / rd.y;
+    vec3 pos = ro + rd * dist;
+
+    // Wave amplitude in world units (height slider)
+    float amplitude = mix(0.05, 1.9, uHeight) * (0.4 + 0.6*uWind);
+
+    // Animate
+    float t = uTime;
+    vec2 p = pos.xz;
+
+    // Displace sample slightly & fetch normal
+    vec3 n = getNormal(p, t, amplitude * (8.0 + 14.0*uChoppy));
+
+    // Distance fade: detail attenuates far away to avoid aliasing
+    float fade = exp(-dist * 0.020);
+    n = normalize(mix(vec3(0.0,1.0,0.0), n, fade));
+
+    vec3 viewDir = -rd;
+
+    // ---- Fresnel ----
+    float fres = pow(1.0 - max(dot(n, viewDir), 0.0), 5.0);
+    fres = mix(0.02, 1.0, fres);
+
+    // ---- Reflection ----
+    vec3 refl = reflect(rd, n);
+    refl.y = abs(refl.y);
+    vec3 reflColor = skyColor(refl, sunDir);
+
+    // ---- Water body / refraction tint with depth-based gradient ----
+    float facing = max(dot(n, viewDir), 0.0);
+    vec3 waterCol = mix(uWaterDeep, uWaterShallow, pow(facing, 1.5));
+
+    // Subsurface scattering: light glowing through wave crests
+    float sss = pow(max(dot(viewDir, -refl), 0.0), 3.0);
+    float crest = smoothstep(0.0, 1.0, amplitude * 0.0 + max(n.y, 0.0));
+    waterCol += uWaterShallow * sss * 0.35 * uAmbient;
+
+    // ---- Specular sun glints ----
+    vec3 h = normalize(sunDir + viewDir);
+    float spec = pow(max(dot(n, h), 0.0), 220.0);
+    float specBroad = pow(max(dot(n, h), 0.0), 30.0);
+    vec3 specular = uSunColor * (spec * 5.0 + specBroad * 0.4);
+    float sunVis = clamp(uSunElev * 3.0, 0.0, 1.0);
+    specular *= sunVis;
+
+    // ---- Combine ----
+    color = mix(waterCol, reflColor, fres);
+    color += specular;
+
+    // Foam on sharp crests when choppy / windy
+    float foamAmt = smoothstep(0.55, 0.95, 1.0 - n.y) * uChoppy * (0.4 + 0.6*uWind);
+    foamAmt *= fade;
+    color = mix(color, vec3(0.9, 0.95, 0.98) * uAmbient, foamAmt * 0.5);
+
+    // Ambient grade
+    color *= (0.5 + 0.5 * uAmbient);
+
+    // Distance fog -> blend to horizon sky
+    vec3 horizonSky = skyColor(vec3(rd.x, 0.001, rd.z), sunDir);
+    float fog = 1.0 - exp(-dist * 0.014);
+    color = mix(color, horizonSky, clamp(fog, 0.0, 1.0));
+  }
+
+  // ---- Tone mapping (ACES-ish) + gamma ----
+  color *= 1.05;
+  color = (color * (2.51*color + 0.03)) / (color * (2.43*color + 0.59) + 0.14);
+  color = pow(clamp(color, 0.0, 1.0), vec3(1.0/2.2));
+
+  // subtle dithering to kill banding
+  float dith = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898,78.233))) * 43758.5453);
+  color += (dith - 0.5) / 255.0;
+
+  gl_FragColor = vec4(color, 1.0);
+}
+`;
+
+/* ---------- Compile / link ---------- */
+function compile(type, src) {
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+    console.error(gl.getShaderInfoLog(sh));
+  }
+  return sh;
+}
+
+let program, uniforms = {};
+if (gl) {
+  program = gl.createProgram();
+  gl.attachShader(program, compile(gl.VERTEX_SHADER, vertSrc));
+  gl.attachShader(program, compile(gl.FRAGMENT_SHADER, fragSrc));
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    console.error(gl.getProgramInfoLog(program));
+  }
+  gl.useProgram(program);
+
+  // Fullscreen triangle
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(program, 'aPos');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+  const names = ['uRes','uTime','uWind','uHeight','uChoppy','uSunElev','uSunColor',
+    'uSkyTop','uSkyHorizon','uWaterDeep','uWaterShallow','uAmbient','uSunAzimuth'];
+  names.forEach(n => uniforms[n] = gl.getUniformLocation(program, n));
+}
+
+/* ---------- State ---------- */
+const state = {
+  wind: 12 / 40,
+  height: 35 / 100,
+  choppy: 55 / 100,
+  sunElev: 28 * Math.PI / 180,
+  sunAzimuth: 0.35,
+  light: 'noon',
+};
+
+/* Lighting presets: sky + water palettes + ambient */
+const presets = {
+  dawn: {
+    sunColor: [1.0, 0.72, 0.5],
+    skyTop: [0.32, 0.42, 0.62],
+    skyHorizon: [0.96, 0.72, 0.6],
+    waterDeep: [0.04, 0.10, 0.18],
+    waterShallow: [0.18, 0.36, 0.46],
+    ambient: 0.7,
+    azimuth: 0.2,
+  },
+  noon: {
+    sunColor: [1.0, 0.98, 0.92],
+    skyTop: [0.16, 0.42, 0.78],
+    skyHorizon: [0.62, 0.80, 0.95],
+    waterDeep: [0.0, 0.13, 0.24],
+    waterShallow: [0.10, 0.42, 0.56],
+    ambient: 1.0,
+    azimuth: 0.35,
+  },
+  sunset: {
+    sunColor: [1.0, 0.55, 0.30],
+    skyTop: [0.20, 0.20, 0.42],
+    skyHorizon: [1.0, 0.55, 0.32],
+    waterDeep: [0.05, 0.06, 0.14],
+    waterShallow: [0.40, 0.26, 0.30],
+    ambient: 0.78,
+    azimuth: 0.0,
+  },
+  night: {
+    sunColor: [0.72, 0.80, 1.0],
+    skyTop: [0.02, 0.04, 0.10],
+    skyHorizon: [0.08, 0.12, 0.22],
+    waterDeep: [0.01, 0.03, 0.07],
+    waterShallow: [0.06, 0.12, 0.20],
+    ambient: 0.42,
+    azimuth: 0.15,
+  },
+};
+
+/* Smooth interpolation between presets for calming transitions */
+let current = JSON.parse(JSON.stringify(presets.noon));
+let target = JSON.parse(JSON.stringify(presets.noon));
+
+function setLight(name) {
+  state.light = name;
+  target = JSON.parse(JSON.stringify(presets[name]));
+  state.sunAzimuth = presets[name].azimuth;
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+function lerpArr(a, b, t) { return a.map((v, i) => lerp(v, b[i], t)); }
+
+function stepPalette(dt) {
+  const k = 1 - Math.pow(0.0001, dt); // smooth approach
+  current.sunColor = lerpArr(current.sunColor, target.sunColor, k);
+  current.skyTop = lerpArr(current.skyTop, target.skyTop, k);
+  current.skyHorizon = lerpArr(current.skyHorizon, target.skyHorizon, k);
+  current.waterDeep = lerpArr(current.waterDeep, target.waterDeep, k);
+  current.waterShallow = lerpArr(current.waterShallow, target.waterShallow, k);
+  current.ambient = lerp(current.ambient, target.ambient, k);
+}
+
+/* ---------- Resize (with DPR cap for performance) ---------- */
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+  const w = Math.floor(window.innerWidth * dpr);
+  const h = Math.floor(window.innerHeight * dpr);
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+  }
+  if (gl) gl.viewport(0, 0, w, h);
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* ---------- Render loop ---------- */
+let startTime = null;
+let lastTime = 0;
+
+function render(now) {
+  if (startTime === null) startTime = now;
+  const elapsed = (now - startTime) / 1000;
+  const dt = Math.min((now - lastTime) / 1000, 0.05) || 0;
+  lastTime = now;
+
+  stepPalette(dt);
+
+  if (gl) {
+    // Time advances faster with wind for livelier seas
+    const timeScale = 0.5 + state.wind * 0.9;
+    gl.uniform2f(uniforms.uRes, canvas.width, canvas.height);
+    gl.uniform1f(uniforms.uTime, elapsed * timeScale);
+    gl.uniform1f(uniforms.uWind, state.wind);
+    gl.uniform1f(uniforms.uHeight, state.height);
+    gl.uniform1f(uniforms.uChoppy, state.choppy);
+    gl.uniform1f(uniforms.uSunElev, state.sunElev);
+    gl.uniform1f(uniforms.uSunAzimuth, state.sunAzimuth);
+    gl.uniform3fv(uniforms.uSunColor, current.sunColor);
+    gl.uniform3fv(uniforms.uSkyTop, current.skyTop);
+    gl.uniform3fv(uniforms.uSkyHorizon, current.skyHorizon);
+    gl.uniform3fv(uniforms.uWaterDeep, current.waterDeep);
+    gl.uniform3fv(uniforms.uWaterShallow, current.waterShallow);
+    gl.uniform1f(uniforms.uAmbient, current.ambient);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+
+/* ---------- UI wiring ---------- */
+function setFill(el) {
+  const min = +el.min, max = +el.max;
+  const pct = ((+el.value - min) / (max - min)) * 100;
+  el.style.setProperty('--fill', pct + '%');
+}
+
+const windEl = document.getElementById('wind');
+const windVal = document.getElementById('wind-val');
+windEl.addEventListener('input', () => {
+  state.wind = +windEl.value / 40;
+  windVal.textContent = (+windEl.value).toFixed(0) + ' kn';
+  setFill(windEl);
+  updateSeaState();
+});
+
+const heightEl = document.getElementById('height');
+const heightVal = document.getElementById('height-val');
+heightEl.addEventListener('input', () => {
+  state.height = +heightEl.value / 100;
+  const meters = (state.height * 6).toFixed(1);
+  heightVal.textContent = meters + ' m';
+  setFill(heightEl);
+  updateSeaState();
+});
+
+const choppyEl = document.getElementById('choppy');
+const choppyVal = document.getElementById('choppy-val');
+const choppyLabels = ['Glassy','Smooth','Medium','Rough','Heavy'];
+choppyEl.addEventListener('input', () => {
+  state.choppy = +choppyEl.value / 100;
+  choppyVal.textContent = choppyLabels[Math.min(4, Math.floor(state.choppy * 5))];
+  setFill(choppyEl);
+});
+
+const sunEl = document.getElementById('sun');
+const sunVal = document.getElementById('sun-val');
+sunEl.addEventListener('input', () => {
+  state.sunElev = (+sunEl.value) * Math.PI / 180;
+  sunVal.textContent = (+sunEl.value).toFixed(0) + '°';
+  setFill(sunEl);
+});
+
+/* Light chips */
+document.querySelectorAll('.chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    setLight(chip.dataset.light);
+    // auto-suggest a matching sun elevation
+    const sunByLight = { dawn: 14, noon: 60, sunset: 8, night: 22 };
+    const v = sunByLight[chip.dataset.light];
+    sunEl.value = v;
+    state.sunElev = v * Math.PI / 180;
+    sunVal.textContent = v + '°';
+    setFill(sunEl);
+  });
+});
+
+/* Sea-state readout (Beaufort-ish) */
+const seaStateVal = document.getElementById('seastate-val');
+function updateSeaState() {
+  const energy = state.wind * 0.6 + state.height * 0.4;
+  let s;
+  if (energy < 0.12) s = 'Calm';
+  else if (energy < 0.28) s = 'Smooth';
+  else if (energy < 0.45) s = 'Slight';
+  else if (energy < 0.62) s = 'Moderate';
+  else if (energy < 0.80) s = 'Rough';
+  else s = 'Stormy';
+  seaStateVal.textContent = s;
+}
+
+/* Collapse / expand panel */
+const panel = document.getElementById('panel');
+const toggle = document.getElementById('toggle');
+document.getElementById('collapse').addEventListener('click', () => {
+  panel.classList.add('collapsed');
+  toggle.classList.add('show');
+});
+toggle.addEventListener('click', () => {
+  panel.classList.remove('collapsed');
+  toggle.classList.remove('show');
+});
+
+/* Init fills + labels */
+[windEl, heightEl, choppyEl, sunEl].forEach(setFill);
+updateSeaState();
+
+/* Hide loader */
+window.addEventListener('load', () => {
+  setTimeout(() => document.getElementById('loader').classList.add('hide'), 350);
+});
+setTimeout(() => document.getElementById('loader').classList.add('hide'), 1200);
+</script>
+</body>
+</html>

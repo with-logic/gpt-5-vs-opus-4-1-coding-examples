@@ -47,6 +47,12 @@ You can experiment with these same prompts using any of the models:
 - **Your favorite IDE or coding tool** – Use GPT-5/5.1 within your existing workflow to generate and refine code
 - **API** – Access GPT-5/5.1 through OpenAI's API for programmatic generation
 
+### Using GPT-5.5
+
+- **[ChatGPT](https://chatgpt.com)** – Choose GPT-5.5 to generate and preview code in the browser
+- **Your favorite IDE or coding tool** – Use GPT-5.5 within your existing workflow to generate and refine code
+- **API** – Access GPT-5.5 through OpenAI's API for programmatic generation
+
 ### Using Claude Opus 4.1
 
 - **[Claude](https://claude.ai)** – Use Claude Opus 4.1 in the browser interface
@@ -64,6 +70,12 @@ You can experiment with these same prompts using any of the models:
 - **[Claude](https://claude.ai)** – Use Claude Opus 4.7 in the browser interface
 - **[Claude Code](https://github.com/anthropics/claude-code)** – A lightweight coding agent that runs in your terminal
 - **API** – Access Claude Opus 4.7 through Anthropic's API for programmatic generation
+
+### Using Claude Opus 4.8
+
+- **[Claude](https://claude.ai)** – Use Claude Opus 4.8 in the browser interface
+- **[Claude Code](https://github.com/anthropics/claude-code)** – A lightweight coding agent that runs in your terminal
+- **API** – Access Claude Opus 4.8 through Anthropic's API for programmatic generation
 
 ### Using Claude Sonnet 4.5
 
