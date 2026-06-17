@@ -1,0 +1,1358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kinetic Typography Studio</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            slate: { 950: '#020617', 900: '#0f172a', 800: '#1e293b', 700: '#334155', 600: '#475569', 500: '#64748b', 400: '#94a3b8', 300: '#cbd5e1', 100: '#f1f5f9' },
+            amber: { 400: '#fbbf24', 500: '#f59e0b', 200: '#fde68a' }
+          }
+        }
+      }
+    }
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Roboto+Mono:wght@100..700&family=Playfair+Display:wght@400..900&family=Oswald:wght@200..700&family=Bebas+Neue&family=Montserrat:wght@100..900&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: Inter, system-ui, -apple-system, sans-serif; }
+    .timeline::-webkit-scrollbar { height: 10px; }
+    .timeline::-webkit-scrollbar-track { background: #0f172a; }
+    .timeline::-webkit-scrollbar-thumb { background: #475569; border-radius: 5px; }
+    .track { height: 36px; border-bottom: 1px solid #1e293b; position: relative; cursor: crosshair; }
+    .track:hover { background: rgba(30,41,59,0.5); }
+    .keyframe { position: absolute; top: 10px; width: 12px; height: 12px; border-radius: 50%; background: #fbbf24; border: 1px solid #fde68a; transform: translateX(-50%); cursor: grab; z-index: 10; }
+    .keyframe:hover { transform: translateX(-50%) scale(1.3); }
+    .keyframe.selected { box-shadow: 0 0 0 2px #fff; }
+    .playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: #ef4444; z-index: 20; pointer-events: none; }
+    .playhead-handle { position: absolute; top: -6px; left: -6px; width: 14px; height: 14px; background: #ef4444; border-radius: 50%; cursor: ew-resize; pointer-events: auto; }
+    .ruler { height: 24px; border-bottom: 1px solid #334155; position: relative; user-select: none; }
+    .tick { position: absolute; top: 0; height: 8px; border-left: 1px solid #475569; font-size: 10px; color: #94a3b8; padding-left: 2px; }
+    .beat { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(16,185,129,0.4); z-index: 5; pointer-events: none; }
+    .bar { position: absolute; top: 0; bottom: 0; width: 2px; background: rgba(16,185,129,0.8); z-index: 6; pointer-events: none; }
+    input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { opacity: 1; }
+    .panel-section { border-bottom: 1px solid #334155; padding: 12px; }
+    .panel-title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; margin-bottom: 0.5rem; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 h-screen overflow-hidden">
+  <div id="root"></div>
+  <script src="https://unpkg.com/preact@10.19.3/dist/preact.umd.js"></script>
+  <script src="https://unpkg.com/preact@10.19.3/hooks/dist/hooks.umd.js"></script>
+  <script src="https://unpkg.com/htm@3.1.1/dist/htm.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script>
+(function() {
+  const { h, render } = preact;
+  const { useState, useEffect, useRef, useMemo, useCallback } = preactHooks;
+  const html = htm.bind(h);
+
+  const FONT_OPTIONS = [
+    { label: 'System UI', value: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' },
+    { label: 'Inter', value: 'Inter' },
+    { label: 'Playfair Display', value: '"Playfair Display"' },
+    { label: 'Roboto Mono', value: '"Roboto Mono"' },
+    { label: 'Oswald', value: 'Oswald' },
+    { label: 'Bebas Neue', value: '"Bebas Neue"' },
+    { label: 'Montserrat', value: 'Montserrat' },
+    { label: 'Georgia', value: 'Georgia, serif' },
+    { label: 'Courier New', value: '"Courier New", monospace' },
+    { label: 'Impact', value: 'Impact, sans-serif' }
+  ];
+
+  const PROPERTIES = [
+    { key: 'position', label: 'Position', type: 'vec2', default: { x: 0.5, y: 0.5 }, step: 0.01 },
+    { key: 'scale', label: 'Scale', type: 'number', default: 1, step: 0.05, min: 0 },
+    { key: 'rotation', label: 'Rotation', type: 'number', default: 0, step: 1 },
+    { key: 'opacity', label: 'Opacity', type: 'number', default: 1, step: 0.05, min: 0, max: 1 },
+    { key: 'tracking', label: 'Tracking', type: 'number', default: 0, step: 0.5 },
+    { key: 'letterOffset', label: 'Letter Offset', type: 'vec2', default: { x: 0, y: 0 }, step: 1 },
+    { key: 'wordOffset', label: 'Word Offset', type: 'vec2', default: { x: 0, y: 0 }, step: 1 },
+    { key: 'lineOffset', label: 'Line Offset', type: 'vec2', default: { x: 0, y: 0 }, step: 1 },
+    { key: 'letterStagger', label: 'Letter Stagger', type: 'number', default: 0, step: 0.01, min: 0 },
+    { key: 'wordStagger', label: 'Word Stagger', type: 'number', default: 0, step: 0.01, min: 0 },
+    { key: 'lineStagger', label: 'Line Stagger', type: 'number', default: 0, step: 0.01, min: 0 }
+  ];
+
+  const EASINGS = {
+    linear: t => t,
+    easeInQuad: t => t * t,
+    easeOutQuad: t => 1 - (1 - t) * (1 - t),
+    easeInOutQuad: t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2,
+    easeInCubic: t => t * t * t,
+    easeOutCubic: t => 1 - Math.pow(1 - t, 3),
+    easeInOutCubic: t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
+    easeInOutBack: t => {
+      const c1 = 1.70158, c2 = c1 * 1.525;
+      return t < 0.5 ? (Math.pow(2 * t, 2) * ((c2 + 1) * 2 * t - c2)) / 2 : (Math.pow(2 * t - 2, 2) * ((c2 + 1) * (2 * t - 2) + c2) + 2) / 2;
+    },
+    easeOutBounce: t => {
+      const n1 = 7.5625, d1 = 2.75;
+      if (t < 1 / d1) return n1 * t * t;
+      else if (t < 2 / d1) return n1 * (t -= 1.5 / d1) * t + 0.75;
+      else if (t < 2.5 / d1) return n1 * (t -= 2.25 / d1) * t + 0.9375;
+      return n1 * (t -= 2.625 / d1) * t + 0.984375;
+    },
+    easeOutElastic: t => {
+      const c4 = (2 * Math.PI) / 3;
+      return t === 0 ? 0 : t === 1 ? 1 : Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1;
+    }
+  };
+
+  const EASING_NAMES = Object.keys(EASINGS);
+
+  function uid() { return Math.random().toString(36).slice(2, 9); }
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+  function formatTime(t) {
+    const m = Math.floor(t / 60);
+    const s = Math.floor(t % 60);
+    const ms = Math.floor((t % 1) * 100);
+    return m + ':' + s.toString().padStart(2, '0') + '.' + ms.toString().padStart(2, '0');
+  }
+
+  function cubicBezier(t, x1, y1, x2, y2) {
+    function cx(u) { return 3 * x1 * (1 - u) * (1 - u) * u + 3 * x2 * (1 - u) * u * u + u * u * u; }
+    function cy(u) { return 3 * y1 * (1 - u) * (1 - u) * u + 3 * y2 * (1 - u) * u * u + u * u * u; }
+    let u = 0.5, lo = 0, hi = 1;
+    for (let i = 0; i < 20; i++) {
+      const x = cx(u);
+      if (x < t) lo = u; else hi = u;
+      u = (lo + hi) / 2;
+    }
+    return cy(u);
+  }
+
+  function parseEasing(easing) {
+    if (!easing) return EASINGS.linear;
+    if (EASINGS[easing]) return EASINGS[easing];
+    if (easing.startsWith('cubic-bezier(')) {
+      const vals = easing.match(/[-\d.]+/g).map(Number);
+      return t => cubicBezier(t, vals[0], vals[1], vals[2], vals[3]);
+    }
+    return EASINGS.linear;
+  }
+
+  function lerp(a, b, t) {
+    if (typeof a === 'number') return a + (b - a) * t;
+    const out = {};
+    for (const k in a) out[k] = lerp(a[k], b[k], t);
+    return out;
+  }
+
+  function getPropertyValue(layer, key, time) {
+    const def = PROPERTIES.find(p => p.key === key);
+    const frames = layer.keyframes[key] || [];
+    if (frames.length === 0) return def.default;
+    if (time <= frames[0].time) return frames[0].value;
+    if (time >= frames[frames.length - 1].time) return frames[frames.length - 1].value;
+    let i = 1;
+    while (i < frames.length && frames[i].time <= time) i++;
+    const a = frames[i - 1], b = frames[i];
+    const raw = (time - a.time) / (b.time - a.time);
+    const eased = parseEasing(a.easing)(raw);
+    return lerp(a.value, b.value, eased);
+  }
+
+  const DEFAULT_PROJECT = {
+    duration: 4,
+    fps: 30,
+    width: 1920,
+    height: 1080,
+    aspect: '16:9',
+    background: { type: 'color', value: '#0f172a' },
+    layout: { margin: 10, showSafeArea: true, showGrid: false, gridSize: 80 }
+  };
+
+  function createDefaultLayer(id) {
+    return {
+      id, name: 'Main Text', text: 'KINETIC\nTYPOGRAPHY',
+      start: 0, end: DEFAULT_PROJECT.duration, visible: true,
+      styles: {
+        fontFamily: FONT_OPTIONS[1].value, fontWeight: 800, fontStyle: 'normal', fontSize: 180,
+        fill: { type: 'color', value: '#ffffff' },
+        outline: { color: '#000000', width: 0 },
+        shadow: { color: '#000000', blur: 0, x: 0, y: 0 },
+        letterSpacing: 0, lineHeight: 1.1, align: 'center', uppercase: true,
+        motionBlur: false
+      },
+      keyframes: {
+        position: [{ id: uid(), time: 0, value: { x: 0.5, y: 0.55 }, easing: 'easeOutQuad' }, { id: uid(), time: 2, value: { x: 0.5, y: 0.5 }, easing: 'easeOutQuad' }],
+        scale: [{ id: uid(), time: 0, value: 0.95, easing: 'easeOutQuad' }, { id: uid(), time: 2, value: 1, easing: 'easeOutQuad' }],
+        rotation: [{ id: uid(), time: 0, value: 0, easing: 'linear' }],
+        opacity: [{ id: uid(), time: 0, value: 0, easing: 'linear' }, { id: uid(), time: 2, value: 1, easing: 'linear' }],
+        tracking: [{ id: uid(), time: 0, value: 0, easing: 'linear' }],
+        letterOffset: [{ id: uid(), time: 0, value: { x: 0, y: 0 }, easing: 'linear' }],
+        wordOffset: [{ id: uid(), time: 0, value: { x: 0, y: 0 }, easing: 'linear' }],
+        lineOffset: [{ id: uid(), time: 0, value: { x: 0, y: 0 }, easing: 'linear' }],
+        letterStagger: [{ id: uid(), time: 0, value: 0, easing: 'linear' }],
+        wordStagger: [{ id: uid(), time: 0, value: 0, easing: 'linear' }],
+        lineStagger: [{ id: uid(), time: 0, value: 0, easing: 'linear' }]
+      }
+    };
+  }
+
+  function sampleProps(layer, time) {
+    return {
+      position: getPropertyValue(layer, 'position', time),
+      scale: getPropertyValue(layer, 'scale', time),
+      rotation: getPropertyValue(layer, 'rotation', time),
+      opacity: getPropertyValue(layer, 'opacity', time),
+      tracking: getPropertyValue(layer, 'tracking', time),
+      letterOffset: getPropertyValue(layer, 'letterOffset', time),
+      wordOffset: getPropertyValue(layer, 'wordOffset', time),
+      lineOffset: getPropertyValue(layer, 'lineOffset', time)
+    };
+  }
+
+  function drawBackground(ctx, w, h, bg) {
+    if (bg.type === 'image' && bg.image) {
+      ctx.drawImage(bg.image, 0, 0, w, h);
+    } else {
+      ctx.fillStyle = bg.value || '#000';
+      ctx.fillRect(0, 0, w, h);
+    }
+  }
+
+  function drawGrid(ctx, w, h, size) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= w; x += size) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
+    for (let y = 0; y <= h; y += size) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+  }
+
+  function drawSafeArea(ctx, w, h, margin) {
+    const m = Math.min(w, h) * (margin / 100);
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.setLineDash([10, 10]);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(m, m, w - m * 2, h - m * 2);
+    ctx.setLineDash([]);
+  }
+
+  function setFillStyle(ctx, fill, x, y, w, h) {
+    if (fill.type === 'color') {
+      ctx.fillStyle = fill.value;
+    } else if (fill.type === 'gradient') {
+      const angle = ((fill.angle || 0) * Math.PI) / 180;
+      const r = Math.max(w, h) * 2;
+      const grad = ctx.createLinearGradient(x - r * Math.cos(angle), y - r * Math.sin(angle), x + r * Math.cos(angle), y + r * Math.sin(angle));
+      const stops = fill.stops || [{ offset: 0, color: '#fff' }, { offset: 1, color: '#000' }];
+      stops.forEach(s => grad.addColorStop(s.offset, s.color));
+      ctx.fillStyle = grad;
+    } else {
+      ctx.fillStyle = '#fff';
+    }
+  }
+
+  function renderLayer(ctx, layer, time, w, h, reducedMotion) {
+    if (!layer.visible) return;
+    const styles = layer.styles;
+    const font = (styles.fontStyle === 'italic' ? 'italic ' : '') + styles.fontWeight + ' ' + styles.fontSize + 'px ' + styles.fontFamily;
+    ctx.font = font;
+    ctx.textBaseline = 'alphabetic';
+    const lineSpacing = styles.fontSize * styles.lineHeight;
+    const text = styles.uppercase ? layer.text.toUpperCase() : layer.text;
+    const lines = text.split('\n');
+    const totalHeight = (lines.length - 1) * lineSpacing;
+    const centerLine = (lines.length - 1) / 2;
+
+    const lineData = lines.map((line, lineIdx) => {
+      const chars = line.split('');
+      const charWidths = chars.map(ch => ctx.measureText(ch).width);
+      const trackingNow = getPropertyValue(layer, 'tracking', time);
+      const lineWidth = charWidths.reduce((a, b) => a + b, 0) + (chars.length - 1) * (styles.letterSpacing + trackingNow);
+      const wordIndices = [];
+      let wordIndex = 0, maxWord = 0;
+      chars.forEach((ch, i) => {
+        wordIndices.push(wordIndex);
+        if (ch === ' ') wordIndex++;
+        maxWord = wordIndex;
+      });
+      return { chars, charWidths, lineWidth, wordIndices, centerWord: maxWord / 2 };
+    });
+
+    lines.forEach((line, lineIdx) => {
+      const ld = lineData[lineIdx];
+      ld.chars.forEach((ch, i) => {
+        const wordIndex = ld.wordIndices[i];
+        const dt = lineIdx * getPropertyValue(layer, 'lineStagger', time)
+                 + wordIndex * getPropertyValue(layer, 'wordStagger', time)
+                 + i * getPropertyValue(layer, 'letterStagger', time);
+        const sampleT = Math.max(layer.start, Math.min(layer.end, time - dt));
+        const p = sampleProps(layer, sampleT);
+        const anchorX = p.position.x * w;
+        const anchorY = p.position.y * h;
+        const startY = anchorY - totalHeight / 2 + lineIdx * lineSpacing;
+        let startX;
+        if (styles.align === 'left') startX = anchorX;
+        else if (styles.align === 'right') startX = anchorX - ld.lineWidth;
+        else startX = anchorX - ld.lineWidth / 2;
+        let cursor = 0;
+        for (let j = 0; j < i; j++) cursor += ld.charWidths[j] + (styles.letterSpacing + p.tracking);
+        const cx = ld.charWidths[i] / 2;
+        const centerLetter = (ld.chars.length - 1) / 2;
+        const x = startX + cursor + cx
+                + p.letterOffset.x * (i - centerLetter)
+                + p.wordOffset.x * (wordIndex - ld.centerWord)
+                + p.lineOffset.x * (lineIdx - centerLine);
+        const y = startY
+                + p.letterOffset.y * (i - centerLetter)
+                + p.wordOffset.y * (wordIndex - ld.centerWord)
+                + p.lineOffset.y * (lineIdx - centerLine);
+        const charW = ld.charWidths[i];
+
+        ctx.save();
+        ctx.globalAlpha = p.opacity;
+        ctx.translate(x, y);
+        ctx.rotate((p.rotation * Math.PI) / 180);
+        ctx.scale(p.scale, p.scale);
+        if (styles.shadow.blur > 0) {
+          ctx.shadowColor = styles.shadow.color;
+          ctx.shadowBlur = styles.shadow.blur;
+          ctx.shadowOffsetX = styles.shadow.x;
+          ctx.shadowOffsetY = styles.shadow.y;
+        }
+        setFillStyle(ctx, styles.fill, 0, 0, charW, styles.fontSize);
+        ctx.fillText(ch, -charW / 2, 0);
+        if (styles.outline.width > 0) {
+          ctx.lineJoin = 'round';
+          ctx.miterLimit = 2;
+          ctx.strokeStyle = styles.outline.color;
+          ctx.lineWidth = styles.outline.width;
+          ctx.strokeText(ch, -charW / 2, 0);
+        }
+        ctx.restore();
+      });
+    });
+
+    if (styles.motionBlur && !reducedMotion) {
+      ctx.save();
+      ctx.globalAlpha = 0.2;
+      ctx.filter = 'blur(4px)';
+      renderLayer(ctx, { ...layer, styles: { ...layer.styles, motionBlur: false } }, time - 1 / 30, w, h, reducedMotion);
+      ctx.restore();
+    }
+  }
+
+  function renderFrame(ctx, project, layers, time, reducedMotion) {
+    const w = ctx.canvas.width, h = ctx.canvas.height;
+    drawBackground(ctx, w, h, project.background);
+    if (project.layout.showGrid) drawGrid(ctx, w, h, project.layout.gridSize);
+    if (project.layout.showSafeArea) drawSafeArea(ctx, w, h, project.layout.margin);
+    layers.forEach(layer => renderLayer(ctx, layer, time, w, h, reducedMotion));
+  }
+  function App() {
+    const [project, setProject] = useState(clone(DEFAULT_PROJECT));
+    const [layers, setLayers] = useState([createDefaultLayer(uid())]);
+    const [selectedLayerId, setSelectedLayerId] = useState(layers[0].id);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [loop, setLoop] = useState(true);
+    const [reducedMotion, setReducedMotion] = useState(false);
+    const [selectedProp, setSelectedProp] = useState('position');
+    const [selectedKeyframe, setSelectedKeyframe] = useState(null);
+    const [timelineZoom, setTimelineZoom] = useState(120);
+    const [dragging, setDragging] = useState(null);
+    const [beats, setBeats] = useState([]);
+    const [bpm, setBpm] = useState(120);
+    const [audioBuffer, setAudioBuffer] = useState(null);
+    const [audioCtx, setAudioCtx] = useState(null);
+    const [snapToBeats, setSnapToBeats] = useState(false);
+    const [showExport, setShowExport] = useState(false);
+    const [exporting, setExporting] = useState(false);
+    const [exportProgress, setExportProgress] = useState(0);
+    const [toast, setToast] = useState(null);
+    const [exportFormat, setExportFormat] = useState('webm');
+    const [exportResolution, setExportResolution] = useState('1920x1080');
+    const [exportFps, setExportFps] = useState(project.fps);
+    const [exportCustomW, setExportCustomW] = useState(project.width);
+    const [exportCustomH, setExportCustomH] = useState(project.height);
+
+    const canvasRef = useRef(null);
+    const timelineRef = useRef(null);
+    const isPlayingRef = useRef(false);
+    const currentTimeRef = useRef(0);
+    const loopRef = useRef(true);
+    const lastFrameRef = useRef(0);
+    const rafRef = useRef(null);
+    const audioSourceRef = useRef(null);
+    const exportAbortRef = useRef(false);
+
+    const selectedLayer = useMemo(() => layers.find(l => l.id === selectedLayerId), [layers, selectedLayerId]);
+
+    useEffect(() => {
+      const m = window.matchMedia('(prefers-reduced-motion: reduce)');
+      setReducedMotion(m.matches);
+      const handler = e => setReducedMotion(e.matches);
+      m.addEventListener('change', handler);
+      return () => m.removeEventListener('change', handler);
+    }, []);
+
+    useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
+    useEffect(() => { currentTimeRef.current = currentTime; }, [currentTime]);
+    useEffect(() => { loopRef.current = loop; }, [loop]);
+    useEffect(() => { setExportFps(project.fps); }, [project.fps]);
+    useEffect(() => { setExportCustomW(project.width); setExportCustomH(project.height); }, [project.width, project.height]);
+
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      canvas.width = project.width;
+      canvas.height = project.height;
+      const ctx = canvas.getContext('2d');
+      let raf;
+      let last = performance.now();
+      function tick(now) {
+        const dt = (now - last) / 1000;
+        last = now;
+        if (isPlayingRef.current) {
+          let next = currentTimeRef.current + dt;
+          if (next >= project.duration) {
+            if (loopRef.current) next = next % project.duration;
+            else { next = project.duration; isPlayingRef.current = false; setIsPlaying(false); }
+          }
+          currentTimeRef.current = next;
+          setCurrentTime(next);
+        }
+        renderFrame(ctx, project, layers, currentTimeRef.current, reducedMotion);
+        raf = requestAnimationFrame(tick);
+      }
+      raf = requestAnimationFrame(tick);
+      return () => cancelAnimationFrame(raf);
+    }, [project, layers, reducedMotion]);
+
+    useEffect(() => {
+      if (!audioCtx || !audioBuffer) return;
+      if (audioSourceRef.current) { try { audioSourceRef.current.stop(); } catch (e) {} audioSourceRef.current = null; }
+      if (isPlayingRef.current) {
+        audioCtx.resume();
+        const src = audioCtx.createBufferSource();
+        src.buffer = audioBuffer;
+        src.connect(audioCtx.destination);
+        const offset = currentTimeRef.current % audioBuffer.duration;
+        src.start(0, offset);
+        audioSourceRef.current = src;
+        src.onended = () => { if (audioSourceRef.current === src) audioSourceRef.current = null; };
+      }
+    }, [isPlaying, audioBuffer, audioCtx]);
+
+    useEffect(() => {
+      if (isPlayingRef.current && audioCtx && audioBuffer) {
+        if (audioSourceRef.current) { try { audioSourceRef.current.stop(); } catch (e) {} }
+        audioCtx.resume();
+        const src = audioCtx.createBufferSource();
+        src.buffer = audioBuffer;
+        src.connect(audioCtx.destination);
+        const offset = currentTimeRef.current % audioBuffer.duration;
+        src.start(0, offset);
+        audioSourceRef.current = src;
+        src.onended = () => { if (audioSourceRef.current === src) audioSourceRef.current = null; };
+      }
+    }, [currentTime]);
+
+    useEffect(() => {
+      const onKey = e => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+        if (e.code === 'Space') { e.preventDefault(); togglePlay(); }
+        if (e.key === 'ArrowLeft') { e.preventDefault(); nudgeTime(-(e.shiftKey ? 1 : 0.1)); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); nudgeTime(e.shiftKey ? 1 : 0.1); }
+        if (e.key.toLowerCase() === 'k') { e.preventDefault(); addKeyframeAtCurrent(); }
+        if ((e.key === 'Delete' || e.key === 'Backspace') && selectedKeyframe) { e.preventDefault(); deleteSelectedKeyframe(); }
+      };
+      window.addEventListener('keydown', onKey);
+      return () => window.removeEventListener('keydown', onKey);
+    }, [selectedKeyframe, selectedProp, project.duration, currentTime, layers, selectedLayerId]);
+
+    useEffect(() => {
+      if (!dragging) return;
+      function onMove(e) {
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const rect = timelineRef.current.getBoundingClientRect();
+        const x = clientX - rect.left + timelineRef.current.scrollLeft;
+        let time = x / timelineZoom;
+        time = clamp(time, 0, project.duration);
+        if (snapToBeats && beats.length) time = snapTime(time, 'beat');
+        if (dragging.type === 'playhead') {
+          setCurrentTime(time);
+          currentTimeRef.current = time;
+        } else {
+          updateKeyframeTime(dragging.layerId, dragging.propKey, dragging.kfId, time);
+        }
+      }
+      function onUp() {
+        setDragging(null);
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        window.removeEventListener('touchmove', onMove);
+        window.removeEventListener('touchend', onUp);
+      }
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+      window.addEventListener('touchmove', onMove);
+      window.addEventListener('touchend', onUp);
+      return () => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        window.removeEventListener('touchmove', onMove);
+        window.removeEventListener('touchend', onUp);
+      };
+    }, [dragging]);
+
+    function showToast(msg) {
+      setToast(msg);
+      setTimeout(() => setToast(null), 3000);
+    }
+
+    function updateProject(patch) {
+      setProject(p => ({ ...p, ...patch }));
+    }
+
+    function updateLayer(id, patch) {
+      setLayers(layers.map(l => l.id === id ? { ...l, ...patch } : l));
+    }
+
+    function updateLayerStyle(id, key, value) {
+      setLayers(layers.map(l => l.id === id ? { ...l, styles: { ...l.styles, [key]: value } } : l));
+    }
+
+    function updateLayerKeyframes(id, keyframes) {
+      setLayers(layers.map(l => l.id === id ? { ...l, keyframes } : l));
+    }
+
+    function addLayer() {
+      const id = uid();
+      const l = createDefaultLayer(id);
+      l.name = 'Text ' + (layers.length + 1);
+      setLayers([...layers, l]);
+      setSelectedLayerId(id);
+    }
+
+    function deleteLayer(id) {
+      const remaining = layers.filter(l => l.id !== id);
+      setLayers(remaining);
+      if (selectedLayerId === id) setSelectedLayerId(remaining[0]?.id || null);
+    }
+
+    function updateLayerText(id, text) {
+      updateLayer(id, { text });
+    }
+
+    function updateLayerName(id, name) {
+      updateLayer(id, { name });
+    }
+
+    function addKeyframe(layerId, propKey, time, value, easing, id) {
+      const kfId = id || uid();
+      setLayers(layers.map(l => {
+        if (l.id !== layerId) return l;
+        const frames = [...(l.keyframes[propKey] || [])];
+        const idx = frames.findIndex(k => Math.abs(k.time - time) < 0.005);
+        const kf = { id: kfId, time, value: clone(value), easing: easing || 'linear' };
+        if (idx >= 0) frames[idx] = kf;
+        else frames.push(kf);
+        frames.sort((a, b) => a.time - b.time);
+        return { ...l, keyframes: { ...l.keyframes, [propKey]: frames } };
+      }));
+      return kfId;
+    }
+
+    function deleteKeyframe(layerId, propKey, kfId) {
+      setLayers(layers.map(l => l.id === layerId ? { ...l, keyframes: { ...l.keyframes, [propKey]: l.keyframes[propKey].filter(k => k.id !== kfId) } } : l));
+    }
+
+    function updateKeyframeValue(layerId, propKey, kfId, value) {
+      setLayers(layers.map(l => l.id === layerId ? { ...l, keyframes: { ...l.keyframes, [propKey]: l.keyframes[propKey].map(k => k.id === kfId ? { ...k, value } : k) } } : l));
+    }
+
+    function updateKeyframeEasing(layerId, propKey, kfId, easing) {
+      setLayers(layers.map(l => l.id === layerId ? { ...l, keyframes: { ...l.keyframes, [propKey]: l.keyframes[propKey].map(k => k.id === kfId ? { ...k, easing } : k) } } : l));
+    }
+
+    function updateKeyframeTime(layerId, propKey, kfId, time) {
+      setLayers(layers.map(l => l.id === layerId ? { ...l, keyframes: { ...l.keyframes, [propKey]: l.keyframes[propKey].map(k => k.id === kfId ? { ...k, time } : k).sort((a, b) => a.time - b.time) } } : l));
+    }
+
+    function addKeyframeAtCurrent() {
+      if (!selectedLayer) return;
+      const value = getPropertyValue(selectedLayer, selectedProp, currentTime);
+      const kfId = addKeyframe(selectedLayer.id, selectedProp, currentTime, value, 'linear');
+      setSelectedKeyframe({ layerId: selectedLayer.id, propKey: selectedProp, kfId });
+    }
+
+    function deleteSelectedKeyframe() {
+      if (!selectedKeyframe) return;
+      deleteKeyframe(selectedKeyframe.layerId, selectedKeyframe.propKey, selectedKeyframe.kfId);
+      setSelectedKeyframe(null);
+    }
+
+    function nudgeTime(delta) {
+      const next = clamp(currentTime + delta, 0, project.duration);
+      setCurrentTime(next);
+      currentTimeRef.current = next;
+    }
+
+    function togglePlay() {
+      if (isPlayingRef.current) {
+        isPlayingRef.current = false;
+        setIsPlaying(false);
+      } else {
+        if (currentTimeRef.current >= project.duration) { currentTimeRef.current = 0; setCurrentTime(0); }
+        isPlayingRef.current = true;
+        setIsPlaying(true);
+      }
+    }
+
+    function stopPlayback() {
+      isPlayingRef.current = false;
+      setIsPlaying(false);
+      setCurrentTime(0);
+      currentTimeRef.current = 0;
+    }
+
+    function goToStart() { nudgeTime(-project.duration); }
+    function goToEnd() { nudgeTime(project.duration); }
+
+    function setAspect(aspect) {
+      let w = project.width, h = project.height;
+      if (aspect === '1:1') { w = 1080; h = 1080; }
+      else if (aspect === '9:16') { w = 1080; h = 1920; }
+      else if (aspect === '16:9') { w = 1920; h = 1080; }
+      else if (aspect === '4:3') { w = 1440; h = 1080; }
+      else if (aspect === 'custom') { return; }
+      setProject({ ...project, aspect, width: w, height: h });
+    }
+
+    function loadAudioFile(file) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        ctx.decodeAudioData(e.target.result, buffer => {
+          setAudioCtx(ctx);
+          setAudioBuffer(buffer);
+          const analysis = detectBeats(buffer);
+          setBeats(analysis.beats);
+          setBpm(analysis.bpm);
+          showToast('Detected ' + analysis.bpm + ' BPM, ' + analysis.beats.length + ' beats');
+        }, () => showToast('Failed to decode audio'));
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function detectBeats(buffer) {
+      const data = buffer.getChannelData(0);
+      const sr = buffer.sampleRate;
+      const step = Math.floor(sr * 0.01);
+      const energies = [];
+      for (let i = 0; i < data.length; i += step) {
+        let sum = 0;
+        for (let j = 0; j < step && i + j < data.length; j++) sum += data[i + j] * data[i + j];
+        energies.push(sum / step);
+      }
+      const smooth = [];
+      for (let i = 0; i < energies.length; i++) {
+        let s = 0, c = 0;
+        for (let j = -2; j <= 2; j++) {
+          const idx = i + j;
+          if (idx >= 0 && idx < energies.length) { s += energies[idx]; c++; }
+        }
+        smooth.push(s / c);
+      }
+      const mean = smooth.reduce((a, b) => a + b, 0) / smooth.length;
+      const variance = smooth.reduce((a, b) => a + (b - mean) * (b - mean), 0) / smooth.length;
+      const std = Math.sqrt(variance);
+      const threshold = mean + 1.2 * std;
+      const peaks = [];
+      for (let i = 1; i < smooth.length - 1; i++) {
+        if (smooth[i] > smooth[i - 1] && smooth[i] > smooth[i + 1] && smooth[i] > threshold) peaks.push(i * 0.01);
+      }
+      if (peaks.length < 2) return { beats: [], bpm: 120 };
+      const intervals = [];
+      for (let i = 1; i < peaks.length; i++) intervals.push(peaks[i] - peaks[i - 1]);
+      intervals.sort((a, b) => a - b);
+      const median = intervals[Math.floor(intervals.length / 2)];
+      const bpm = Math.round(60 / median);
+      const beats = [];
+      for (let t = peaks[0]; t < buffer.duration; t += median) beats.push(t);
+      return { beats, bpm };
+    }
+
+    function snapTime(time, mode) {
+      if (!beats.length) return time;
+      let best = time, bestDist = Infinity;
+      if (mode === 'beat' || mode === 'bar') {
+        beats.forEach(b => {
+          const d = Math.abs(b - time);
+          if (d < bestDist) { bestDist = d; best = b; }
+        });
+      }
+      if (mode === 'bar' && beats.length >= 2) {
+        const interval = beats[1] - beats[0];
+        for (let i = 0; i < beats.length; i += 4) {
+          const d = Math.abs(beats[i] - time);
+          if (d < bestDist) { bestDist = d; best = beats[i]; }
+        }
+      }
+      return clamp(best, 0, project.duration);
+    }
+
+    function setBackgroundImage(file) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const img = new Image();
+        img.onload = () => setProject({ ...project, background: { type: 'image', image: img } });
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function applyPreset(name) {
+      if (!selectedLayer) return;
+      const layer = selectedLayer;
+      const duration = layer.end - layer.start;
+      const chars = layer.text.replace(/\n/g, '').length;
+      const newKeyframes = clone(layer.keyframes);
+      const addKf = (prop, time, value, easing) => {
+        const list = [...(newKeyframes[prop] || [])];
+        list.push({ id: uid(), time, value: clone(value), easing });
+        newKeyframes[prop] = list;
+      };
+      const clear = prop => { newKeyframes[prop] = []; };
+      if (name === 'typewriter') {
+        clear('opacity'); clear('letterStagger'); clear('wordStagger'); clear('lineStagger');
+        addKf('opacity', layer.start, 0, 'linear');
+        addKf('opacity', layer.end, 1, 'linear');
+        addKf('letterStagger', layer.start, duration / Math.max(1, chars), 'linear');
+      } else if (name === 'fadeUp') {
+        clear('position'); clear('opacity'); clear('scale');
+        addKf('position', layer.start, { x: 0.5, y: 0.55 }, 'easeOutQuad');
+        addKf('position', layer.end, { x: 0.5, y: 0.5 }, 'easeOutQuad');
+        addKf('opacity', layer.start, 0, 'linear');
+        addKf('opacity', layer.end, 1, 'linear');
+        addKf('scale', layer.start, 0.95, 'easeOutQuad');
+        addKf('scale', layer.end, 1, 'easeOutQuad');
+      } else if (name === 'bounce') {
+        clear('scale');
+        addKf('scale', layer.start, 0, 'easeOutBounce');
+        addKf('scale', layer.end, 1, 'easeOutBounce');
+      } else if (name === 'cascade') {
+        clear('position'); clear('opacity'); clear('letterStagger');
+        addKf('position', layer.start, { x: 0.5, y: 0.6 }, 'easeOutQuad');
+        addKf('position', layer.end, { x: 0.5, y: 0.5 }, 'easeOutQuad');
+        addKf('opacity', layer.start, 0, 'linear');
+        addKf('opacity', layer.end, 1, 'linear');
+        addKf('letterStagger', layer.start, 0.03, 'linear');
+      } else if (name === 'liquid') {
+        clear('letterOffset');
+        for (let i = 0; i <= 24; i++) {
+          const t = layer.start + (i / 24) * duration;
+          addKf('letterOffset', t, { x: Math.sin(i * 0.6) * 20, y: Math.cos(i * 0.6) * 15 }, 'linear');
+        }
+      } else if (name === 'glitch') {
+        clear('position'); clear('opacity'); clear('letterOffset');
+        const steps = Math.max(10, Math.floor(duration * 15));
+        for (let i = 0; i <= steps; i++) {
+          const t = layer.start + (i / steps) * duration;
+          addKf('position', t, { x: 0.5 + (Math.random() - 0.5) * 0.04, y: 0.5 + (Math.random() - 0.5) * 0.04 }, 'linear');
+          addKf('opacity', t, Math.random() > 0.3 ? 1 : 0.5, 'linear');
+          addKf('letterOffset', t, { x: (Math.random() - 0.5) * 12, y: (Math.random() - 0.5) * 12 }, 'linear');
+        }
+      }
+      updateLayerKeyframes(layer.id, newKeyframes);
+      showToast(name + ' preset applied');
+    }
+
+    function finishExport() {
+      setExporting(false);
+      setExportProgress(0);
+      exportAbortRef.current = false;
+    }
+
+    function getSupportedMime(format) {
+      if (format === 'mp4') {
+        const types = ['video/mp4;codecs=avc1.42E01E', 'video/mp4;codecs=avc1', 'video/mp4'];
+        for (const t of types) if (MediaRecorder.isTypeSupported(t)) return t;
+      }
+      const types = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+      for (const t of types) if (MediaRecorder.isTypeSupported(t)) return t;
+      return 'video/webm';
+    }
+
+    function downloadBlob(blob, name) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function startVideoExport(format, w, h, fps) {
+      if (!window.MediaRecorder || !HTMLCanvasElement.prototype.captureStream) {
+        showToast('Video export not supported in this browser');
+        return;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      const mime = getSupportedMime(format);
+      const stream = canvas.captureStream(fps);
+      const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8000000 });
+      const chunks = [];
+      recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: mime });
+        const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+        downloadBlob(blob, 'kinetic.' + ext);
+        finishExport();
+      };
+      recorder.onerror = () => { showToast('Export failed'); finishExport(); };
+      setExporting(true);
+      exportAbortRef.current = false;
+      renderFrame(ctx, project, layers, 0, reducedMotion);
+      recorder.start();
+      const startTime = performance.now();
+      function step() {
+        if (exportAbortRef.current) { recorder.stop(); finishExport(); return; }
+        const elapsed = (performance.now() - startTime) / 1000;
+        const time = Math.min(elapsed, project.duration);
+        renderFrame(ctx, project, layers, time, reducedMotion);
+        setExportProgress(time / project.duration);
+        if (time < project.duration) requestAnimationFrame(step);
+        else setTimeout(() => recorder.stop(), 200);
+      }
+      requestAnimationFrame(step);
+    }
+
+    function startGifExport(w, h, fps) {
+      if (!window.GIF) { showToast('GIF library not loaded'); return; }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      const gif = new GIF({ workers: 2, quality: 10, width: w, height: h, workerScript: 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js' });
+      gif.on('finished', blob => { downloadBlob(blob, 'kinetic.gif'); finishExport(); });
+      gif.on('error', () => { showToast('GIF export failed'); finishExport(); });
+      setExporting(true);
+      exportAbortRef.current = false;
+      const total = Math.floor(project.duration * fps);
+      let frame = 0;
+      function add() {
+        if (exportAbortRef.current || frame >= total) { gif.render(); return; }
+        const time = frame / fps;
+        renderFrame(ctx, project, layers, time, reducedMotion);
+        gif.addFrame(ctx, { copy: true, delay: 1000 / fps });
+        frame++;
+        setExportProgress(frame / total);
+        setTimeout(add, 0);
+      }
+      add();
+    }
+
+    function startPngExport(w, h, fps) {
+      if (!window.JSZip) { showToast('JSZip library not loaded'); return; }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      const zip = new JSZip();
+      const folder = zip.folder('frames');
+      setExporting(true);
+      exportAbortRef.current = false;
+      const total = Math.floor(project.duration * fps);
+      let frame = 0;
+      function add() {
+        if (exportAbortRef.current || frame >= total) {
+          zip.generateAsync({ type: 'blob' }).then(blob => { downloadBlob(blob, 'kinetic_frames.zip'); finishExport(); });
+          return;
+        }
+        const time = frame / fps;
+        renderFrame(ctx, project, layers, time, reducedMotion);
+        const data = canvas.toDataURL('image/png').split(',')[1];
+        folder.file('frame_' + String(frame).padStart(4, '0') + '.png', data, { base64: true });
+        frame++;
+        setExportProgress(frame / total);
+        setTimeout(add, 0);
+      }
+      add();
+    }
+
+    function parseBezier(str) {
+      return (str.match(/[-\d.]+/g) || [0.4, 0, 0.2, 1]).map(Number);
+    }
+
+    function getKeyframeTime(kf) {
+      const layer = layers.find(l => l.id === kf.layerId);
+      return layer?.keyframes[kf.propKey]?.find(k => k.id === kf.kfId)?.time || 0;
+    }
+
+    function Header() {
+      return html`
+        <header class="h-14 bg-slate-900 border-b border-slate-700 flex items-center px-4 justify-between shrink-0">
+          <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded bg-gradient-to-br from-amber-400 to-pink-500 flex items-center justify-center font-bold text-slate-900">K</div>
+            <h1 class="font-bold text-lg tracking-tight">Kinetic Typography Studio</h1>
+          </div>
+          <div class="flex items-center gap-2">
+            <label class="cursor-pointer px-3 py-1.5 text-sm bg-slate-800 hover:bg-slate-700 rounded border border-slate-600 flex items-center gap-2" aria-label="Load audio">
+              <span>Load Audio</span>
+              <input type="file" accept="audio/*" class="hidden" onChange=${e => { if (e.target.files[0]) loadAudioFile(e.target.files[0]); }} />
+            </label>
+            <button class="px-3 py-1.5 text-sm bg-amber-500 hover:bg-amber-400 text-slate-900 font-semibold rounded" onClick=${() => setShowExport(true)} aria-label="Export">Export</button>
+          </div>
+        </header>
+      `;
+    }
+
+    function CanvasArea() {
+      return html`
+        <div class="flex-1 relative bg-black flex items-center justify-center p-4 min-h-0">
+          <canvas ref=${canvasRef} class="max-w-full max-h-full shadow-2xl" aria-label="Animation preview" tabindex="0"></canvas>
+          <div class="absolute top-4 left-4 text-xs text-slate-400 bg-slate-900/70 px-2 py-1 rounded">
+            ${project.width}×${project.height} • ${(project.width / project.height).toFixed(2)}
+          </div>
+        </div>
+      `;
+    }
+
+    function Toolbar() {
+      return html`
+        <div class="h-14 bg-slate-900 border-t border-slate-700 flex items-center px-4 gap-3 shrink-0">
+          <button class="w-9 h-9 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700" onClick=${goToStart} aria-label="Go to start">⏮</button>
+          <button class="w-10 h-10 flex items-center justify-center rounded bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold" onClick=${togglePlay} aria-label=${isPlaying ? 'Pause' : 'Play'}>${isPlaying ? '⏸' : '▶'}</button>
+          <button class="w-9 h-9 flex items-center justify-center rounded bg-slate-800 hover:bg-slate-700" onClick=${stopPlayback} aria-label="Stop">⏹</button>
+          <button class="w-9 h-9 flex items-center justify-center rounded ${loop ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 hover:bg-slate-700'}" onClick=${() => setLoop(!loop)} aria-label="Toggle loop">🔁</button>
+          <div class="text-sm font-mono text-slate-300 w-24 text-center">${formatTime(currentTime)}</div>
+          <div class="flex-1"></div>
+          <div class="text-xs text-slate-400">Space: play • K: keyframe • ←/→: nudge</div>
+        </div>
+      `;
+    }
+
+    function Timeline() {
+      const layer = selectedLayer;
+      if (!layer) return html`<div class="h-64 bg-slate-800 flex items-center justify-center text-slate-400">Select a layer</div>`;
+
+      const width = project.duration * timelineZoom + 40;
+
+      function addKfAt(e, propKey) {
+        if (dragging) return;
+        const rect = timelineRef.current.getBoundingClientRect();
+        const x = e.clientX - rect.left + timelineRef.current.scrollLeft;
+        let time = x / timelineZoom;
+        if (snapToBeats && beats.length) time = snapTime(time, 'beat');
+        time = clamp(time, 0, project.duration);
+        const value = getPropertyValue(layer, propKey, time);
+        const kfId = addKeyframe(layer.id, propKey, time, value, 'linear');
+        setSelectedKeyframe({ layerId: layer.id, propKey, kfId });
+      }
+
+      return html`
+        <div class="h-64 bg-slate-800 border-t border-slate-700 flex flex-col shrink-0">
+          <div class="h-8 bg-slate-900 border-b border-slate-700 flex items-center px-3 justify-between">
+            <div class="text-xs font-bold text-slate-400 uppercase tracking-wider">Timeline</div>
+            <div class="flex items-center gap-2">
+              <button class="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded" onClick=${() => setTimelineZoom(z => Math.max(40, z - 20))} aria-label="Zoom out">-</button>
+              <span class="text-xs text-slate-400">${timelineZoom}px/s</span>
+              <button class="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded" onClick=${() => setTimelineZoom(z => Math.min(400, z + 20))} aria-label="Zoom in">+</button>
+              <button class="text-xs px-2 py-1 bg-slate-800 hover:bg-slate-700 rounded ${snapToBeats ? 'text-emerald-400' : 'text-slate-400'}" onClick=${() => setSnapToBeats(!snapToBeats)} aria-label="Snap to beats">Snap ${snapToBeats ? 'on' : 'off'}</button>
+            </div>
+          </div>
+          <div class="timeline flex-1 overflow-x-auto relative" ref=${timelineRef}>
+            <div class="relative" style="width:${width}px; min-height:100%;">
+              <div class="ruler">
+                ${Array.from({ length: Math.floor(project.duration) + 1 }, (_, i) => html`<div class="tick" style="left:${i * timelineZoom}px">${formatTime(i)}</div>`)}
+                ${beats.map((b, i) => html`<div class="${i % 4 === 0 ? 'bar' : 'beat'}" style="left:${b * timelineZoom}px"></div>`)}
+              </div>
+              <div class="playhead" style="left:${currentTime * timelineZoom}px">
+                <div class="playhead-handle"
+                     onMouseDown=${e => { e.stopPropagation(); setDragging({ type: 'playhead' }); }}
+                     onTouchStart=${e => { e.stopPropagation(); setDragging({ type: 'playhead' }); }}
+                     aria-label="Playhead" role="slider" tabindex="0"></div>
+              </div>
+              ${PROPERTIES.map(prop => {
+                const frames = layer.keyframes[prop.key] || [];
+                return html`
+                  <div class="track flex items-center" onClick=${e => addKfAt(e, prop.key)}>
+                    <div class="w-32 shrink-0 text-xs text-slate-400 pl-2 select-none">${prop.label}</div>
+                    <div class="relative flex-1 h-full">
+                      ${frames.map(kf => {
+                        const selected = selectedKeyframe && selectedKeyframe.layerId === layer.id && selectedKeyframe.propKey === prop.key && selectedKeyframe.kfId === kf.id;
+                        return html`
+                          <div class="keyframe ${selected ? 'selected' : ''}"
+                               style="left:${kf.time * timelineZoom}px"
+                               onMouseDown=${e => { e.stopPropagation(); setSelectedKeyframe({ layerId: layer.id, propKey: prop.key, kfId: kf.id }); setDragging({ type: 'keyframe', layerId: layer.id, propKey: prop.key, kfId: kf.id }); }}
+                               onTouchStart=${e => { e.stopPropagation(); setSelectedKeyframe({ layerId: layer.id, propKey: prop.key, kfId: kf.id }); setDragging({ type: 'keyframe', layerId: layer.id, propKey: prop.key, kfId: kf.id }); }}
+                               onClick=${e => e.stopPropagation()}
+                               role="button" aria-label="Keyframe at ${formatTime(kf.time)}">
+                          </div>
+                        `;
+                      })}
+                    </div>
+                  </div>
+                `;
+              })}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function LeftSidebar() {
+      return html`
+        <aside class="w-full lg:w-80 bg-slate-900 border-r border-slate-700 flex flex-col shrink-0 overflow-y-auto">
+          <div class="panel-section">
+            <div class="panel-title">Layers</div>
+            <div class="space-y-1">
+              ${layers.map(l => html`
+                <div key=${l.id} class="flex items-center gap-2 p-2 rounded cursor-pointer ${selectedLayerId === l.id ? 'bg-slate-800' : 'hover:bg-slate-800/50'}" onClick=${() => setSelectedLayerId(l.id)}>
+                  <input type="text" value=${l.name} class="bg-transparent text-sm flex-1 outline-none focus:bg-slate-700 rounded px-1" onChange=${e => updateLayerName(l.id, e.target.value)} />
+                  <button class="text-slate-400 hover:text-red-400" onClick=${e => { e.stopPropagation(); deleteLayer(l.id); }} aria-label="Delete layer">🗑</button>
+                </div>
+              `)}
+            </div>
+            <button class="mt-2 w-full py-1.5 text-sm bg-slate-800 hover:bg-slate-700 rounded border border-slate-600" onClick=${addLayer} aria-label="Add layer">+ Add Layer</button>
+          </div>
+          <div class="panel-section">
+            <div class="panel-title">Text</div>
+            <textarea class="w-full h-24 bg-slate-800 border border-slate-600 rounded p-2 text-sm font-mono" value=${selectedLayer ? selectedLayer.text : ''} onInput=${e => selectedLayer && updateLayerText(selectedLayer.id, e.target.value)} aria-label="Text content"></textarea>
+          </div>
+          <div class="panel-section">
+            <div class="panel-title">Style</div>
+            <div class="space-y-3">
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="text-xs text-slate-400">Font</label>
+                  <select class="w-full bg-slate-800 border border-slate-600 rounded text-sm" value=${selectedLayer?.styles.fontFamily} onChange=${e => selectedLayer && updateLayerStyle(selectedLayer.id, 'fontFamily', e.target.value)}>
+                    ${FONT_OPTIONS.map(f => html`<option value=${f.value}>${f.label}</option>`)}
+                  </select>
+                </div>
+                <div>
+                  <label class="text-xs text-slate-400">Weight</label>
+                  <input type="number" class="w-full bg-slate-800 border border-slate-600 rounded text-sm" value=${selectedLayer?.styles.fontWeight} min="100" max="900" step="100" onChange=${e => selectedLayer && updateLayerStyle(selectedLayer.id, 'fontWeight', Number(e.target.value))} />
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="text-xs text-slate-400">Size</label>
+                  <input type="number" class="w-full bg-slate-800 border border-slate-600 rounded text-sm" value=${selectedLayer?.styles.fontSize} min="8" onChange=${e => selectedLayer && updateLayerStyle(selectedLayer.id, 'fontSize', Number(e.target.value))} />
+                </div>
+                <div class="flex items-end gap-2 pb-1">
+                  <label class="flex items-center gap-1 text-sm text-slate-300"><input type="checkbox" checked=${selectedLayer?.styles.fontStyle === 'italic'} onChange=${e => selectedLayer && updateLayerStyle(selectedLayer.id, 'fontStyle', e.target.checked ? 'italic' : 'normal')} /> Italic</label>
+                  <label class="flex items-center gap-1 text-sm text-slate-300"><input type="checkbox" checked=${selectedLayer?.styles.uppercase} onChange=${e => selectedLayer && updateLayerStyle(selectedLayer.id, 'uppercase', e.target.checked)} /> AA</label>
+                </div>
+              </div>
+              <div>
+                <label class="text-xs text-slate-400">Fill</label>
+                <div class="flex gap-2">
+                  <select class="bg-slate-800 border border-slate-600 rounded text-sm" value=${selectedLayer?.styles.fill.type} onChange=${e => selectedLayer && updateLayerStyle(selectedLayer.id, 'fill', { ...selectedLayer.styles.fill, type: e.target.value })}>
+                    <option value="color">Color</option>
+                    <option value="gradient">Gradient</option>
+                  </select>
+                  ${selectedLayer?.styles.fill.type === 'color' && html`<input type="color" class="h-8 w-12 bg-transparent" value=${selectedLayer.styles.fill.value} onChange=${e => selectedLayer && updateLayerStyle(selectedLayer.id, 'fill', { ...selectedLayer.styles.fill, value: e.target.value })} />`}
+                  ${selectedLayer?.styles.fill.type === 'gradient' && html`
+                    <div class="flex-1 flex gap-1">
+                      <input type="number" class="w-14 bg-slate-800 border border-slate-600 rounded text-sm" value=${selectedLayer.styles.fill.angle || 0} onChange=${e => selectedLayer && updateLayerStyle(selectedLayer.id, 'fill', { ...selectedLayer.styles.fill, angle: Number(e.target.value) })} />
+                      <input type="color" class="h-8 w-10 bg-transparent" value=${selectedLayer.styles.fill.stops?.[0]?.color || '#ffffff'} onChange=${e => selectedLayer && updateLayerStyle(selectedLayer.id, 'fill', { ...selectedLayer.styles.fill, stops: [{ offset: 0, color: e.target.value }, { offset: 1, color: selectedLayer.styles.fill.stops?.[1]?.color || '#000000' }] })} />
+                      <input type="color" class="h-8 w-10 bg-transparent" value=${selectedLayer.styles.fill.stops?.[1]?.color || '#000000'} onChange=${e => selectedLayer && updateLayerStyle(selectedLayer.id, 'fill', { ...selectedLayer.styles.fill, stops: [{ offset: 0, color: selectedLayer.styles.fill.stops?.[0]?.color || '#ffffff' }, { offset: 1, color: e.target.value }] })} />
+                    </div>
+                  `}
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="text-xs text-slate-400">Outline</label>
+                  <input type="color" class="w-full h-8 bg-transparent" value=${selectedLayer?.styles.outline.color} onChange=${e => selectedLayer && updateLayerStyle(selectedLayer.id, 'outline', { ...selectedLayer.styles.outline, color: e.target.value })} />
+                </div>
+                <div>
+                  <label class="text-xs text-slate-400">Width</label>
+                  <input type="number" class="w-full bg-slate-800 border border-slate-600 rounded text-sm" value=${selectedLayer?.styles.outline.width} min="0" onChange=${e => selectedLayer && updateLayerStyle(selectedLayer.id, 'outline', { ...selectedLayer.styles.outline, width: Number(e.target.value) })} />
+                </div>
+              </div>
+              <div>
+                <label class="text-xs text-slate-400">Shadow</label>
+                <div class="grid grid-cols-4 gap-1">
+                  <input type="color" class="h-8 bg-transparent" value=${selectedLayer?.styles.shadow.color} onChange=${e => selectedLayer && updateLayerStyle(selectedLayer.id, 'shadow', { ...selectedLayer.styles.shadow, color: e.target.value })} />
+                  <input type="number" class="bg-slate-800 border border-slate-600 rounded text-sm" value=${selectedLayer?.styles.shadow.blur} min="0" onChange=${e => selectedLayer && updateLayerStyle(selectedLayer.id, 'shadow', { ...selectedLayer.styles.shadow, blur: Number(e.target.value) })} />
+                  <input type="number" class="bg-slate-800 border border-slate-600 rounded text-sm" value=${selectedLayer?.styles.shadow.x} onChange=${e => selectedLayer && updateLayerStyle(selectedLayer.id, 'shadow', { ...selectedLayer.styles.shadow, x: Number(e.target.value) })} />
+                  <input type="number" class="bg-slate-800 border border-slate-600 rounded text-sm" value=${selectedLayer?.styles.shadow.y} onChange=${e => selectedLayer && updateLayerStyle(selectedLayer.id, 'shadow', { ...selectedLayer.styles.shadow, y: Number(e.target.value) })} />
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="text-xs text-slate-400">Letter Spacing</label>
+                  <input type="number" class="w-full bg-slate-800 border border-slate-600 rounded text-sm" value=${selectedLayer?.styles.letterSpacing} onChange=${e => selectedLayer && updateLayerStyle(selectedLayer.id, 'letterSpacing', Number(e.target.value))} />
+                </div>
+                <div>
+                  <label class="text-xs text-slate-400">Line Height</label>
+                  <input type="number" class="w-full bg-slate-800 border border-slate-600 rounded text-sm" value=${selectedLayer?.styles.lineHeight} step="0.1" onChange=${e => selectedLayer && updateLayerStyle(selectedLayer.id, 'lineHeight', Number(e.target.value))} />
+                </div>
+              </div>
+              <div>
+                <label class="text-xs text-slate-400">Align</label>
+                <select class="w-full bg-slate-800 border border-slate-600 rounded text-sm" value=${selectedLayer?.styles.align} onChange=${e => selectedLayer && updateLayerStyle(selectedLayer.id, 'align', e.target.value)}>
+                  <option value="left">Left</option>
+                  <option value="center">Center</option>
+                  <option value="right">Right</option>
+                </select>
+              </div>
+              <label class="flex items-center gap-2 text-sm text-slate-300">
+                <input type="checkbox" checked=${selectedLayer?.styles.motionBlur} onChange=${e => selectedLayer && updateLayerStyle(selectedLayer.id, 'motionBlur', e.target.checked)} />
+                Motion Blur ${reducedMotion ? '(reduced motion)' : ''}
+              </label>
+            </div>
+          </div>
+          <div class="panel-section">
+            <div class="panel-title">Layout</div>
+            <div class="space-y-3">
+              <div>
+                <label class="text-xs text-slate-400">Background</label>
+                <div class="flex gap-2">
+                  <input type="color" class="h-8 w-12 bg-transparent" value=${project.background.type === 'color' ? project.background.value : '#000000'} onChange=${e => setProject({ ...project, background: { type: 'color', value: e.target.value } })} />
+                  <label class="flex-1 cursor-pointer px-2 py-1 bg-slate-800 border border-slate-600 rounded text-sm text-center hover:bg-slate-700">
+                    <span>Image</span>
+                    <input type="file" accept="image/*" class="hidden" onChange=${e => e.target.files[0] && setBackgroundImage(e.target.files[0])} />
+                  </label>
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="text-xs text-slate-400">Aspect</label>
+                  <select class="w-full bg-slate-800 border border-slate-600 rounded text-sm" value=${project.aspect} onChange=${e => setAspect(e.target.value)}>
+                    <option value="1:1">1:1</option>
+                    <option value="9:16">9:16</option>
+                    <option value="16:9">16:9</option>
+                    <option value="4:3">4:3</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="text-xs text-slate-400">Resolution</label>
+                  <div class="text-sm text-slate-300">${project.width}×${project.height}</div>
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="text-xs text-slate-400">Duration (s)</label>
+                  <input type="number" class="w-full bg-slate-800 border border-slate-600 rounded text-sm" value=${project.duration} min="0.1" step="0.1" onChange=${e => setProject({ ...project, duration: Number(e.target.value) })} />
+                </div>
+                <div>
+                  <label class="text-xs text-slate-400">FPS</label>
+                  <input type="number" class="w-full bg-slate-800 border border-slate-600 rounded text-sm" value=${project.fps} min="1" step="1" onChange=${e => setProject({ ...project, fps: Number(e.target.value) })} />
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="text-xs text-slate-400">Margin %</label>
+                  <input type="number" class="w-full bg-slate-800 border border-slate-600 rounded text-sm" value=${project.layout.margin} min="0" max="50" onChange=${e => setProject({ ...project, layout: { ...project.layout, margin: Number(e.target.value) } })} />
+                </div>
+                <div>
+                  <label class="text-xs text-slate-400">Grid Size</label>
+                  <input type="number" class="w-full bg-slate-800 border border-slate-600 rounded text-sm" value=${project.layout.gridSize} min="10" onChange=${e => setProject({ ...project, layout: { ...project.layout, gridSize: Number(e.target.value) } })} />
+                </div>
+              </div>
+              <div class="flex gap-2">
+                <label class="flex items-center gap-1 text-sm text-slate-300"><input type="checkbox" checked=${project.layout.showSafeArea} onChange=${e => setProject({ ...project, layout: { ...project.layout, showSafeArea: e.target.checked } })} /> Safe Area</label>
+                <label class="flex items-center gap-1 text-sm text-slate-300"><input type="checkbox" checked=${project.layout.showGrid} onChange=${e => setProject({ ...project, layout: { ...project.layout, showGrid: e.target.checked } })} /> Grid</label>
+              </div>
+            </div>
+          </div>
+        </aside>
+      `;
+    }
+
+    function RightSidebar() {
+      const kf = selectedKeyframe && selectedLayer && (selectedLayer.keyframes[selectedKeyframe.propKey] || []).find(k => k.id === selectedKeyframe.kfId);
+      const prop = PROPERTIES.find(p => p.key === (selectedKeyframe?.propKey || selectedProp));
+
+      return html`
+        <aside class="w-full lg:w-80 bg-slate-900 border-l border-slate-700 flex flex-col shrink-0 overflow-y-auto">
+          <div class="panel-section">
+            <div class="panel-title">Presets</div>
+            <div class="grid grid-cols-2 gap-2">
+              <button class="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-sm" onClick=${() => applyPreset('typewriter')} aria-label="Typewriter preset">Typewriter</button>
+              <button class="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-sm" onClick=${() => applyPreset('fadeUp')} aria-label="Fade up preset">Fade Up</button>
+              <button class="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-sm" onClick=${() => applyPreset('bounce')} aria-label="Bounce preset">Bounce</button>
+              <button class="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-sm" onClick=${() => applyPreset('cascade')} aria-label="Cascade preset">Cascade</button>
+              <button class="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-sm" onClick=${() => applyPreset('liquid')} aria-label="Liquid preset">Liquid</button>
+              <button class="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-sm" onClick=${() => applyPreset('glitch')} aria-label="Glitch preset">Glitch</button>
+            </div>
+          </div>
+          <div class="panel-section">
+            <div class="panel-title">Audio</div>
+            <div class="text-sm text-slate-300 mb-2">${audioBuffer ? bpm + ' BPM • ' + beats.length + ' beats' : 'No audio loaded'}</div>
+            ${audioBuffer && html`
+              <div class="flex gap-2">
+                <button class="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-sm" onClick=${() => { const kf = selectedKeyframe; if (kf) { const t = snapTime(getKeyframeTime(kf), 'beat'); updateKeyframeTime(kf.layerId, kf.propKey, kf.kfId, t); } }}>Snap to Beat</button>
+                <button class="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 rounded text-sm" onClick=${() => { const kf = selectedKeyframe; if (kf) { const t = snapTime(getKeyframeTime(kf), 'bar'); updateKeyframeTime(kf.layerId, kf.propKey, kf.kfId, t); } }}>Snap to Bar</button>
+              </div>
+            `}
+          </div>
+          <div class="panel-section">
+            <div class="panel-title">Keyframe</div>
+            ${kf ? html`
+              <div class="space-y-3">
+                <div class="text-xs text-slate-400">${prop?.label} at ${formatTime(kf.time)}</div>
+                <div>
+                  <label class="text-xs text-slate-400">Time</label>
+                  <input type="number" class="w-full bg-slate-800 border border-slate-600 rounded text-sm" step="0.01" value=${kf.time} onChange=${e => updateKeyframeTime(selectedKeyframe.layerId, selectedKeyframe.propKey, selectedKeyframe.kfId, Number(e.target.value))} />
+                </div>
+                ${prop?.type === 'vec2' ? html`
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <label class="text-xs text-slate-400">X</label>
+                      <input type="number" class="w-full bg-slate-800 border border-slate-600 rounded text-sm" step=${prop.step} value=${kf.value.x} onChange=${e => updateKeyframeValue(selectedKeyframe.layerId, selectedKeyframe.propKey, selectedKeyframe.kfId, { ...kf.value, x: Number(e.target.value) })} />
+                    </div>
+                    <div>
+                      <label class="text-xs text-slate-400">Y</label>
+                      <input type="number" class="w-full bg-slate-800 border border-slate-600 rounded text-sm" step=${prop.step} value=${kf.value.y} onChange=${e => updateKeyframeValue(selectedKeyframe.layerId, selectedKeyframe.propKey, selectedKeyframe.kfId, { ...kf.value, y: Number(e.target.value) })} />
+                    </div>
+                  </div>
+                ` : html`
+                  <div>
+                    <label class="text-xs text-slate-400">Value</label>
+                    <input type="number" class="w-full bg-slate-800 border border-slate-600 rounded text-sm" step=${prop?.step || 1} min=${prop?.min} max=${prop?.max} value=${kf.value} onChange=${e => updateKeyframeValue(selectedKeyframe.layerId, selectedKeyframe.propKey, selectedKeyframe.kfId, Number(e.target.value))} />
+                  </div>
+                `}
+                <div>
+                  <label class="text-xs text-slate-400">Easing</label>
+                  <select class="w-full bg-slate-800 border border-slate-600 rounded text-sm mb-1" value=${kf.easing} onChange=${e => updateKeyframeEasing(selectedKeyframe.layerId, selectedKeyframe.propKey, selectedKeyframe.kfId, e.target.value)}>
+                    ${EASING_NAMES.map(e => html`<option value=${e}>${e}</option>`)}
+                    <option value="cubic-bezier(0.4,0,0.2,1)">Custom Bézier</option>
+                  </select>
+                  ${kf.easing.startsWith('cubic-bezier(') && html`
+                    <div class="grid grid-cols-4 gap-1">
+                      ${['x1','y1','x2','y2'].map((label, i) => html`
+                        <input key=${label} type="number" class="bg-slate-800 border border-slate-600 rounded text-sm" step="0.01" min="0" max="1" value=${parseBezier(kf.easing)[i]} onChange=${e => {
+                          const vals = parseBezier(kf.easing);
+                          vals[i] = Number(e.target.value);
+                          updateKeyframeEasing(selectedKeyframe.layerId, selectedKeyframe.propKey, selectedKeyframe.kfId, 'cubic-bezier(' + vals.join(',') + ')');
+                        }} />
+                      `)}
+                    </div>
+                  `}
+                </div>
+                <button class="w-full py-1.5 text-sm bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded" onClick=${deleteSelectedKeyframe} aria-label="Delete keyframe">Delete Keyframe</button>
+              </div>
+            ` : html`
+              <div class="text-sm text-slate-400">Select a keyframe on the timeline to edit its value and easing.</div>
+            `}
+          </div>
+          <div class="panel-section">
+            <div class="panel-title">Shortcuts</div>
+            <div class="text-xs text-slate-400 space-y-1">
+              <div><b>Space</b> Play / Pause</div>
+              <div><b>← / →</b> Nudge time</div>
+              <div><b>K</b> Add keyframe</div>
+              <div><b>Del</b> Delete keyframe</div>
+            </div>
+          </div>
+        </aside>
+      `;
+    }
+
+    function ExportModal() {
+      const resolutions = ['1920x1080', '1280x720', '1080x1080', '1080x1920', 'custom'];
+      const resMap = { '1920x1080': [1920, 1080], '1280x720': [1280, 720], '1080x1080': [1080, 1080], '1080x1920': [1080, 1920] };
+
+      function startExport() {
+        let w, h;
+        if (exportResolution === 'custom') { w = exportCustomW; h = exportCustomH; }
+        else { [w, h] = resMap[exportResolution]; }
+        if (exportFormat === 'gif') startGifExport(w, h, exportFps);
+        else if (exportFormat === 'png') startPngExport(w, h, exportFps);
+        else startVideoExport(exportFormat, w, h, exportFps);
+        setShowExport(false);
+      }
+
+      const canMp4 = getSupportedMime('mp4') !== 'video/webm';
+
+      return html`
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/70" onClick=${() => setShowExport(false)}>
+          <div class="bg-slate-900 border border-slate-600 rounded-lg p-6 w-full max-w-md shadow-2xl" onClick=${e => e.stopPropagation()}>
+            <h2 class="text-lg font-bold mb-4">Export</h2>
+            <div class="space-y-4">
+              <div>
+                <label class="text-xs text-slate-400 block mb-1">Format</label>
+                <select class="w-full bg-slate-800 border border-slate-600 rounded text-sm" value=${exportFormat} onChange=${e => setExportFormat(e.target.value)}>
+                  <option value="webm">WebM (fastest)</option>
+                  <option value="mp4">MP4 ${!canMp4 ? '(fallback to WebM)' : ''}</option>
+                  <option value="gif">GIF</option>
+                  <option value="png">PNG Sequence (ZIP)</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-xs text-slate-400 block mb-1">Resolution</label>
+                <select class="w-full bg-slate-800 border border-slate-600 rounded text-sm" value=${exportResolution} onChange=${e => setExportResolution(e.target.value)}>
+                  ${resolutions.map(r => html`<option value=${r}>${r === 'custom' ? 'Custom' : r}</option>`)}
+                </select>
+              </div>
+              ${exportResolution === 'custom' && html`
+                <div class="grid grid-cols-2 gap-2">
+                  <input type="number" class="bg-slate-800 border border-slate-600 rounded text-sm" value=${exportCustomW} onChange=${e => setExportCustomW(Number(e.target.value))} />
+                  <input type="number" class="bg-slate-800 border border-slate-600 rounded text-sm" value=${exportCustomH} onChange=${e => setExportCustomH(Number(e.target.value))} />
+                </div>
+              `}
+              <div>
+                <label class="text-xs text-slate-400 block mb-1">Frame Rate</label>
+                <select class="w-full bg-slate-800 border border-slate-600 rounded text-sm" value=${exportFps} onChange=${e => setExportFps(Number(e.target.value))}>
+                  <option value="60">60 fps</option>
+                  <option value="30">30 fps</option>
+                  <option value="24">24 fps</option>
+                  <option value="15">15 fps</option>
+                </select>
+              </div>
+              <div class="flex gap-2 justify-end">
+                <button class="px-4 py-2 rounded text-sm bg-slate-800 hover:bg-slate-700" onClick=${() => setShowExport(false)}>Cancel</button>
+                <button class="px-4 py-2 rounded text-sm bg-amber-500 hover:bg-amber-400 text-slate-900 font-semibold" onClick=${startExport}>Export</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function ExportOverlay() {
+      return html`
+        <div class="fixed inset-0 z-[60] bg-black/80 flex flex-col items-center justify-center">
+          <div class="text-lg font-bold mb-4">Exporting...</div>
+          <div class="w-64 h-2 bg-slate-700 rounded overflow-hidden">
+            <div class="h-full bg-amber-500 transition-all" style="width:${exportProgress * 100}%"></div>
+          </div>
+          <div class="text-sm text-slate-400 mt-2">${Math.round(exportProgress * 100)}%</div>
+          <button class="mt-4 px-4 py-2 rounded bg-slate-800 hover:bg-slate-700 text-sm" onClick=${() => { exportAbortRef.current = true; }}>Cancel</button>
+        </div>
+      `;
+    }
+
+    function Toast() {
+      return html`<div class="fixed top-4 right-4 z-[70] bg-slate-800 border border-slate-600 text-sm px-4 py-2 rounded shadow-lg">${toast}</div>`;
+    }
+
+    return html`
+      <div class="flex flex-col h-screen">
+        ${Header()}
+        <div class="flex flex-col lg:flex-row flex-1 min-h-0">
+          ${LeftSidebar()}
+          <div class="flex-1 flex flex-col min-w-0 min-h-0">
+            ${CanvasArea()}
+            ${Toolbar()}
+            ${Timeline()}
+          </div>
+          ${RightSidebar()}
+        </div>
+        ${showExport && ExportModal()}
+        ${exporting && ExportOverlay()}
+        ${toast && Toast()}
+      </div>
+    `;
+  }
+
+  render(html`<${App} />`, document.getElementById('root'));
+})();
+  </script>
+</body>
+</html>

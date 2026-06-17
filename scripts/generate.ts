@@ -90,7 +90,10 @@ function loadExamples(): ExampleSpec[] {
   const files = fs.readdirSync(EXAMPLES_DIR).filter((f) => f.endsWith(".yaml"));
   return files.map((file) => {
     const content = fs.readFileSync(path.join(EXAMPLES_DIR, file), "utf-8");
-    return yaml.parse(content) as ExampleSpec;
+    const raw = yaml.parse(content);
+    // Only keep known fields — drop screenshot_url and anything else that
+    // could cause vision-only API calls against models that don't support images.
+    return { id: raw.id, title: raw.title, prompt: raw.prompt, tags: raw.tags } as ExampleSpec;
   });
 }
 
@@ -246,26 +249,30 @@ function buildCliCommand(
         ],
       };
 
-    case "anthropic-proxy":
+    case "anthropic-proxy": {
       // Models served by an Anthropic-compatible proxy (Fireworks, OpenRouter,
       // self-hosted gateway, etc). Uses the Claude Code CLI with ANTHROPIC_*
       // env vars pointed at the proxy's base URL so multiple proxied models
       // can coexist without manually editing .env between runs.
+      const proxyArgs = [
+        "-p",
+        "--bare",
+        "--model",
+        model.model,
+        "--max-turns",
+        "500",
+        "--dangerously-skip-permissions",
+        "--permission-mode",
+        "bypassPermissions",
+        ...(model.supportsVision === false ? ["--disallowed-tools", "computer_20250124", "--"] : []),
+        prompt,
+      ];
       return {
         cmd: "claude",
-        args: [
-          "-p",
-          "--model",
-          model.model,
-          "--max-turns",
-          "500",
-          "--dangerously-skip-permissions",
-          "--permission-mode",
-          "bypassPermissions",
-          prompt,
-        ],
+        args: proxyArgs,
         env: buildAnthropicProxyEnv(model),
       };
+    }
 
     default:
       throw new Error(`Unknown CLI type: ${(model as ModelConfig).cli}`);

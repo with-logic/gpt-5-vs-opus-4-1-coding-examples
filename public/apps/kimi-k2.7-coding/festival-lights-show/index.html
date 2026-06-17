@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Festival Lights Show</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #050210; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+  #showCanvas { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; }
+
+  .glass {
+    background: rgba(10, 8, 25, 0.55);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+  }
+
+  .title-gradient {
+    background: linear-gradient(90deg, #ff2a6d, #05d9e8, #d1f7ff, #ffcc00);
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: shine 5s linear infinite;
+  }
+  @keyframes shine {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  .control-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.6);
+  }
+  .control-group { display: flex; flex-direction: column; gap: 0.25rem; }
+
+  .btn-glow {
+    background: linear-gradient(135deg, rgba(255, 42, 109, 0.95), rgba(5, 217, 232, 0.95));
+    border: none;
+    border-radius: 999px;
+    color: #fff;
+    font-weight: 800;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    box-shadow: 0 0 18px rgba(255, 42, 109, 0.35);
+    transition: transform 0.12s, box-shadow 0.2s, filter 0.2s;
+  }
+  .btn-glow:hover { transform: translateY(-2px); box-shadow: 0 0 28px rgba(5, 217, 232, 0.55); filter: brightness(1.1); }
+  .btn-glow:active { transform: translateY(0); }
+
+  .btn-toggle {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 999px;
+    color: #fff;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+    cursor: pointer;
+  }
+  .btn-toggle.active {
+    background: rgba(5, 217, 232, 0.25);
+    border-color: rgba(5, 217, 232, 0.7);
+    box-shadow: 0 0 15px rgba(5, 217, 232, 0.25);
+  }
+
+  .panel-enter {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+  }
+  .panel-enter.show { opacity: 1; transform: translateY(0); }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    border: none;
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+  }
+
+  select {
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 0.5rem;
+    color: #fff;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  select option { background: #111; }
+
+  .checkbox-wrap { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.95rem; }
+  .checkbox-wrap input { accent-color: #05d9e8; width: 18px; height: 18px; }
+</style>
+</head>
+<body class="text-white">
+  <canvas id="showCanvas"></canvas>
+
+  <!-- Start overlay -->
+  <div id="overlay" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md">
+    <div class="text-center px-6 max-w-xl">
+      <h1 class="text-5xl md:text-7xl font-black mb-4 title-gradient">Festival Lights Show</h1>
+      <p class="text-lg md:text-xl text-white/80 mb-8">A vibrant, music-reactive light show you control. Choose colors, patterns, and sync to the beat.</p>
+      <div class="flex flex-col items-center gap-4">
+        <label class="checkbox-wrap">
+          <input type="checkbox" id="musicOnStart" checked>
+          <span>Play generated music</span>
+        </label>
+        <button id="startBtn" class="btn-glow text-xl px-8 py-4">Start the Show</button>
+      </div>
+      <p class="mt-4 text-xs text-white/40">Tip: use headphones for the best beat-sync experience.</p>
+    </div>
+  </div>
+
+  <!-- UI -->
+  <div id="ui" class="fixed inset-0 z-10 pointer-events-none flex flex-col justify-between p-4 md:p-6">
+    <!-- header -->
+    <div class="pointer-events-auto flex items-start justify-between gap-4">
+      <div>
+        <h1 class="text-3xl md:text-4xl font-black title-gradient">Festival Lights Show</h1>
+        <p class="text-xs md:text-sm text-white/60">Color • Patterns • Music Sync</p>
+      </div>
+      <div class="flex flex-col md:flex-row items-end md:items-center gap-3">
+        <div class="glass rounded-xl p-2 flex items-center gap-3">
+          <button id="musicBtn" class="btn-toggle">▶ Music</button>
+          <div class="flex flex-col w-24">
+            <span class="control-label">BPM</span>
+            <input id="bpmSlider" type="range" min="60" max="180" value="120">
+          </div>
+          <div class="flex flex-col w-24">
+            <span class="control-label">Vol</span>
+            <input id="volSlider" type="range" min="0" max="1" step="0.01" value="0.5">
+          </div>
+        </div>
+        <button id="fsBtn" class="btn-toggle" title="Fullscreen">⛶</button>
+      </div>
+    </div>
+
+    <!-- visualizer + controls -->
+    <div class="pointer-events-auto flex flex-col md:flex-row items-end justify-between gap-4">
+      <div class="glass rounded-xl p-3 hidden md:block">
+        <canvas id="vizCanvas" width="220" height="70" class="rounded-lg"></canvas>
+      </div>
+
+      <div id="controlsPanel" class="glass rounded-2xl p-4 md:p-5 panel-enter hidden w-full md:w-auto md:max-w-5xl">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
+          <div class="control-group">
+            <span class="control-label">Color Theme</span>
+            <select id="themeSelect"></select>
+          </div>
+          <div class="control-group">
+            <span class="control-label">Light Pattern</span>
+            <select id="patternSelect"></select>
+          </div>
+          <div class="control-group">
+            <span class="control-label">Effect</span>
+            <select id="effectSelect"></select>
+          </div>
+          <div class="control-group">
+            <span class="control-label">Speed</span>
+            <input id="speedSlider" type="range" min="0" max="3" step="0.1" value="1">
+          </div>
+          <div class="control-group">
+            <span class="control-label">Brightness</span>
+            <input id="brightSlider" type="range" min="0.2" max="1.5" step="0.05" value="0.9">
+          </div>
+          <div class="control-group">
+            <span class="control-label">Light Size</span>
+            <input id="sizeSlider" type="range" min="0.5" max="3" step="0.1" value="1">
+          </div>
+          <div class="control-group">
+            <span class="control-label">Spread</span>
+            <input id="spreadSlider" type="range" min="0.5" max="2" step="0.1" value="1">
+          </div>
+          <div class="control-group">
+            <span class="control-label">Sync</span>
+            <div class="flex gap-2 flex-wrap">
+              <button id="syncBtn" class="btn-toggle active">Music Sync</button>
+              <button id="trailsBtn" class="btn-toggle active">Trails</button>
+            </div>
+          </div>
+        </div>
+        <div class="flex gap-3 mt-4 pt-4 border-t border-white/10">
+          <button id="randomBtn" class="btn-glow text-sm">✨ Surprise Me</button>
+          <button id="snapBtn" class="btn-toggle text-sm">📸 Snapshot</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+
+    const state = {
+      theme: 'rainbow',
+      pattern: 'string',
+      effect: 'chase',
+      speed: 1,
+      brightness: 0.9,
+      size: 1,
+      spread: 1,
+      musicSync: true,
+      trails: true,
+      bpm: 120,
+      volume: 0.5,
+      musicPlaying: false
+    };
+
+    let audioEngine = null;
+    let started = false;
+
+    const palettes = {
+      neon: [{h:320, s:100, l:60}, {h:180, s:100, l:60}, {h:120, s:100, l:60}],
+      warm: [{h:0, s:100, l:55}, {h:35, s:100, l:55}, {h:55, s:100, l:60}],
+      cool: [{h:200, s:100, l:55}, {h:260, s:100, l:60}, {h:300, s:100, l:60}],
+      sunset: [{h:340, s:100, l:60}, {h:20, s:100, l:60}, {h:50, s:100, l:60}, {h:210, s:80, l:30}],
+      ocean: [{h:180, s:100, l:40}, {h:200, s:100, l:55}, {h:160, s:100, l:50}],
+      christmas: [{h:0, s:100, l:50}, {h:120, s:100, l:45}, {h:0, s:0, l:95}]
+    };
+
+    const themes = ['rainbow', 'neon', 'warm', 'cool', 'sunset', 'ocean', 'christmas'];
+    const patterns = ['string', 'grid', 'ring', 'wave', 'star', 'random'];
+    const effects = ['chase', 'wave', 'pulse', 'twinkle', 'sparkle', 'equalizer', 'flow'];
+    const labels = {
+      theme: { rainbow:'Rainbow', neon:'Neon', warm:'Warm', cool:'Cool', sunset:'Sunset', ocean:'Ocean', christmas:'Christmas' },
+      pattern: { string:'String', grid:'Grid', ring:'Ring', wave:'Wave', star:'Star', random:'Random' },
+      effect: { chase:'Chase', wave:'Wave', pulse:'Pulse', twinkle:'Twinkle', sparkle:'Sparkle', equalizer:'Equalizer', flow:'Flow' }
+    };
+
+    function lerp(a, b, t) { return a + (b - a) * t; }
+    function hueLerp(a, b, t) {
+      let d = b - a;
+      if (d > 180) d -= 360;
+      if (d < -180) d += 360;
+      return (a + d * t + 360) % 360;
+    }
+    function getColor(value, theme, time) {
+      value = Math.max(0, Math.min(1, value));
+      if (theme === 'rainbow') {
+        return { h: (value * 360 + time * 40) % 360, s: 100, l: 55 };
+      }
+      const pal = palettes[theme];
+      if (!pal) return { h: 0, s: 0, l: 100 };
+      const scaled = value * (pal.length - 1);
+      const i = Math.floor(scaled);
+      const f = scaled - i;
+      const a = pal[i], b = pal[Math.min(pal.length - 1, i + 1)];
+      return { h: hueLerp(a.h, b.h, f), s: lerp(a.s, b.s, f), l: lerp(a.l, b.l, f) };
+    }
+
+    class AudioEngine {
+      constructor() {
+        this.ctx = null;
+        this.analyser = null;
+        this.master = null;
+        this.isPlaying = false;
+        this.bpm = state.bpm;
+        this.volume = state.volume;
+        this.nextNoteTime = 0;
+        this.beatNumber = 0;
+        this.timer = null;
+        this.noiseBuffer = null;
+      }
+
+      async start() {
+        if (!this.ctx) {
+          const AC = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AC();
+        }
+        await this.ctx.resume();
+        if (!this.analyser) {
+          this.analyser = this.ctx.createAnalyser();
+          this.analyser.fftSize = 256;
+          this.analyser.smoothingTimeConstant = 0.8;
+          this.master = this.ctx.createGain();
+          this.master.gain.value = this.volume;
+          this.analyser.connect(this.master);
+          this.master.connect(this.ctx.destination);
+        }
+        this.noiseBuffer = this.createNoiseBuffer();
+        this.isPlaying = true;
+        this.nextNoteTime = this.ctx.currentTime + 0.05;
+        this.beatNumber = 0;
+        this.scheduler();
+      }
+
+      stop() {
+        this.isPlaying = false;
+        if (this.timer) clearTimeout(this.timer);
+        this.timer = null;
+        if (this.ctx && this.ctx.state !== 'closed') this.ctx.suspend();
+      }
+
+      createNoiseBuffer() {
+        const len = this.ctx.sampleRate * 2;
+        const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+        return buf;
+      }
+
+      scheduler() {
+        if (!this.isPlaying) return;
+        const scheduleAhead = 0.1;
+        while (this.nextNoteTime < this.ctx.currentTime + scheduleAhead) {
+          this.scheduleStep(this.beatNumber, this.nextNoteTime);
+          this.nextNote();
+        }
+        this.timer = setTimeout(() => this.scheduler(), 25);
+      }
+
+      nextNote() {
+        const secondsPerBeat = 60.0 / this.bpm;
+        this.nextNoteTime += secondsPerBeat / 4;
+        this.beatNumber++;
+      }
+
+      scheduleStep(beat, time) {
+        const step = beat % 16;
+        if (step % 4 === 0) this.playKick(time);
+        if (step % 8 === 4) this.playSnare(time);
+        if (step % 2 === 1) this.playHiHat(time);
+        if (step % 2 === 0) this.playBass(time, step);
+        if (step % 4 === 0) this.playPad(time, step);
+      }
+
+      playKick(time) {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.frequency.setValueAtTime(150, time);
+        osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.5);
+        gain.gain.setValueAtTime(0.9, time);
+        gain.gain.exponentialRampToValueAtTime(0.01, time + 0.5);
+        osc.connect(gain);
+        gain.connect(this.analyser);
+        osc.start(time);
+        osc.stop(time + 0.5);
+      }
+
+      playSnare(time) {
+        const src = this.ctx.createBufferSource();
+        src.buffer = this.noiseBuffer;
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'highpass';
+        filter.frequency.value = 800;
+        filter.Q.value = 1;
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.7, time);
+        gain.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
+        src.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.analyser);
+        src.start(time);
+        src.stop(time + 0.2);
+      }
+
+      playHiHat(time) {
+        const src = this.ctx.createBufferSource();
+        src.buffer = this.noiseBuffer;
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'highpass';
+        filter.frequency.value = 9000;
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.35, time);
+        gain.gain.exponentialRampToValueAtTime(0.01, time + 0.05);
+        src.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.analyser);
+        src.start(time);
+        src.stop(time + 0.05);
+      }
+
+      playBass(time, step) {
+        const notes = [55, 55, 65, 73, 55, 55, 49, 55];
+        const freq = notes[(step / 2) % notes.length];
+        const osc = this.ctx.createOscillator();
+        osc.type = 'sawtooth';
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(400, time);
+        filter.frequency.linearRampToValueAtTime(120, time + 0.2);
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.4, time);
+        gain.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
+        osc.frequency.setValueAtTime(freq, time);
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.analyser);
+        osc.start(time);
+        osc.stop(time + 0.2);
+      }
+
+      playPad(time, step) {
+        const chords = [
+          [261.63, 329.63, 392.00],
+          [220.00, 261.63, 329.63],
+          [196.00, 246.94, 293.66],
+          [261.63, 329.63, 392.00]
+        ];
+        const chord = chords[(step / 4) % chords.length];
+        chord.forEach(f => {
+          const osc = this.ctx.createOscillator();
+          osc.type = 'triangle';
+          const gain = this.ctx.createGain();
+          gain.gain.setValueAtTime(0.06, time);
+          gain.gain.exponentialRampToValueAtTime(0.01, time + 1.5);
+          osc.frequency.setValueAtTime(f, time);
+          osc.connect(gain);
+          gain.connect(this.analyser);
+          osc.start(time);
+          osc.stop(time + 1.5);
+        });
+      }
+
+      getData() {
+        if (!this.analyser) return { bass: 0, energy: 0, treble: 0, fft: new Uint8Array(64) };
+        const data = new Uint8Array(this.analyser.frequencyBinCount);
+        this.analyser.getByteFrequencyData(data);
+        const n = data.length;
+        const bassEnd = Math.max(1, Math.floor(n * 0.15));
+        const midEnd = Math.max(bassEnd + 1, Math.floor(n * 0.5));
+        let bass = 0, energy = 0, treble = 0;
+        for (let i = 0; i < n; i++) {
+          energy += data[i];
+          if (i < bassEnd) bass += data[i];
+          else if (i >= midEnd) treble += data[i];
+        }
+        bass = bass / bassEnd / 255;
+        treble = treble / (n - midEnd) / 255;
+        energy = energy / n / 255;
+        return { bass, energy, treble, fft: data };
+      }
+
+      setBpm(bpm) { this.bpm = bpm; }
+      setVolume(v) {
+        this.volume = v;
+        if (this.master && this.ctx) {
+          this.master.gain.setTargetAtTime(v, this.ctx.currentTime, 0.05);
+        }
+      }
+    }
+
+    class LightSystem {
+      constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.resize();
+        window.addEventListener('resize', () => this.resize());
+        this.lightCount = 220;
+        this.lights = [];
+        for (let i = 0; i < this.lightCount; i++) {
+          this.lights.push({
+            x: 0, y: 0, baseX: Math.random(), baseY: Math.random(),
+            h: 0, s: 100, l: 50, alpha: 1, r: 4, phase: Math.random() * Math.PI * 2,
+            sparkle: 0
+          });
+        }
+        this.fft = new Uint8Array(64);
+        this.audio = { bass: 0, energy: 0, treble: 0 };
+        this.pulse = 0;
+        this.time = 0;
+      }
+
+      resize() {
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+        this.w = this.canvas.width;
+        this.h = this.canvas.height;
+      }
+
+      update(dt) {
+        this.time += dt * state.speed;
+        this.updateAudio();
+        this.pulse += (this.audio.bass - this.pulse) * 0.25;
+        this.updatePositions();
+        this.updateColors();
+      }
+
+      updateAudio() {
+        if (state.musicSync && audioEngine && audioEngine.isPlaying && audioEngine.analyser) {
+          const data = audioEngine.getData();
+          this.audio = data;
+          this.fft = data.fft;
+        } else {
+          const bpm = state.bpm || 120;
+          const beat = (this.time * (bpm / 60)) % 1;
+          const bass = beat < 0.15 ? 1 - beat / 0.15 : 0;
+          const energy = 0.4 + 0.4 * bass;
+          this.audio = { bass, energy, treble: 0.3 + 0.3 * bass };
+          const n = 64;
+          if (this.fft.length !== n) this.fft = new Uint8Array(n);
+          for (let i = 0; i < n; i++) {
+            this.fft[i] = (0.3 + 0.5 * bass * Math.exp(-i / 8)) * 255 * (0.8 + 0.2 * Math.sin(this.time * 5 + i));
+          }
+        }
+      }
+
+      updatePositions() {
+        const w = this.w, h = this.h, n = this.lights.length;
+        const t = this.time;
+        const spread = state.spread;
+        const bass = this.audio.bass;
+        switch (state.pattern) {
+          case 'string':
+            for (let i = 0; i < n; i++) {
+              const p = i / (n - 1);
+              this.lights[i].x = p * w;
+              this.lights[i].y = h / 2 + Math.sin(p * Math.PI * 4 + t * 2) * h * 0.15 * spread + bass * h * 0.05;
+            }
+            break;
+          case 'grid':
+            const cols = Math.ceil(Math.sqrt(n * 1.4));
+            const rows = Math.ceil(n / cols);
+            for (let i = 0; i < n; i++) {
+              const col = i % cols;
+              const row = Math.floor(i / cols);
+              this.lights[i].x = (col + 0.5) * (w / cols);
+              this.lights[i].y = (row + 0.5) * (h / rows);
+            }
+            break;
+          case 'ring':
+            const rings = 5;
+            let idx = 0;
+            for (let r = 0; r < rings; r++) {
+              const radius = (0.12 + 0.1 * r) * Math.min(w, h) * 0.5 * spread + bass * 50;
+              const count = Math.floor(n / rings);
+              const dir = (r % 2 === 0) ? 1 : -1;
+              for (let j = 0; j < count && idx < n; j++) {
+                const a = (j / count) * Math.PI * 2 + t * (0.3 + r * 0.1) * dir;
+                this.lights[idx].x = w / 2 + Math.cos(a) * radius;
+                this.lights[idx].y = h / 2 + Math.sin(a) * radius;
+                idx++;
+              }
+            }
+            break;
+          case 'wave':
+            for (let i = 0; i < n; i++) {
+              const p = i / (n - 1);
+              this.lights[i].x = w / 2 + Math.sin(p * Math.PI * 6 + t * 2) * w * 0.35 * spread;
+              this.lights[i].y = p * h;
+            }
+            break;
+          case 'star':
+            const arms = 7;
+            const ptsPerArm = Math.floor(n / arms);
+            let ii = 0;
+            for (let a = 0; a < arms; a++) {
+              for (let j = 0; j < ptsPerArm && ii < n; j++) {
+                const p = j / ptsPerArm;
+                const radius = p * Math.min(w, h) * 0.45 * spread * (1 + bass * 0.3);
+                const angle = a * Math.PI * 2 / arms + t * 0.4 + p * Math.PI * 0.3;
+                this.lights[ii].x = w / 2 + Math.cos(angle) * radius;
+                this.lights[ii].y = h / 2 + Math.sin(angle) * radius;
+                ii++;
+              }
+            }
+            break;
+          case 'random':
+            for (let i = 0; i < n; i++) {
+              const l = this.lights[i];
+              const jitter = bass * 40;
+              l.x = (l.baseX * w + Math.sin(t * 0.7 + l.phase) * jitter + w) % w;
+              l.y = (l.baseY * h + Math.cos(t * 0.5 + l.phase) * jitter + h) % h;
+            }
+            break;
+        }
+      }
+
+      updateColors() {
+        const n = this.lights.length;
+        const t = this.time;
+        const effect = state.effect;
+        const theme = state.theme;
+        const audio = this.audio;
+        for (let i = 0; i < n; i++) {
+          const l = this.lights[i];
+          const p = i / (n - 1);
+          let value = 0;
+          switch (effect) {
+            case 'chase':
+              const peak = (t * 0.3) % 1;
+              const d1 = Math.abs(p - peak);
+              const d2 = Math.abs(p - (peak + 0.5) % 1);
+              const d = Math.min(d1, d2);
+              value = Math.exp(-d * d * 80);
+              break;
+            case 'wave':
+              value = 0.5 + 0.5 * Math.sin(p * 12 + t * 2);
+              break;
+            case 'pulse':
+              value = 0.5 + 0.5 * Math.sin(t * 3 + p * Math.PI);
+              value = Math.max(value, this.pulse);
+              break;
+            case 'twinkle':
+              value = 0.5 + 0.5 * Math.sin(t * 3 + l.phase * 5);
+              value = Math.pow(value, 4);
+              break;
+            case 'sparkle':
+              if (Math.random() < 0.02 + audio.treble * 0.15) l.sparkle = 1;
+              l.sparkle *= 0.92;
+              value = l.sparkle;
+              break;
+            case 'equalizer':
+              value = this.fft[Math.floor(p * (this.fft.length - 1))] / 255;
+              break;
+            case 'flow':
+              value = (p + t * 0.1) % 1;
+              break;
+          }
+          if (state.musicSync) {
+            value = Math.min(1, value * (0.6 + 0.6 * audio.energy) + audio.bass * 0.2);
+          }
+          const color = getColor(value, theme, t);
+          l.h = color.h; l.s = color.s; l.l = color.l;
+          l.alpha = (0.3 + 0.7 * value) * state.brightness;
+          l.r = (2 + 5 * value) * state.size;
+        }
+      }
+
+      render() {
+        const ctx = this.ctx;
+        const w = this.w, h = this.h;
+        ctx.globalCompositeOperation = 'source-over';
+        if (state.trails) {
+          ctx.fillStyle = 'rgba(5, 2, 18, 0.28)';
+          ctx.fillRect(0, 0, w, h);
+        } else {
+          ctx.fillStyle = 'rgba(5, 2, 18, 1)';
+          ctx.fillRect(0, 0, w, h);
+        }
+        ctx.globalCompositeOperation = 'lighter';
+        for (let l of this.lights) {
+          if (l.alpha <= 0.01) continue;
+          const glowR = l.r * 5;
+          const grad = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, glowR);
+          grad.addColorStop(0, `hsla(${l.h}, ${l.s}%, ${l.l}%, ${l.alpha})`);
+          grad.addColorStop(0.35, `hsla(${l.h}, ${l.s}%, ${l.l}%, ${l.alpha * 0.4})`);
+          grad.addColorStop(1, `hsla(${l.h}, ${l.s}%, ${l.l}%, 0)`);
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(l.x, l.y, glowR, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = `hsla(${l.h}, ${l.s}%, ${Math.min(100, l.l + 25)}%, ${l.alpha})`;
+          ctx.beginPath();
+          ctx.arc(l.x, l.y, Math.max(0.5, l.r * 0.6), 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalCompositeOperation = 'source-over';
+        const vg = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.7);
+        vg.addColorStop(0, 'rgba(0,0,0,0)');
+        vg.addColorStop(1, 'rgba(0,0,0,0.5)');
+        ctx.fillStyle = vg;
+        ctx.fillRect(0, 0, w, h);
+      }
+    }
+
+    function drawVisualizer(ctx, w, h, data) {
+      ctx.clearRect(0, 0, w, h);
+      const bars = 32;
+      const barW = w / bars;
+      for (let i = 0; i < bars; i++) {
+        const idx = Math.floor(i / bars * data.length);
+        const val = (data[idx] || 0) / 255;
+        const bh = val * h;
+        const hue = 320 - i * 8;
+        const grad = ctx.createLinearGradient(0, h - bh, 0, h);
+        grad.addColorStop(0, `hsla(${hue}, 100%, 75%, 0.95)`);
+        grad.addColorStop(1, `hsla(${hue}, 100%, 50%, 0.25)`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(i * barW + 1, h - bh, barW - 2, bh);
+      }
+    }
+
+    function populateSelect(el, options, labelMap) {
+      el.innerHTML = '';
+      options.forEach(o => {
+        const opt = document.createElement('option');
+        opt.value = o;
+        opt.textContent = labelMap[o] || o;
+        el.appendChild(opt);
+      });
+    }
+
+    function updateUI() {
+      $('themeSelect').value = state.theme;
+      $('patternSelect').value = state.pattern;
+      $('effectSelect').value = state.effect;
+      $('speedSlider').value = state.speed;
+      $('brightSlider').value = state.brightness;
+      $('sizeSlider').value = state.size;
+      $('spreadSlider').value = state.spread;
+      $('bpmSlider').value = state.bpm;
+      $('volSlider').value = state.volume;
+      $('syncBtn').classList.toggle('active', state.musicSync);
+      $('trailsBtn').classList.toggle('active', state.trails);
+      $('musicBtn').classList.toggle('active', state.musicPlaying);
+      $('musicBtn').textContent = state.musicPlaying ? '❚❚ Music' : '▶ Music';
+    }
+
+    populateSelect($('themeSelect'), themes, labels.theme);
+    populateSelect($('patternSelect'), patterns, labels.pattern);
+    populateSelect($('effectSelect'), effects, labels.effect);
+    updateUI();
+
+    $('themeSelect').addEventListener('change', e => state.theme = e.target.value);
+    $('patternSelect').addEventListener('change', e => state.pattern = e.target.value);
+    $('effectSelect').addEventListener('change', e => state.effect = e.target.value);
+    $('speedSlider').addEventListener('input', e => state.speed = parseFloat(e.target.value));
+    $('brightSlider').addEventListener('input', e => state.brightness = parseFloat(e.target.value));
+    $('sizeSlider').addEventListener('input', e => state.size = parseFloat(e.target.value));
+    $('spreadSlider').addEventListener('input', e => state.spread = parseFloat(e.target.value));
+    $('bpmSlider').addEventListener('input', e => {
+      state.bpm = parseInt(e.target.value);
+      if (audioEngine) audioEngine.setBpm(state.bpm);
+    });
+    $('volSlider').addEventListener('input', e => {
+      state.volume = parseFloat(e.target.value);
+      if (audioEngine) audioEngine.setVolume(state.volume);
+    });
+    $('syncBtn').addEventListener('click', () => { state.musicSync = !state.musicSync; updateUI(); });
+    $('trailsBtn').addEventListener('click', () => { state.trails = !state.trails; updateUI(); });
+    $('musicBtn').addEventListener('click', toggleMusic);
+    $('randomBtn').addEventListener('click', randomize);
+    $('snapBtn').addEventListener('click', snapshot);
+    $('fsBtn').addEventListener('click', toggleFullscreen);
+    $('startBtn').addEventListener('click', startShow);
+
+    function toggleMusic() {
+      if (!audioEngine) audioEngine = new AudioEngine();
+      if (audioEngine.isPlaying) {
+        audioEngine.stop();
+        state.musicPlaying = false;
+      } else {
+        audioEngine.start();
+        state.musicPlaying = true;
+      }
+      updateUI();
+    }
+
+    function randomize() {
+      state.theme = themes[Math.floor(Math.random() * themes.length)];
+      state.pattern = patterns[Math.floor(Math.random() * patterns.length)];
+      state.effect = effects[Math.floor(Math.random() * effects.length)];
+      state.speed = 0.5 + Math.random() * 2;
+      state.brightness = 0.6 + Math.random() * 0.6;
+      state.size = 0.7 + Math.random() * 1.5;
+      state.spread = 0.7 + Math.random() * 1.0;
+      updateUI();
+    }
+
+    function snapshot() {
+      const link = document.createElement('a');
+      link.download = 'festival-lights.png';
+      link.href = $('showCanvas').toDataURL('image/png');
+      link.click();
+    }
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen();
+      }
+    }
+
+    async function startShow() {
+      started = true;
+      audioEngine = new AudioEngine();
+      if ($('musicOnStart').checked) {
+        try {
+          await audioEngine.start();
+          state.musicPlaying = true;
+        } catch (err) {
+          console.warn('Audio failed to start', err);
+          state.musicPlaying = false;
+        }
+      }
+      updateUI();
+      $('overlay').style.transition = 'opacity 0.4s ease';
+      $('overlay').style.opacity = '0';
+      setTimeout(() => {
+        $('overlay').classList.add('hidden');
+        $('controlsPanel').classList.remove('hidden');
+        void $('controlsPanel').offsetWidth;
+        $('controlsPanel').classList.add('show');
+      }, 400);
+    }
+
+    const lightSystem = new LightSystem($('showCanvas'));
+    const vizCanvas = $('vizCanvas');
+    const vizCtx = vizCanvas.getContext('2d');
+
+    let lastTime = performance.now();
+    function loop(now) {
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+      lightSystem.update(dt);
+      lightSystem.render();
+      drawVisualizer(vizCtx, vizCanvas.width, vizCanvas.height, lightSystem.fft);
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+
+    document.addEventListener('keydown', e => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+      if (e.code === 'Space') { e.preventDefault(); toggleMusic(); }
+      if (e.code === 'KeyR') { randomize(); }
+      if (e.code === 'KeyF') { toggleFullscreen(); }
+    });
+  </script>
+</body>
+</html>

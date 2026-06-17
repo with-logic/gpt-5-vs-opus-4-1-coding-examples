@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Interactive language learning flashcards with flip animations, shuffle, and progress tracking for travelers.">
+  <title>Language Learning Flashcards</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', 'Noto Sans JP', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    .animated-bg {
+      background: linear-gradient(-45deg, #0f172a, #1e1b4b, #312e81, #0f172a);
+      background-size: 400% 400%;
+      animation: gradientBG 15s ease infinite;
+    }
+
+    @keyframes gradientBG {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    .glass {
+      background: rgba(255, 255, 255, 0.08);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .flip-card {
+      perspective: 1200px;
+    }
+
+    .flip-card-inner {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      transition: transform 0.7s cubic-bezier(0.4, 0.0, 0.2, 1);
+      transform-style: preserve-3d;
+    }
+
+    .flip-card.flipped .flip-card-inner {
+      transform: rotateY(180deg);
+    }
+
+    .flip-card-front,
+    .flip-card-back {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+      border-radius: 1.5rem;
+    }
+
+    .flip-card-back {
+      transform: rotateY(180deg);
+    }
+
+    .btn-glass {
+      transition: all 0.2s ease;
+    }
+    .btn-glass:hover {
+      background: rgba(255, 255, 255, 0.15);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
+    }
+    .btn-glass:active {
+      transform: translateY(0);
+    }
+
+    .shuffle-anim {
+      animation: shuffleAnim 0.5s ease;
+    }
+
+    @keyframes shuffleAnim {
+      0% { transform: rotate(0deg) scale(1); }
+      25% { transform: rotate(6deg) scale(0.95); }
+      50% { transform: rotate(-6deg) scale(0.95); }
+      75% { transform: rotate(3deg) scale(0.98); }
+      100% { transform: rotate(0deg) scale(1); }
+    }
+
+    .pulse-green {
+      animation: pulseGreen 0.6s ease;
+    }
+
+    @keyframes pulseGreen {
+      0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+      70% { box-shadow: 0 0 0 24px rgba(34, 197, 94, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+    }
+
+    .shape {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(80px);
+      opacity: 0.35;
+      animation: float 20s infinite ease-in-out;
+      pointer-events: none;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translate(0, 0); }
+      50% { transform: translate(30px, -30px); }
+    }
+
+    .shape-delay-1 { animation-delay: 0s; }
+    .shape-delay-2 { animation-delay: -5s; }
+    .shape-delay-3 { animation-delay: -10s; }
+
+    .language-card {
+      opacity: 0;
+      animation: fadeUp 0.6s ease forwards;
+    }
+
+    .language-card:nth-child(1) { animation-delay: 0.1s; }
+    .language-card:nth-child(2) { animation-delay: 0.2s; }
+    .language-card:nth-child(3) { animation-delay: 0.3s; }
+    .language-card:nth-child(4) { animation-delay: 0.4s; }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(30px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    #card-container {
+      transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+
+    .scale-in {
+      animation: scaleIn 0.3s ease forwards;
+    }
+
+    @keyframes scaleIn {
+      from { opacity: 0; transform: scale(0.9); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    .bounce-icon {
+      animation: bounce 1s ease infinite;
+    }
+
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-20px); }
+    }
+
+    @media (max-width: 640px) {
+      .flip-card-front,
+      .flip-card-back {
+        border-radius: 1rem;
+      }
+    }
+  </style>
+</head>
+<body class="bg-slate-900 text-white min-h-screen antialiased">
+  <div id="app" class="min-h-screen flex flex-col"></div>
+  <canvas id="confetti-canvas" class="fixed inset-0 pointer-events-none z-50"></canvas>
+
+  <script>
+    (function() {
+      // ===== DATA =====
+      const basePhrases = [
+        { category: 'greeting', translations: { en: 'Hello', es: 'Hola', fr: 'Bonjour', ja: 'こんにちは' } },
+        { category: 'thanks', translations: { en: 'Thank you', es: 'Gracias', fr: 'Merci', ja: 'ありがとうございます' } },
+        { category: 'polite', translations: { en: 'Please', es: 'Por favor', fr: "S'il vous plaît", ja: 'お願いします' } },
+        { category: 'apology', translations: { en: 'Excuse me', es: 'Disculpe', fr: 'Excusez-moi', ja: 'すみません' } },
+        { category: 'bathroom', translations: { en: 'Where is the bathroom?', es: '¿Dónde está el baño?', fr: 'Où sont les toilettes ?', ja: 'トイレはどこですか' } },
+        { category: 'price', translations: { en: 'How much does this cost?', es: '¿Cuánto cuesta esto?', fr: 'Combien ça coûte ?', ja: 'これはいくらですか' } },
+        { category: 'order', translations: { en: 'I would like to order...', es: 'Me gustaría pedir...', fr: 'Je voudrais commander...', ja: '...を注文したいです' } },
+        { category: 'help', translations: { en: 'Can you help me?', es: '¿Puede ayudarme?', fr: "Pouvez-vous m'aider ?", ja: '手伝っていただけますか' } },
+        { category: 'language', translations: { en: 'Do you speak English?', es: '¿Habla inglés?', fr: 'Parlez-vous anglais ?', ja: '英語を話せますか' } },
+        { category: 'farewell', translations: { en: 'Goodbye', es: 'Adiós', fr: 'Au revoir', ja: 'さようなら' } }
+      ];
+
+      function generatePhrases() {
+        const result = {};
+        ['en', 'es', 'fr', 'ja'].forEach(target => {
+          result[target] = basePhrases.map((p, i) => ({
+            id: `${target}_${i}`,
+            text: p.translations[target],
+            translations: p.translations,
+            category: p.category
+          }));
+        });
+        return result;
+      }
+
+      const phrases = generatePhrases();
+
+      const uiStrings = {
+        en: {
+          appTitle: 'Travel Flashcards',
+          subtitle: 'Learn essential phrases for your next trip',
+          chooseLanguage: 'Which language would you like to learn?',
+          learningLanguage: 'Learning',
+          shuffle: 'Shuffle',
+          markLearned: 'Mark as learned',
+          unmarkLearned: 'Unmark',
+          learned: 'Learned',
+          remaining: 'Remaining',
+          next: 'Next',
+          prev: 'Previous',
+          flip: 'Flip',
+          reset: 'Reset progress',
+          restart: 'Start over',
+          backToMenu: 'Back to menu',
+          noCards: 'No cards to show',
+          allLearned: 'All cards learned!',
+          congrats: 'Great job! You have mastered every phrase.',
+          startLearning: 'Start Learning',
+          showAll: 'All cards',
+          showUnlearned: 'Unlearned',
+          showLearned: 'Learned',
+          tapToFlip: 'Tap or press Space to flip',
+          languageLabel: 'Interface language',
+          cards: 'cards',
+          languageName_en: 'English',
+          languageName_es: 'Spanish',
+          languageName_fr: 'French',
+          languageName_ja: 'Japanese',
+          shortcuts: 'Space: flip • ← →: navigate • S: shuffle • L: mark learned • Esc: menu'
+        },
+        es: {
+          appTitle: 'Tarjetas de Viaje',
+          subtitle: 'Aprende frases esenciales para tu próximo viaje',
+          chooseLanguage: '¿Qué idioma te gustaría aprender?',
+          learningLanguage: 'Aprendiendo',
+          shuffle: 'Barajar',
+          markLearned: 'Marcar como aprendido',
+          unmarkLearned: 'Desmarcar',
+          learned: 'Aprendidas',
+          remaining: 'Restantes',
+          next: 'Siguiente',
+          prev: 'Anterior',
+          flip: 'Voltear',
+          reset: 'Reiniciar progreso',
+          restart: 'Empezar de nuevo',
+          backToMenu: 'Volver al menú',
+          noCards: 'No hay tarjetas para mostrar',
+          allLearned: '¡Todas las tarjetas aprendidas!',
+          congrats: '¡Bien hecho! Has dominado todas las frases.',
+          startLearning: 'Comenzar a aprender',
+          showAll: 'Todas las tarjetas',
+          showUnlearned: 'Por aprender',
+          showLearned: 'Aprendidas',
+          tapToFlip: 'Toca o presiona Espacio para voltear',
+          languageLabel: 'Idioma de la interfaz',
+          cards: 'tarjetas',
+          languageName_en: 'Inglés',
+          languageName_es: 'Español',
+          languageName_fr: 'Francés',
+          languageName_ja: 'Japonés',
+          shortcuts: 'Espacio: voltear • ← →: navegar • S: barajar • L: marcar • Esc: menú'
+        },
+        fr: {
+          appTitle: 'Cartes de Voyage',
+          subtitle: 'Apprenez des phrases essentielles pour votre prochain voyage',
+          chooseLanguage: 'Quelle langue souhaitez-vous apprendre ?',
+          learningLanguage: 'Apprentissage',
+          shuffle: 'Mélanger',
+          markLearned: 'Marquer comme appris',
+          unmarkLearned: 'Démarquer',
+          learned: 'Appris',
+          remaining: 'Restant',
+          next: 'Suivant',
+          prev: 'Précédent',
+          flip: 'Retourner',
+          reset: 'Réinitialiser la progression',
+          restart: 'Recommencer',
+          backToMenu: 'Retour au menu',
+          noCards: 'Aucune carte à afficher',
+          allLearned: 'Toutes les cartes sont apprises !',
+          congrats: 'Bravo ! Vous maîtrisez toutes les phrases.',
+          startLearning: 'Commencer à apprendre',
+          showAll: 'Toutes les cartes',
+          showUnlearned: 'Non apprises',
+          showLearned: 'Apprises',
+          tapToFlip: 'Tapez ou appuyez sur Espace pour retourner',
+          languageLabel: "Langue de l'interface",
+          cards: 'cartes',
+          languageName_en: 'Anglais',
+          languageName_es: 'Espagnol',
+          languageName_fr: 'Français',
+          languageName_ja: 'Japonais',
+          shortcuts: 'Espace : retourner • ← → : naviguer • S : mélanger • L : marquer • Échap : menu'
+        },
+        ja: {
+          appTitle: '旅行フラッシュカード',
+          subtitle: '次の旅行に役立つ表現を学ぼう',
+          chooseLanguage: '学びたい言語を選んでください',
+          learningLanguage: '学習中',
+          shuffle: 'シャッフル',
+          markLearned: '学習済みにする',
+          unmarkLearned: 'マーク解除',
+          learned: '学習済み',
+          remaining: '残り',
+          next: '次へ',
+          prev: '前へ',
+          flip: '裏返す',
+          reset: '進捗をリセット',
+          restart: '最初から',
+          backToMenu: 'メニューに戻る',
+          noCards: '表示するカードがありません',
+          allLearned: 'すべてのカードを学習しました！',
+          congrats: 'よくできました！すべての表現をマスターしました。',
+          startLearning: '学習を始める',
+          showAll: 'すべてのカード',
+          showUnlearned: '未学習',
+          showLearned: '学習済み',
+          tapToFlip: 'タップまたはスペースキーで裏返す',
+          languageLabel: '表示言語',
+          cards: 'カード',
+          languageName_en: '英語',
+          languageName_es: 'スペイン語',
+          languageName_fr: 'フランス語',
+          languageName_ja: '日本語',
+          shortcuts: 'スペース：裏返す • ← →：移動 • S：シャッフル • L：学習済み • Esc：メニュー'
+        }
+      };
+
+      // ===== STATE =====
+      const state = {
+        uiLang: detectUILanguage(),
+        targetLang: null,
+        cards: [],
+        filter: 'all',
+        currentIndex: 0,
+        isFlipped: false,
+        learned: new Set(),
+        celebrationShown: false
+      };
+
+      // ===== HELPERS =====
+      function detectUILanguage() {
+        const lang = (navigator.language || navigator.userLanguage || 'en').toLowerCase();
+        if (lang.startsWith('es')) return 'es';
+        if (lang.startsWith('fr')) return 'fr';
+        if (lang.startsWith('ja')) return 'ja';
+        return 'en';
+      }
+
+      function t(key) {
+        return uiStrings[state.uiLang]?.[key] || uiStrings.en[key] || key;
+      }
+
+      function escapeHtml(str) {
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      // ===== MENU =====
+      function renderLanguageMenu() {
+        const app = document.getElementById('app');
+        app.innerHTML = `
+          <div class="min-h-screen animated-bg relative flex flex-col items-center justify-center p-6">
+            <div class="shape w-72 h-72 bg-purple-500 top-[-10%] left-[-10%] shape-delay-1"></div>
+            <div class="shape w-96 h-96 bg-blue-500 bottom-[-10%] right-[-10%] shape-delay-2"></div>
+            
+            <div class="relative z-10 w-full max-w-5xl">
+              <header class="text-center mb-10 md:mb-14">
+                <h1 class="text-4xl md:text-6xl font-bold mb-4 tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-blue-300 via-purple-300 to-pink-300">${t('appTitle')}</h1>
+                <p class="text-lg md:text-xl text-slate-300">${t('subtitle')}</p>
+              </header>
+              
+              <div class="glass rounded-2xl p-6 md:p-10 max-w-3xl mx-auto shadow-2xl">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+                  <h2 class="text-2xl font-semibold">${t('chooseLanguage')}</h2>
+                  <div class="flex items-center gap-2">
+                    <label for="ui-language-select" class="text-sm text-slate-400">${t('languageLabel')}:</label>
+                    <select id="ui-language-select" class="glass rounded-lg px-3 py-2 text-sm outline-none cursor-pointer hover:bg-white/10 transition">
+                      ${['en','es','fr','ja'].map(lang => `<option value="${lang}" ${state.uiLang === lang ? 'selected' : ''}>${t('languageName_' + lang)}</option>`).join('')}
+                    </select>
+                  </div>
+                </div>
+                
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  ${['en','es','fr','ja'].map(createLanguageCard).join('')}
+                </div>
+              </div>
+              
+              <footer class="mt-12 text-center text-slate-400 text-sm">
+                <p>${t('languageLabel')}: ${t('languageName_' + state.uiLang)}</p>
+              </footer>
+            </div>
+          </div>
+        `;
+        attachMenuListeners();
+      }
+
+      function createLanguageCard(lang) {
+        const flags = { en: '🇺🇸', es: '🇪🇸', fr: '🇫🇷', ja: '🇯🇵' };
+        const nativeNames = { en: 'English', es: 'Español', fr: 'Français', ja: '日本語' };
+        return `
+          <button class="language-card glass rounded-xl p-5 md:p-6 text-left hover:bg-white/10 transition-all duration-300 transform hover:-translate-y-1 group focus:outline-none focus:ring-2 focus:ring-blue-400/50" data-lang="${lang}">
+            <div class="flex items-center gap-4">
+              <span class="text-4xl md:text-5xl group-hover:scale-110 transition-transform duration-300">${flags[lang]}</span>
+              <div class="flex-1 min-w-0">
+                <h3 class="text-xl md:text-2xl font-bold truncate">${nativeNames[lang]}</h3>
+                <p class="text-slate-300 text-sm md:text-base">${t('languageName_' + lang)}</p>
+                <p class="text-slate-400 text-xs mt-2">10 ${t('cards')}</p>
+              </div>
+              <span class="text-slate-400 group-hover:text-white transition-colors text-xl">→</span>
+            </div>
+          </button>
+        `;
+      }
+
+      function selectTargetLanguage(lang) {
+        state.targetLang = lang;
+        state.cards = phrases[lang].map(c => ({...c}));
+        state.currentIndex = 0;
+        state.isFlipped = false;
+        state.learned.clear();
+        state.celebrationShown = false;
+        state.filter = 'all';
+        renderFlashcardView();
+      }
+
+      function setUILanguage(lang) {
+        state.uiLang = lang;
+      }
+
+      function attachMenuListeners() {
+        document.querySelectorAll('.language-card').forEach(btn => {
+          btn.addEventListener('click', () => selectTargetLanguage(btn.dataset.lang));
+        });
+
+        const select = document.getElementById('ui-language-select');
+        if (select) {
+          select.addEventListener('change', (e) => {
+            setUILanguage(e.target.value);
+            renderLanguageMenu();
+          });
+        }
+      }
+
+      // ===== FLASHCARD VIEW =====
+      function renderFlashcardView() {
+        const app = document.getElementById('app');
+        app.innerHTML = `
+          <div class="min-h-screen animated-bg relative flex flex-col p-4 md:p-6">
+            <div class="shape w-64 h-64 bg-indigo-500 top-[-5%] left-[-5%] shape-delay-1"></div>
+            <div class="shape w-80 h-80 bg-cyan-500 bottom-[-5%] right-[-5%] shape-delay-3"></div>
+            
+            <div class="relative z-10 w-full max-w-4xl mx-auto flex flex-col flex-grow">
+              <header class="flex flex-col md:flex-row items-center justify-between gap-4 mb-6">
+                <div class="flex items-center gap-2 w-full md:w-auto justify-center md:justify-start">
+                  <button id="back-btn" class="btn-glass glass rounded-lg px-4 py-2 text-sm flex items-center gap-2">
+                    <span>←</span> ${t('backToMenu')}
+                  </button>
+                  <button id="reset-btn" class="btn-glass glass rounded-lg px-4 py-2 text-sm flex items-center gap-2" title="${t('reset')}">
+                    <span>↺</span> ${t('reset')}
+                  </button>
+                </div>
+                <div class="text-center">
+                  <h2 class="text-lg md:text-xl font-bold">${t('learningLanguage')}: ${t('languageName_' + state.targetLang)}</h2>
+                </div>
+                <select id="ui-language-select" class="glass rounded-lg px-3 py-2 text-sm outline-none cursor-pointer hover:bg-white/10 transition w-full md:w-auto">
+                  ${['en','es','fr','ja'].map(lang => `<option value="${lang}" ${state.uiLang === lang ? 'selected' : ''}>${t('languageName_' + lang)}</option>`).join('')}
+                </select>
+              </header>
+              
+              <div class="mb-6">
+                <div class="flex justify-between text-sm mb-2 text-slate-300">
+                  <span>${t('learned')}: <span id="learned-count" class="font-bold text-green-400">0</span></span>
+                  <span>${t('remaining')}: <span id="remaining-count" class="font-bold">0</span></span>
+                </div>
+                <div class="w-full h-2.5 bg-slate-700/60 rounded-full overflow-hidden glass">
+                  <div id="progress-bar" class="h-full bg-gradient-to-r from-green-400 to-emerald-500 rounded-full transition-all duration-500" style="width: 0%"></div>
+                </div>
+              </div>
+              
+              <div class="flex justify-center gap-2 mb-6 flex-wrap">
+                <button class="filter-btn btn-glass glass rounded-lg px-4 py-1.5 text-sm ${state.filter === 'all' ? 'bg-white/20 text-white' : 'text-slate-300'}" data-filter="all">${t('showAll')}</button>
+                <button class="filter-btn btn-glass glass rounded-lg px-4 py-1.5 text-sm ${state.filter === 'unlearned' ? 'bg-white/20 text-white' : 'text-slate-300'}" data-filter="unlearned">${t('showUnlearned')}</button>
+                <button class="filter-btn btn-glass glass rounded-lg px-4 py-1.5 text-sm ${state.filter === 'learned' ? 'bg-white/20 text-white' : 'text-slate-300'}" data-filter="learned">${t('showLearned')}</button>
+              </div>
+              
+              <div class="flex-grow flex items-center justify-center mb-6">
+                <div id="card-container" class="w-full max-w-xl aspect-[3/2]">
+                  <!-- card rendered here -->
+                </div>
+              </div>
+              
+              <div class="flex flex-col gap-4 mb-4">
+                <div class="flex justify-center gap-3 md:gap-4">
+                  <button id="prev-btn" class="btn-glass glass rounded-xl px-5 md:px-6 py-3 font-medium flex items-center gap-2">
+                    <span>←</span> ${t('prev')}
+                  </button>
+                  <button id="flip-btn" class="btn-glass glass rounded-xl px-7 md:px-8 py-3 font-bold bg-blue-500/30 hover:bg-blue-500/40 flex items-center gap-2">
+                    <span>↻</span> ${t('flip')}
+                  </button>
+                  <button id="next-btn" class="btn-glass glass rounded-xl px-5 md:px-6 py-3 font-medium flex items-center gap-2">
+                    ${t('next')} <span>→</span>
+                  </button>
+                </div>
+                <div class="flex justify-center gap-3 md:gap-4">
+                  <button id="shuffle-btn" class="btn-glass glass rounded-xl px-5 py-2.5 text-sm flex items-center gap-2">
+                    <span>🔀</span> ${t('shuffle')}
+                  </button>
+                  <button id="learned-btn" class="btn-glass glass rounded-xl px-5 py-2.5 text-sm flex items-center gap-2">
+                    <span>✓</span> ${t('markLearned')}
+                  </button>
+                </div>
+              </div>
+              
+              <div class="text-center pb-4">
+                <p class="text-slate-500 text-xs md:text-sm">${t('shortcuts')}</p>
+              </div>
+            </div>
+          </div>
+        `;
+        attachFlashcardListeners();
+        renderCard();
+        updateProgress();
+      }
+
+      function getFilteredCards() {
+        return state.cards.filter(card => {
+          if (state.filter === 'all') return true;
+          const isLearned = state.learned.has(card.id);
+          return state.filter === 'learned' ? isLearned : !isLearned;
+        });
+      }
+
+      function getCurrentCard() {
+        const filtered = getFilteredCards();
+        return filtered[state.currentIndex] || null;
+      }
+
+      function renderCard() {
+        const container = document.getElementById('card-container');
+        if (!container) return;
+
+        const card = getCurrentCard();
+
+        if (!card) {
+          container.innerHTML = `
+            <div class="glass rounded-2xl h-full flex flex-col items-center justify-center p-8 text-center">
+              <p class="text-xl text-slate-300 mb-4">${t('noCards')}</p>
+              ${state.filter === 'unlearned' && state.learned.size === state.cards.length && state.cards.length > 0 ? `
+                <div class="text-5xl mb-4 bounce-icon">🎉</div>
+                <p class="text-green-400 font-bold text-2xl mb-2">${t('allLearned')}</p>
+                <p class="text-slate-400">${t('congrats')}</p>
+              ` : ''}
+            </div>
+          `;
+          updateLearnedButton();
+          return;
+        }
+
+        const backText = card.translations[state.uiLang] || card.translations.en;
+        const isLearned = state.learned.has(card.id);
+
+        container.innerHTML = `
+          <div class="flip-card w-full h-full ${state.isFlipped ? 'flipped' : ''}" id="flashcard" role="button" aria-label="${t('flip')}">
+            <div class="flip-card-inner">
+              <div class="flip-card-front glass flex flex-col items-center justify-center p-6 md:p-10 text-center">
+                ${isLearned ? `<div class="absolute top-4 right-4 bg-green-500/20 text-green-400 rounded-full px-3 py-1 text-xs font-bold backdrop-blur-sm">✓ ${t('learned')}</div>` : ''}
+                <div class="text-slate-400 text-xs md:text-sm uppercase tracking-widest mb-4">${t('languageName_' + state.targetLang)}</div>
+                <h3 class="text-3xl md:text-5xl font-bold mb-4 leading-tight break-words max-w-full">${escapeHtml(card.text)}</h3>
+                <p class="text-slate-400 text-sm mt-auto">${t('tapToFlip')}</p>
+              </div>
+              <div class="flip-card-back glass flex flex-col items-center justify-center p-6 md:p-10 text-center">
+                <div class="text-slate-400 text-xs md:text-sm uppercase tracking-widest mb-4">${t('languageName_' + state.uiLang)}</div>
+                <h3 class="text-3xl md:text-5xl font-bold mb-4 leading-tight break-words max-w-full">${escapeHtml(backText)}</h3>
+                <p class="text-slate-400 text-sm mt-auto">${state.currentIndex + 1} / ${getFilteredCards().length}</p>
+              </div>
+            </div>
+          </div>
+        `;
+
+        document.getElementById('flashcard').addEventListener('click', flipCard);
+        updateLearnedButton();
+      }
+
+      function updateLearnedButton() {
+        const btn = document.getElementById('learned-btn');
+        const card = getCurrentCard();
+        if (!btn) return;
+
+        if (!card) {
+          btn.style.opacity = '0.5';
+          btn.style.pointerEvents = 'none';
+          btn.innerHTML = '<span>✓</span> ' + t('markLearned');
+          btn.classList.remove('bg-green-500/30');
+          return;
+        }
+
+        btn.style.opacity = '1';
+        btn.style.pointerEvents = 'auto';
+        const isLearned = state.learned.has(card.id);
+        btn.innerHTML = '<span>✓</span> ' + (isLearned ? t('unmarkLearned') : t('markLearned'));
+        btn.classList.toggle('bg-green-500/30', isLearned);
+      }
+
+      function flipCard() {
+        if (!getCurrentCard()) return;
+        state.isFlipped = !state.isFlipped;
+        const card = document.getElementById('flashcard');
+        if (card) card.classList.toggle('flipped', state.isFlipped);
+      }
+
+      function nextCard() {
+        const filtered = getFilteredCards();
+        if (filtered.length === 0) return;
+        const container = document.getElementById('card-container');
+        if (!container) return;
+
+        container.style.opacity = '0';
+        container.style.transform = 'translateX(-30px)';
+        setTimeout(() => {
+          state.currentIndex = (state.currentIndex + 1) % filtered.length;
+          state.isFlipped = false;
+          renderCard();
+          container.style.opacity = '1';
+          container.style.transform = 'translateX(0)';
+        }, 300);
+      }
+
+      function prevCard() {
+        const filtered = getFilteredCards();
+        if (filtered.length === 0) return;
+        const container = document.getElementById('card-container');
+        if (!container) return;
+
+        container.style.opacity = '0';
+        container.style.transform = 'translateX(30px)';
+        setTimeout(() => {
+          state.currentIndex = (state.currentIndex - 1 + filtered.length) % filtered.length;
+          state.isFlipped = false;
+          renderCard();
+          container.style.opacity = '1';
+          container.style.transform = 'translateX(0)';
+        }, 300);
+      }
+
+      function shuffleCards() {
+        const container = document.getElementById('card-container');
+        if (!container) return;
+        container.classList.add('shuffle-anim');
+        setTimeout(() => {
+          for (let i = state.cards.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [state.cards[i], state.cards[j]] = [state.cards[j], state.cards[i]];
+          }
+          state.currentIndex = 0;
+          state.isFlipped = false;
+          renderCard();
+          updateProgress();
+        }, 250);
+        setTimeout(() => container.classList.remove('shuffle-anim'), 500);
+      }
+
+      function toggleLearned() {
+        const card = getCurrentCard();
+        if (!card) return;
+
+        const isLearned = state.learned.has(card.id);
+        if (isLearned) {
+          state.learned.delete(card.id);
+        } else {
+          state.learned.add(card.id);
+          const cardEl = document.getElementById('flashcard');
+          if (cardEl) {
+            cardEl.classList.add('pulse-green');
+            setTimeout(() => cardEl.classList.remove('pulse-green'), 600);
+          }
+        }
+
+        state.isFlipped = false;
+        updateProgress();
+
+        const filtered = getFilteredCards();
+        if (filtered.length === 0) {
+          state.currentIndex = 0;
+        } else if (state.filter !== 'all') {
+          state.currentIndex = Math.min(state.currentIndex, filtered.length - 1);
+        }
+
+        renderCard();
+      }
+
+      function setFilter(filter) {
+        state.filter = filter;
+        state.currentIndex = 0;
+        state.isFlipped = false;
+        renderCard();
+        updateProgress();
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+          btn.classList.toggle('bg-white/20', btn.dataset.filter === filter);
+          btn.classList.toggle('text-white', btn.dataset.filter === filter);
+          btn.classList.toggle('text-slate-300', btn.dataset.filter !== filter);
+        });
+      }
+
+      function updateProgress() {
+        const learnedCount = state.learned.size;
+        const total = state.cards.length;
+        const remaining = total - learnedCount;
+        const percent = total === 0 ? 0 : (learnedCount / total) * 100;
+
+        const learnedEl = document.getElementById('learned-count');
+        const remainingEl = document.getElementById('remaining-count');
+        const bar = document.getElementById('progress-bar');
+
+        if (learnedEl) learnedEl.textContent = learnedCount;
+        if (remainingEl) remainingEl.textContent = remaining;
+        if (bar) bar.style.width = percent + '%';
+
+        if (learnedCount === total && total > 0 && !state.celebrationShown) {
+          state.celebrationShown = true;
+          showCelebration();
+        }
+      }
+
+      function resetProgress() {
+        state.learned.clear();
+        state.celebrationShown = false;
+        state.currentIndex = 0;
+        state.isFlipped = false;
+        state.filter = 'all';
+        renderFlashcardView();
+      }
+
+      // ===== CELEBRATION =====
+      function showCelebration() {
+        const existing = document.getElementById('celebration-modal');
+        if (existing) return;
+
+        const modal = document.createElement('div');
+        modal.id = 'celebration-modal';
+        modal.className = 'fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm scale-in';
+        modal.innerHTML = `
+          <div class="glass rounded-2xl p-8 md:p-12 text-center max-w-md shadow-2xl border border-white/20">
+            <div class="text-6xl md:text-7xl mb-4 bounce-icon">🎉</div>
+            <h2 class="text-3xl md:text-4xl font-bold mb-2 text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-300">${t('allLearned')}</h2>
+            <p class="text-slate-300 mb-8 text-lg">${t('congrats')}</p>
+            <div class="flex flex-col sm:flex-row gap-3 justify-center">
+              <button id="restart-btn" class="btn-glass bg-green-500/30 hover:bg-green-500/40 rounded-xl px-6 py-3 font-bold">${t('restart')}</button>
+              <button id="keep-reviewing-btn" class="btn-glass rounded-xl px-6 py-3 font-medium">${t('backToMenu')}</button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(modal);
+        createConfetti();
+
+        document.getElementById('restart-btn').addEventListener('click', () => {
+          modal.remove();
+          resetProgress();
+        });
+        document.getElementById('keep-reviewing-btn').addEventListener('click', () => {
+          modal.remove();
+          state.targetLang = null;
+          state.celebrationShown = false;
+          renderLanguageMenu();
+        });
+      }
+
+      function createConfetti() {
+        const canvas = document.getElementById('confetti-canvas');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const particles = [];
+        const colors = ['#f43f5e', '#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#84cc16'];
+        const count = Math.min(150, Math.floor((canvas.width * canvas.height) / 15000));
+
+        for (let i = 0; i < count; i++) {
+          particles.push({
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            vx: (Math.random() - 0.5) * 16,
+            vy: (Math.random() - 1) * 16 - 4,
+            size: Math.random() * 8 + 4,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            rotation: Math.random() * 360,
+            rotationSpeed: (Math.random() - 0.5) * 12,
+            gravity: 0.35,
+            drag: 0.97
+          });
+        }
+
+        let animationId;
+        let frame = 0;
+        const maxFrames = 300;
+
+        function animate() {
+          if (frame >= maxFrames) {
+            cancelAnimationFrame(animationId);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            return;
+          }
+          frame++;
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          particles.forEach(p => {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vy += p.gravity;
+            p.vx *= p.drag;
+            p.vy *= p.drag;
+            p.rotation += p.rotationSpeed;
+
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rotation * Math.PI / 180);
+            ctx.fillStyle = p.color;
+            ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+            ctx.restore();
+          });
+
+          animationId = requestAnimationFrame(animate);
+        }
+
+        animate();
+      }
+
+      // ===== EVENT LISTENERS =====
+      function attachFlashcardListeners() {
+        document.getElementById('back-btn').addEventListener('click', () => {
+          state.targetLang = null;
+          state.celebrationShown = false;
+          renderLanguageMenu();
+        });
+
+        document.getElementById('reset-btn').addEventListener('click', resetProgress);
+        document.getElementById('prev-btn').addEventListener('click', prevCard);
+        document.getElementById('next-btn').addEventListener('click', nextCard);
+        document.getElementById('flip-btn').addEventListener('click', flipCard);
+        document.getElementById('shuffle-btn').addEventListener('click', shuffleCards);
+        document.getElementById('learned-btn').addEventListener('click', toggleLearned);
+
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+          btn.addEventListener('click', () => setFilter(btn.dataset.filter));
+        });
+
+        const select = document.getElementById('ui-language-select');
+        if (select) {
+          select.addEventListener('change', (e) => {
+            setUILanguage(e.target.value);
+            renderFlashcardView();
+          });
+        }
+      }
+
+      function handleKeydown(e) {
+        if (!state.targetLang) return;
+
+        if (e.code === 'Space' || e.code === 'Enter') {
+          e.preventDefault();
+          flipCard();
+        } else if (e.code === 'ArrowRight') {
+          e.preventDefault();
+          nextCard();
+        } else if (e.code === 'ArrowLeft') {
+          e.preventDefault();
+          prevCard();
+        } else if (e.code === 'KeyS') {
+          e.preventDefault();
+          shuffleCards();
+        } else if (e.code === 'KeyL') {
+          e.preventDefault();
+          toggleLearned();
+        } else if (e.code === 'Escape') {
+          const modal = document.getElementById('celebration-modal');
+          if (modal) {
+            modal.remove();
+          } else {
+            state.targetLang = null;
+            state.celebrationShown = false;
+            renderLanguageMenu();
+          }
+        }
+      }
+
+      // ===== INIT =====
+      document.addEventListener('DOMContentLoaded', () => {
+        renderLanguageMenu();
+        document.addEventListener('keydown', handleKeydown);
+        window.addEventListener('resize', () => {
+          const canvas = document.getElementById('confetti-canvas');
+          if (canvas) {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+          }
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

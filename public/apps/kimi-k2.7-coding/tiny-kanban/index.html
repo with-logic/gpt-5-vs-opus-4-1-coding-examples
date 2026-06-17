@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tiny Kanban</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif; }
+    .card { transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease; cursor: grab; }
+    .card:active { cursor: grabbing; }
+    .card.dragging { opacity: 0.5; transform: scale(0.98) rotate(1deg); box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+    .column.drag-over { background-color: rgba(59,130,246,0.12); border-color: #3b82f6; }
+    .priority-high { border-left-color: #ef4444; }
+    .priority-medium { border-left-color: #f59e0b; }
+    .priority-low { border-left-color: #10b981; }
+    .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .standup-mode .card-title { font-size: 1.25rem; }
+    .standup-mode .card-desc { font-size: 1rem; }
+    .standup-mode .col-title { font-size: 1.25rem; }
+    .standup-mode .priority-badge { font-size: 0.875rem; padding: 0.25rem 0.75rem; }
+    /* Custom scrollbar for column bodies */
+    .column-body::-webkit-scrollbar { width: 6px; }
+    .column-body::-webkit-scrollbar-track { background: transparent; }
+    .column-body::-webkit-scrollbar-thumb { background-color: rgba(156,163,175,0.5); border-radius: 999px; }
+    .column-body::-webkit-scrollbar-thumb:hover { background-color: rgba(107,114,128,0.7); }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800 h-screen flex flex-col overflow-hidden">
+  <!-- Hidden safelist to ensure dynamic Tailwind classes are available when using the CDN -->
+  <div class="hidden bg-slate-100 bg-slate-200 bg-blue-50 bg-blue-100 bg-green-50 bg-green-100 border-slate-300 border-blue-300 border-green-300 bg-red-500 bg-amber-500 bg-green-500 text-red-600"></div>
+
+  <!-- Header -->
+  <header class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shrink-0 z-20 flex-wrap gap-y-2">
+    <div class="flex items-center gap-3">
+      <div class="bg-blue-600 text-white rounded-lg p-2 shadow-sm">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6 4h6a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+        </svg>
+      </div>
+      <div>
+        <h1 class="text-xl font-bold tracking-tight text-gray-900">Tiny Kanban</h1>
+        <p class="text-xs text-gray-500" id="dateDisplay">Loading…</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <!-- Search -->
+      <div class="relative">
+        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <input id="searchInput" type="text" placeholder="Search cards, people, or priorities…"
+          class="pl-9 pr-4 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-64 transition-shadow">
+      </div>
+
+      <!-- Standup timer -->
+      <div class="flex items-center gap-2 bg-gray-100 rounded-lg px-3 py-2">
+        <input id="timerDuration" type="number" min="1" value="15"
+          class="w-12 text-sm bg-white border border-gray-300 rounded px-1 text-center focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <span class="text-xs text-gray-500">min</span>
+        <button id="timerToggleBtn" class="text-sm bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700 transition-colors">Start</button>
+        <button id="timerResetBtn" class="text-sm text-gray-600 hover:bg-gray-200 px-2 py-1 rounded-md transition-colors">Reset</button>
+        <span id="timerDisplay" class="font-mono text-sm font-semibold w-12 text-center">15:00</span>
+      </div>
+
+      <!-- Standup mode toggle -->
+      <button id="standupModeBtn" class="text-sm font-medium px-3 py-2 rounded-lg border border-gray-300 hover:bg-gray-100 transition-colors">
+        Standup Mode
+      </button>
+
+      <!-- Add card -->
+      <button id="addCardBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 shadow-sm transition-colors flex items-center gap-1">
+        <span class="text-lg leading-none">+</span> Card
+      </button>
+    </div>
+  </header>
+
+  <!-- Kanban board -->
+  <main class="flex-1 overflow-x-auto overflow-y-auto md:overflow-y-hidden p-4 md:p-6">
+    <div id="board" class="grid grid-cols-1 md:grid-cols-3 gap-5 min-w-0 md:min-w-[900px] md:h-full">
+      <!-- Columns injected by JS -->
+    </div>
+  </main>
+
+  <!-- Card modal -->
+  <div id="cardModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50 p-4">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 transform transition-all">
+      <h2 id="modalTitle" class="text-lg font-bold text-gray-900 mb-4">New Card</h2>
+      <form id="cardForm">
+        <input type="hidden" id="cardId">
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Title</label>
+          <input id="cardTitle" type="text" required
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow">
+        </div>
+        <div class="mb-4">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+          <textarea id="cardDesc" rows="2"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow resize-none"></textarea>
+        </div>
+        <div class="grid grid-cols-2 gap-4 mb-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+            <select id="cardPriority"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white">
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Assignee</label>
+            <select id="cardAssignee"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white">
+              <option value="">Unassigned</option>
+            </select>
+          </div>
+        </div>
+        <div class="mb-6">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Column</label>
+          <select id="cardColumn"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white">
+            <option value="todo">Todo</option>
+            <option value="doing">Doing</option>
+            <option value="done">Done</option>
+          </select>
+        </div>
+        <div class="flex justify-end gap-2">
+          <button type="button" id="cancelBtn"
+            class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium transition-colors">Cancel</button>
+          <button type="submit"
+            class="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-sm">Save Card</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast notifications -->
+  <div id="toastContainer" class="fixed bottom-4 right-4 flex flex-col gap-2 z-50 pointer-events-none"></div>
+
+  <script>
+    const columns = [
+      { id: 'todo', label: 'Todo', wip: null, color: 'bg-slate-100', headerColor: 'bg-slate-200', border: 'border-slate-300' },
+      { id: 'doing', label: 'Doing', wip: 3, color: 'bg-blue-50', headerColor: 'bg-blue-100', border: 'border-blue-300' },
+      { id: 'done', label: 'Done', wip: null, color: 'bg-green-50', headerColor: 'bg-green-100', border: 'border-green-300' }
+    ];
+
+    const people = [
+      { id: 'p1', name: 'Alex', initials: 'A', color: '#ef4444' },
+      { id: 'p2', name: 'Beth', initials: 'B', color: '#8b5cf6' },
+      { id: 'p3', name: 'Carlos', initials: 'C', color: '#10b981' },
+      { id: 'p4', name: 'Dana', initials: 'D', color: '#f59e0b' }
+    ];
+
+    const priorityMeta = {
+      low: { label: 'Low', bg: 'rgba(16,185,129,0.12)', text: '#047857' },
+      medium: { label: 'Medium', bg: 'rgba(245,158,11,0.12)', text: '#b45309' },
+      high: { label: 'High', bg: 'rgba(239,68,68,0.12)', text: '#b91c1c' }
+    };
+
+    let tasks = [];
+    let draggedTaskId = null;
+
+    // Standup timer state
+    let timerInterval = null;
+    let timerRunning = false;
+    let timerSeconds = 15 * 60;
+
+    const STORAGE_KEY = 'tinyKanban';
+
+    function init() {
+      loadData();
+      renderPeopleOptions();
+      renderBoard();
+      updateDate();
+      setInterval(updateDate, 60000);
+      updateTimerDisplay();
+      setupEventListeners();
+    }
+
+    function loadData() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          tasks = JSON.parse(raw);
+        } else {
+          // Seed sample board so the first impression is useful
+          tasks = [
+            { id: 't1', title: 'Write project brief', description: 'Draft scope, goals, and success criteria for the sprint.', status: 'todo', priority: 'medium', assigneeId: 'p1', createdAt: Date.now() },
+            { id: 't2', title: 'Review wireframes', description: 'Provide UX feedback on the new dashboard mockups.', status: 'doing', priority: 'high', assigneeId: 'p2', createdAt: Date.now() - 100000 },
+            { id: 't3', title: 'Set up CI/CD', description: 'Configure GitHub Actions for automated testing and deploy.', status: 'done', priority: 'low', assigneeId: 'p3', createdAt: Date.now() - 200000 },
+            { id: 't4', title: 'Prepare standup notes', description: 'Summarize yesterday’s wins, today’s focus, and blockers.', status: 'todo', priority: 'high', assigneeId: 'p4', createdAt: Date.now() - 300000 }
+          ];
+        }
+      } catch (e) {
+        tasks = [];
+      }
+    }
+
+    function saveData() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+      } catch (e) {
+        // Ignore storage errors in restricted environments
+      }
+    }
+
+    function renderPeopleOptions() {
+      const select = document.getElementById('cardAssignee');
+      select.innerHTML = '<option value="">Unassigned</option>';
+      people.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.name;
+        select.appendChild(opt);
+      });
+    }
+
+    function renderBoard() {
+      const board = document.getElementById('board');
+      const query = document.getElementById('searchInput').value.trim().toLowerCase();
+      board.innerHTML = '';
+
+      columns.forEach(col => {
+        const allColTasks = tasks.filter(t => t.status === col.id);
+        const countAll = allColTasks.length;
+        const colTasks = allColTasks.filter(t => {
+          if (!query) return true;
+          const haystack = (t.title + ' ' + (t.description || '') + ' ' + getAssigneeName(t.assigneeId) + ' ' + t.priority).toLowerCase();
+          return haystack.includes(query);
+        });
+
+        const atLimit = col.wip && countAll >= col.wip;
+        const nearLimit = col.wip && countAll >= col.wip - 1 && countAll < col.wip;
+
+        const columnEl = document.createElement('div');
+        columnEl.className = `column flex flex-col rounded-xl border ${col.border} ${col.color} h-auto md:h-full overflow-hidden transition-colors`;
+        columnEl.dataset.status = col.id;
+        columnEl.setAttribute('ondrop', 'handleDrop(event)');
+        columnEl.setAttribute('ondragover', 'handleDragOver(event)');
+        columnEl.setAttribute('ondragleave', 'handleDragLeave(event)');
+
+        const wipBarColor = atLimit ? '#ef4444' : nearLimit ? '#f59e0b' : '#10b981';
+        const wipWidth = col.wip ? Math.min(100, (countAll / col.wip) * 100) : 0;
+
+        columnEl.innerHTML = `
+          <div class="p-4 ${col.headerColor} border-b ${col.border} flex items-center justify-between col-header shrink-0">
+            <div class="flex items-center gap-2">
+              <h2 class="col-title font-bold text-gray-900 transition-all">${col.label}</h2>
+              <span class="text-sm font-semibold text-gray-600 bg-white/60 px-2 py-0.5 rounded">${countAll}${col.wip ? '/' + col.wip : ''}</span>
+            </div>
+            <div class="flex items-center gap-3">
+              ${col.wip ? `
+                <div class="w-24 h-2 bg-white/60 rounded-full overflow-hidden" title="${countAll} of ${col.wip} WIP limit">
+                  <div class="h-full transition-all" style="width:${wipWidth}%; background-color:${wipBarColor}"></div>
+                </div>` : ''}
+              ${col.id === 'doing' ? `
+                <label class="text-xs text-gray-500 hidden sm:inline">WIP</label>
+                <input type="number" min="1" value="${col.wip}" title="Edit WIP limit"
+                  onchange="setWip('${col.id}', this.value)"
+                  class="w-12 text-xs border border-gray-300 rounded px-1 text-center bg-white/70 focus:outline-none focus:ring-1 focus:ring-blue-500">` : ''}
+              ${col.id === 'done' ? `
+                <button onclick="clearDone()" title="Clear all done cards"
+                  class="text-xs text-gray-500 hover:text-red-600 font-medium transition-colors">Clear</button>` : ''}
+            </div>
+          </div>
+          <div class="flex-1 p-3 overflow-y-auto space-y-3 column-body" id="col-${col.id}">
+            ${colTasks.length ? colTasks.map(t => taskCardHTML(t)).join('') : emptyStateHTML(!!query)}
+          </div>
+          <div class="p-3 border-t ${col.border} shrink-0">
+            <button onclick="openCardModal(null, '${col.id}')"
+              class="w-full py-2 rounded-lg border-2 border-dashed border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600 font-medium transition-colors">
+              + Add card
+            </button>
+          </div>
+        `;
+        board.appendChild(columnEl);
+      });
+    }
+
+    function taskCardHTML(t) {
+      const p = people.find(x => x.id === t.assigneeId);
+      const priority = priorityMeta[t.priority] || priorityMeta.medium;
+      const assigneeHTML = p
+        ? `<div class="flex items-center gap-2" title="${p.name}">
+             <div class="w-7 h-7 rounded-full text-white flex items-center justify-center text-xs font-bold shadow-sm" style="background-color:${p.color}">${p.initials}</div>
+             <span class="text-xs text-gray-600 font-medium">${p.name}</span>
+           </div>`
+        : `<div class="flex items-center gap-2">
+             <div class="w-7 h-7 rounded-full bg-gray-300 text-white flex items-center justify-center text-xs font-bold">?</div>
+             <span class="text-xs text-gray-400">Unassigned</span>
+           </div>`;
+
+      return `
+        <div class="card bg-white rounded-lg shadow-sm border border-gray-200 p-4 relative group border-l-4 priority-${t.priority} hover:shadow-md"
+          draggable="true" data-id="${t.id}" ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)">
+          <div class="flex justify-between items-start mb-2 gap-2">
+            <span class="priority-badge inline-flex items-center px-2 py-1 rounded text-xs font-bold transition-all"
+              style="background-color:${priority.bg}; color:${priority.text}">${priority.label}</span>
+            <button onclick="deleteTask('${t.id}')" title="Delete card"
+              class="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1 leading-none text-lg">×</button>
+          </div>
+          <h3 class="card-title font-bold text-gray-900 mb-1 leading-tight">${escapeHTML(t.title)}</h3>
+          ${t.description ? `<p class="card-desc text-sm text-gray-600 mb-3 line-clamp-2">${escapeHTML(t.description)}</p>` : ''}
+          <div class="flex items-center justify-between mt-2">
+            ${assigneeHTML}
+            <button onclick="openCardModal('${t.id}')"
+              class="text-xs text-blue-600 hover:text-blue-800 font-medium opacity-0 group-hover:opacity-100 transition-opacity">Edit</button>
+          </div>
+        </div>
+      `;
+    }
+
+    function emptyStateHTML(isFiltering) {
+      return `
+        <div class="text-center py-8 px-4">
+          <div class="text-3xl mb-2">${isFiltering ? '🔍' : '📝'}</div>
+          <p class="text-sm text-gray-500">${isFiltering ? 'No cards match your search.' : 'No cards yet.'}</p>
+        </div>
+      `;
+    }
+
+    function escapeHTML(str) {
+      if (!str) return '';
+      return str.replace(/[&<>'"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+    }
+
+    function getAssigneeName(id) {
+      const p = people.find(x => x.id === id);
+      return p ? p.name : '';
+    }
+
+    // Drag & drop handlers
+    function handleDragStart(e) {
+      draggedTaskId = e.currentTarget.dataset.id;
+      e.currentTarget.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', draggedTaskId);
+    }
+
+    function handleDragEnd(e) {
+      e.currentTarget.classList.remove('dragging');
+      draggedTaskId = null;
+      document.querySelectorAll('.column').forEach(c => c.classList.remove('drag-over'));
+    }
+
+    function handleDragOver(e) {
+      e.preventDefault();
+      const col = e.currentTarget.closest('.column');
+      if (col) col.classList.add('drag-over');
+    }
+
+    function handleDragLeave(e) {
+      const col = e.currentTarget.closest('.column');
+      if (col && !col.contains(e.relatedTarget)) {
+        col.classList.remove('drag-over');
+      }
+    }
+
+    function handleDrop(e) {
+      e.preventDefault();
+      const col = e.currentTarget.closest('.column');
+      if (!col || !draggedTaskId) return;
+      col.classList.remove('drag-over');
+
+      const status = col.dataset.status;
+      const task = tasks.find(t => t.id === draggedTaskId);
+      if (!task || task.status === status) return;
+
+      const colDef = columns.find(c => c.id === status);
+      const countInCol = tasks.filter(t => t.status === status).length;
+
+      if (colDef.wip && countInCol >= colDef.wip) {
+        showToast(`${colDef.label} is at its WIP limit of ${colDef.wip}. Increase the limit to move more cards.`, 'error');
+        return;
+      }
+
+      task.status = status;
+      saveData();
+      renderBoard();
+      showToast(`Moved to ${colDef.label}`, 'success');
+    }
+
+    // Card modal
+    function openCardModal(taskId, defaultStatus = 'todo') {
+      const modal = document.getElementById('cardModal');
+      const form = document.getElementById('cardForm');
+      const titleEl = document.getElementById('modalTitle');
+
+      if (taskId) {
+        const t = tasks.find(x => x.id === taskId);
+        document.getElementById('cardId').value = t.id;
+        document.getElementById('cardTitle').value = t.title;
+        document.getElementById('cardDesc').value = t.description || '';
+        document.getElementById('cardPriority').value = t.priority;
+        document.getElementById('cardAssignee').value = t.assigneeId || '';
+        document.getElementById('cardColumn').value = t.status;
+        titleEl.textContent = 'Edit Card';
+      } else {
+        form.reset();
+        document.getElementById('cardId').value = '';
+        document.getElementById('cardColumn').value = defaultStatus;
+        titleEl.textContent = 'New Card';
+      }
+
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      document.getElementById('cardTitle').focus();
+    }
+
+    function closeCardModal() {
+      const modal = document.getElementById('cardModal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function saveCard(e) {
+      e.preventDefault();
+      const id = document.getElementById('cardId').value;
+      const title = document.getElementById('cardTitle').value.trim();
+      const description = document.getElementById('cardDesc').value.trim();
+      const priority = document.getElementById('cardPriority').value;
+      const assigneeId = document.getElementById('cardAssignee').value || null;
+      const status = document.getElementById('cardColumn').value;
+
+      if (!title) return;
+
+      const colDef = columns.find(c => c.id === status);
+      const countInCol = tasks.filter(t => t.status === status && t.id !== id).length;
+      const isMovingIntoCol = !id || tasks.find(t => t.id === id).status !== status;
+
+      if (colDef.wip && countInCol >= colDef.wip && isMovingIntoCol) {
+        showToast(`Cannot save to ${colDef.label}: WIP limit of ${colDef.wip} reached.`, 'error');
+        return;
+      }
+
+      if (id) {
+        const t = tasks.find(x => x.id === id);
+        t.title = title;
+        t.description = description;
+        t.priority = priority;
+        t.assigneeId = assigneeId;
+        t.status = status;
+      } else {
+        tasks.push({
+          id: 't' + Date.now(),
+          title,
+          description,
+          status,
+          priority,
+          assigneeId,
+          createdAt: Date.now()
+        });
+      }
+
+      saveData();
+      renderBoard();
+      closeCardModal();
+      showToast('Card saved', 'success');
+    }
+
+    function deleteTask(id) {
+      const t = tasks.find(x => x.id === id);
+      if (!t) return;
+      if (!confirm(`Delete "${t.title}"?`)) return;
+      tasks = tasks.filter(x => x.id !== id);
+      saveData();
+      renderBoard();
+      showToast('Card deleted', 'success');
+    }
+
+    function clearDone() {
+      const doneCount = tasks.filter(t => t.status === 'done').length;
+      if (doneCount === 0) return;
+      if (!confirm(`Clear all ${doneCount} done cards?`)) return;
+      tasks = tasks.filter(t => t.status !== 'done');
+      saveData();
+      renderBoard();
+      showToast('Done column cleared', 'success');
+    }
+
+    function setWip(colId, value) {
+      const col = columns.find(c => c.id === colId);
+      const num = parseInt(value, 10);
+      col.wip = num >= 1 ? num : null;
+      renderBoard();
+    }
+
+    // Toast notifications
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      const colors = type === 'error'
+        ? 'bg-red-600 text-white'
+        : type === 'success'
+          ? 'bg-green-600 text-white'
+          : 'bg-gray-800 text-white';
+      toast.className = `${colors} px-4 py-2 rounded-lg shadow-lg text-sm font-medium transform transition-all duration-300 translate-y-2 opacity-0 pointer-events-auto`;
+      toast.textContent = message;
+      container.appendChild(toast);
+      requestAnimationFrame(() => toast.classList.remove('translate-y-2', 'opacity-0'));
+      setTimeout(() => {
+        toast.classList.add('translate-y-2', 'opacity-0');
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    // Date / time header
+    function updateDate() {
+      const options = { weekday: 'long', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+      document.getElementById('dateDisplay').textContent = new Date().toLocaleDateString(undefined, options);
+    }
+
+    // Standup timer
+    function updateTimerDisplay() {
+      const m = Math.floor(timerSeconds / 60).toString().padStart(2, '0');
+      const s = (timerSeconds % 60).toString().padStart(2, '0');
+      const display = document.getElementById('timerDisplay');
+      display.textContent = `${m}:${s}`;
+      if (timerSeconds <= 60 && !display.classList.contains('text-red-600')) {
+        display.classList.add('text-red-600');
+      } else if (timerSeconds > 60) {
+        display.classList.remove('text-red-600');
+      }
+    }
+
+    function toggleTimer() {
+      const btn = document.getElementById('timerToggleBtn');
+      if (timerRunning) {
+        clearInterval(timerInterval);
+        timerRunning = false;
+        btn.textContent = 'Start';
+        btn.classList.remove('bg-amber-600', 'hover:bg-amber-700');
+        btn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+      } else {
+        if (timerSeconds <= 0) {
+          const mins = parseInt(document.getElementById('timerDuration').value, 10) || 15;
+          timerSeconds = mins * 60;
+        }
+        timerInterval = setInterval(() => {
+          timerSeconds--;
+          updateTimerDisplay();
+          if (timerSeconds <= 0) {
+            clearInterval(timerInterval);
+            timerRunning = false;
+            btn.textContent = 'Start';
+            btn.classList.remove('bg-amber-600', 'hover:bg-amber-700');
+            btn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+            showToast('Standup time is up!', 'error');
+          }
+        }, 1000);
+        timerRunning = true;
+        btn.textContent = 'Pause';
+        btn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+        btn.classList.add('bg-amber-600', 'hover:bg-amber-700');
+      }
+    }
+
+    function resetTimer() {
+      clearInterval(timerInterval);
+      timerRunning = false;
+      const btn = document.getElementById('timerToggleBtn');
+      btn.textContent = 'Start';
+      btn.classList.remove('bg-amber-600', 'hover:bg-amber-700');
+      btn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+      const mins = parseInt(document.getElementById('timerDuration').value, 10) || 15;
+      timerSeconds = mins * 60;
+      updateTimerDisplay();
+    }
+
+    // Standup mode (large, readable cards for projectors / TVs)
+    function toggleStandupMode() {
+      document.body.classList.toggle('standup-mode');
+      const btn = document.getElementById('standupModeBtn');
+      const active = document.body.classList.contains('standup-mode');
+      if (active) {
+        btn.classList.add('bg-blue-100', 'text-blue-700', 'border-blue-300');
+        btn.classList.remove('hover:bg-gray-100');
+      } else {
+        btn.classList.remove('bg-blue-100', 'text-blue-700', 'border-blue-300');
+        btn.classList.add('hover:bg-gray-100');
+      }
+    }
+
+    // Event listeners
+    function setupEventListeners() {
+      document.getElementById('addCardBtn').addEventListener('click', () => openCardModal(null, 'todo'));
+      document.getElementById('cancelBtn').addEventListener('click', closeCardModal);
+      document.getElementById('cardForm').addEventListener('submit', saveCard);
+      document.getElementById('searchInput').addEventListener('input', renderBoard);
+      document.getElementById('standupModeBtn').addEventListener('click', toggleStandupMode);
+      document.getElementById('timerToggleBtn').addEventListener('click', toggleTimer);
+      document.getElementById('timerResetBtn').addEventListener('click', resetTimer);
+      document.getElementById('timerDuration').addEventListener('change', () => {
+        if (!timerRunning) {
+          const mins = parseInt(document.getElementById('timerDuration').value, 10) || 15;
+          timerSeconds = mins * 60;
+          updateTimerDisplay();
+        }
+      });
+
+      // Close modal on backdrop click or Escape
+      document.getElementById('cardModal').addEventListener('click', e => {
+        if (e.target === document.getElementById('cardModal')) closeCardModal();
+      });
+      document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') closeCardModal();
+      });
+    }
+
+    // Boot the app
+    document.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>

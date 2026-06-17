@@ -1,4 +1,4 @@
-export type Provider = "openai" | "anthropic" | "google" | "moonshot";
+export type Provider = "openai" | "anthropic" | "google" | "moonshot" | "z-ai";
 
 export interface ProviderConfig {
   id: Provider;
@@ -10,6 +10,7 @@ export const providers: ProviderConfig[] = [
   { id: "anthropic", name: "Anthropic" },
   { id: "google", name: "Google" },
   { id: "moonshot", name: "Moonshot AI" },
+  { id: "z-ai", name: "Z.ai" },
 ];
 
 export interface ModelConfig {
@@ -30,6 +31,9 @@ export interface ModelConfig {
 
   /** Provider that owns this model */
   provider: Provider;
+
+  /** Whether the model accepts image inputs (default: true). Set false to disallow screenshot tools. */
+  supportsVision?: boolean;
 }
 
 export const models: ModelConfig[] = [
@@ -177,7 +181,27 @@ export const models: ModelConfig[] = [
     color: "bg-fuchsia-500",
     provider: "moonshot",
   },
+  {
+    id: "kimi-k2.7-coding",
+    name: "Kimi K2.7 Coding",
+    cli: "anthropic-proxy",
+    model: "accounts/fireworks/models/kimi-k2p7-code",
+    color: "bg-purple-600",
+    provider: "moonshot",
+  },
+  {
+    id: "glm-5.2",
+    name: "GLM-5.2",
+    cli: "anthropic-proxy",
+    model: "accounts/fireworks/models/glm-5p2",
+    color: "bg-green-600",
+    provider: "z-ai",
+    supportsVision: false,
+  },
 ];
+
+/** Default models shown in the side-by-side comparison view */
+export const DEFAULT_COMPARISON_MODELS = ["opus-4.8", "kimi-k2.7-coding", "glm-5.2"] as const;
 
 /** Helper to get a model by ID */
 export function getModel(id: string): ModelConfig | undefined {

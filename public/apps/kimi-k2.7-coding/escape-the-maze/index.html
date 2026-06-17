@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Escape the Maze</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+    body { font-family: 'Inter', sans-serif; touch-action: none; }
+    .canvas-wrap { aspect-ratio: 1 / 1; }
+    .wall-shadow { box-shadow: 0 0 40px rgba(0,0,0,0.35); }
+    .dpad-btn { user-select: none; -webkit-user-select: none; }
+    @keyframes pulse-star {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.15); }
+    }
+    .animate-pulse-star { animation: pulse-star 1.5s ease-in-out infinite; }
+    .stat-pill { background: rgba(51, 65, 85, 0.6); backdrop-filter: blur(8px); border: 1px solid #475569; border-radius: 9999px; padding: 0.375rem 0.75rem; font-size: 0.875rem; }
+    @media (min-width: 640px) { .stat-pill { font-size: 1rem; } }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-slate-900 to-slate-800 text-white min-h-screen flex flex-col items-center p-4">
+  <header class="w-full max-w-3xl flex flex-col sm:flex-row items-center justify-between gap-4 mb-4">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center text-xl shadow-lg shadow-emerald-500/20">🧩</div>
+      <h1 class="text-2xl sm:text-3xl font-extrabold tracking-tight">Escape the Maze</h1>
+    </div>
+    <div class="flex flex-wrap items-center justify-center gap-2 sm:gap-4">
+      <div class="stat-pill">⏱️ <span id="timer">0.0s</span></div>
+      <div class="stat-pill">👣 <span id="moves">0</span></div>
+      <div class="stat-pill">🎯 Shortest <span id="shortest">0</span></div>
+      <div class="stat-pill">🏆 Best <span id="bestScore">0</span></div>
+    </div>
+  </header>
+
+  <main class="w-full max-w-3xl flex flex-col items-center gap-4">
+    <div class="flex flex-wrap items-center justify-between gap-3 w-full">
+      <div class="flex items-center gap-2">
+        <label for="difficulty" class="text-sm text-slate-300 font-medium">Difficulty</label>
+        <select id="difficulty" class="bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400 cursor-pointer">
+          <option value="11">Easy</option>
+          <option value="15" selected>Medium</option>
+          <option value="21">Hard</option>
+        </select>
+      </div>
+      <div class="flex gap-2">
+        <button id="hintBtn" class="bg-slate-700 hover:bg-slate-600 active:bg-slate-500 transition px-3 py-1.5 rounded-lg text-sm font-semibold border border-slate-600">💡 Hint</button>
+        <button id="replayBtn" class="bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 transition px-4 py-1.5 rounded-lg text-sm font-bold text-slate-900 shadow-lg shadow-emerald-500/20">↻ Replay</button>
+      </div>
+    </div>
+
+    <div class="relative w-full canvas-wrap bg-slate-900 rounded-2xl border-4 border-slate-700 wall-shadow overflow-hidden flex items-center justify-center">
+      <canvas id="mazeCanvas" class="block max-w-full max-h-full"></canvas>
+
+      <div id="winOverlay" class="absolute inset-0 bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center text-center p-6 hidden opacity-0 transition-opacity duration-300">
+        <div class="text-5xl mb-2 animate-pulse-star">🏆</div>
+        <h2 class="text-3xl sm:text-4xl font-extrabold mb-2 text-emerald-300">You Escaped!</h2>
+        <p class="text-slate-300 mb-5 text-sm sm:text-base">Maze solved in <span id="finalTime" class="font-bold text-white"></span> with <span id="finalMoves" class="font-bold text-white"></span> moves.</p>
+        <div class="grid grid-cols-2 gap-3 mb-4 w-full max-w-xs">
+          <div class="bg-slate-800 rounded-xl p-3 border border-slate-700">
+            <div class="text-xs text-slate-400 uppercase tracking-wide">Shortest Path</div>
+            <div id="finalShortest" class="text-xl font-bold text-emerald-400"></div>
+          </div>
+          <div class="bg-slate-800 rounded-xl p-3 border border-slate-700">
+            <div class="text-xs text-slate-400 uppercase tracking-wide">Score</div>
+            <div id="finalScore" class="text-xl font-bold text-amber-400"></div>
+          </div>
+        </div>
+        <div id="bonusMessage" class="text-emerald-400 font-bold mb-6 hidden"></div>
+        <button id="overlayReplay" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold px-6 py-3 rounded-xl shadow-lg transition">Play Again</button>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-3 gap-2 sm:hidden w-40">
+      <div></div>
+      <button id="upBtn" class="dpad-btn bg-slate-700 active:bg-slate-500 rounded-lg p-3 text-xl shadow">▲</button>
+      <div></div>
+      <button id="leftBtn" class="dpad-btn bg-slate-700 active:bg-slate-500 rounded-lg p-3 text-xl shadow">◀</button>
+      <button id="downBtn" class="dpad-btn bg-slate-700 active:bg-slate-500 rounded-lg p-3 text-xl shadow">▼</button>
+      <button id="rightBtn" class="dpad-btn bg-slate-700 active:bg-slate-500 rounded-lg p-3 text-xl shadow">▶</button>
+    </div>
+
+    <p class="text-slate-400 text-xs text-center hidden sm:block">Use the arrow keys to move. Press <kbd class="bg-slate-700 px-1 rounded">R</kbd> to replay.</p>
+  </main>
+
+  <script>
+    const canvas = document.getElementById('mazeCanvas');
+    const ctx = canvas.getContext('2d');
+    const timerEl = document.getElementById('timer');
+    const movesEl = document.getElementById('moves');
+    const shortestEl = document.getElementById('shortest');
+    const bestScoreEl = document.getElementById('bestScore');
+    const difficultySel = document.getElementById('difficulty');
+    const replayBtn = document.getElementById('replayBtn');
+    const overlayReplay = document.getElementById('overlayReplay');
+    const hintBtn = document.getElementById('hintBtn');
+    const winOverlay = document.getElementById('winOverlay');
+    const finalTime = document.getElementById('finalTime');
+    const finalMoves = document.getElementById('finalMoves');
+    const finalShortest = document.getElementById('finalShortest');
+    const finalScore = document.getElementById('finalScore');
+    const bonusMessage = document.getElementById('bonusMessage');
+
+    let cols, rows;
+    let cells = [];
+    let player = { x: 0, y: 0 };
+    let moves = 0;
+    let startTime = null;
+    let timerInterval = null;
+    let finished = false;
+    let shortestPathLength = 0;
+    let hintPath = null;
+    let hintTimer = null;
+    let cellSize, wallWidth, drawWidth, drawHeight, dpr = 1;
+
+    function getBestKey() {
+      return 'etm-best-' + difficultySel.value;
+    }
+
+    function getBestScore() {
+      try {
+        const v = localStorage.getItem(getBestKey());
+        return v ? parseInt(v, 10) : 0;
+      } catch (e) {
+        return 0;
+      }
+    }
+
+    function saveBestScore(score) {
+      try {
+        const key = getBestKey();
+        const current = parseInt(localStorage.getItem(key) || '0', 10);
+        if (score > current) {
+          localStorage.setItem(key, String(score));
+          bestScoreEl.textContent = score;
+        }
+      } catch (e) { }
+    }
+
+    function initGame() {
+      const size = parseInt(difficultySel.value, 10);
+      cols = size;
+      rows = size;
+      generateMaze();
+      player = { x: 0, y: 0 };
+      moves = 0;
+      finished = false;
+      startTime = null;
+      clearInterval(timerInterval);
+      timerInterval = null;
+      hintPath = null;
+      clearTimeout(hintTimer);
+      shortestPathLength = computeShortestPath().length - 1;
+      bestScoreEl.textContent = getBestScore();
+      updateStats();
+      resizeAndDraw();
+      winOverlay.classList.add('hidden');
+      winOverlay.classList.remove('opacity-100');
+      winOverlay.style.opacity = 0;
+    }
+
+    function generateMaze() {
+      cells = [];
+      for (let y = 0; y < rows; y++) {
+        const row = [];
+        for (let x = 0; x < cols; x++) {
+          row.push({ x, y, walls: { top: true, right: true, bottom: true, left: true }, visited: false });
+        }
+        cells.push(row);
+      }
+      const stack = [];
+      const start = cells[0][0];
+      start.visited = true;
+      stack.push(start);
+      while (stack.length > 0) {
+        const current = stack[stack.length - 1];
+        const neighbors = getUnvisitedNeighbors(current);
+        if (neighbors.length > 0) {
+          const next = neighbors[Math.floor(Math.random() * neighbors.length)];
+          removeWalls(current, next);
+          next.visited = true;
+          stack.push(next);
+        } else {
+          stack.pop();
+        }
+      }
+    }
+
+    function getUnvisitedNeighbors(cell) {
+      const { x, y } = cell;
+      const neighbors = [];
+      if (y > 0 && !cells[y - 1][x].visited) neighbors.push(cells[y - 1][x]);
+      if (x < cols - 1 && !cells[y][x + 1].visited) neighbors.push(cells[y][x + 1]);
+      if (y < rows - 1 && !cells[y + 1][x].visited) neighbors.push(cells[y + 1][x]);
+      if (x > 0 && !cells[y][x - 1].visited) neighbors.push(cells[y][x - 1]);
+      return neighbors;
+    }
+
+    function removeWalls(a, b) {
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      if (dx === 1) { a.walls.left = false; b.walls.right = false; }
+      else if (dx === -1) { a.walls.right = false; b.walls.left = false; }
+      if (dy === 1) { a.walls.top = false; b.walls.bottom = false; }
+      else if (dy === -1) { a.walls.bottom = false; b.walls.top = false; }
+    }
+
+    function getConnectedNeighbors(cell) {
+      const { x, y } = cell;
+      const list = [];
+      if (!cell.walls.top) list.push(cells[y - 1][x]);
+      if (!cell.walls.right) list.push(cells[y][x + 1]);
+      if (!cell.walls.bottom) list.push(cells[y + 1][x]);
+      if (!cell.walls.left) list.push(cells[y][x - 1]);
+      return list;
+    }
+
+    function key(cell) { return cell.x + ',' + cell.y; }
+
+    function computeShortestPath() {
+      const start = cells[0][0];
+      const end = cells[rows - 1][cols - 1];
+      const queue = [{ cell: start, path: [start] }];
+      const visited = new Set();
+      visited.add(key(start));
+      while (queue.length > 0) {
+        const { cell, path } = queue.shift();
+        if (cell === end) return path;
+        const neighbors = getConnectedNeighbors(cell);
+        for (const n of neighbors) {
+          const k = key(n);
+          if (!visited.has(k)) {
+            visited.add(k);
+            queue.push({ cell: n, path: path.concat(n) });
+          }
+        }
+      }
+      return [];
+    }
+
+    function resizeAndDraw() {
+      const container = canvas.parentElement;
+      const minDim = Math.min(container.clientWidth, container.clientHeight);
+      dpr = window.devicePixelRatio || 1;
+      wallWidth = Math.max(3, Math.floor(minDim / (Math.max(cols, rows) * 4)));
+      const available = minDim - wallWidth;
+      cellSize = Math.floor(available / Math.max(cols, rows));
+      drawWidth = cols * cellSize + wallWidth;
+      drawHeight = rows * cellSize + wallWidth;
+      canvas.width = Math.floor(drawWidth * dpr);
+      canvas.height = Math.floor(drawHeight * dpr);
+      canvas.style.width = drawWidth + 'px';
+      canvas.style.height = drawHeight + 'px';
+      draw();
+    }
+
+    function draw() {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, drawWidth, drawHeight);
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, drawWidth, drawHeight);
+
+      const start = cells[0][0];
+      const finish = cells[rows - 1][cols - 1];
+
+      if (hintPath) {
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = Math.max(2, cellSize * 0.25);
+        ctx.strokeStyle = 'rgba(52, 211, 153, 0.35)';
+        ctx.beginPath();
+        for (let i = 0; i < hintPath.length; i++) {
+          const cx = wallWidth / 2 + hintPath[i].x * cellSize + cellSize / 2;
+          const cy = wallWidth / 2 + hintPath[i].y * cellSize + cellSize / 2;
+          if (i === 0) ctx.moveTo(cx, cy);
+          else ctx.lineTo(cx, cy);
+        }
+        ctx.stroke();
+      }
+
+      fillCell(start, 'rgba(16, 185, 129, 0.22)');
+      fillCell(finish, 'rgba(244, 63, 94, 0.22)');
+
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = wallWidth;
+      ctx.lineCap = 'butt';
+      ctx.beginPath();
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const c = cells[y][x];
+          const x0 = wallWidth / 2 + x * cellSize;
+          const y0 = wallWidth / 2 + y * cellSize;
+          const x1 = x0 + cellSize;
+          const y1 = y0 + cellSize;
+          if (c.walls.top) { ctx.moveTo(x0, y0); ctx.lineTo(x1, y0); }
+          if (c.walls.left) { ctx.moveTo(x0, y0); ctx.lineTo(x0, y1); }
+          if (c.walls.right) { ctx.moveTo(x1, y0); ctx.lineTo(x1, y1); }
+          if (c.walls.bottom) { ctx.moveTo(x0, y1); ctx.lineTo(x1, y1); }
+        }
+      }
+      ctx.stroke();
+
+      drawLabel(start, '🚀');
+      drawLabel(finish, '🏁');
+      drawAvatar();
+    }
+
+    function fillCell(cell, color) {
+      const x0 = wallWidth / 2 + cell.x * cellSize;
+      const y0 = wallWidth / 2 + cell.y * cellSize;
+      ctx.fillStyle = color;
+      ctx.fillRect(x0, y0, cellSize, cellSize);
+    }
+
+    function drawLabel(cell, text) {
+      const x = wallWidth / 2 + cell.x * cellSize + cellSize / 2;
+      const y = wallWidth / 2 + cell.y * cellSize + cellSize / 2;
+      const size = Math.max(10, Math.floor(cellSize * 0.55));
+      ctx.font = size + 'px serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, x, y);
+    }
+
+    function drawAvatar() {
+      const x = wallWidth / 2 + player.x * cellSize + cellSize / 2;
+      const y = wallWidth / 2 + player.y * cellSize + cellSize / 2;
+      const radius = Math.max(3, cellSize * 0.32);
+      ctx.save();
+      ctx.shadowColor = 'rgba(52, 211, 153, 0.85)';
+      ctx.shadowBlur = 14;
+      ctx.fillStyle = '#10b981';
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#6ee7b7';
+      ctx.beginPath();
+      ctx.arc(x - radius * 0.25, y - radius * 0.25, radius * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function move(dx, dy) {
+      if (finished) return;
+      const current = cells[player.y][player.x];
+      let canMove = false;
+      if (dx === 0 && dy === -1 && !current.walls.top) canMove = true;
+      if (dx === 1 && dy === 0 && !current.walls.right) canMove = true;
+      if (dx === 0 && dy === 1 && !current.walls.bottom) canMove = true;
+      if (dx === -1 && dy === 0 && !current.walls.left) canMove = true;
+      if (!canMove) return;
+      player.x += dx;
+      player.y += dy;
+      moves++;
+      if (!startTime) {
+        startTime = Date.now();
+        timerInterval = setInterval(updateStats, 100);
+      }
+      updateStats();
+      draw();
+      if (player.x === cols - 1 && player.y === rows - 1) {
+        finishGame();
+      }
+    }
+
+    function updateStats() {
+      let elapsed = 0;
+      if (startTime) {
+        elapsed = (Date.now() - startTime) / 1000;
+      }
+      timerEl.textContent = elapsed.toFixed(1) + 's';
+      movesEl.textContent = moves;
+      shortestEl.textContent = shortestPathLength;
+    }
+
+    function finishGame() {
+      finished = true;
+      clearInterval(timerInterval);
+      const elapsed = (Date.now() - startTime) / 1000;
+      const efficiency = Math.max(0, moves - shortestPathLength);
+      const timeScore = Math.max(0, 1000 - Math.floor(elapsed * 10));
+      const pathPenalty = efficiency * 20;
+      let score = Math.max(0, timeScore - pathPenalty);
+      let bonus = 0;
+      if (moves === shortestPathLength) {
+        bonus = 500;
+      } else {
+        bonus = Math.max(0, 250 - efficiency * 10);
+      }
+      score += bonus;
+      saveBestScore(score);
+      finalTime.textContent = elapsed.toFixed(2) + 's';
+      finalMoves.textContent = moves;
+      finalShortest.textContent = shortestPathLength;
+      finalScore.textContent = score;
+      if (moves === shortestPathLength) {
+        bonusMessage.textContent = 'Perfect path! Bonus +500';
+        bonusMessage.classList.remove('hidden');
+      } else if (bonus > 0) {
+        bonusMessage.textContent = 'Near-optimal path! Bonus +' + bonus;
+        bonusMessage.classList.remove('hidden');
+      } else {
+        bonusMessage.classList.add('hidden');
+      }
+      winOverlay.classList.remove('hidden');
+      void winOverlay.offsetWidth;
+      winOverlay.style.opacity = 1;
+      winOverlay.classList.add('opacity-100');
+    }
+
+    function showHint() {
+      if (finished) return;
+      hintPath = computeShortestPath();
+      draw();
+      clearTimeout(hintTimer);
+      hintTimer = setTimeout(() => {
+        hintPath = null;
+        draw();
+      }, 1500);
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowUp') { e.preventDefault(); move(0, -1); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); move(1, 0); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); move(0, 1); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); move(-1, 0); }
+      else if (e.key === 'r' || e.key === 'R') { initGame(); }
+    });
+
+    replayBtn.addEventListener('click', initGame);
+    overlayReplay.addEventListener('click', initGame);
+    difficultySel.addEventListener('change', initGame);
+    hintBtn.addEventListener('click', showHint);
+
+    document.getElementById('upBtn').addEventListener('click', () => move(0, -1));
+    document.getElementById('rightBtn').addEventListener('click', () => move(1, 0));
+    document.getElementById('downBtn').addEventListener('click', () => move(0, 1));
+    document.getElementById('leftBtn').addEventListener('click', () => move(-1, 0));
+
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(resizeAndDraw, 100);
+    });
+
+    initGame();
+  </script>
+</body>
+</html>
