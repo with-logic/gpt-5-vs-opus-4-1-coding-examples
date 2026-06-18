@@ -6,6 +6,7 @@ import { AppComparisonView } from "./app-comparison-view";
 import { StatsMiniChart } from "./stats-mini-chart";
 import { StatsModelDashboard } from "./stats-model-card";
 import { MODEL_IDS, MODELS_BY_PROVIDER } from "@/lib/models";
+import { DEFAULT_COMPARISON_MODELS } from "@/lib/models.config";
 
 interface AppGridWithRoutingProps {
   apps: CodeExample[];
@@ -15,9 +16,9 @@ type PageMode = "apps" | "stats-by-app" | "stats-by-model";
 
 export function AppGridWithRouting({ apps }: AppGridWithRoutingProps) {
   const [selectedApp, setSelectedApp] = useState<CodeExample | null>(null);
-  const [initialModels, setInitialModels] = useState<string[]>(["gpt-5.5", "opus-4.8", "gemini-3"]);
+  const [initialModels, setInitialModels] = useState<string[]>([...DEFAULT_COMPARISON_MODELS]);
   const [initialView, setInitialView] = useState<"side-by-side" | "tabs">("side-by-side");
-  const [initialTab, setInitialTab] = useState<string>("gpt-5.5");
+  const [initialTab, setInitialTab] = useState<string>(DEFAULT_COMPARISON_MODELS[0]);
   const [initialContentMode, setInitialContentMode] = useState<"demo" | "stats">("demo");
   const [pageMode, setPageMode] = useState<PageMode>("apps");
 
@@ -80,9 +81,9 @@ export function AppGridWithRouting({ apps }: AppGridWithRoutingProps) {
     // Let middle-click, ctrl+click, cmd+click open in new tab naturally
     if (e.button !== 0 || e.ctrlKey || e.metaKey) return;
     e.preventDefault();
-    setInitialModels(["gpt-5.5", "opus-4.8", "gemini-3"]); // Reset to defaults
+    setInitialModels([...DEFAULT_COMPARISON_MODELS]);
     setInitialView("side-by-side");
-    setInitialTab("gpt-5.5");
+    setInitialTab(DEFAULT_COMPARISON_MODELS[0]);
     setInitialContentMode(pageMode !== "apps" ? "stats" : "demo");
     setSelectedApp(app);
   }, [pageMode]);
@@ -124,8 +125,8 @@ export function AppGridWithRouting({ apps }: AppGridWithRoutingProps) {
             <a
               key={app.id}
               href={pageMode === "stats-by-app"
-                ? `/compare/${app.id}?models=gpt-5.4,opus-4.7,gemini-3&view=side-by-side&content=stats`
-                : `/compare/${app.id}?models=gpt-5.4,opus-4.7,gemini-3&view=side-by-side`}
+                ? `/compare/${app.id}?models=${DEFAULT_COMPARISON_MODELS.join(',')}&view=side-by-side&content=stats`
+                : `/compare/${app.id}?models=${DEFAULT_COMPARISON_MODELS.join(',')}&view=side-by-side`}
               className="group bg-white p-4 cursor-pointer hover:bg-neutral-50 transition-colors"
               onClick={(e) => handleOpenApp(e, app)}
             >

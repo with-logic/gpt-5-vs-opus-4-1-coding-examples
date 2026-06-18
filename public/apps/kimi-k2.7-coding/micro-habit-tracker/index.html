@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+  <title>Micro Habit Tracker</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    .glass { background: rgba(255, 255, 255, 0.85); backdrop-filter: blur(8px); }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-emerald-50 via-cyan-50 to-blue-100 text-slate-800 min-h-screen">
+  <div id="app" class="max-w-3xl mx-auto p-4 md:p-6">
+    <header class="flex justify-between items-end mb-6">
+      <div>
+        <h1 class="text-3xl md:text-4xl font-bold tracking-tight">
+          <span class="bg-gradient-to-r from-emerald-500 to-cyan-600 bg-clip-text text-transparent">Micro Habit Tracker</span>
+        </h1>
+        <p class="text-sm md:text-base text-slate-500 mt-1" id="dateLine">Today</p>
+      </div>
+      <div class="text-right">
+        <div class="text-3xl font-bold text-slate-800" id="totalStreak">0</div>
+        <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">total streak</div>
+      </div>
+    </header>
+
+    <section class="bg-white/80 backdrop-blur rounded-2xl shadow-sm border border-white/50 p-4 mb-6">
+      <div class="flex justify-between items-center mb-3">
+        <h2 class="font-semibold text-slate-700">7-Day Momentum</h2>
+        <span class="text-xs text-slate-500" id="chartLabel">% habits done</span>
+      </div>
+      <div class="relative h-48">
+        <canvas id="momentumChart"></canvas>
+      </div>
+    </section>
+
+    <div id="habitsContainer" class="space-y-4"></div>
+
+    <button id="addBtn" class="mt-6 w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 text-white font-bold shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:scale-[1.01] transition active:scale-[0.99]">
+      + Add Habit
+    </button>
+
+    <div class="mt-4 grid grid-cols-2 gap-3">
+      <button id="exportBtn" class="py-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition">Export JSON</button>
+      <button id="importBtn" class="py-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition">Import JSON</button>
+      <input type="file" id="importFile" class="hidden" accept=".json,application/json">
+    </div>
+
+    <p class="mt-6 text-center text-xs text-slate-400">
+      Tap a day to mark done. Tap again to log a skip. Keep the chain alive.
+    </p>
+  </div>
+
+  <div id="habitModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm hidden items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6">
+      <h3 id="modalTitle" class="text-lg font-bold text-slate-800 mb-4">Add Habit</h3>
+      <input id="habitName" type="text" placeholder="e.g., Drink 2 glasses of water" class="w-full mb-4 px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-400 text-slate-800 placeholder-slate-400">
+      <div class="mb-6">
+        <label class="text-xs font-bold text-slate-500 uppercase tracking-wider">Color</label>
+        <div id="colorOptions" class="flex flex-wrap gap-3 mt-2"></div>
+      </div>
+      <div class="flex justify-end gap-2">
+        <button id="cancelModal" class="px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-100 font-medium transition">Cancel</button>
+        <button id="saveModal" class="px-5 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-cyan-500 text-white font-bold shadow-md hover:shadow-lg transition">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'mht_data_v1';
+    const colorPalette = [
+      { name: 'emerald', bg: 'bg-emerald-500', text: 'text-emerald-500', hex: '#10b981' },
+      { name: 'sky', bg: 'bg-sky-500', text: 'text-sky-500', hex: '#0ea5e9' },
+      { name: 'violet', bg: 'bg-violet-500', text: 'text-violet-500', hex: '#8b5cf6' },
+      { name: 'rose', bg: 'bg-rose-500', text: 'text-rose-500', hex: '#f43f5e' },
+      { name: 'amber', bg: 'bg-amber-500', text: 'text-amber-500', hex: '#f59e0b' },
+      { name: 'fuchsia', bg: 'bg-fuchsia-500', text: 'text-fuchsia-500', hex: '#d946ef' },
+      { name: 'indigo', bg: 'bg-indigo-500', text: 'text-indigo-500', hex: '#6366f1' }
+    ];
+
+    let data = { habits: [], history: {} };
+    let chartInstance = null;
+    let editingId = null;
+    let selectedColor = colorPalette[0].name;
+
+    const $ = (sel) => document.querySelector(sel);
+
+    function init() {
+      loadData();
+      setupListeners();
+      render();
+    }
+
+    function loadData() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        try {
+          data = JSON.parse(raw);
+          if (!Array.isArray(data.habits) || typeof data.history !== 'object') throw new Error('bad format');
+          return;
+        } catch (e) {
+          localStorage.removeItem(STORAGE_KEY);
+        }
+      }
+      data = generateSampleData();
+      saveData();
+    }
+
+    function saveData() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+
+    function generateSampleData() {
+      const habits = [
+        { id: 'h1', name: 'Morning water', color: 'emerald' },
+        { id: 'h2', name: 'Walk 10 min', color: 'sky' },
+        { id: 'h3', name: 'Read 5 pages', color: 'violet' },
+        { id: 'h4', name: 'Stretch', color: 'rose' },
+        { id: 'h5', name: 'No phone before bed', color: 'amber' }
+      ];
+      const history = {};
+      const today = new Date();
+      habits.forEach(h => {
+        history[h.id] = {};
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(today);
+          d.setDate(today.getDate() - i);
+          const ds = formatDate(d);
+          const r = Math.random();
+          // Make recent days more likely complete
+          const threshold = 0.7 - i * 0.05;
+          if (r < threshold) {
+            history[h.id][ds] = 'done';
+          } else if (r < threshold + 0.18) {
+            history[h.id][ds] = 'skip';
+          }
+        }
+      });
+      return { habits, history };
+    }
+
+    function formatDate(d) {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    function parseDate(str) {
+      return new Date(str + 'T00:00:00');
+    }
+
+    function getWeekDates() {
+      const today = new Date();
+      const arr = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - i);
+        arr.push(formatDate(d));
+      }
+      return arr;
+    }
+
+    function getStatus(habitId, date) {
+      return data.history[habitId]?.[date] || null;
+    }
+
+    function setStatus(habitId, date, status) {
+      if (!data.history[habitId]) data.history[habitId] = {};
+      if (status) data.history[habitId][date] = status;
+      else delete data.history[habitId][date];
+    }
+
+    function nextStatus(current) {
+      if (!current) return 'done';
+      if (current === 'done') return 'skip';
+      return null;
+    }
+
+    function colorObj(name) {
+      return colorPalette.find(c => c.name === name) || colorPalette[0];
+    }
+
+    function computeStreak(habitId) {
+      let count = 0;
+      const d = new Date();
+      while (true) {
+        const status = getStatus(habitId, formatDate(d));
+        if (status === 'done') {
+          count++;
+        } else if (status === 'skip') {
+          // skip does not break the streak
+        } else {
+          break;
+        }
+        d.setDate(d.getDate() - 1);
+      }
+      return count;
+    }
+
+    function computeBestStreak(habitId) {
+      const dates = Object.keys(data.history[habitId] || {}).sort();
+      if (!dates.length) return 0;
+      const first = parseDate(dates[0]);
+      const last = parseDate(dates[dates.length - 1]);
+      let current = 0;
+      let max = 0;
+      const d = new Date(first);
+      while (d <= last) {
+        const ds = formatDate(d);
+        const s = getStatus(habitId, ds);
+        if (s === 'done') {
+          current++;
+          max = Math.max(max, current);
+        } else if (s === 'skip') {
+          // continue without breaking
+        } else {
+          current = 0;
+        }
+        d.setDate(d.getDate() + 1);
+      }
+      return max;
+    }
+
+    function computeWeekDone(habitId) {
+      return getWeekDates().filter(d => getStatus(habitId, d) === 'done').length;
+    }
+
+    function render() {
+      const today = formatDate(new Date());
+      $('#dateLine').textContent = 'Today is ' + parseDate(today).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+      $('#totalStreak').textContent = data.habits.reduce((sum, h) => sum + computeStreak(h.id), 0);
+      renderChart();
+      renderHabits();
+      updateAddButton();
+    }
+
+    function renderChart() {
+      const ctx = $('#momentumChart').getContext('2d');
+      const week = getWeekDates();
+      const labels = week.map(ds => {
+        const d = parseDate(ds);
+        return `${d.getMonth() + 1}/${d.getDate()}`;
+      });
+      const values = week.map(ds => {
+        if (!data.habits.length) return 0;
+        const done = data.habits.filter(h => getStatus(h.id, ds) === 'done').length;
+        return Math.round((done / data.habits.length) * 100);
+      });
+      if (chartInstance) chartInstance.destroy();
+      const gradient = ctx.createLinearGradient(0, 0, 0, 200);
+      gradient.addColorStop(0, '#10b981');
+      gradient.addColorStop(1, '#06b6d4');
+      chartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            data: values,
+            backgroundColor: gradient,
+            borderRadius: 6,
+            barThickness: 18
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true,
+              max: 100,
+              grid: { color: '#f1f5f9' },
+              ticks: { callback: v => v + '%', font: { size: 10 } }
+            },
+            x: {
+              grid: { display: false },
+              ticks: { font: { size: 10 } }
+            }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: c => c.raw + '% done' } }
+          }
+        }
+      });
+    }
+
+    function renderHabits() {
+      const container = $('#habitsContainer');
+      container.innerHTML = '';
+      const week = getWeekDates();
+      const today = formatDate(new Date());
+      const check = `<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></svg>`;
+      const skip = `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>`;
+
+      data.habits.forEach(h => {
+        const c = colorObj(h.color);
+        const streak = computeStreak(h.id);
+        const best = computeBestStreak(h.id);
+        const doneCount = computeWeekDone(h.id);
+        const pct = Math.round((doneCount / 7) * 100);
+        const ringStyle = `background: conic-gradient(${c.hex} ${pct}%, #e2e8f0 0);`;
+
+        const card = document.createElement('div');
+        card.className = 'bg-white/80 backdrop-blur rounded-2xl p-4 shadow-sm border border-white/50';
+        card.innerHTML = `
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-3">
+              <div class="w-3 h-3 rounded-full ${c.bg} shadow-sm"></div>
+              <h3 class="font-semibold text-lg text-slate-800">${escapeHtml(h.name)}</h3>
+            </div>
+            <div class="flex items-center gap-1 md:gap-2">
+              <div class="flex items-center gap-1 px-2 py-1 rounded-full bg-orange-100 text-orange-600">
+                <span class="text-sm">🔥</span>
+                <span class="text-xs font-bold">${streak}</span>
+              </div>
+              <button data-edit="${h.id}" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition" title="Edit">✏️</button>
+              <button data-delete="${h.id}" class="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition" title="Delete">🗑️</button>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 md:gap-4">
+            <div class="flex flex-col items-center gap-1 shrink-0">
+              <div class="w-12 h-12 rounded-full relative" style="${ringStyle}">
+                <div class="absolute inset-1 bg-white rounded-full flex items-center justify-center text-xs font-bold text-slate-700">${pct}%</div>
+              </div>
+              <span class="text-[10px] text-slate-400 font-medium">best ${best}</span>
+            </div>
+            <div class="flex-1 grid grid-cols-7 gap-1 md:gap-2">
+              ${week.map(ds => {
+                const d = parseDate(ds);
+                const dayLetter = ['S','M','T','W','T','F','S'][d.getDay()];
+                const status = getStatus(h.id, ds);
+                const isToday = ds === today;
+                let cellClass = 'day-cell aspect-square rounded-lg flex items-center justify-center transition transform active:scale-95 ';
+                let content = '';
+                if (status === 'done') {
+                  cellClass += `${c.bg} text-white shadow-md`;
+                  content = check;
+                } else if (status === 'skip') {
+                  cellClass += 'bg-slate-200 text-slate-500';
+                  content = skip;
+                } else {
+                  cellClass += 'bg-white border-2 border-slate-200 text-slate-300 hover:border-slate-300';
+                }
+                if (isToday) cellClass += ' ring-2 ring-offset-1 ring-slate-300';
+                return `
+                  <div class="flex flex-col items-center">
+                    <span class="text-[10px] text-slate-400 mb-1">${dayLetter}</span>
+                    <button data-habit="${h.id}" data-date="${ds}" class="${cellClass}" title="${ds}">${content}</button>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function updateAddButton() {
+      const btn = $('#addBtn');
+      if (data.habits.length >= 7) {
+        btn.disabled = true;
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+        btn.textContent = 'Maximum 7 habits';
+      } else {
+        btn.disabled = false;
+        btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        btn.textContent = '+ Add Habit';
+      }
+    }
+
+    function setupListeners() {
+      $('#addBtn').addEventListener('click', () => openModal());
+      $('#exportBtn').addEventListener('click', exportData);
+      $('#importBtn').addEventListener('click', () => $('#importFile').click());
+      $('#importFile').addEventListener('change', importData);
+      $('#cancelModal').addEventListener('click', closeModal);
+      $('#saveModal').addEventListener('click', saveHabit);
+      $('#habitModal').addEventListener('click', e => { if (e.target === $('#habitModal')) closeModal(); });
+      $('#habitName').addEventListener('keydown', e => { if (e.key === 'Enter') saveHabit(); });
+      $('#habitsContainer').addEventListener('click', handleHabitClick);
+      renderColorOptions();
+    }
+
+    function handleHabitClick(e) {
+      const cell = e.target.closest('.day-cell');
+      if (cell) {
+        const h = cell.dataset.habit;
+        const d = cell.dataset.date;
+        setStatus(h, d, nextStatus(getStatus(h, d)));
+        saveData();
+        render();
+        return;
+      }
+      const edit = e.target.closest('button[data-edit]');
+      if (edit) {
+        openModal(edit.dataset.edit);
+        return;
+      }
+      const del = e.target.closest('button[data-delete]');
+      if (del) {
+        if (confirm('Delete this habit and its history?')) {
+          data.habits = data.habits.filter(h => h.id !== del.dataset.delete);
+          delete data.history[del.dataset.delete];
+          saveData();
+          render();
+        }
+      }
+    }
+
+    function openModal(habitId = null) {
+      editingId = habitId;
+      const title = $('#modalTitle');
+      const nameInput = $('#habitName');
+      if (habitId) {
+        const h = data.habits.find(h => h.id === habitId);
+        title.textContent = 'Edit Habit';
+        nameInput.value = h.name;
+        selectedColor = h.color;
+      } else {
+        title.textContent = 'Add Habit';
+        nameInput.value = '';
+        selectedColor = unusedColor();
+      }
+      renderColorOptions();
+      $('#habitModal').classList.remove('hidden');
+      $('#habitModal').classList.add('flex');
+      nameInput.focus();
+    }
+
+    function closeModal() {
+      $('#habitModal').classList.add('hidden');
+      $('#habitModal').classList.remove('flex');
+      editingId = null;
+    }
+
+    function unusedColor() {
+      const used = data.habits.map(h => h.color);
+      const avail = colorPalette.filter(c => !used.includes(c.name));
+      return (avail.length ? avail[0] : colorPalette[0]).name;
+    }
+
+    function renderColorOptions() {
+      const box = $('#colorOptions');
+      box.innerHTML = '';
+      colorPalette.forEach(c => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `w-8 h-8 rounded-full ${c.bg} flex items-center justify-center transition ring-2 ring-offset-2 ${selectedColor === c.name ? 'ring-slate-400' : 'ring-transparent hover:ring-slate-200'}`;
+        btn.title = c.name;
+        btn.addEventListener('click', () => { selectedColor = c.name; renderColorOptions(); });
+        box.appendChild(btn);
+      });
+    }
+
+    function saveHabit() {
+      const name = $('#habitName').value.trim();
+      if (!name) return;
+      if (data.habits.length >= 7 && !editingId) {
+        alert('You can track up to 7 habits.');
+        return;
+      }
+      if (editingId) {
+        const h = data.habits.find(h => h.id === editingId);
+        h.name = name;
+        h.color = selectedColor;
+      } else {
+        data.habits.push({ id: 'h_' + Date.now() + Math.random().toString(36).slice(2, 7), name, color: selectedColor });
+      }
+      saveData();
+      closeModal();
+      render();
+    }
+
+    function exportData() {
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'micro-habit-tracker.json';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function importData(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        try {
+          const imported = JSON.parse(ev.target.result);
+          if (!Array.isArray(imported.habits) || typeof imported.history !== 'object') throw new Error('Invalid format');
+          if (imported.habits.length > 7) imported.habits = imported.habits.slice(0, 7);
+          data = imported;
+          saveData();
+          render();
+          alert('Habits imported successfully.');
+        } catch (err) {
+          alert('Could not import file: ' + err.message);
+        }
+        e.target.value = '';
+      };
+      reader.readAsText(file);
+    }
+
+    init();
+  </script>
+</body>
+</html>

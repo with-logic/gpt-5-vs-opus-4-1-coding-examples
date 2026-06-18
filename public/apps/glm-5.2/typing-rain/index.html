@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Typing Rain</title>
+<style>
+  :root{
+    --neon:#7df9ff;
+    --neon2:#ff4d8d;
+    --ink:#05070f;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:var(--ink);font-family:"Segoe UI",system-ui,-apple-system,sans-serif;color:#e8f0ff}
+  #game{position:fixed;inset:0;display:block;cursor:none}
+
+  /* HUD */
+  .hud{
+    position:fixed;top:0;left:0;right:0;padding:18px 26px;
+    display:flex;justify-content:space-between;align-items:flex-start;
+    pointer-events:none;z-index:5;
+    text-shadow:0 2px 18px rgba(0,0,0,.8);
+  }
+  .panel{
+    background:rgba(8,14,28,.45);backdrop-filter:blur(8px);
+    border:1px solid rgba(125,249,255,.18);
+    border-radius:14px;padding:10px 16px;min-width:120px;
+    box-shadow:0 8px 30px rgba(0,0,0,.45), inset 0 0 20px rgba(125,249,255,.05);
+  }
+  .panel.right{text-align:right}
+  .label{font-size:10px;letter-spacing:.22em;text-transform:uppercase;color:#8fb6c8;opacity:.85}
+  .value{font-size:26px;font-weight:700;color:#fff;line-height:1.1;margin-top:2px;font-variant-numeric:tabular-nums}
+  .value.neon{color:var(--neon);text-shadow:0 0 12px rgba(125,249,255,.55)}
+  .value.pink{color:var(--neon2);text-shadow:0 0 12px rgba(255,77,141,.5)}
+  .row{display:flex;gap:18px}
+  .lives{display:flex;gap:5px;margin-top:4px;justify-content:flex-end}
+  .heart{width:14px;height:14px;border-radius:3px;background:var(--neon2);box-shadow:0 0 8px rgba(255,77,141,.7);transition:.2s}
+  .heart.lost{background:rgba(255,77,141,.18);box-shadow:none}
+
+  /* Input line */
+  .input-wrap{
+    position:fixed;left:50%;bottom:26px;transform:translateX(-50%);
+    z-index:6;pointer-events:none;
+    display:flex;flex-direction:column;align-items:center;gap:8px;width:min(620px,92vw);
+  }
+  .echo{
+    font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    font-size:22px;letter-spacing:.08em;min-height:30px;
+    padding:6px 16px;border-radius:10px;
+    background:rgba(8,14,28,.55);backdrop-filter:blur(6px);
+    border:1px solid rgba(125,249,255,.22);
+    color:var(--neon);text-shadow:0 0 10px rgba(125,249,255,.5);
+    white-space:pre;overflow:hidden;text-overflow:clip;
+  }
+  .echo .cur{opacity:.6}
+  .hint{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:#7d97a8}
+
+  /* Overlays */
+  .overlay{
+    position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;text-align:center;
+    background:radial-gradient(ellipse at 50% 40%,rgba(6,10,22,.55),rgba(2,4,10,.9));
+    backdrop-filter:blur(3px);
+  }
+  .overlay.hidden{display:none}
+  .title{
+    font-size:clamp(48px,9vw,108px);font-weight:800;letter-spacing:.06em;
+    background:linear-gradient(180deg,#bfefff 0%,#7df9ff 45%,#3aa6ff 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    text-shadow:0 0 60px rgba(125,249,255,.35);
+    filter:drop-shadow(0 6px 30px rgba(80,180,255,.4));
+  }
+  .subtitle{margin-top:6px;color:#9fc0d4;letter-spacing:.32em;text-transform:uppercase;font-size:13px}
+  .tagline{margin-top:22px;max-width:560px;color:#cfe3f0;font-size:16px;line-height:1.6}
+  .btn{
+    margin-top:34px;pointer-events:auto;cursor:pointer;
+    font-size:16px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;
+    color:#021018;background:linear-gradient(180deg,#aef3ff,#56d4ff);
+    border:none;border-radius:12px;padding:15px 42px;
+    box-shadow:0 10px 40px rgba(86,212,255,.45),inset 0 1px 0 rgba(255,255,255,.6);
+    transition:transform .12s ease, box-shadow .12s ease;
+  }
+  .btn:hover{transform:translateY(-2px);box-shadow:0 16px 50px rgba(86,212,255,.6)}
+  .btn:active{transform:translateY(0)}
+
+  .stats{display:flex;gap:40px;margin-top:28px}
+  .stat{display:flex;flex-direction:column;gap:4px}
+  .stat .v{font-size:34px;font-weight:700;color:#fff;font-variant-numeric:tabular-nums}
+  .stat .l{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:#8fb6c8}
+
+  .ghost{position:absolute;left:-9999px;opacity:0}
+  .corner{position:fixed;bottom:14px;right:18px;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:#54708a;z-index:5;pointer-events:none}
+
+  .flash{position:fixed;inset:0;background:#ff2e63;opacity:0;z-index:7;pointer-events:none;mix-blend-mode:screen}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div class="hud">
+  <div class="row">
+    <div class="panel">
+      <div class="label">Score</div>
+      <div class="value neon" id="score">0</div>
+    </div>
+    <div class="panel">
+      <div class="label">Level</div>
+      <div class="value" id="level">1</div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="panel">
+      <div class="label">Accuracy</div>
+      <div class="value" id="acc">100%</div>
+    </div>
+    <div class="panel right">
+      <div class="label">Lives</div>
+      <div class="lives" id="lives"></div>
+    </div>
+  </div>
+</div>
+
+<div class="input-wrap">
+  <div class="echo" id="echo"><span class="cur">type to stop the rain…</span></div>
+  <div class="hint" id="hint">Press any letter to begin</div>
+</div>
+
+<div class="flash" id="flash"></div>
+
+<div class="overlay" id="start">
+  <div class="title">TYPING RAIN</div>
+  <div class="subtitle">A neon downpour of words</div>
+  <p class="tagline">Words fall like rain over the sleeping city. Type each one before it hits the ground. The storm grows heavier with every level — miss too many and the city floods.</p>
+  <button class="btn" id="startBtn">Start Game</button>
+</div>
+
+<div class="overlay hidden" id="over">
+  <div class="title" style="font-size:clamp(40px,8vw,80px)">CITY FLOODED</div>
+  <div class="subtitle">The rain won the night</div>
+  <div class="stats">
+    <div class="stat"><div class="v" id="fScore">0</div><div class="l">Score</div></div>
+    <div class="stat"><div class="v" id="fLevel">1</div><div class="l">Max Level</div></div>
+    <div class="stat"><div class="v" id="fAcc">0%</div><div class="l">Accuracy</div></div>
+    <div class="stat"><div class="v" id="fWpm">0</div><div class="l">WPM</div></div>
+  </div>
+  <button class="btn" id="retryBtn">Play Again</button>
+</div>
+
+<div class="corner">Typing Rain</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------- Setup ----------
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  let W = 0, H = 0, DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+  const $ = id => document.getElementById(id);
+  const ui = {
+    score: $('score'), level: $('level'), acc: $('acc'), lives: $('lives'),
+    echo: $('echo'), hint: $('hint'), flash: $('flash'),
+    start: $('start'), over: $('over'),
+    fScore: $('fScore'), fLevel: $('fLevel'), fAcc: $('fAcc'), fWpm: $('fWpm'),
+    startBtn: $('startBtn'), retryBtn: $('retryBtn'),
+  };
+
+  const WORDS = [
+    "rain","city","neon","echo","wave","sky","fog","dusk","storm","cloud",
+    "light","shadow","pulse","drift","glass","steel","tower","river","amber","violet",
+    "thunder","midnight","skyline","cascade","horizon","lattice","velocity","phantom",
+    "rainfall","boulevard","monsoon","circuit","neon","avenue","lantern","reflection",
+    "skyscraper","downpour","insomnia","frequency","architecture","spectrum","meridian",
+    "synthwave","silhouette","fluorescent","luminescent","metropolitan","constellation",
+    "electricity","precipitation","chromatic","phenomenon","equilibrium","reverberate",
+    "cascade","whisper","glide","ember","quartz","azure","cobalt","mirage"," prism",
+    "satellite","parallax","velocity","gradient","monolith","aurora","tide","vault",
+  ];
+
+  const LIVES = 5;
+
+  // ---------- City background (pre-rendered, parallax) ----------
+  const buildings = [];     // {x,w,h,layer,winRows,winCols,winSeed,roof}
+  let groundY = 0;
+  const stars = [];
+  let backdrop = null;      // offscreen canvas for static sky+far city
+
+  function seedRand(seed){
+    let s = seed >>> 0;
+    return () => { s = (s*1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  }
+
+  function buildCity(){
+    buildings.length = 0;
+    stars.length = 0;
+    const rnd = seedRand(20260617);
+    // stars
+    for(let i=0;i<120;i++){
+      stars.push({x:rnd(),y:rnd()*0.6,r:rnd()*1.4+0.3,tw:rnd()*Math.PI*2});
+    }
+    // three layers
+    const layers = [
+      {layer:0, count:14, hMin:0.18, hMax:0.34, wMin:60, wMax:120, color:'#101a33', win:false},
+      {layer:1, count:20, hMin:0.30, hMax:0.55, wMin:48, wMax:96,  color:'#0c1430', win:true, winC:'#3b2d6b'},
+      {layer:2, count:26, hMin:0.42, hMax:0.78, wMin:38, wMax:78,  color:'#070d22', win:true, winC:'#caa64a'},
+    ];
+    for(const L of layers){
+      let x = -40;
+      while(x < W + 40){
+        const w = L.wMin + rnd()*(L.wMax-L.wMin);
+        const h = (L.hMin + rnd()*(L.hMax-L.hMin)) * H;
+        const b = {
+          x, w, h, layer:L.layer, color:L.color, win:L.win, winC:L.winC,
+          roof: rnd()<0.3 ? (rnd()<0.5?'antenna':'step') : 'flat',
+          blink: rnd(),
+          winSeed: Math.floor(rnd()*1e9),
+        };
+        buildings.push(b);
+        x += w - rnd()*10;
+      }
+    }
+    buildings.sort((a,b)=>a.layer-b.layer);
+    groundY = H * 0.92;
+  }
+
+  function renderBackdrop(){
+    backdrop = document.createElement('canvas');
+    backdrop.width = W * DPR; backdrop.height = H * DPR;
+    const c = backdrop.getContext('2d');
+    c.scale(DPR, DPR);
+
+    // sky gradient
+    const sky = c.createLinearGradient(0,0,0,H);
+    sky.addColorStop(0,'#070b1c');
+    sky.addColorStop(0.45,'#0a1230');
+    sky.addColorStop(0.75,'#0d1838');
+    sky.addColorStop(1,'#05091a');
+    c.fillStyle = sky; c.fillRect(0,0,W,H);
+
+    // distant glow on horizon
+    const glow = c.createRadialGradient(W*0.5, H*0.9, 10, W*0.5, H*0.9, W*0.7);
+    glow.addColorStop(0,'rgba(80,120,220,0.18)');
+    glow.addColorStop(1,'rgba(80,120,220,0)');
+    c.fillStyle = glow; c.fillRect(0,0,W,H);
+
+    // moon
+    c.save();
+    c.globalAlpha = 0.9;
+    const mx = W*0.78, my = H*0.16, mr = 34;
+    const mg = c.createRadialGradient(mx,my,mr*0.2,mx,my,mr*3);
+    mg.addColorStop(0,'rgba(220,235,255,0.5)');
+    mg.addColorStop(1,'rgba(220,235,255,0)');
+    c.fillStyle = mg; c.beginPath(); c.arc(mx,my,mr*3,0,Math.PI*2); c.fill();
+    c.fillStyle = '#e6eeff'; c.beginPath(); c.arc(mx,my,mr,0,Math.PI*2); c.fill();
+    c.fillStyle = 'rgba(10,20,45,0.5)'; c.beginPath(); c.arc(mx+12,my-6,mr*0.85,0,Math.PI*2); c.fill();
+    c.restore();
+
+    // stars (static dots; twinkle drawn live on main canvas)
+    c.fillStyle = '#cfe2ff';
+    for(const s of stars){
+      c.globalAlpha = 0.4 + s.r*0.3;
+      c.beginPath(); c.arc(s.x*W, s.y*H, s.r, 0, Math.PI*2); c.fill();
+    }
+    c.globalAlpha = 1;
+
+    // far layers (0 and 1) drawn to backdrop; layer 2 (closest) drawn live for lit windows
+    for(const b of buildings){
+      if(b.layer === 2) continue;
+      drawBuilding(c, b);
+    }
+  }
+
+  function drawBuilding(c, b){
+    const top = groundY - b.h;
+    // body
+    c.fillStyle = b.color;
+    c.fillRect(b.x, top, b.w, b.h);
+    // edge highlight
+    c.fillStyle = 'rgba(125,170,255,0.05)';
+    c.fillRect(b.x, top, 1.5, b.h);
+
+    // roof details
+    if(b.roof === 'antenna'){
+      c.strokeStyle = b.color; c.lineWidth = 1.5;
+      c.beginPath(); c.moveTo(b.x+b.w*0.5, top); c.lineTo(b.x+b.w*0.5, top-18); c.stroke();
+      c.fillStyle = '#ff4d8d'; c.beginPath(); c.arc(b.x+b.w*0.5, top-18, 1.6, 0, Math.PI*2); c.fill();
+    } else if(b.roof === 'step'){
+      c.fillStyle = b.color;
+      c.fillRect(b.x+b.w*0.2, top-10, b.w*0.6, 10);
+    }
+
+    // windows
+    if(b.win){
+      const rnd = seedRand(b.winSeed);
+      const cols = Math.max(2, Math.floor(b.w/14));
+      const rows = Math.max(3, Math.floor(b.h/18));
+      const padX = 6, padY = 10;
+      const cw = (b.w - padX*2)/cols, ch = (b.h - padY*2)/rows;
+      const ww = cw*0.6, wh = ch*0.55;
+      for(let r=0;r<rows;r++){
+        for(let col=0;col<cols;col++){
+          const lit = rnd() < (b.layer===1?0.18:0.42);
+          if(!lit) continue;
+          const wx = b.x + padX + col*cw + (cw-ww)/2;
+          const wy = top + padY + r*ch + (ch-wh)/2;
+          c.fillStyle = b.winC;
+          c.globalAlpha = b.layer===1?0.55:0.85;
+          c.fillRect(wx, wy, ww, wh);
+          c.globalAlpha = 1;
+        }
+      }
+    }
+  }
+
+  // ---------- Rain particles (ambient) ----------
+  const rain = [];
+  function spawnRain(){
+    for(let i=0;i<160;i++){
+      rain.push({
+        x: Math.random()*W,
+        y: Math.random()*H,
+        len: 8+Math.random()*16,
+        sp: 4+Math.random()*7,
+        a: 0.12+Math.random()*0.25,
+      });
+    }
+  }
+
+  // ---------- Falling words ----------
+  const drops = [];        // active falling words
+  const splashes = [];     // impact particles
+  let spawnTimer = 0;
+
+  function makeDrop(){
+    const word = WORDS[Math.floor(Math.random()*WORDS.length)].trim();
+    // font size grows slightly with level
+    const fs = 18 + Math.min(10, (level-1)*0.6);
+    ctx.font = `700 ${fs}px "SF Mono", ui-monospace, Menlo, Consolas, monospace`;
+    const tw = ctx.measureText(word).width;
+    const margin = 40;
+    const x = margin + Math.random()*(W - tw - margin*2);
+    // speed scales with level
+    const base = 38 + (level-1)*9;
+    const speed = base + Math.random()*base*0.35;
+    drops.push({
+      word, x, y: -20 - Math.random()*120,
+      vx: (Math.random()-0.5)*8,
+      speed, fs, tw,
+      typed: 0,
+      hue: 190 + Math.random()*40,
+      wob: Math.random()*Math.PI*2,
+      dead:false,
+    });
+  }
+
+  function impact(d, miss){
+    const n = miss ? 22 : 14;
+    for(let i=0;i<n;i++){
+      const a = Math.random()*Math.PI - Math.PI;
+      const sp = (miss?2:1.2) + Math.random()*3;
+      splashes.push({
+        x: d.x + d.tw/2, y: groundY,
+        vx: Math.cos(a)*sp + (Math.random()-0.5)*2,
+        vy: -Math.random()*5 - 2,
+        life: 1, decay: 0.02+Math.random()*0.02,
+        size: 1.5+Math.random()*2.5,
+        color: miss ? '#ff4d8d' : '#7df9ff',
+      });
+    }
+  }
+
+  // ---------- Game state ----------
+  let running = false, over = false;
+  let score = 0, level = 1, lives = LIVES;
+  let typed = 0, correct = 0;
+  let charsTyped = 0, charsCorrect = 0;
+  let startMs = 0, elapsedMs = 0;
+  let buffer = "";          // current typing buffer
+  let activeDrop = null;    // the drop we're currently matching
+  let shake = 0;
+  let flashTimer = 0;
+
+  function setLives(){
+    ui.lives.innerHTML = '';
+    for(let i=0;i<LIVES;i++){
+      const h = document.createElement('div');
+      h.className = 'heart' + (i>=lives?' lost':'');
+      ui.lives.appendChild(h);
+    }
+  }
+
+  function updateHUD(){
+    ui.score.textContent = score.toLocaleString();
+    ui.level.textContent = level;
+    const acc = charsTyped ? Math.round(charsCorrect/charsTyped*100) : 100;
+    ui.acc.textContent = acc + '%';
+    ui.acc.className = 'value' + (acc>=90?' neon':acc<70?' pink':'');
+  }
+
+  function startGame(){
+    score=0; level=1; lives=LIVES;
+    typed=0; correct=0; charsTyped=0; charsCorrect=0;
+    drops.length=0; splashes.length=0;
+    buffer=""; activeDrop=null; spawnTimer=0;
+    startMs = performance.now();
+    running=true; over=false;
+    ui.start.classList.add('hidden');
+    ui.over.classList.add('hidden');
+    setLives(); updateHUD();
+    ui.echo.innerHTML = '<span class="cur">…</span>';
+    ui.hint.textContent = 'Type the falling words';
+  }
+
+  function endGame(){
+    running=false; over=true;
+    const mins = Math.max(elapsedMs/60000, 1/60);
+    const wpm = Math.round((correct / mins));
+    ui.fScore.textContent = score.toLocaleString();
+    ui.fLevel.textContent = level;
+    const acc = charsTyped ? Math.round(charsCorrect/charsTyped*100) : 0;
+    ui.fAcc.textContent = acc+'%';
+    ui.fWpm.textContent = wpm;
+    ui.over.classList.remove('hidden');
+  }
+
+  // ---------- Typing ----------
+  // A drop is "locked" once the player has typed its first char correctly.
+  // While locked, only that drop accepts input. A wrong key breaks the lock
+  // and counts against accuracy. Every letter keypress counts toward accuracy.
+
+  function findCandidate(ch){
+    // prefer the lowest (most urgent) drop whose next char matches
+    let best=null;
+    for(const d of drops){
+      if(d.dead) continue;
+      if(d.word[d.typed] === ch){
+        if(!best || d.y > best.y) best = d;
+      }
+    }
+    return best;
+  }
+
+  function clearWord(d){
+    correct++;
+    const gained = Math.round(d.word.length * 10 * (1 + level*0.12) + d.y*0.05);
+    score += gained;
+    impact(d, false);
+    d.dead = true;
+    floaters.push({x:d.x+d.tw/2, y:d.y, text:'+'+gained, life:1, color:'#7df9ff'});
+    if(activeDrop === d){ activeDrop = null; buffer = ""; }
+    maybeLevelUp();
+    updateHUD();
+  }
+
+  function handleKey(e){
+    if(!running) return;
+    const k = e.key;
+
+    if(k === 'Backspace'){
+      e.preventDefault();
+      if(activeDrop && !activeDrop.dead && activeDrop.typed>0){
+        activeDrop.typed--;
+        buffer = activeDrop.word.slice(0, activeDrop.typed);
+        if(activeDrop.typed === 0){ activeDrop = null; buffer = ""; }
+      } else if(buffer.length){
+        buffer = buffer.slice(0,-1);
+      }
+      renderEcho();
+      return;
+    }
+    if(k === 'Escape'){
+      activeDrop = null; buffer = ""; renderEcho(); return;
+    }
+    if(k.length !== 1 || !/[a-zA-Z]/.test(k)) return;
+    e.preventDefault();
+
+    const ch = k.toLowerCase();
+    charsTyped++;           // every letter counts toward accuracy denominator
+
+    if(activeDrop && !activeDrop.dead){
+      // locked onto a drop: must match its next char
+      const expected = activeDrop.word[activeDrop.typed];
+      if(ch === expected){
+        activeDrop.typed++;
+        charsCorrect++;
+        buffer = activeDrop.word.slice(0, activeDrop.typed);
+        if(activeDrop.typed >= activeDrop.word.length){
+          clearWord(activeDrop);
+        }
+      } else {
+        // wrong key while locked: break lock, penalize
+        activeDrop = null;
+        buffer = "";
+        flashTimer = 0.4;
+        shake = 6;
+      }
+    } else {
+      // not locked: try to start a new word whose first char matches
+      const cand = findCandidate(ch);
+      if(cand){
+        activeDrop = cand;
+        cand.typed = 1;
+        charsCorrect++;
+        buffer = cand.word.slice(0, 1);
+      } else {
+        // no word starts with this letter: pure miss
+        buffer = ch;
+        flashTimer = 0.2;
+      }
+    }
+
+    renderEcho();
+    updateHUD();
+  }
+
+  function maybeLevelUp(){
+    const next = Math.floor(score/600) + 1;
+    if(next > level){
+      level = next;
+      ui.level.textContent = level;
+      floaters.push({x:W/2, y:H*0.4, text:'LEVEL '+level, life:1.4, color:'#ff4d8d', big:true});
+    }
+  }
+
+  function renderEcho(){
+    if(!activeDrop || activeDrop.dead){
+      const shown = buffer || '…';
+      ui.echo.innerHTML = `<span class="cur">${escapeHtml(shown)}</span>`;
+      return;
+    }
+    const d = activeDrop;
+    const done = escapeHtml(d.word.slice(0, d.typed));
+    const rest = escapeHtml(d.word.slice(d.typed));
+    ui.echo.innerHTML = `<span style="color:#fff">${done}</span><span class="cur">${rest}</span>`;
+  }
+  function escapeHtml(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+
+  // ---------- Floating score text ----------
+  let floaters = [];
+
+  // ---------- Game loop ----------
+  let last = 0;
+  function frame(t){
+    const dt = Math.min(0.05, (t - last)/1000 || 0.016);
+    last = t;
+    update(dt);
+    draw(dt);
+    requestAnimationFrame(frame);
+  }
+
+  function update(dt){
+    if(running) elapsedMs = performance.now() - startMs;
+
+    // ambient rain
+    for(const r of rain){
+      r.y += r.sp * (60*dt);
+      if(r.y > H){ r.y = -10; r.x = Math.random()*W; }
+    }
+
+    // stars twinkle handled in draw
+    // closest-city lit windows blink occasionally handled in draw
+
+    if(running){
+      spawnTimer -= dt;
+      const interval = Math.max(0.55, 2.2 - (level-1)*0.16);
+      if(spawnTimer <= 0){
+        makeDrop();
+        spawnTimer = interval * (0.7 + Math.random()*0.6);
+        // occasional double spawn at higher levels
+        if(level >= 4 && Math.random() < 0.25) makeDrop();
+      }
+
+      for(const d of drops){
+        if(d.dead) continue;
+        d.wob += dt*2;
+        d.y += d.speed * dt;
+        d.x += d.vx * dt;
+        if(d.x < 20){ d.x=20; d.vx*=-1; }
+        if(d.x + d.tw > W-20){ d.x = W-20-d.tw; d.vx*=-1; }
+        if(d.y + d.fs >= groundY){
+          // missed!
+          d.dead = true;
+          lives--;
+          shake = 14; flashTimer = 0.6;
+          impact(d, true);
+          setLives();
+          if(activeDrop === d){ activeDrop=null; buffer=""; renderEcho(); }
+          if(lives <= 0){ endGame(); }
+        }
+      }
+    }
+
+    // cleanup dead drops
+    for(let i=drops.length-1;i>=0;i--) if(drops[i].dead && drops[i].y>groundY-40) drops.splice(i,1);
+    // also remove long-dead
+    for(let i=drops.length-1;i>=0;i--) if(drops[i].dead) drops.splice(i,1);
+
+    // splashes
+    for(let i=splashes.length-1;i>=0;i--){
+      const s=splashes[i];
+      s.vy += 18*dt;
+      s.x += s.vx*60*dt; s.y += s.vy*60*dt;
+      s.life -= s.decay*60*dt*0.5;
+      if(s.life<=0 || s.y>H) splashes.splice(i,1);
+    }
+
+    // floaters
+    for(let i=floaters.length-1;i>=0;i--){
+      const f=floaters[i];
+      f.y -= (f.big?22:40)*dt;
+      f.life -= dt*(f.big?0.8:1.4);
+      if(f.life<=0) floaters.splice(i,1);
+    }
+
+    if(shake>0) shake -= dt*40;
+    if(flashTimer>0) flashTimer -= dt;
+    ui.flash.style.opacity = Math.max(0, flashTimer)*0.5;
+  }
+
+  function draw(dt){
+    // camera shake
+    let sx=0, sy=0;
+    if(shake>0){ sx=(Math.random()-0.5)*shake; sy=(Math.random()-0.5)*shake; }
+    ctx.setTransform(DPR,0,0,DPR,sx*DPR,sy*DPR);
+
+    // backdrop (sky + far city)
+    if(backdrop) ctx.drawImage(backdrop, 0, 0, W, H);
+
+    // twinkle stars
+    ctx.fillStyle = '#cfe2ff';
+    const time = performance.now()/1000;
+    for(const s of stars){
+      const tw = 0.4 + 0.5*Math.abs(Math.sin(time*1.5 + s.tw));
+      ctx.globalAlpha = tw*0.6;
+      ctx.beginPath(); ctx.arc(s.x*W, s.y*H, s.r, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // ambient rain
+    ctx.strokeStyle = 'rgba(150,190,230,0.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for(const r of rain){
+      ctx.globalAlpha = r.a;
+      ctx.moveTo(r.x, r.y);
+      ctx.lineTo(r.x - 1.2, r.y + r.len);
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // closest city layer (live, with occasional blinking windows)
+    for(const b of buildings){
+      if(b.layer !== 2) continue;
+      drawBuilding(ctx, b);
+    }
+
+    // ground glow / wet street
+    const gg = ctx.createLinearGradient(0, groundY, 0, H);
+    gg.addColorStop(0,'rgba(125,249,255,0.06)');
+    gg.addColorStop(1,'rgba(10,20,45,0.6)');
+    ctx.fillStyle = gg; ctx.fillRect(0, groundY, W, H-groundY);
+    // ground line
+    ctx.strokeStyle = 'rgba(125,249,255,0.25)';
+    ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0,groundY); ctx.lineTo(W,groundY); ctx.stroke();
+
+    // splashes
+    for(const s of splashes){
+      ctx.globalAlpha = Math.max(0,s.life);
+      ctx.fillStyle = s.color;
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.size, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // falling words
+    for(const d of drops){
+      if(d.dead) continue;
+      const wobX = Math.sin(d.wob)*2;
+      drawWord(d, wobX);
+    }
+
+    // floaters
+    for(const f of floaters){
+      ctx.globalAlpha = Math.max(0, Math.min(1, f.life));
+      ctx.font = `800 ${f.big?44:20}px "Segoe UI", system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = f.color;
+      ctx.shadowColor = f.color; ctx.shadowBlur = f.big?30:14;
+      ctx.fillText(f.text, f.x, f.y);
+      ctx.shadowBlur = 0;
+    }
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'left';
+  }
+
+  function drawWord(d, wobX){
+    const x = d.x + wobX, y = d.y;
+    const isActive = activeDrop === d;
+    const fs = d.fs;
+    ctx.font = `700 ${fs}px "SF Mono", ui-monospace, Menlo, Consolas, monospace`;
+    ctx.textBaseline = 'alphabetic';
+
+    // raindrop trail behind word
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    const grad = ctx.createLinearGradient(x+d.tw/2, y-fs, x+d.tw/2, y-fs+40);
+    grad.addColorStop(0, `hsla(${d.hue},90%,70%,0)`);
+    grad.addColorStop(1, `hsla(${d.hue},90%,70%,0.5)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(x+d.tw/2-1, y-fs-6, 2, 40);
+    ctx.restore();
+
+    // danger glow as it nears ground
+    const danger = Math.min(1, Math.max(0, (d.y - (groundY-140)) / 140));
+    const glowColor = isActive ? '#7df9ff' : `hsla(${d.hue - danger*120}, 90%, ${70 - danger*15}%, 1)`;
+
+    // typed portion vs remaining
+    const done = d.word.slice(0, d.typed);
+    const rest = d.word.slice(d.typed);
+
+    ctx.save();
+    ctx.shadowColor = glowColor;
+    ctx.shadowBlur = isActive ? 18 : (8 + danger*14);
+
+    if(done.length){
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(done, x, y);
+    }
+    if(rest.length){
+      ctx.fillStyle = glowColor;
+      const dw = ctx.measureText(done).width;
+      ctx.fillText(rest, x+dw, y);
+    }
+    ctx.restore();
+
+    // underline cursor for active
+    if(isActive){
+      const doneW = ctx.measureText(done).width;
+      const fullW = ctx.measureText(d.word).width;
+      ctx.strokeStyle = 'rgba(125,249,255,0.7)';
+      ctx.lineWidth = 2; ctx.beginPath();
+      const ux = x + (d.typed>=d.word.length? fullW : doneW);
+      ctx.moveTo(x, y+4); ctx.lineTo(x+fullW, y+4); ctx.stroke();
+      // caret
+      ctx.fillStyle = '#7df9ff';
+      ctx.fillRect(ux-1, y-fs+2, 2, fs);
+    }
+  }
+
+  // ---------- Resize ----------
+  function resize(){
+    W = window.innerWidth; H = window.innerHeight;
+    DPR = Math.min(window.devicePixelRatio||1, 2);
+    canvas.width = W*DPR; canvas.height = H*DPR;
+    canvas.style.width = W+'px'; canvas.style.height = H+'px';
+    buildCity();
+    renderBackdrop();
+  }
+
+  // ---------- Init ----------
+  window.addEventListener('resize', resize);
+  window.addEventListener('keydown', handleKey);
+  ui.startBtn.addEventListener('click', startGame);
+  ui.retryBtn.addEventListener('click', startGame);
+
+  resize();
+  spawnRain();
+  setLives();
+  updateHUD();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

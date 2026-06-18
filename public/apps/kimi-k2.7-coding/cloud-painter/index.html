@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Cloud Painter</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&display=swap" rel="stylesheet">
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; }
+    body { font-family: 'Nunito', sans-serif; overflow: hidden; touch-action: none; user-select: none; }
+    .glass { background: rgba(255,255,255,0.58); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.7); }
+    .btn-pill { transition: transform .15s ease, box-shadow .15s ease, background-color .15s; }
+    .btn-pill:active { transform: scale(0.92); }
+    .tool-btn.active { background: rgba(255,255,255,0.95); color: #0ea5e9; box-shadow: 0 0 0 3px rgba(14,165,233,0.25); }
+    .color-btn.active { transform: scale(1.25); box-shadow: 0 0 0 3px #ffffff, 0 0 0 5px rgba(14,165,233,0.45); }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    input[type=range] { -webkit-appearance: none; background: transparent; }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 22px; width: 22px; border-radius: 50%; background: #ffffff; border: 3px solid #0ea5e9; box-shadow: 0 2px 6px rgba(0,0,0,0.18); cursor: pointer; margin-top: -7px; }
+    input[type=range]::-webkit-slider-runnable-track { height: 8px; border-radius: 999px; background: rgba(255,255,255,0.78); }
+    @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+    .float { animation: float 4s ease-in-out infinite; }
+    @keyframes fadeHint { 0% { opacity: 0; transform: translateY(10px); } 10% { opacity: 1; transform: translateY(0); } 80% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-10px); pointer-events: none; } }
+    .hint-fade { animation: fadeHint 5s ease forwards; }
+  </style>
+</head>
+<body class="bg-sky-200">
+  <canvas id="sky" class="fixed inset-0 w-full h-full cursor-crosshair"></canvas>
+
+  <!-- Header -->
+  <div class="fixed top-0 left-0 w-full p-4 flex justify-between items-start pointer-events-none z-10">
+    <div class="glass rounded-full px-5 sm:px-6 py-2 sm:py-3 shadow-lg pointer-events-auto float">
+      <h1 class="text-xl sm:text-3xl font-black text-sky-600 tracking-wide">☁️ Cloud Painter</h1>
+    </div>
+    <div id="hint" class="glass rounded-2xl px-4 py-2 shadow-lg text-xs sm:text-sm font-bold text-sky-700 hint-fade pointer-events-auto max-w-[10rem] sm:max-w-xs text-center">
+      Pick a brush & color, then drag to paint the sky!
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="fixed bottom-4 left-1/2 -translate-x-1/2 w-[96%] max-w-4xl glass rounded-3xl p-3 shadow-2xl z-10 flex flex-col gap-2">
+    <div class="flex items-center gap-2 overflow-x-auto no-scrollbar">
+      <div id="toolBtns" class="flex gap-2"></div>
+      <div class="h-9 w-px bg-white/60 mx-1 shrink-0"></div>
+      <div id="colorBtns" class="flex gap-2"></div>
+    </div>
+    <div class="flex items-center gap-3 flex-wrap">
+      <div class="flex items-center gap-2">
+        <span class="text-xs font-black text-sky-700 uppercase tracking-wider">Size</span>
+        <input id="sizeSlider" type="range" min="15" max="120" value="45" class="w-28">
+      </div>
+      <div class="flex-1"></div>
+      <button id="undoBtn" class="btn-pill glass rounded-xl px-3 py-2 text-xl" aria-label="Undo">↩️</button>
+      <button id="clearBtn" class="btn-pill glass rounded-xl px-3 py-2 text-xl" aria-label="Clear sky">🗑️</button>
+      <button id="planeBtn" class="btn-pill glass rounded-xl px-3 py-2 text-xl" aria-label="Summon airplane">✈️</button>
+      <button id="saveBtn" class="btn-pill bg-sky-500 hover:bg-sky-400 text-white font-black rounded-xl px-4 sm:px-5 py-2 shadow-lg">💾 Save</button>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed top-24 left-1/2 -translate-x-1/2 glass rounded-full px-6 py-2 text-sm font-black text-sky-800 opacity-0 transition-opacity duration-300 pointer-events-none z-20">Saved!</div>
+
+  <script>
+  (function() {
+    const canvas = document.getElementById('sky');
+    const ctx = canvas.getContext('2d');
+    let width, height;
+
+    const tools = [
+      { id: 'cloud', emoji: '☁️', label: 'Cloud' },
+      { id: 'heart', emoji: '❤️', label: 'Heart' },
+      { id: 'star', emoji: '⭐', label: 'Star' },
+      { id: 'sun', emoji: '☀️', label: 'Sun' },
+      { id: 'rainbow', emoji: '🌈', label: 'Rainbow' },
+      { id: 'dot', emoji: '🔵', label: 'Dot' }
+    ];
+
+    const colors = [
+      { hex: '#ffffff', name: 'White' },
+      { hex: '#ffd1dc', name: 'Pink' },
+      { hex: '#bae1ff', name: 'Blue' },
+      { hex: '#eecbff', name: 'Purple' },
+      { hex: '#baffc9', name: 'Mint' },
+      { hex: '#ffffba', name: 'Yellow' },
+      { hex: '#ffdfba', name: 'Peach' },
+      { hex: '#ff9aa2', name: 'Coral' }
+    ];
+
+    let currentTool = 'cloud';
+    let currentColor = '#ffffff';
+    let brushSize = 45;
+    let strokes = [];
+    let currentStroke = null;
+    let isDrawing = false;
+    let lastX = 0, lastY = 0;
+    const clouds = [];
+    const planes = [];
+
+    function resize() {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    window.addEventListener('resize', resize);
+
+    function hexToRgb(hex) {
+      hex = hex.replace('#', '');
+      if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+      const n = parseInt(hex, 16);
+      return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+    }
+
+    function drawStamp(s) {
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      ctx.rotate(s.rotation || 0);
+      ctx.globalAlpha = s.alpha;
+      ctx.shadowBlur = Math.min(24, s.size * 0.25);
+      ctx.shadowColor = 'rgba(0,0,0,0.1)';
+      switch (s.shape) {
+        case 'cloud': drawCloudStamp(s.size, s.color); break;
+        case 'heart': drawHeartStamp(s.size, s.color); break;
+        case 'star': drawStarStamp(s.size, s.color); break;
+        case 'sun': drawSunStamp(s.size, s.color); break;
+        case 'rainbow': drawRainbowStamp(s.size); break;
+        case 'dot': drawDotStamp(s.size, s.color); break;
+      }
+      ctx.restore();
+    }
+
+    function drawCloudStamp(size, color) {
+      const rgb = hexToRgb(color);
+      const r = size * 0.25;
+      const puffs = [
+        [0, 0, r * 1.1],
+        [-r * 0.8, r * 0.2, r * 0.7],
+        [r * 0.8, r * 0.2, r * 0.7],
+        [-r * 0.35, -r * 0.45, r * 0.65],
+        [r * 0.35, -r * 0.45, r * 0.65],
+        [0, -r * 0.75, r * 0.5]
+      ];
+      for (const [px, py, pr] of puffs) {
+        const g = ctx.createRadialGradient(px, py, 0, px, py, pr);
+        g.addColorStop(0, 'rgba(255,255,255,0.98)');
+        g.addColorStop(0.65, 'rgba(255,255,255,0.55)');
+        g.addColorStop(1, `rgba(${rgb.r},${rgb.g},${rgb.b},0.15)`);
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(px, py, pr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function drawHeartStamp(size, color) {
+      ctx.fillStyle = color;
+      const s = size / 2;
+      ctx.beginPath();
+      ctx.moveTo(0, s * 0.3);
+      ctx.bezierCurveTo(-s * 0.5, -s * 0.5, -s, 0, 0, s);
+      ctx.bezierCurveTo(s, 0, s * 0.5, -s * 0.5, 0, s * 0.3);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    function drawStarStamp(size, color) {
+      const spikes = 5, outer = size / 2, inner = size / 4;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      for (let i = 0; i < spikes * 2; i++) {
+        const r = i % 2 ? inner : outer;
+        const a = Math.PI * i / spikes - Math.PI / 2;
+        ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    function drawSunStamp(size, color) {
+      const r = size * 0.35;
+      const rays = 10;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      for (let i = 0; i < rays * 2; i++) {
+        const a = Math.PI * i / rays - Math.PI / 2;
+        const rad = i % 2 ? r * 0.55 : r;
+        ctx.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.65)';
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.45, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawRainbowStamp(size) {
+      const colors = ['#ff595e', '#ffca3a', '#8ac926', '#1982c4', '#6a4c93'];
+      const band = size / 14;
+      const r = size / 2;
+      ctx.lineCap = 'round';
+      for (let i = 0; i < colors.length; i++) {
+        ctx.strokeStyle = colors[i];
+        ctx.lineWidth = band;
+        ctx.beginPath();
+        ctx.arc(0, 0, r - i * band - band / 2, Math.PI, 0);
+        ctx.stroke();
+      }
+    }
+
+    function drawDotStamp(size, color) {
+      const rgb = hexToRgb(color);
+      const r = size / 2;
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+      g.addColorStop(0, `rgba(${rgb.r},${rgb.g},${rgb.b},0.9)`);
+      g.addColorStop(1, `rgba(${rgb.r},${rgb.g},${rgb.b},0.1)`);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    class Cloud {
+      constructor() { this.reset(true); }
+      reset(randomX) {
+        this.scale = 0.5 + Math.random() * 1.2;
+        this.y = Math.random() * height * 0.6;
+        this.speed = 0.2 + Math.random() * 0.4;
+        this.opacity = 0.35 + Math.random() * 0.4;
+        this.puffs = [];
+        const count = 4 + Math.floor(Math.random() * 3);
+        let maxW = 0;
+        for (let i = 0; i < count; i++) {
+          const px = (Math.random() - 0.5) * 90;
+          const py = (Math.random() - 0.5) * 40;
+          const pr = 25 + Math.random() * 30;
+          this.puffs.push({ x: px, y: py, r: pr });
+          maxW = Math.max(maxW, Math.abs(px) + pr);
+        }
+        this.maxW = maxW * this.scale;
+        this.x = randomX ? Math.random() * (width + 2 * this.maxW) - this.maxW : width + this.maxW + Math.random() * 200;
+      }
+      update() {
+        this.x -= this.speed;
+        if (this.x < -this.maxW - 60) {
+          this.x = width + this.maxW + Math.random() * 200;
+          this.y = Math.random() * height * 0.6;
+        }
+      }
+      draw(ctx) {
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.scale(this.scale, this.scale);
+        ctx.globalAlpha = this.opacity;
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = 'rgba(0,0,0,0.08)';
+        for (const p of this.puffs) {
+          const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
+          g.addColorStop(0, 'rgba(255,255,255,0.96)');
+          g.addColorStop(0.7, 'rgba(255,255,255,0.5)');
+          g.addColorStop(1, 'rgba(255,255,255,0)');
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+    }
+
+    class Airplane {
+      constructor() {
+        this.scale = 0.4 + Math.random() * 0.6;
+        this.speed = 1.5 + Math.random() * 2;
+        this.x = -120;
+        this.y = 40 + Math.random() * (height * 0.35);
+        this.phase = Math.random() * Math.PI * 2;
+        this.color = ['#ff9aa2', '#ffb7b2', '#ffdac1', '#e2f0cb', '#b5ead7', '#c7ceea'][Math.floor(Math.random() * 6)];
+        this.trail = [];
+        this.frame = 0;
+      }
+      update() {
+        this.x += this.speed;
+        this.y += Math.sin(performance.now() * 0.002 + this.phase) * 0.5;
+        if (this.frame % 5 === 0) {
+          this.trail.push({ x: this.x - this.scale * 30, y: this.y, age: 0 });
+        }
+        this.frame++;
+        for (let i = this.trail.length - 1; i >= 0; i--) {
+          this.trail[i].age++;
+          if (this.trail[i].age > 60) this.trail.splice(i, 1);
+        }
+      }
+      draw(ctx) {
+        for (const p of this.trail) {
+          const a = 1 - p.age / 60;
+          ctx.fillStyle = `rgba(255,255,255,${0.7 * a})`;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 5 * a, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        const s = this.scale * 40;
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = 'rgba(0,0,0,0.15)';
+        // Fuselage
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, s * 1.2, s * 0.32, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Top wing
+        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+        ctx.beginPath();
+        ctx.moveTo(s * 0.2, -s * 0.05);
+        ctx.lineTo(-s * 0.45, -s * 0.75);
+        ctx.lineTo(s * 0.05, -s * 0.75);
+        ctx.closePath();
+        ctx.fill();
+        // Bottom wing
+        ctx.beginPath();
+        ctx.moveTo(s * 0.2, s * 0.05);
+        ctx.lineTo(-s * 0.45, s * 0.75);
+        ctx.lineTo(s * 0.05, s * 0.75);
+        ctx.closePath();
+        ctx.fill();
+        // Tail
+        ctx.beginPath();
+        ctx.moveTo(-s * 0.85, 0);
+        ctx.lineTo(-s * 1.3, -s * 0.5);
+        ctx.lineTo(-s * 0.85, -s * 0.5);
+        ctx.closePath();
+        ctx.fill();
+        // Cockpit
+        ctx.fillStyle = 'rgba(50,80,120,0.5)';
+        ctx.beginPath();
+        ctx.ellipse(s * 0.35, -s * 0.12, s * 0.22, s * 0.12, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    function drawSky() {
+      const g = ctx.createLinearGradient(0, 0, 0, height);
+      g.addColorStop(0, '#8FD3F4');
+      g.addColorStop(1, '#E0F7FA');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, width, height);
+      // Sun
+      const sx = width * 0.85;
+      const sy = height * 0.12;
+      const glow = ctx.createRadialGradient(sx, sy, 8, sx, sy, 90);
+      glow.addColorStop(0, 'rgba(255,255,220,0.9)');
+      glow.addColorStop(1, 'rgba(255,255,220,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 90, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,200,0.95)';
+      ctx.beginPath();
+      ctx.arc(sx, sy, 28, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawStrokes() {
+      for (const stroke of strokes) {
+        for (const s of stroke) drawStamp(s);
+      }
+    }
+
+    function drawFrame() {
+      ctx.clearRect(0, 0, width, height);
+      drawSky();
+      for (const c of clouds) { c.update(); c.draw(ctx); }
+      drawStrokes();
+      for (let i = planes.length - 1; i >= 0; i--) {
+        const p = planes[i];
+        p.update();
+        p.draw(ctx);
+        if (p.x > width + 150) planes.splice(i, 1);
+      }
+      requestAnimationFrame(drawFrame);
+    }
+
+    function renderTools() {
+      const container = document.getElementById('toolBtns');
+      tools.forEach(t => {
+        const btn = document.createElement('button');
+        btn.className = 'tool-btn btn-pill glass rounded-xl px-2 sm:px-3 py-2 min-w-[3.25rem] flex flex-col items-center justify-center gap-0.5';
+        btn.dataset.id = t.id;
+        if (t.id === currentTool) btn.classList.add('active');
+        btn.innerHTML = `<span class="text-2xl leading-none">${t.emoji}</span><span class="text-[10px] font-bold leading-none">${t.label}</span>`;
+        btn.onclick = () => selectTool(t.id);
+        container.appendChild(btn);
+      });
+    }
+
+    function renderColors() {
+      const container = document.getElementById('colorBtns');
+      colors.forEach(c => {
+        const btn = document.createElement('button');
+        btn.className = 'color-btn btn-pill w-9 h-9 rounded-full shadow-md border border-white/40 shrink-0';
+        btn.style.backgroundColor = c.hex;
+        btn.dataset.hex = c.hex;
+        btn.setAttribute('aria-label', c.name);
+        if (c.hex === currentColor) btn.classList.add('active');
+        btn.onclick = () => selectColor(c.hex);
+        container.appendChild(btn);
+      });
+    }
+
+    function selectTool(id) {
+      currentTool = id;
+      document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.id === id));
+    }
+
+    function selectColor(hex) {
+      currentColor = hex;
+      document.querySelectorAll('.color-btn').forEach(b => b.classList.toggle('active', b.dataset.hex === hex));
+    }
+
+    function makeStamp(x, y) {
+      return {
+        shape: currentTool,
+        x, y,
+        size: brushSize,
+        color: currentColor,
+        rotation: (Math.random() - 0.5) * 0.5,
+        alpha: 0.85 + Math.random() * 0.15
+      };
+    }
+
+    canvas.addEventListener('pointerdown', e => {
+      if (e.button && e.button !== 0) return;
+      isDrawing = true;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      currentStroke = [makeStamp(x, y)];
+      strokes.push(currentStroke);
+      lastX = x; lastY = y;
+      canvas.setPointerCapture(e.pointerId);
+    });
+
+    canvas.addEventListener('pointermove', e => {
+      if (!isDrawing) return;
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const dx = x - lastX, dy = y - lastY;
+      const dist = Math.hypot(dx, dy);
+      const step = Math.max(8, brushSize * 0.35);
+      if (dist < step) return;
+      const angle = Math.atan2(dy, dx);
+      for (let d = step; d <= dist; d += step) {
+        currentStroke.push(makeStamp(lastX + Math.cos(angle) * d, lastY + Math.sin(angle) * d));
+      }
+      lastX = x; lastY = y;
+    });
+
+    function stopDrawing() {
+      isDrawing = false;
+      currentStroke = null;
+    }
+    canvas.addEventListener('pointerup', stopDrawing);
+    canvas.addEventListener('pointercancel', stopDrawing);
+    canvas.addEventListener('pointerleave', stopDrawing);
+    window.addEventListener('pointerup', stopDrawing);
+
+    document.getElementById('sizeSlider').addEventListener('input', e => { brushSize = parseInt(e.target.value, 10); });
+    document.getElementById('undoBtn').addEventListener('click', () => { if (!isDrawing && strokes.length) strokes.pop(); });
+    document.getElementById('clearBtn').addEventListener('click', () => { strokes = []; });
+    document.getElementById('planeBtn').addEventListener('click', () => { if (planes.length < 5) planes.push(new Airplane()); });
+    document.getElementById('saveBtn').addEventListener('click', () => {
+      const link = document.createElement('a');
+      link.download = 'cloud-painter-' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      showToast('Picture saved! ☁️');
+    });
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.style.opacity = '1';
+      setTimeout(() => { toast.style.opacity = '0'; }, 1800);
+    }
+
+    function schedulePlane() {
+      const delay = 6000 + Math.random() * 8000;
+      setTimeout(() => {
+        if (planes.length < 4) planes.push(new Airplane());
+        schedulePlane();
+      }, delay);
+    }
+
+    resize();
+    for (let i = 0; i < 9; i++) clouds.push(new Cloud());
+    renderTools();
+    renderColors();
+    selectTool(currentTool);
+    selectColor(currentColor);
+    drawFrame();
+    schedulePlane();
+  })();
+  </script>
+</body>
+</html>

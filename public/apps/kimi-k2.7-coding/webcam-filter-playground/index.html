@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="A playful single-page webcam filter studio">
+<title>Webcam Filter Playground</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { background: #0f172a; color: #f8fafc; }
+  #video { display: none; }
+  canvas { display: block; width: 100%; height: 100%; object-fit: cover; }
+  @keyframes flash { 0% { opacity: 0.85; } 100% { opacity: 0; } }
+  .snap-flash { animation: flash 0.25s ease-out; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: #1e293b; }
+  ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+  input[type=range] { accent-color: #ec4899; }
+</style>
+</head>
+<body class="h-screen w-screen flex flex-col overflow-hidden">
+  <header class="h-14 shrink-0 flex items-center justify-between px-4 bg-slate-900/80 backdrop-blur border-b border-slate-700 z-20">
+    <div class="flex items-center gap-3">
+      <svg class="w-7 h-7 text-pink-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+      </svg>
+      <h1 class="font-bold text-lg tracking-tight hidden sm:block">Webcam Filter Playground</h1>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="surpriseBtn" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-purple-600 hover:bg-purple-500 text-white transition">🎲 Surprise</button>
+      <button id="snapBtn" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-pink-600 hover:bg-pink-500 text-white transition flex items-center gap-1.5">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+        Snap
+      </button>
+      <button id="saveBtn" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-slate-700 hover:bg-slate-600 text-white transition flex items-center gap-1.5">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+        Save
+      </button>
+    </div>
+  </header>
+
+  <main class="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
+    <div class="flex-1 relative min-h-0 bg-black">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="canvas"></canvas>
+      <div id="flash" class="absolute inset-0 pointer-events-none bg-white opacity-0"></div>
+      <div id="loading" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/90 z-30 text-slate-300">
+        <div class="w-10 h-10 border-4 border-pink-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+        <p class="text-sm">Waiting for camera access...</p>
+      </div>
+    </div>
+
+    <aside class="w-full md:w-72 shrink-0 bg-slate-900/90 border-t md:border-t-0 md:border-l border-slate-700 p-4 overflow-y-auto flex flex-col gap-5 max-h-56 md:max-h-none">
+      <div>
+        <label class="text-xs font-bold tracking-wider text-slate-400 uppercase">Effects</label>
+        <div id="effectGrid" class="grid grid-cols-3 md:grid-cols-2 gap-2 mt-2"></div>
+      </div>
+
+      <div>
+        <div class="flex justify-between items-center mb-1">
+          <label class="text-xs font-bold tracking-wider text-slate-400 uppercase">Intensity</label>
+          <span id="intensityValue" class="text-xs font-mono text-pink-400">50%</span>
+        </div>
+        <input id="intensity" type="range" min="0" max="1" step="0.01" value="0.5" class="w-full">
+      </div>
+
+      <label class="flex items-center justify-between cursor-pointer select-none">
+        <span class="text-xs font-bold tracking-wider text-slate-400 uppercase">Mirror</span>
+        <input id="mirror" type="checkbox" checked class="w-4 h-4 accent-pink-500 rounded bg-slate-800 border-slate-600">
+      </label>
+
+      <div>
+        <div class="flex justify-between items-center mb-1">
+          <label class="text-xs font-bold tracking-wider text-slate-400 uppercase">Captures</label>
+          <button id="clearGallery" class="text-xs text-slate-400 hover:text-white transition">Clear</button>
+        </div>
+        <div id="gallery" class="grid grid-cols-3 md:grid-cols-2 gap-2"></div>
+      </div>
+    </aside>
+  </main>
+
+<script>
+(() => {
+  const video = document.getElementById('video');
+  let canvas = document.getElementById('canvas');
+  const effectGrid = document.getElementById('effectGrid');
+  const intensityInput = document.getElementById('intensity');
+  const intensityValue = document.getElementById('intensityValue');
+  const mirrorInput = document.getElementById('mirror');
+  const snapBtn = document.getElementById('snapBtn');
+  const saveBtn = document.getElementById('saveBtn');
+  const surpriseBtn = document.getElementById('surpriseBtn');
+  const clearGallery = document.getElementById('clearGallery');
+  const flash = document.getElementById('flash');
+  const gallery = document.getElementById('gallery');
+  const loading = document.getElementById('loading');
+
+  const effects = [
+    { id: 0, name: 'Normal', icon: '○' },
+    { id: 1, name: 'Noir', icon: '◐' },
+    { id: 2, name: 'Sepia', icon: '☀' },
+    { id: 3, name: 'VHS', icon: '▦' },
+    { id: 4, name: 'Pixelate', icon: '▣' },
+    { id: 5, name: 'Thermal', icon: '♨' },
+    { id: 6, name: 'Night Vision', icon: '◉' },
+    { id: 7, name: 'Pop Art', icon: '◈' },
+    { id: 8, name: 'Kaleidoscope', icon: '✦' },
+    { id: 9, name: 'Edge', icon: '⊞' },
+    { id: 10, name: 'Cartoon', icon: '☺' },
+    { id: 11, name: 'Posterize', icon: '▓' },
+    { id: 12, name: 'RGB Split', icon: '◭' },
+  ];
+
+  let currentEffect = 0;
+  let intensity = 0.5;
+  let mirror = true;
+
+  function renderEffectButtons() {
+    effectGrid.innerHTML = '';
+    effects.forEach((ef, i) => {
+      const btn = document.createElement('button');
+      const active = i === currentEffect;
+      btn.className = `px-2 py-2 rounded-lg text-sm font-medium transition border flex flex-col items-center gap-1 ${active ? 'bg-pink-600 border-pink-500 text-white shadow-lg shadow-pink-900/30' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'}`;
+      btn.innerHTML = `<span class="text-lg leading-none">${ef.icon}</span><span class="text-xs">${ef.name}</span>`;
+      btn.onclick = () => { currentEffect = i; renderEffectButtons(); };
+      effectGrid.appendChild(btn);
+    });
+  }
+
+  function updateIntensityUI() {
+    intensityValue.textContent = Math.round(intensity * 100) + '%';
+  }
+  intensityInput.addEventListener('input', e => {
+    intensity = parseFloat(e.target.value);
+    updateIntensityUI();
+  });
+  mirrorInput.addEventListener('change', e => { mirror = e.target.checked; });
+  updateIntensityUI();
+
+  surpriseBtn.addEventListener('click', () => {
+    currentEffect = Math.floor(Math.random() * effects.length);
+    intensity = Math.random() * 0.6 + 0.3;
+    intensityInput.value = intensity;
+    updateIntensityUI();
+    renderEffectButtons();
+  });
+
+  // WebGL
+  let gl, program, uResolution, uTime, uIntensity, uEffect, uMirror, uVideoAspect, videoTexture;
+  let fallbackCtx = null;
+
+  function compileShader(type, source) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, source);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+      console.error('Shader compile error:', gl.getShaderInfoLog(s));
+      gl.deleteShader(s);
+      return null;
+    }
+    return s;
+  }
+
+  function initWebGL() {
+    gl = canvas.getContext('webgl', { preserveDrawingBuffer: true, alpha: false });
+    if (!gl) return false;
+
+    const vs = `
+      attribute vec2 a_position;
+      attribute vec2 a_texCoord;
+      varying vec2 v_texCoord;
+      void main() {
+        gl_Position = vec4(a_position, 0.0, 1.0);
+        v_texCoord = a_texCoord;
+      }
+    `;
+
+    const fs = `
+      precision mediump float;
+      varying vec2 v_texCoord;
+      uniform sampler2D u_video;
+      uniform vec2 u_resolution;
+      uniform float u_time;
+      uniform float u_intensity;
+      uniform int u_effect;
+      uniform float u_mirror;
+      uniform float u_videoAspect;
+      const float PI = 3.14159265359;
+
+      vec3 rgb2hsv(vec3 c) {
+        vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
+        vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+        vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+        float d = q.x - min(q.w, q.y);
+        float e = 1.0e-10;
+        return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+      }
+      vec3 hsv2rgb(vec3 c) {
+        vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+        vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+        return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+      }
+      float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+      vec3 get(vec2 uv) { return texture2D(u_video, uv).rgb; }
+
+      vec3 sobel(vec2 uv) {
+        vec2 px = 1.0 / u_resolution;
+        float t00 = luma(get(uv + vec2(-px.x, -px.y)));
+        float t01 = luma(get(uv + vec2(-px.x, 0.0)));
+        float t02 = luma(get(uv + vec2(-px.x, px.y)));
+        float t10 = luma(get(uv + vec2(0.0, -px.y)));
+        float t12 = luma(get(uv + vec2(0.0, px.y)));
+        float t20 = luma(get(uv + vec2(px.x, -px.y)));
+        float t21 = luma(get(uv + vec2(px.x, 0.0)));
+        float t22 = luma(get(uv + vec2(px.x, px.y)));
+        float gx = -t00 - 2.0*t01 - t02 + t20 + 2.0*t21 + t22;
+        float gy = -t00 - 2.0*t10 - t20 + t02 + 2.0*t12 + t22;
+        return vec3(sqrt(gx*gx + gy*gy));
+      }
+
+      void main() {
+        vec2 uv = v_texCoord;
+        float canvasAspect = u_resolution.x / max(u_resolution.y, 1.0);
+        float videoAspect = max(u_videoAspect, 0.001);
+        float cover = min(videoAspect / canvasAspect, canvasAspect / videoAspect);
+        uv = vec2(0.5) + (uv - vec2(0.5)) * cover;
+        if (u_mirror > 0.5) uv.x = 1.0 - uv.x;
+
+        vec3 col = get(uv);
+        float I = u_intensity;
+        vec3 outColor = col;
+
+        if (u_effect == 0) {
+          outColor = col;
+        } else if (u_effect == 1) {
+          vec3 g = vec3(luma(col));
+          outColor = mix(g, smoothstep(0.2, 0.8, g), I * 0.5);
+          outColor = mix(outColor, vec3(0.0), 0.06);
+        } else if (u_effect == 2) {
+          vec3 sepia = vec3(
+            dot(col, vec3(0.393, 0.769, 0.189)),
+            dot(col, vec3(0.349, 0.686, 0.168)),
+            dot(col, vec3(0.272, 0.534, 0.131))
+          );
+          outColor = mix(col, sepia, I);
+        } else if (u_effect == 3) {
+          float shift = I * 0.03 * sin(uv.y * 40.0 + u_time * 3.0);
+          float r = get(uv + vec2(shift, 0.0)).r;
+          float g = get(uv).g;
+          float b = get(uv - vec2(shift, 0.0)).b;
+          vec3 vhs = vec3(r, g, b);
+          float scan = sin(uv.y * u_resolution.y * 1.5) * 0.08 * I;
+          vhs -= vec3(scan);
+          outColor = mix(col, vhs, 0.8 + 0.2 * I);
+        } else if (u_effect == 4) {
+          float block = mix(1.0, 80.0, I);
+          vec2 blockSize = block / u_resolution;
+          vec2 pix = floor(uv / blockSize) * blockSize + blockSize * 0.5;
+          outColor = get(pix);
+        } else if (u_effect == 5) {
+          float lum = luma(col);
+          vec3 t = vec3(0.0);
+          t = mix(t, vec3(0.0, 0.0, 0.5), smoothstep(0.0, 0.25, lum));
+          t = mix(t, vec3(1.0, 0.0, 0.0), smoothstep(0.25, 0.5, lum));
+          t = mix(t, vec3(1.0, 1.0, 0.0), smoothstep(0.5, 0.75, lum));
+          t = mix(t, vec3(1.0), smoothstep(0.75, 1.0, lum));
+          outColor = mix(col, t, I);
+        } else if (u_effect == 6) {
+          float lum = luma(col);
+          vec3 nv = vec3(0.0, lum * 1.4, 0.0);
+          float scan = sin(uv.y * u_resolution.y * 2.0) * 0.07 * I;
+          float noise = fract(sin(dot(uv + vec2(u_time), vec2(12.9898, 78.233))) * 43758.5453);
+          nv += vec3(scan) + vec3(noise * 0.05 * I);
+          outColor = mix(col, nv, I);
+        } else if (u_effect == 7) {
+          float lum = luma(col);
+          vec3 c;
+          if (uv.x < 0.5 && uv.y < 0.5) c = lum * vec3(1.0, 0.0, 0.5);
+          else if (uv.x >= 0.5 && uv.y < 0.5) c = lum * vec3(1.0, 0.85, 0.0);
+          else if (uv.x < 0.5 && uv.y >= 0.5) c = lum * vec3(0.0, 0.6, 1.0);
+          else c = lum * vec3(0.0, 1.0, 0.2);
+          c = (c - vec3(0.5)) * (1.0 + I * 2.0) + vec3(0.5);
+          c = floor(c * 6.0) / 6.0;
+          outColor = mix(col, c, I);
+        } else if (u_effect == 8) {
+          vec2 center = (uv - vec2(0.5)) * 2.0;
+          float radius = length(center);
+          float angle = atan(center.y, center.x);
+          float seg = 2.0 * PI / 6.0;
+          angle = mod(angle + u_time * 0.2, seg);
+          if (angle > seg * 0.5) angle = seg - angle;
+          vec2 kuv = vec2(cos(angle), sin(angle)) * radius * 0.5 + vec2(0.5);
+          outColor = get(kuv);
+        } else if (u_effect == 9) {
+          outColor = sobel(uv);
+          outColor = step(0.1, outColor);
+          outColor = mix(col, outColor, I);
+        } else if (u_effect == 10) {
+          float levels = mix(16.0, 6.0, I);
+          vec3 q = floor(col * levels) / levels;
+          vec3 edge = sobel(uv);
+          float e = smoothstep(0.05, 0.3, luma(edge));
+          q = mix(q, vec3(0.0), e);
+          outColor = mix(col, q, I);
+        } else if (u_effect == 11) {
+          float levels = floor(mix(32.0, 3.0, I));
+          outColor = floor(col * levels) / levels;
+          outColor = mix(col, outColor, I);
+        } else if (u_effect == 12) {
+          vec2 dir = (uv - vec2(0.5)) * 2.0;
+          float ab = I * 0.04 * length(dir);
+          float r = get(uv + dir * ab).r;
+          float g = get(uv).g;
+          float b = get(uv - dir * ab).b;
+          outColor = vec3(r, g, b);
+        }
+
+        gl_FragColor = vec4(clamp(outColor, 0.0, 1.0), 1.0);
+      }
+    `;
+
+    const vShader = compileShader(gl.VERTEX_SHADER, vs);
+    const fShader = compileShader(gl.FRAGMENT_SHADER, fs);
+    if (!vShader || !fShader) return false;
+
+    program = gl.createProgram();
+    gl.attachShader(program, vShader);
+    gl.attachShader(program, fShader);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      console.error('Program link error:', gl.getProgramInfoLog(program));
+      return false;
+    }
+    gl.useProgram(program);
+
+    const aPos = gl.getAttribLocation(program, 'a_position');
+    const aTex = gl.getAttribLocation(program, 'a_texCoord');
+    uResolution = gl.getUniformLocation(program, 'u_resolution');
+    uTime = gl.getUniformLocation(program, 'u_time');
+    uIntensity = gl.getUniformLocation(program, 'u_intensity');
+    uEffect = gl.getUniformLocation(program, 'u_effect');
+    uMirror = gl.getUniformLocation(program, 'u_mirror');
+    uVideoAspect = gl.getUniformLocation(program, 'u_videoAspect');
+
+    const posBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+    const texBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, texBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0,0, 1,0, 0,1, 0,1, 1,0, 1,1]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(aTex);
+    gl.vertexAttribPointer(aTex, 2, gl.FLOAT, false, 0, 0);
+
+    videoTexture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, videoTexture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    return true;
+  }
+
+  function renderGL() {
+    if (!gl || gl.isContextLost()) return;
+    const videoAspect = (video.videoWidth && video.videoHeight) ? video.videoWidth / video.videoHeight : 1.0;
+    if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+      gl.bindTexture(gl.TEXTURE_2D, videoTexture);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+    }
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.uniform2f(uResolution, canvas.width, canvas.height);
+    gl.uniform1f(uTime, performance.now() / 1000.0);
+    gl.uniform1f(uIntensity, intensity);
+    gl.uniform1i(uEffect, currentEffect);
+    gl.uniform1f(uMirror, mirror ? 1.0 : 0.0);
+    gl.uniform1f(uVideoAspect, videoAspect);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
+  // 2D canvas fallback
+  function drawImageCover(ctx, v, cw, ch) {
+    const va = (v.videoWidth && v.videoHeight) ? v.videoWidth / v.videoHeight : 1.0;
+    const ca = cw / ch;
+    let dx, dy, dw, dh;
+    if (va > ca) {
+      dh = ch;
+      dw = ch * va;
+      dx = (cw - dw) / 2;
+      dy = 0;
+    } else {
+      dw = cw;
+      dh = cw / va;
+      dx = 0;
+      dy = (ch - dh) / 2;
+    }
+    ctx.drawImage(v, dx, dy, dw, dh);
+  }
+
+  function effectToCSS(effect, intensity) {
+    switch (effect) {
+      case 0: return '';
+      case 1: return 'grayscale(100%) contrast(1.3)';
+      case 2: return `sepia(${Math.round(100)}%)`;
+      case 3: return `hue-rotate(180deg) saturate(2) contrast(1.2)`;
+      case 4: return `blur(${Math.max(1, intensity * 10)}px)`;
+      case 5: return `hue-rotate(${180 + Math.round(intensity * 60)}deg) saturate(${1 + intensity * 3}) contrast(1.3)`;
+      case 6: return 'hue-rotate(90deg) saturate(3) brightness(1.3)';
+      case 7: return 'contrast(2) brightness(1.2) saturate(2)';
+      case 8: return '';
+      case 9: return 'contrast(3) grayscale(100%)';
+      case 10: return 'contrast(1.5) saturate(1.5)';
+      case 11: return 'contrast(1.5) brightness(1.1)';
+      case 12: return `hue-rotate(${Math.round(intensity * 60)}deg) saturate(2)`;
+      default: return '';
+    }
+  }
+
+  function render2D() {
+    if (!fallbackCtx) fallbackCtx = canvas.getContext('2d');
+    if (!fallbackCtx || video.readyState < 2) return;
+    const ctx = fallbackCtx;
+    ctx.save();
+    if (mirror) {
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+    }
+    const cssFilter = effectToCSS(currentEffect, intensity);
+    if (cssFilter) ctx.filter = cssFilter;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    drawImageCover(ctx, video, canvas.width, canvas.height);
+    ctx.restore();
+  }
+
+  function render() {
+    if (gl) renderGL();
+    else render2D();
+    requestAnimationFrame(render);
+  }
+
+  function resizeCanvas() {
+    const rect = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+    canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+  }
+  window.addEventListener('resize', resizeCanvas);
+
+  // Webcam
+  function showError(message) {
+    loading.innerHTML = `
+      <div class="text-center max-w-xs px-4">
+        <p class="text-red-400 text-sm mb-2">Camera access failed</p>
+        <p class="text-xs text-slate-400 mb-4">${message}</p>
+        <button id="retryBtn" class="px-4 py-2 bg-pink-600 hover:bg-pink-500 text-white rounded-lg text-sm font-medium transition">Retry</button>
+      </div>`;
+    document.getElementById('retryBtn').addEventListener('click', startCamera);
+  }
+
+  async function startCamera() {
+    loading.innerHTML = `
+      <div class="w-10 h-10 border-4 border-pink-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+      <p class="text-sm">Waiting for camera access...</p>`;
+    loading.classList.remove('hidden');
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera access is not supported in this browser.');
+      }
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
+      } catch (err) {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      }
+      video.srcObject = stream;
+      loading.classList.add('hidden');
+    } catch (err) {
+      console.warn('Camera access failed:', err.message || err);
+      showError(err.message || 'Could not access the webcam.');
+    }
+  }
+  window.startCamera = startCamera;
+
+  // Snapshots & saving
+  function flashEffect() {
+    flash.classList.remove('snap-flash');
+    void flash.offsetWidth;
+    flash.classList.add('snap-flash');
+  }
+
+  function download(dataUrl, filename) {
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  function createSnapshot() {
+    const data = canvas.toDataURL('image/jpeg', 0.92);
+    const container = document.createElement('div');
+    container.className = 'relative group rounded-lg overflow-hidden border border-slate-700 bg-slate-800 cursor-pointer';
+    const img = document.createElement('img');
+    img.src = data;
+    img.className = 'w-full h-24 object-cover';
+    img.alt = 'Snapshot';
+    const badge = document.createElement('div');
+    badge.className = 'absolute bottom-0 left-0 right-0 bg-black/60 text-[10px] text-white text-center py-0.5 opacity-0 group-hover:opacity-100 transition';
+    badge.textContent = 'Download';
+    container.appendChild(img);
+    container.appendChild(badge);
+    container.onclick = () => download(data, 'webcam-snapshot.jpg');
+    gallery.insertBefore(container, gallery.firstChild);
+  }
+
+  snapBtn.addEventListener('click', () => { flashEffect(); createSnapshot(); });
+  saveBtn.addEventListener('click', () => {
+    download(canvas.toDataURL('image/jpeg', 0.92), 'webcam-filter.jpg');
+  });
+  clearGallery.addEventListener('click', () => { gallery.innerHTML = ''; });
+
+  // Boot
+  renderEffectButtons();
+  resizeCanvas();
+  window.addEventListener('load', resizeCanvas);
+  if (!initWebGL()) {
+    gl = null;
+    console.log('WebGL unavailable; using 2D canvas fallback.');
+    const newCanvas = document.createElement('canvas');
+    newCanvas.id = 'canvas';
+    canvas.parentNode.replaceChild(newCanvas, canvas);
+    canvas = newCanvas;
+    resizeCanvas();
+  }
+  startCamera();
+  render();
+})();
+</script>
+</body>
+</html>

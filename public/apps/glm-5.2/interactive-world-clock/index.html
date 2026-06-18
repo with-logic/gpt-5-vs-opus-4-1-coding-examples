@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Interactive World Clock</title>
+<style>
+  :root{
+    --bg:#0b1020;
+    --panel:rgba(255,255,255,0.04);
+    --panel-border:rgba(255,255,255,0.08);
+    --text:#eaf0ff;
+    --muted:rgba(234,240,255,0.55);
+    --accent:#7cc4ff;
+    --radius:20px;
+    --shadow:0 20px 50px rgba(0,0,0,0.45);
+    --font:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:var(--font);
+    background:
+      radial-gradient(1200px 800px at 80% -10%, rgba(124,196,255,0.10), transparent 60%),
+      radial-gradient(1000px 700px at -10% 110%, rgba(167,139,250,0.10), transparent 60%),
+      linear-gradient(180deg,#080c1a 0%,#0b1020 100%);
+    color:var(--text);
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+
+  .wrap{max-width:1200px;margin:0 auto;padding:40px 24px 80px;}
+
+  /* ---------- Header ---------- */
+  header{
+    display:flex;align-items:center;justify-content:space-between;
+    gap:24px;flex-wrap:wrap;margin-bottom:36px;
+  }
+  .brand{display:flex;align-items:center;gap:14px;}
+  .logo{
+    width:46px;height:46px;border-radius:14px;
+    background:linear-gradient(135deg,#7cc4ff,#a78bfa);
+    display:grid;place-items:center;
+    box-shadow:0 8px 24px rgba(124,196,255,0.35);
+    flex-shrink:0;
+  }
+  .logo svg{width:26px;height:26px;}
+  h1{
+    font-size:clamp(20px,3.4vw,28px);margin:0;font-weight:700;letter-spacing:-0.02em;
+  }
+  .subtitle{margin:2px 0 0;color:var(--muted);font-size:13.5px;}
+
+  .controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+
+  .seg{
+    display:inline-flex;background:var(--panel);border:1px solid var(--panel-border);
+    border-radius:12px;padding:4px;backdrop-filter:blur(8px);
+  }
+  .seg button{
+    border:0;background:transparent;color:var(--muted);
+    font-family:inherit;font-size:13px;font-weight:600;
+    padding:7px 14px;border-radius:9px;cursor:pointer;
+    transition:color .2s, background .2s, transform .1s;
+  }
+  .seg button:hover{color:var(--text);}
+  .seg button.active{
+    background:linear-gradient(135deg,rgba(124,196,255,0.25),rgba(167,139,250,0.25));
+    color:var(--text);box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08);
+  }
+
+  .add-btn{
+    display:inline-flex;align-items:center;gap:8px;
+    background:linear-gradient(135deg,#7cc4ff,#a78bfa);color:#08111f;
+    border:0;border-radius:12px;padding:9px 16px;font-family:inherit;
+    font-weight:700;font-size:13.5px;cursor:pointer;
+    box-shadow:0 8px 22px rgba(124,196,255,0.30);
+    transition:transform .12s, box-shadow .2s, filter .2s;
+  }
+  .add-btn:hover{transform:translateY(-1px);filter:brightness(1.05);box-shadow:0 12px 28px rgba(124,196,255,0.40);}
+  .add-btn:active{transform:translateY(0);}
+  .add-btn svg{width:16px;height:16px;}
+
+  /* ---------- Clock grid ---------- */
+  .grid{
+    display:grid;gap:18px;
+    grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+  }
+
+  .card{
+    position:relative;overflow:hidden;border-radius:var(--radius);
+    min-height:230px;padding:22px;color:var(--text);
+    box-shadow:var(--shadow);
+    border:1px solid rgba(255,255,255,0.10);
+    isolation:isolate;
+    transition:transform .25s cubic-bezier(.2,.7,.2,1), box-shadow .25s;
+  }
+  .card:hover{transform:translateY(-4px);box-shadow:0 28px 60px rgba(0,0,0,0.55);}
+
+  /* dynamic sky is set via inline custom properties */
+  .card .sky{
+    position:absolute;inset:0;z-index:-2;
+    background:linear-gradient(160deg,var(--sky-top,#1a2240) 0%,var(--sky-mid,#2a3155) 55%,var(--sky-bot,#3a3f66) 100%);
+    transition:background 2s ease;
+  }
+  .card .glow{
+    position:absolute;z-index:-1;border-radius:50%;filter:blur(40px);opacity:.55;
+    width:240px;height:240px;left:var(--gx,50%);top:var(--gy,20%);
+    transform:translate(-50%,-50%);
+    background:var(--glow,rgba(255,220,150,0.6));
+    transition:left 2s ease, top 2s ease, background 2s ease;
+  }
+
+  /* stars (only visible at night) */
+  .stars{position:absolute;inset:0;z-index:-1;opacity:var(--stars-op,0);transition:opacity 2s ease;}
+  .star{position:absolute;width:2px;height:2px;border-radius:50%;background:#fff;opacity:.8;animation:twinkle 3s infinite ease-in-out;}
+  @keyframes twinkle{0%,100%{opacity:.25;}50%{opacity:.9;}}
+
+  /* celestial body (sun/moon) */
+  .orb{
+    position:absolute;width:54px;height:54px;border-radius:50%;
+    left:var(--ox,50%);top:var(--oy,30%);
+    transform:translate(-50%,-50%);
+    transition:left 2s ease, top 2s ease, background 2s ease, box-shadow 2s ease;
+    z-index:0;
+  }
+  .orb.sun{
+    background:radial-gradient(circle at 38% 35%,#fff6d8,#ffd15a 45%,#ff9d3a 100%);
+    box-shadow:0 0 30px rgba(255,200,80,0.85),0 0 70px rgba(255,160,60,0.45);
+  }
+  .orb.moon{
+    background:radial-gradient(circle at 38% 35%,#fdfdf6,#d7ddef 45%,#9aa3c4 100%);
+    box-shadow:0 0 24px rgba(220,225,255,0.6),0 0 60px rgba(180,190,230,0.35);
+  }
+  .orb.moon::after{
+    content:"";position:absolute;width:16px;height:16px;border-radius:50%;
+    background:rgba(150,160,190,0.35);top:10px;left:22px;
+    box-shadow:8px 14px 0 -4px rgba(150,160,190,0.30),-6px 18px 0 -6px rgba(150,160,190,0.30);
+  }
+
+  .card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+  .city-name{font-size:17px;font-weight:700;letter-spacing:-0.01em;text-shadow:0 1px 12px rgba(0,0,0,0.35);}
+  .country{font-size:12px;color:rgba(255,255,255,0.78);margin-top:2px;text-shadow:0 1px 8px rgba(0,0,0,0.35);}
+  .phase{
+    display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;
+    background:rgba(255,255,255,0.14);backdrop-filter:blur(6px);
+    border:1px solid rgba(255,255,255,0.18);
+    padding:5px 10px;border-radius:999px;text-transform:uppercase;letter-spacing:.06em;
+    text-shadow:0 1px 6px rgba(0,0,0,0.3);
+  }
+  .phase svg{width:13px;height:13px;}
+
+  .remove{
+    position:absolute;top:12px;right:12px;z-index:5;
+    width:28px;height:28px;border-radius:9px;border:1px solid rgba(255,255,255,0.18);
+    background:rgba(0,0,0,0.25);backdrop-filter:blur(6px);
+    color:rgba(255,255,255,0.9);cursor:pointer;display:grid;place-items:center;
+    opacity:0;transform:scale(.9);transition:opacity .2s, transform .2s, background .2s;
+  }
+  .card:hover .remove{opacity:1;transform:scale(1);}
+  .remove:hover{background:rgba(255,80,80,0.85);border-color:transparent;}
+  .remove svg{width:15px;height:15px;}
+
+  .time{
+    position:absolute;left:22px;bottom:20px;right:22px;
+    display:flex;align-items:flex-end;justify-content:space-between;gap:8px;
+  }
+  .clock{
+    font-variant-numeric:tabular-nums;
+    font-size:42px;font-weight:700;letter-spacing:-0.02em;line-height:1;
+    text-shadow:0 2px 18px rgba(0,0,0,0.4);
+  }
+  .clock .ampm{font-size:15px;font-weight:600;opacity:.85;margin-left:6px;letter-spacing:.05em;}
+  .meta{display:flex;flex-direction:column;align-items:flex-end;gap:3px;text-align:right;}
+  .date{font-size:12px;color:rgba(255,255,255,0.82);text-shadow:0 1px 8px rgba(0,0,0,0.35);}
+  .offset{font-size:11px;color:rgba(255,255,255,0.62);font-variant-numeric:tabular-nums;}
+
+  .seconds-tick{display:flex;gap:3px;margin-top:6px;}
+  .seconds-tick span{width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,0.25);}
+  .seconds-tick span.on{background:rgba(255,255,255,0.95);box-shadow:0 0 6px rgba(255,255,255,0.6);}
+
+  /* local card accent */
+  .card.local{border-color:rgba(124,196,255,0.45);}
+  .card.local .city-name::after{
+    content:"YOU";margin-left:8px;font-size:9px;font-weight:800;letter-spacing:.1em;
+    background:rgba(124,196,255,0.25);border:1px solid rgba(124,196,255,0.5);
+    color:#cfe6ff;padding:2px 6px;border-radius:6px;vertical-align:middle;
+  }
+
+  /* empty state */
+  .empty{
+    grid-column:1/-1;text-align:center;padding:60px 20px;color:var(--muted);
+    border:1px dashed var(--panel-border);border-radius:var(--radius);background:var(--panel);
+  }
+
+  /* ---------- Modal ---------- */
+  .modal-bg{
+    position:fixed;inset:0;background:rgba(4,7,15,0.66);backdrop-filter:blur(6px);
+    display:none;align-items:center;justify-content:center;z-index:50;padding:20px;
+  }
+  .modal-bg.open{display:flex;animation:fade .2s ease;}
+  @keyframes fade{from{opacity:0;}to{opacity:1;}}
+  .modal{
+    width:min(560px,100%);background:#121829;border:1px solid var(--panel-border);
+    border-radius:18px;box-shadow:0 30px 80px rgba(0,0,0,0.6);overflow:hidden;
+    animation:pop .22s cubic-bezier(.2,.8,.2,1);
+  }
+  @keyframes pop{from{opacity:0;transform:translateY(10px) scale(.98);}to{opacity:1;transform:none;}}
+  .modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--panel-border);}
+  .modal-head h3{margin:0;font-size:16px;font-weight:700;}
+  .modal-head button{background:transparent;border:0;color:var(--muted);cursor:pointer;padding:6px;border-radius:8px;}
+  .modal-head button:hover{color:var(--text);background:rgba(255,255,255,0.06);}
+  .modal-head svg{width:18px;height:18px;display:block;}
+  .search-wrap{padding:16px 20px 8px;}
+  .search{
+    width:100%;background:rgba(255,255,255,0.05);border:1px solid var(--panel-border);
+    border-radius:11px;padding:11px 14px;color:var(--text);font-family:inherit;font-size:14px;
+    outline:none;transition:border .2s, box-shadow .2s;
+  }
+  .search:focus{border-color:rgba(124,196,255,0.6);box-shadow:0 0 0 3px rgba(124,196,255,0.18);}
+  .list{max-height:340px;overflow:auto;padding:6px 8px 14px;}
+  .list::-webkit-scrollbar{width:10px;}
+  .list::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.12);border-radius:10px;border:3px solid transparent;background-clip:content-box;}
+  .opt{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:10px 12px;border-radius:10px;cursor:pointer;transition:background .15s;
+  }
+  .opt:hover{background:rgba(255,255,255,0.06);}
+  .opt.added{opacity:.4;cursor:default;}
+  .opt .o-name{font-size:14px;font-weight:600;}
+  .opt .o-sub{font-size:11.5px;color:var(--muted);margin-top:1px;}
+  .opt .o-time{font-variant-numeric:tabular-nums;font-size:13px;color:var(--accent);font-weight:600;}
+  .opt .o-check{color:#7cc4ff;}
+  .opt .o-check svg{width:16px;height:16px;}
+  .no-results{padding:24px;text-align:center;color:var(--muted);font-size:13px;}
+
+  footer{margin-top:30px;text-align:center;color:var(--muted);font-size:12px;}
+  footer span{color:var(--accent);font-variant-numeric:tabular-nums;}
+
+  @media (max-width:520px){
+    .clock{font-size:36px;}
+    .card{min-height:210px;}
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <div class="logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#08111f" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
+          </svg>
+        </div>
+        <div>
+          <h1>Interactive World Clock</h1>
+          <div class="subtitle">Track the time across the globe, day or night.</div>
+        </div>
+      </div>
+      <div class="controls">
+        <div class="seg" id="formatToggle" role="group" aria-label="Time format">
+          <button data-fmt="24" class="active">24h</button>
+          <button data-fmt="12">12h</button>
+        </div>
+        <button class="add-btn" id="addBtn" aria-haspopup="dialog">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          Add city
+        </button>
+      </div>
+    </header>
+
+    <section class="grid" id="grid"></section>
+
+    <footer>Updated every second · <span id="utcNow">—</span> UTC</footer>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-bg" id="modal" role="dialog" aria-modal="true" aria-label="Add a city">
+    <div class="modal">
+      <div class="modal-head">
+        <h3>Add a city</h3>
+        <button id="modalClose" aria-label="Close"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      </div>
+      <div class="search-wrap">
+        <input class="search" id="search" type="text" placeholder="Search 130+ cities or timezones…" autocomplete="off" />
+      </div>
+      <div class="list" id="list"></div>
+    </div>
+  </div>
+
+<script>
+"use strict";
+
+/* ------------------------------------------------------------------
+   City dataset — name, country, IANA timezone, coordinates (lat,lng)
+------------------------------------------------------------------ */
+const CITIES = [
+  ["New York","United States","America/New_York",40.71,-74.01],
+  ["Los Angeles","United States","America/Los_Angeles",34.05,-118.24],
+  ["Chicago","United States","America/Chicago",41.88,-87.63],
+  ["Denver","United States","America/Denver",39.74,-104.99],
+  ["Honolulu","United States","Pacific/Honolulu",21.31,-157.86],
+  ["Toronto","Canada","America/Toronto",43.65,-79.38],
+  ["Vancouver","Canada","America/Vancouver",49.28,-123.12],
+  ["Mexico City","Mexico","America/Mexico_City",19.43,-99.13],
+  ["São Paulo","Brazil","America/Sao_Paulo",-23.55,-46.63],
+  ["Rio de Janeiro","Brazil","America/Sao_Paulo",-22.91,-43.17],
+  ["Buenos Aires","Argentina","America/Argentina/Buenos_Aires",-34.6,-58.38],
+  ["Lima","Peru","America/Lima",-12.05,-77.04],
+  ["Bogotá","Colombia","America/Bogota",4.71,-74.07],
+  ["Santiago","Chile","America/Santiago",-33.45,-70.67],
+  ["Havana","Cuba","America/Havana",23.13,-82.38],
+  ["Reykjavík","Iceland","Atlantic/Reykjavik",64.15,-21.94],
+  ["London","United Kingdom","Europe/London",51.51,-0.13],
+  ["Dublin","Ireland","Europe/Dublin",53.35,-6.26],
+  ["Paris","France","Europe/Paris",48.85,2.35],
+  ["Berlin","Germany","Europe/Berlin",52.52,13.40],
+  ["Madrid","Spain","Europe/Madrid",40.42,-3.70],
+  ["Rome","Italy","Europe/Rome",41.90,12.50],
+  ["Amsterdam","Netherlands","Europe/Amsterdam",52.37,4.90],
+  ["Brussels","Belgium","Europe/Brussels",50.85,4.35],
+  ["Vienna","Austria","Europe/Vienna",48.21,16.37],
+  ["Zurich","Switzerland","Europe/Zurich",47.38,8.54],
+  ["Stockholm","Sweden","Europe/Stockholm",59.33,18.07],
+  ["Oslo","Norway","Europe/Oslo",59.91,10.75],
+  ["Copenhagen","Denmark","Europe/Copenhagen",55.68,12.57],
+  ["Helsinki","Finland","Europe/Helsinki",60.17,24.94],
+  ["Athens","Greece","Europe/Athens",37.98,23.73],
+  ["Lisbon","Portugal","Europe/Lisbon",38.72,-9.14],
+  ["Warsaw","Poland","Europe/Warsaw",52.23,21.01],
+  ["Prague","Czechia","Europe/Prague",50.08,14.44],
+  ["Budapest","Hungary","Europe/Budapest",47.50,19.04],
+  ["Istanbul","Türkiye","Europe/Istanbul",41.01,28.98],
+  ["Moscow","Russia","Europe/Moscow",55.76,37.62],
+  ["Cairo","Egypt","Africa/Cairo",30.04,31.24],
+  ["Lagos","Nigeria","Africa/Lagos",6.52,3.38],
+  ["Nairobi","Kenya","Africa/Nairobi",-1.29,36.82],
+  ["Cape Town","South Africa","Africa/Johannesburg",-33.92,18.42],
+  ["Johannesburg","South Africa","Africa/Johannesburg",-26.20,28.04],
+  ["Accra","Ghana","Africa/Accra",5.60,-0.19],
+  ["Casablanca","Morocco","Africa/Casablanca",33.57,-7.59],
+  ["Dubai","United Arab Emirates","Asia/Dubai",25.20,55.27],
+  ["Doha","Qatar","Asia/Qatar",25.29,51.50],
+  ["Tehran","Iran","Asia/Tehran",35.69,51.39],
+  ["Karachi","Pakistan","Asia/Karachi",24.86,67.01],
+  ["Delhi","India","Asia/Kolkata",28.61,77.21],
+  ["Mumbai","India","Asia/Kolkata",19.08,72.88],
+  ["Bangalore","India","Asia/Kolkata",12.97,77.59],
+  ["Dhaka","Bangladesh","Asia/Dhaka",23.81,90.41],
+  ["Kathmandu","Nepal","Asia/Kathmandu",27.72,85.32],
+  ["Colombo","Sri Lanka","Asia/Colombo",6.93,79.86],
+  ["Bangkok","Thailand","Asia/Bangkok",13.76,100.50],
+  ["Hanoi","Vietnam","Asia/Ho_Chi_Minh",21.03,105.85],
+  ["Ho Chi Minh City","Vietnam","Asia/Ho_Chi_Minh",10.82,106.63],
+  ["Jakarta","Indonesia","Asia/Jakarta",-6.21,106.85],
+  ["Singapore","Singapore","Asia/Singapore",1.35,103.82],
+  ["Kuala Lumpur","Malaysia","Asia/Kuala_Lumpur",3.14,101.69],
+  ["Manila","Philippines","Asia/Manila",14.60,120.98],
+  ["Hong Kong","Hong Kong","Asia/Hong_Kong",22.32,114.17],
+  ["Taipei","Taiwan","Asia/Taipei",25.03,121.57],
+  ["Shanghai","China","Asia/Shanghai",31.23,121.47],
+  ["Beijing","China","Asia/Shanghai",39.90,116.41],
+  ["Seoul","South Korea","Asia/Seoul",37.57,126.98],
+  ["Pyongyang","North Korea","Asia/Pyongyang",39.02,125.75],
+  ["Tokyo","Japan","Asia/Tokyo",35.68,139.69],
+  ["Osaka","Japan","Asia/Osaka",34.69,135.50],
+  ["Perth","Australia","Australia/Perth",-31.95,115.86],
+  ["Adelaide","Australia","Australia/Adelaide",-34.93,138.60],
+  ["Melbourne","Australia","Australia/Melbourne",-37.81,144.96],
+  ["Sydney","Australia","Australia/Sydney",-33.87,151.21],
+  ["Brisbane","Australia","Australia/Brisbane",-27.47,153.03],
+  ["Auckland","New Zealand","Pacific/Auckland",-36.85,174.76],
+  ["Wellington","New Zealand","Pacific/Wellington",-41.29,174.78],
+  ["Fiji","Fiji","Pacific/Fiji",-18.12,178.44],
+  ["Anchorage","United States","America/Anchorage",61.22,-149.90],
+  ["Phoenix","United States","America/Phoenix",33.45,-112.07],
+  ["Tel Aviv","Israel","Asia/Jerusalem",32.08,34.78],
+  ["Riyadh","Saudi Arabia","Asia/Riyadh",24.71,46.68],
+  ["Kiev","Ukraine","Europe/Kyiv",50.45,30.52]
+].map(([name,country,tz,lat,lng])=>({name,country,tz,lat,lng}));
+
+/* ------------------------------------------------------------------
+   State
+------------------------------------------------------------------ */
+const LOCAL_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+let cities = loadCities();
+let fmt24 = true;
+
+function loadCities(){
+  try{
+    const s = localStorage.getItem("wc.cities");
+    if(s){const arr=JSON.parse(s); if(Array.isArray(arr)&&arr.length) return arr;}
+  }catch(e){}
+  // Sensible defaults spanning the globe + local
+  const def = ["Asia/Tokyo","Europe/London","America/New_York","America/Los_Angeles","Asia/Dubai"];
+  const local = CITIES.find(c=>c.tz===LOCAL_TZ);
+  const out = [];
+  if(local) out.push(local.tz);
+  def.forEach(tz=>{ if(!out.includes(tz)) out.push(tz); });
+  return out;
+}
+function saveCities(){ try{ localStorage.setItem("wc.cities",JSON.stringify(cities)); }catch(e){} }
+
+function findCity(tz){ return CITIES.find(c=>c.tz===tz) || {name:tz.split("/").pop().replace(/_/g," "),country:"",tz,lat:0,lng:0}; }
+
+/* ------------------------------------------------------------------
+   Time utilities — compute parts in a given timezone
+------------------------------------------------------------------ */
+function partsInTZ(tz, base){
+  const d = base || new Date();
+  // Use Intl to get wall-clock parts in the target zone
+  const f = new Intl.DateTimeFormat("en-US",{
+    timeZone:tz, hour12:false,
+    year:"numeric",month:"2-digit",day:"2-digit",
+    hour:"2-digit",minute:"2-digit",second:"2-digit",
+    weekday:"short"
+  });
+  const p = {};
+  f.formatToParts(d).forEach(x=>{ p[x.type]=x.value; });
+  let h = parseInt(p.hour,10); if(h===24) h=0;
+  const m = parseInt(p.minute,10);
+  const s = parseInt(p.second,10);
+  const hourFloat = h + m/60 + s/3600;
+  return {
+    h, m, s, hourFloat,
+    weekday:p.weekday,
+    // Build a date string YYYY-MM-DD for offset calc
+    dateStr:`${p.year}-${p.month}-${p.day}`
+  };
+}
+
+function tzOffsetHours(tz, base){
+  // Wall clock minutes minus UTC minutes, in hours
+  const d = base || new Date();
+  const p = partsInTZ(tz, d);
+  // Construct a UTC timestamp representing the wall-clock time
+  const wall = Date.UTC(
+    parseInt(p.dateStr.slice(0,4),10),
+    parseInt(p.dateStr.slice(5,7),10)-1,
+    parseInt(p.dateStr.slice(8,10),10),
+    p.h, p.m, p.s
+  );
+  return Math.round((wall - d.getTime())/3600000);
+}
+
+function formatOffset(off){
+  const sign = off>=0?"+":"-";
+  const a = Math.abs(off);
+  const hh = String(Math.floor(a)).padStart(2,"0");
+  return `UTC${sign}${hh}:00`;
+}
+
+function ordinal(n){
+  const s=["th","st","nd","rd"], v=n%100;
+  return n+(s[(v-20)%10]||s[v]||s[0]);
+}
+
+function formatDateLabel(p){
+  const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const [y,mo,da]=p.dateStr.split("-").map(Number);
+  return `${p.weekday}, ${months[mo-1]} ${ordinal(da)}`;
+}
+
+/* ------------------------------------------------------------------
+   Day-phase model — returns colors, icon, label, orb position
+   Positions the celestial orb along an arc across the card.
+------------------------------------------------------------------ */
+function phaseFor(hour){
+  // night: 0-5, dawn: 5-7, morning: 7-11, noon: 11-14,
+  // afternoon: 14-17, dusk: 17-19, evening: 19-22, night: 22-24
+  if(hour<5)  return "night";
+  if(hour<7)  return "dawn";
+  if(hour<11) return "morning";
+  if(hour<14) return "noon";
+  if(hour<17) return "afternoon";
+  if(hour<19) return "dusk";
+  if(hour<22) return "evening";
+  return "night";
+}
+
+const PHASES = {
+  night:     {label:"Night",     top:"#0a1230", mid:"#141b3a", bot:"#232a52", glow:"rgba(120,140,220,0.5)",  stars:1, icon:"moon"},
+  dawn:      {label:"Dawn",      top:"#3a2a55", mid:"#6b4a7a", bot:"#c98a8a", glow:"rgba(255,170,140,0.7)",  stars:.4, icon:"sunrise"},
+  morning:   {label:"Morning",   top:"#3f78c2", mid:"#62a6e0", bot:"#bfe3f7", glow:"rgba(255,225,150,0.7)",  stars:0, icon:"sunrise"},
+  noon:      {label:"Midday",    top:"#2f7fd6", mid:"#54a8ee", bot:"#9fd4f7", glow:"rgba(255,240,180,0.85)", stars:0, icon:"sun"},
+  afternoon: {label:"Afternoon", top:"#357fd0", mid:"#5aa0e6", bot:"#e6c79a", glow:"rgba(255,210,140,0.7)",  stars:0, icon:"sun"},
+  dusk:      {label:"Dusk",      top:"#2a2350", mid:"#7a4a8a", bot:"#e8805a", glow:"rgba(255,150,90,0.75)",  stars:.2, icon:"sunset"},
+  evening:   {label:"Evening",   top:"#161a3e", mid:"#26305f", bot:"#5a4a8a", glow:"rgba(160,140,230,0.6)",  stars:.6, icon:"moon"},
+};
+
+function orbPosition(hour){
+  // Sun arcs while 5..19 (day). Moon arcs while 19..5 (night, wrapping).
+  // x: 8% -> 92% across the arc. y: lower near horizon, higher at peak.
+  let isDay = hour>=5 && hour<19;
+  let t; // 0..1 progress across the visible arc
+  if(isDay){
+    t = (hour-5)/14; // 5h=0, 19h=1
+  } else {
+    // night spans 19..24 then 0..5 -> length 10
+    let nh = hour<5 ? hour+24 : hour; // 19..29
+    t = (nh-19)/10;
+  }
+  // arc: y peaks (smaller top%) at t=0.5
+  const x = 8 + t*84; // %
+  const arcY = 18 + Math.pow(Math.abs(t-0.5)*2, 1.8) * 46; // 18%..64%
+  return {x, y:arcY, isDay};
+}
+
+/* SVG icons */
+const ICONS = {
+  sun:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`,
+  moon:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>`,
+  sunrise:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M5.6 10.6 7 12M2 18h2M20 18h2M17 12l1.4-1.4M8 18a4 4 0 0 1 8 0M3 22h18M12 8a4 4 0 0 1 4 4"/></svg>`,
+  sunset: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M5.6 10.6 7 12M2 18h2M20 18h2M17 12l1.4-1.4M8 18a4 4 0 0 1 8 0M3 22h18M12 12a4 4 0 0 0-4 4"/></svg>`
+};
+
+/* ------------------------------------------------------------------
+   Rendering
+------------------------------------------------------------------ */
+const grid = document.getElementById("grid");
+
+function render(){
+  grid.innerHTML = "";
+  if(cities.length===0){
+    const el = document.createElement("div");
+    el.className="empty";
+    el.innerHTML = `<div style="font-size:15px;margin-bottom:8px;color:var(--text)">No cities yet</div>
+      <div>Click <strong>Add city</strong> to start tracking times around the world.</div>`;
+    grid.appendChild(el);
+    return;
+  }
+  cities.forEach((tz,i)=>{
+    grid.appendChild(buildCard(tz,i));
+  });
+}
+
+function buildCard(tz, idx){
+  const c = findCity(tz);
+  const p = partsInTZ(tz);
+  const ph = PHASES[phaseFor(p.hourFloat)];
+  const orb = orbPosition(p.hourFloat);
+
+  const card = document.createElement("article");
+  card.className = "card" + (tz===LOCAL_TZ ? " local" : "");
+  card.dataset.tz = tz;
+  card.dataset.idx = idx;
+
+  // sky
+  const sky = document.createElement("div"); sky.className="sky";
+  // glow
+  const glow = document.createElement("div"); glow.className="glow";
+
+  // stars
+  const stars = document.createElement("div"); stars.className="stars";
+  const starCount = 22;
+  for(let i=0;i<starCount;i++){
+    const st=document.createElement("div"); st.className="star";
+    st.style.left=(Math.random()*100).toFixed(1)+"%";
+    st.style.top=(Math.random()*55).toFixed(1)+"%";
+    st.style.animationDelay=(Math.random()*3).toFixed(2)+"s";
+    st.style.opacity=(0.4+Math.random()*0.6).toFixed(2);
+    stars.appendChild(st);
+  }
+
+  // orb
+  const orbEl = document.createElement("div");
+  orbEl.className = "orb " + (orb.isDay ? "sun" : "moon");
+
+  // remove
+  const rm = document.createElement("button");
+  rm.className="remove"; rm.setAttribute("aria-label","Remove "+c.name);
+  rm.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>`;
+  rm.addEventListener("click",(e)=>{ e.stopPropagation(); removeCity(tz); });
+
+  // top
+  const top = document.createElement("div");
+  top.className="card-top";
+  top.innerHTML = `
+    <div>
+      <div class="city-name">${escapeHtml(c.name)}</div>
+      <div class="country">${escapeHtml(c.country||"")}</div>
+    </div>
+    <div class="phase">${ICONS[ph.icon]}<span>${ph.label}</span></div>`;
+
+  // time
+  const off = tzOffsetHours(tz);
+  const time = document.createElement("div");
+  time.className="time";
+  time.innerHTML = `
+    <div>
+      <div class="clock"><span class="hm">${clockText(p)}</span><span class="ampm"></span></div>
+      <div class="seconds-tick">${ticks(p.s)}</div>
+    </div>
+    <div class="meta">
+      <div class="date">${formatDateLabel(p)}</div>
+      <div class="offset">${formatOffset(off)}</div>
+    </div>`;
+
+  // apply vars
+  card.style.setProperty("--sky-top",ph.top);
+  card.style.setProperty("--sky-mid",ph.mid);
+  card.style.setProperty("--sky-bot",ph.bot);
+  card.style.setProperty("--glow",ph.glow);
+  card.style.setProperty("--gx",orb.x+"%");
+  card.style.setProperty("--gy",(orb.y+10)+"%");
+  card.style.setProperty("--stars-op",ph.stars);
+  card.style.setProperty("--ox",orb.x+"%");
+  card.style.setProperty("--oy",orb.y+"%");
+
+  card.appendChild(sky);
+  card.appendChild(stars);
+  card.appendChild(glow);
+  card.appendChild(orbEl);
+  card.appendChild(rm);
+  card.appendChild(top);
+  card.appendChild(time);
+  return card;
+}
+
+function clockText(p){
+  if(fmt24){
+    return `${String(p.h).padStart(2,"0")}:${String(p.m).padStart(2,"0")}`;
+  }
+  let h = p.h%12; if(h===0) h=12;
+  return `${h}:${String(p.m).padStart(2,"0")}`;
+}
+function ampmText(p){
+  if(!fmt24) return p.h<12?"AM":"PM";
+  return "";
+}
+function ticks(sec){
+  let out="";
+  for(let i=0;i<10;i++) out+=`<span class="${i<sec%10?'on':''}"></span>`;
+  return out;
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+}
+
+/* ------------------------------------------------------------------
+   Lightweight per-second update — only patch changing text + orb
+------------------------------------------------------------------ */
+function tick(){
+  const now = new Date();
+  document.getElementById("utcNow").textContent =
+    String(now.getUTCHours()).padStart(2,"0")+":"+String(now.getUTCMinutes()).padStart(2,"0")+":"+String(now.getUTCSeconds()).padStart(2,"0");
+
+  const cards = grid.querySelectorAll(".card");
+  cards.forEach(card=>{
+    const tz = card.dataset.tz;
+    const p = partsInTZ(tz, now);
+    const hm = card.querySelector(".clock .hm");
+    const ampm = card.querySelector(".clock .ampm");
+    if(hm) hm.textContent = clockText(p);
+    if(ampm) ampm.textContent = ampmText(p);
+
+    const tickWrap = card.querySelector(".seconds-tick");
+    if(tickWrap){
+      const dots = tickWrap.querySelectorAll("span");
+      const on = p.s % 10;
+      dots.forEach((d,i)=> d.classList.toggle("on", i<on));
+    }
+
+    // Phase / sky updates (only when phase changes)
+    const phKey = phaseFor(p.hourFloat);
+    const ph = PHASES[phKey];
+    if(card.dataset.phase !== phKey){
+      card.dataset.phase = phKey;
+      card.style.setProperty("--sky-top",ph.top);
+      card.style.setProperty("--sky-mid",ph.mid);
+      card.style.setProperty("--sky-bot",ph.bot);
+      card.style.setProperty("--glow",ph.glow);
+      card.style.setProperty("--stars-op",ph.stars);
+      const phaseEl = card.querySelector(".phase");
+      if(phaseEl){
+        phaseEl.innerHTML = `${ICONS[ph.icon]}<span>${ph.label}</span>`;
+      }
+    }
+    // Orb position (smooth, updated each second is fine via CSS transition)
+    const orb = orbPosition(p.hourFloat);
+    card.style.setProperty("--ox",orb.x+"%");
+    card.style.setProperty("--oy",orb.y+"%");
+    card.style.setProperty("--gx",orb.x+"%");
+    card.style.setProperty("--gy",(orb.y+10)+"%");
+    const orbEl = card.querySelector(".orb");
+    if(orbEl){
+      const want = orb.isDay?"sun":"moon";
+      if(!orbEl.classList.contains(want)){
+        orbEl.className = "orb "+want;
+      }
+    }
+  });
+}
+
+/* ------------------------------------------------------------------
+   City management
+------------------------------------------------------------------ */
+function removeCity(tz){
+  cities = cities.filter(t=>t!==tz);
+  saveCities();
+  render();
+}
+function addCity(tz){
+  if(cities.includes(tz)) return;
+  cities.push(tz);
+  saveCities();
+  render();
+}
+
+/* ------------------------------------------------------------------
+   Modal + search
+------------------------------------------------------------------ */
+const modal = document.getElementById("modal");
+const listEl = document.getElementById("list");
+const searchInput = document.getElementById("search");
+
+document.getElementById("addBtn").addEventListener("click",openModal);
+document.getElementById("modalClose").addEventListener("click",closeModal);
+modal.addEventListener("click",(e)=>{ if(e.target===modal) closeModal(); });
+document.addEventListener("keydown",(e)=>{ if(e.key==="Escape") closeModal(); });
+
+function openModal(){
+  modal.classList.add("open");
+  searchInput.value="";
+  renderList("");
+  setTimeout(()=>searchInput.focus(),30);
+}
+function closeModal(){ modal.classList.remove("open"); }
+
+searchInput.addEventListener("input",()=> renderList(searchInput.value.trim().toLowerCase()));
+
+function renderList(q){
+  const items = CITIES
+    .map(c=>{
+      const dist = matchScore(c,q);
+      return {c,dist};
+    })
+    .filter(x=> q==="" || x.dist>=0)
+    .sort((a,b)=>{
+      if(q==="") return a.c.name.localeCompare(b.c.name);
+      return a.dist-b.dist || a.c.name.localeCompare(b.c.name);
+    })
+    .slice(0, q==="" ? CITIES.length : 60);
+
+  listEl.innerHTML = "";
+  if(items.length===0){
+    listEl.innerHTML = `<div class="no-results">No cities match “${escapeHtml(q)}”.</div>`;
+    return;
+  }
+  const now = new Date();
+  items.forEach(({c})=>{
+    const added = cities.includes(c.tz);
+    const p = partsInTZ(c.tz, now);
+    const t = (fmt24
+      ? `${String(p.h).padStart(2,"0")}:${String(p.m).padStart(2,"0")}`
+      : `${(()=>{let h=p.h%12; if(h===0)h=12; return h;})()}:${String(p.m).padStart(2,"0")} ${p.h<12?"AM":"PM"}`);
+    const div = document.createElement("div");
+    div.className = "opt" + (added?" added":"");
+    div.innerHTML = `
+      <div>
+        <div class="o-name">${escapeHtml(c.name)}</div>
+        <div class="o-sub">${escapeHtml(c.country)} · ${c.tz.replace(/_/g," ")}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div class="o-time">${t}</div>
+        ${added ? `<div class="o-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>` : ""}
+      </div>`;
+    if(!added){
+      div.addEventListener("click",()=>{ addCity(c.tz); renderList(searchInput.value.trim().toLowerCase()); });
+    }
+    listEl.appendChild(div);
+  });
+}
+
+function matchScore(c,q){
+  if(!q) return 0;
+  const name = c.name.toLowerCase();
+  const country = c.country.toLowerCase();
+  const tz = c.tz.toLowerCase().replace(/_/g," ");
+  if(name===q) return 0;
+  if(name.startsWith(q)) return 1;
+  if(country.startsWith(q)) return 2;
+  if(tz.includes(q)) return 3;
+  if(name.includes(q)) return 4;
+  if(country.includes(q)) return 5;
+  return -1;
+}
+
+/* ------------------------------------------------------------------
+   Format toggle
+------------------------------------------------------------------ */
+document.getElementById("formatToggle").addEventListener("click",(e)=>{
+  const b = e.target.closest("button"); if(!b) return;
+  const f = b.dataset.fmt;
+  fmt24 = (f==="24");
+  document.querySelectorAll("#formatToggle button").forEach(x=>x.classList.toggle("active",x===b));
+  try{ localStorage.setItem("wc.fmt24", fmt24?"1":"0"); }catch(e){}
+  // refresh modal times
+  if(modal.classList.contains("open")) renderList(searchInput.value.trim().toLowerCase());
+});
+
+(function restoreFmt(){
+  try{ const v = localStorage.getItem("wc.fmt24"); if(v==="0"){ fmt24=false;
+    document.querySelectorAll("#formatToggle button").forEach(x=>x.classList.toggle("active",x.dataset.fmt==="12"));
+  }}catch(e){}
+})();
+
+/* ------------------------------------------------------------------
+   Init
+------------------------------------------------------------------ */
+render();
+tick();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>

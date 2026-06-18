@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { CodeExample } from "@/lib/code-examples";
 import { MODELS as BASE_MODELS, MODELS_BY_PROVIDER } from "@/lib/models";
+import { DEFAULT_COMPARISON_MODELS } from "@/lib/models.config";
 import { Brandmark } from "./brandmark";
 import { StatsComparisonPanel } from "./stats-comparison-panel";
 
@@ -29,9 +30,9 @@ export function AppComparisonView({
   apps = [],
   isOpen,
   onClose: _onClose,
-  initialModels = ["gpt-5.5", "opus-4.8", "gemini-3"],
+  initialModels = [...DEFAULT_COMPARISON_MODELS],
   initialView = "side-by-side",
-  initialTab = "gpt-5.5",
+  initialTab = DEFAULT_COMPARISON_MODELS[0],
   initialContentMode = "demo",
 }: AppComparisonViewProps) {
   void _onClose; // Required prop for interface but handled via history.back()
@@ -46,13 +47,16 @@ export function AppComparisonView({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const modelPickerRef = useRef<HTMLDivElement>(null);
 
-  // Update state when initial props change (for URL navigation)
+  // Update state when initial props change (for URL navigation).
+  // Serialize initialModels to avoid a new array reference triggering an infinite loop.
+  const initialModelsKey = initialModels.join(",");
   useEffect(() => {
     setSelectedModels(initialModels);
     setViewMode(initialView);
     setActiveTab(initialTab);
     setContentMode(initialContentMode);
-  }, [initialModels, initialView, initialTab, initialContentMode]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialModelsKey, initialView, initialTab, initialContentMode]);
 
   // Build the comparison URL
   const buildUrl = useCallback((appId: string, models: string[], mode: "side-by-side" | "tabs", tab: string, content: "demo" | "stats") => {

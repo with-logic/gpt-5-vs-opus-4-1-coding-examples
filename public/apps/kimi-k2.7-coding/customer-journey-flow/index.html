@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Customer Journey Flow</title>
+<style>
+:root {
+  --bg: #f8fafc;
+  --panel: rgba(255, 255, 255, 0.92);
+  --panel-border: rgba(226, 232, 240, 0.9);
+  --text: #0f172a;
+  --muted: #64748b;
+  --primary: #3b82f6;
+  --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+* { box-sizing: border-box; }
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+#viewport {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  background: #f1f5f9;
+  background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+#viewport.panning { cursor: grabbing; }
+#world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  transform-origin: 0 0;
+}
+#edges {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 1;
+}
+#edgeLayer { pointer-events: none; }
+.edge {
+  fill: none;
+  stroke: #94a3b8;
+  stroke-width: 2;
+  pointer-events: stroke;
+  transition: stroke 0.2s, stroke-width 0.2s;
+  cursor: pointer;
+}
+.edge:hover { stroke: #64748b; }
+.edge.selected { stroke: var(--primary); stroke-width: 3; }
+#edgeTemp {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 2;
+  stroke-dasharray: 6, 4;
+  pointer-events: none;
+  opacity: 0;
+}
+#nodes {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+}
+.node {
+  position: absolute;
+  width: 260px;
+  height: 180px;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-top: 3px solid var(--node-color);
+  user-select: none;
+  transition: box-shadow 0.2s, outline 0.2s;
+  cursor: grab;
+  z-index: 1;
+}
+.node.selected { outline: 3px solid var(--node-color); outline-offset: 2px; z-index: 10; }
+.node.dragging { box-shadow: 0 20px 40px rgba(15, 23, 42, 0.15); z-index: 100; cursor: grabbing; }
+.node-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  cursor: grab;
+}
+.node-badge {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--node-color);
+  position: relative;
+  flex: none;
+}
+.node-badge::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--node-color);
+  opacity: 0.15;
+  border-radius: 50%;
+}
+.node-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 16px;
+  color: #0f172a;
+  border: none;
+  background: transparent;
+  outline: none;
+  padding: 0;
+  cursor: text;
+  user-select: text;
+}
+.node-title::placeholder { color: #94a3b8; }
+.node-body { flex: 1; display: flex; min-height: 0; }
+.node-desc {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: transparent;
+  outline: none;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #475569;
+  resize: none;
+  cursor: text;
+  user-select: text;
+}
+.node-desc::placeholder { color: #94a3b8; }
+.node-title:focus,
+.node-desc:focus { background: rgba(241, 245, 249, 0.6); }
+.node-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-top: 1px solid #f1f5f9;
+}
+.node-meta {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+}
+.btn-delete {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  border-radius: 50%;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0;
+}
+.btn-delete:hover { background: #fee2e2; color: #ef4444; }
+.connector {
+  position: absolute;
+  right: -10px;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--node-color);
+  border: 3px solid #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  transform: translateY(-50%);
+  cursor: crosshair;
+  z-index: 5;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.connector:hover {
+  transform: translateY(-50%) scale(1.2);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
+}
+.toolbar {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  right: 312px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+  z-index: 100;
+  pointer-events: auto;
+  flex-wrap: wrap;
+}
+.toolbar h1 {
+  font-size: 18px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  white-space: nowrap;
+}
+.toolbar .controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.btn:hover { background: #f8fafc; border-color: #cbd5e1; }
+.btn.primary { background: #0f172a; color: #fff; border-color: #0f172a; }
+.btn.primary:hover { background: #1e293b; }
+.btn.danger { border-color: #fecaca; color: #ef4444; }
+.btn.danger:hover { background: #fef2f2; }
+.btn.icon { padding: 8px; min-width: 36px; }
+.sep { width: 1px; height: 20px; background: #e2e8f0; }
+.sidebar {
+  position: fixed;
+  top: 88px;
+  right: 16px;
+  width: 280px;
+  max-height: calc(100vh - 104px);
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+  z-index: 100;
+  pointer-events: auto;
+  padding: 16px;
+}
+.sidebar h2 {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+  margin: 0 0 12px;
+}
+.field { margin-bottom: 14px; }
+.field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+.field input,
+.field textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 14px;
+  font-family: inherit;
+  background: #fff;
+  color: #0f172a;
+  outline: none;
+}
+.field input:focus,
+.field textarea:focus { border-color: #94a3b8; }
+.field textarea { min-height: 100px; resize: vertical; }
+.palette { display: flex; gap: 8px; flex-wrap: wrap; }
+.color-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s;
+}
+.color-btn:hover { transform: scale(1.1); }
+.color-btn.active { border-color: #0f172a; transform: scale(1.15); }
+.legend { display: grid; gap: 8px; }
+.legend-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #475569; }
+.dot { width: 12px; height: 12px; border-radius: 50%; flex: none; }
+.empty-state { color: #64748b; font-size: 14px; line-height: 1.5; margin: 0; }
+.hint {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+  padding: 8px 14px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  font-size: 12px;
+  color: #64748b;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+  z-index: 100;
+  pointer-events: none;
+  max-width: calc(100% - 32px);
+}
+.toast {
+  position: fixed;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0f172a;
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s, bottom 0.3s;
+  z-index: 200;
+}
+.toast.show { opacity: 1; bottom: 70px; }
+@media (max-width: 800px) {
+  .toolbar { right: 16px; }
+  .sidebar { top: auto; bottom: 16px; right: 16px; left: 16px; width: auto; max-height: 40vh; }
+}
+</style>
+</head>
+<body>
+  <div class="toolbar" id="toolbar">
+    <h1>Customer Journey Flow</h1>
+    <div class="controls">
+      <button class="btn primary" id="addStageBtn">+ Add Stage</button>
+      <button class="btn" id="layoutBtn">Auto Layout</button>
+      <button class="btn" id="resetBtn">Reset</button>
+      <div class="sep"></div>
+      <button class="btn icon" id="zoomOutBtn" title="Zoom out">−</button>
+      <button class="btn icon" id="zoomInBtn" title="Zoom in">+</button>
+      <button class="btn" id="fitBtn">Fit</button>
+      <div class="sep"></div>
+      <button class="btn" id="exportBtn">Export</button>
+      <button class="btn" id="importBtn">Import</button>
+    </div>
+  </div>
+
+  <div class="sidebar" id="sidebar">
+    <h2 id="sidebarTitle">Journey Map</h2>
+    <div id="sidebarContent"></div>
+  </div>
+
+  <div class="hint" id="hint">Drag canvas to pan • Scroll to zoom • Drag connector to link</div>
+  <div class="toast" id="toast"></div>
+
+  <div id="viewport">
+    <div id="world">
+      <svg id="edges" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrowhead" viewBox="0 0 10 10" refX="0" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+            <path d="M0,5 L10,0 L10,10 Z" fill="#94a3b8"/>
+          </marker>
+        </defs>
+        <g id="edgeLayer"></g>
+        <path id="edgeTemp" d=""></path>
+      </svg>
+      <div id="nodes"></div>
+    </div>
+  </div>
+
+  <input type="file" id="importInput" accept="application/json,.json" style="display:none">
+
+<script>
+(function() {
+  const NODE_W = 260;
+  const NODE_H = 180;
+  const HALF_W = NODE_W / 2;
+  const HALF_H = NODE_H / 2;
+  const ARROW_LEN = 10;
+
+  const palette = {
+    blue: '#3b82f6', indigo: '#6366f1', violet: '#8b5cf6', purple: '#a855f7',
+    fuchsia: '#d946ef', rose: '#f43f5e', red: '#ef4444', orange: '#f97316',
+    amber: '#f59e0b', emerald: '#10b981', teal: '#14b8a6', cyan: '#06b6d4', slate: '#64748b'
+  };
+
+  const defaultData = {
+    nodes: [
+      { id: 'n1', title: 'Awareness', desc: 'Customer discovers your brand through ads, social media, or search.', x: 120, y: 260, color: 'blue' },
+      { id: 'n2', title: 'Interest', desc: 'Customer explores content and learns more about your products.', x: 440, y: 160, color: 'indigo' },
+      { id: 'n3', title: 'Consideration', desc: 'Customer compares alternatives and reads reviews or case studies.', x: 760, y: 260, color: 'violet' },
+      { id: 'n4', title: 'Intent', desc: 'Customer shows intent by adding to cart or requesting a demo.', x: 1080, y: 160, color: 'amber' },
+      { id: 'n5', title: 'Purchase', desc: 'Customer completes the transaction and becomes a buyer.', x: 1400, y: 260, color: 'emerald' }
+    ],
+    edges: [
+      { from: 'n1', to: 'n2' },
+      { from: 'n2', to: 'n3' },
+      { from: 'n3', to: 'n4' },
+      { from: 'n4', to: 'n5' }
+    ]
+  };
+
+  let nodes = [];
+  let edges = [];
+  let scale = 1;
+  let panX = 80;
+  let panY = 120;
+  let selectedNodeId = null;
+  let selectedEdgeIndex = null;
+  let tempConnection = null;
+
+  const viewport = document.getElementById('viewport');
+  const world = document.getElementById('world');
+  const nodesContainer = document.getElementById('nodes');
+  const edgeLayer = document.getElementById('edgeLayer');
+  const edgeTemp = document.getElementById('edgeTemp');
+  const sidebarContent = document.getElementById('sidebarContent');
+  const sidebarTitle = document.getElementById('sidebarTitle');
+  const toast = document.getElementById('toast');
+  const importInput = document.getElementById('importInput');
+
+  function loadData() {
+    try {
+      const raw = localStorage.getItem('cjf_data');
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (saved.nodes && saved.edges) {
+          return {
+            nodes: saved.nodes,
+            edges: saved.edges,
+            scale: typeof saved.scale === 'number' ? saved.scale : 1,
+            panX: typeof saved.panX === 'number' ? saved.panX : 80,
+            panY: typeof saved.panY === 'number' ? saved.panY : 120,
+            loaded: true
+          };
+        }
+      }
+    } catch (e) {}
+    return {
+      nodes: defaultData.nodes.map(n => ({ ...n })),
+      edges: defaultData.edges.map(e => ({ ...e })),
+      scale: 1,
+      panX: 80,
+      panY: 120,
+      loaded: false
+    };
+  }
+
+  function saveData() {
+    try {
+      localStorage.setItem('cjf_data', JSON.stringify({ nodes, edges, scale, panX, panY }));
+    } catch (e) {}
+  }
+
+  function getColor(name) { return palette[name] || palette.slate; }
+  function getNodeById(id) { return nodes.find(n => n.id === id); }
+  function getNodeEl(id) { return nodesContainer.querySelector('.node[data-id="' + id + '"]'); }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function screenToWorld(sx, sy) {
+    return { x: (sx - panX) / scale, y: (sy - panY) / scale };
+  }
+
+  function updateWorldTransform() {
+    world.style.transform = 'translate(' + panX + 'px, ' + panY + 'px) scale(' + scale + ')';
+  }
+
+  function showToast(message) {
+    toast.textContent = message;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2000);
+  }
+
+  function createNodeEl(n) {
+    const el = document.createElement('div');
+    el.className = 'node' + (selectedNodeId === n.id ? ' selected' : '');
+    el.dataset.id = n.id;
+    el.style.setProperty('--node-color', getColor(n.color));
+    el.style.transform = 'translate(' + n.x + 'px, ' + n.y + 'px)';
+    el.innerHTML =
+      '<div class="node-header">' +
+        '<div class="node-badge"></div>' +
+        '<input type="text" class="node-title" value="' + escapeHtml(n.title) + '" placeholder="Stage name">' +
+        '<div class="connector" title="Drag to connect"></div>' +
+      '</div>' +
+      '<div class="node-body">' +
+        '<textarea class="node-desc" placeholder="Describe this step...">' + escapeHtml(n.desc) + '</textarea>' +
+      '</div>' +
+      '<div class="node-footer">' +
+        '<span class="node-meta">Stage</span>' +
+        '<button class="btn-delete" title="Delete stage">×</button>' +
+      '</div>';
+    return el;
+  }
+
+  function renderNodes() {
+    nodesContainer.innerHTML = '';
+    nodes.forEach(n => {
+      nodesContainer.appendChild(createNodeEl(n));
+    });
+    updateNumbers();
+  }
+
+  function updateNumbers() {
+    const sorted = [...nodes].map((n, i) => ({ n, i })).sort((a, b) => a.n.x - b.n.x);
+    sorted.forEach(({ n }, order) => {
+      const el = getNodeEl(n.id);
+      if (el) el.querySelector('.node-badge').textContent = order + 1;
+    });
+  }
+
+  function getBorderPoint(cx, cy, dx, dy, halfW, halfH, offset) {
+    const adx = Math.abs(dx), ady = Math.abs(dy);
+    const tx = adx > 0 ? halfW / adx : Infinity;
+    const ty = ady > 0 ? halfH / ady : Infinity;
+    let t = Math.min(tx, ty);
+    if (!isFinite(t)) t = 0;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    return { x: cx + dx * t + ux * offset, y: cy + dy * t + uy * offset };
+  }
+
+  function getNodeBorderPoint(id, targetX, targetY) {
+    const n = getNodeById(id);
+    const cx = n.x + HALF_W, cy = n.y + HALF_H;
+    const dx = targetX - cx, dy = targetY - cy;
+    return getBorderPoint(cx, cy, dx, dy, HALF_W, HALF_H, 0);
+  }
+
+  function computeEdgePoints(src, dst) {
+    const scx = src.x + HALF_W, scy = src.y + HALF_H;
+    const dcx = dst.x + HALF_W, dcy = dst.y + HALF_H;
+    const dx = dcx - scx, dy = dcy - scy;
+    const len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    const start = getBorderPoint(scx, scy, dx, dy, HALF_W, HALF_H, 0);
+    const targetBorder = getBorderPoint(dcx, dcy, -dx, -dy, HALF_W, HALF_H, 0);
+    const end = { x: targetBorder.x - ux * ARROW_LEN, y: targetBorder.y - uy * ARROW_LEN };
+    return { start, end };
+  }
+
+  function bezierPath(s, e) {
+    const dx = e.x - s.x, dy = e.y - s.y;
+    return 'M ' + s.x + ' ' + s.y + ' C ' + (s.x + dx * 0.5) + ' ' + s.y + ', ' + (e.x - dx * 0.5) + ' ' + e.y + ', ' + e.x + ' ' + e.y;
+  }
+
+  function drawEdges() {
+    edgeLayer.innerHTML = '';
+    edges.forEach((edge, i) => {
+      const src = getNodeById(edge.from);
+      const dst = getNodeById(edge.to);
+      if (!src || !dst) return;
+      const p = computeEdgePoints(src, dst);
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('class', 'edge' + (selectedEdgeIndex === i ? ' selected' : ''));
+      path.setAttribute('d', bezierPath(p.start, p.end));
+      path.setAttribute('marker-end', 'url(#arrowhead)');
+      path.dataset.index = i;
+      edgeLayer.appendChild(path);
+    });
+  }
+
+  function findNodeAtScreen(sx, sy) {
+    const elements = document.elementsFromPoint(sx, sy);
+    for (let i = 0; i < elements.length; i++) {
+      const node = elements[i].closest && elements[i].closest('.node');
+      if (node) return node;
+    }
+    return null;
+  }
+
+  function selectNode(id) {
+    selectedNodeId = id;
+    selectedEdgeIndex = null;
+    document.querySelectorAll('.node.selected').forEach(el => el.classList.remove('selected'));
+    if (id) {
+      const el = getNodeEl(id);
+      if (el) el.classList.add('selected');
+    }
+    drawEdges();
+    updateSidebar();
+  }
+
+  function selectEdge(index) {
+    selectedEdgeIndex = index;
+    selectedNodeId = null;
+    document.querySelectorAll('.node.selected').forEach(el => el.classList.remove('selected'));
+    drawEdges();
+    updateSidebar();
+  }
+
+  function deselectAll() {
+    selectedNodeId = null;
+    selectedEdgeIndex = null;
+    document.querySelectorAll('.node.selected').forEach(el => el.classList.remove('selected'));
+    drawEdges();
+    updateSidebar();
+  }
+
+  function deleteNode(id) {
+    nodes = nodes.filter(n => n.id !== id);
+    edges = edges.filter(e => e.from !== id && e.to !== id);
+    if (selectedNodeId === id) deselectAll();
+    renderNodes();
+    drawEdges();
+    saveData();
+    showToast('Stage deleted');
+  }
+
+  function addNodeAt(x, y, title) {
+    const id = 'n' + Date.now();
+    const color = Object.keys(palette)[Math.floor(Math.random() * (Object.keys(palette).length - 1))];
+    const n = {
+      id,
+      title: title || 'New Stage',
+      desc: 'Describe this customer step.',
+      x: x - HALF_W,
+      y: y - HALF_H,
+      color
+    };
+    nodes.push(n);
+    renderNodes();
+    selectNode(id);
+    drawEdges();
+    saveData();
+    showToast('Stage added');
+  }
+
+  function addNode() {
+    const cx = (viewport.clientWidth / 2 - panX) / scale;
+    const cy = (viewport.clientHeight / 2 - panY) / scale;
+    addNodeAt(cx, cy, 'New Stage');
+  }
+
+  function autoLayout() {
+    const sorted = [...nodes].sort((a, b) => a.x - b.x);
+    const gap = NODE_W + 80;
+    sorted.forEach((n, i) => {
+      n.x = 100 + i * gap;
+      n.y = 160 + (i % 2) * 120;
+      const el = getNodeEl(n.id);
+      if (el) el.style.transform = 'translate(' + n.x + 'px, ' + n.y + 'px)';
+    });
+    drawEdges();
+    updateNumbers();
+    fitView();
+    saveData();
+    showToast('Auto layout applied');
+  }
+
+  function fitView() {
+    if (nodes.length === 0) return;
+    const xs = nodes.map(n => n.x), ys = nodes.map(n => n.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs) + NODE_W;
+    const minY = Math.min(...ys), maxY = Math.max(...ys) + NODE_H;
+    const padding = 100;
+    const vw = viewport.clientWidth, vh = viewport.clientHeight;
+    const scaleX = (vw - padding * 2) / (maxX - minX);
+    const scaleY = (vh - padding * 2) / (maxY - minY);
+    scale = Math.min(scaleX, scaleY, 1.5);
+    scale = Math.max(scale, 0.2);
+    panX = padding - minX * scale;
+    panY = padding - minY * scale;
+    updateWorldTransform();
+    saveData();
+  }
+
+  function zoomAt(sx, sy, factor) {
+    const before = screenToWorld(sx, sy);
+    scale = Math.min(Math.max(scale * factor, 0.2), 4);
+    panX = sx - before.x * scale;
+    panY = sy - before.y * scale;
+    updateWorldTransform();
+    saveData();
+  }
+
+  function zoomAtCenter(factor) {
+    zoomAt(viewport.clientWidth / 2, viewport.clientHeight / 2, factor);
+  }
+
+  function exportJSON() {
+    const blob = new Blob([JSON.stringify({ nodes, edges }, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'customer-journey-flow.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('Exported JSON');
+  }
+
+  function importJSON(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (data.nodes && data.edges) {
+          nodes = data.nodes;
+          edges = data.edges;
+          deselectAll();
+          renderNodes();
+          drawEdges();
+          fitView();
+          saveData();
+          showToast('Imported journey');
+        } else {
+          showToast('Invalid journey file');
+        }
+      } catch (e) {
+        showToast('Could not read JSON');
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function renderColorPalette(activeColor) {
+    return Object.keys(palette).map(name => {
+      const active = name === activeColor ? ' active' : '';
+      return '<button class="color-btn' + active + '" data-color="' + name + '" style="background:' + palette[name] + '" title="' + name + '"></button>';
+    }).join('');
+  }
+
+  function updateSidebar() {
+    if (selectedNodeId) {
+      const n = getNodeById(selectedNodeId);
+      const incoming = edges.filter(e => e.to === n.id).length;
+      const outgoing = edges.filter(e => e.from === n.id).length;
+      sidebarTitle.textContent = 'Stage Properties';
+      sidebarContent.innerHTML =
+        '<div class="field"><label>Stage name</label><input id="sb-title" type="text" value="' + escapeHtml(n.title) + '"></div>' +
+        '<div class="field"><label>Description</label><textarea id="sb-desc">' + escapeHtml(n.desc) + '</textarea></div>' +
+        '<div class="field"><label>Color</label><div class="palette">' + renderColorPalette(n.color) + '</div></div>' +
+        '<div class="field"><label>Connections</label><p style="font-size:13px;color:#64748b;margin:0;">Incoming: ' + incoming + ' &nbsp;•&nbsp; Outgoing: ' + outgoing + '</p></div>' +
+        '<button id="sb-delete-node" class="btn danger" style="width:100%;">Delete Stage</button>';
+    } else if (selectedEdgeIndex !== null) {
+      const edge = edges[selectedEdgeIndex];
+      const from = edge && getNodeById(edge.from);
+      const to = edge && getNodeById(edge.to);
+      sidebarTitle.textContent = 'Connection';
+      sidebarContent.innerHTML =
+        '<p class="empty-state">From <strong>' + (from ? escapeHtml(from.title) : 'Unknown') + '</strong> to <strong>' + (to ? escapeHtml(to.title) : 'Unknown') + '</strong></p>' +
+        '<button id="sb-delete-edge" class="btn danger" style="width:100%;margin-top:12px;">Delete Connection</button>';
+    } else {
+      sidebarTitle.textContent = 'Journey Map';
+      sidebarContent.innerHTML =
+        '<p class="empty-state">Select a stage to edit its details, or drag the connector dot to create a new path between stages.</p>' +
+        '<div class="legend" style="margin-top:16px;">' +
+          '<div class="legend-item"><span class="dot" style="background:#3b82f6"></span> Awareness</div>' +
+          '<div class="legend-item"><span class="dot" style="background:#6366f1"></span> Interest</div>' +
+          '<div class="legend-item"><span class="dot" style="background:#8b5cf6"></span> Consideration</div>' +
+          '<div class="legend-item"><span class="dot" style="background:#f59e0b"></span> Intent</div>' +
+          '<div class="legend-item"><span class="dot" style="background:#10b981"></span> Purchase</div>' +
+        '</div>';
+    }
+  }
+
+  function startDragNode(e, id) {
+    const el = getNodeEl(id);
+    const n = getNodeById(id);
+    const world = screenToWorld(e.clientX, e.clientY);
+    const start = { wx: world.x, wy: world.y, nodeX: n.x, nodeY: n.y };
+    el.setPointerCapture(e.pointerId);
+    el.classList.add('dragging');
+
+    function move(ev) {
+      const w = screenToWorld(ev.clientX, ev.clientY);
+      n.x = start.nodeX + (w.x - start.wx);
+      n.y = start.nodeY + (w.y - start.wy);
+      el.style.transform = 'translate(' + n.x + 'px, ' + n.y + 'px)';
+      drawEdges();
+    }
+    function up(ev) {
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.releasePointerCapture(ev.pointerId);
+      el.classList.remove('dragging');
+      updateNumbers();
+      saveData();
+    }
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+  }
+
+  function startPan(e) {
+    const start = { sx: e.clientX, sy: e.clientY, panX: panX, panY: panY };
+    viewport.setPointerCapture(e.pointerId);
+    viewport.classList.add('panning');
+
+    function move(ev) {
+      panX = start.panX + (ev.clientX - start.sx);
+      panY = start.panY + (ev.clientY - start.sy);
+      updateWorldTransform();
+    }
+    function up(ev) {
+      viewport.removeEventListener('pointermove', move);
+      viewport.removeEventListener('pointerup', up);
+      viewport.releasePointerCapture(ev.pointerId);
+      viewport.classList.remove('panning');
+      saveData();
+    }
+    viewport.addEventListener('pointermove', move);
+    viewport.addEventListener('pointerup', up);
+  }
+
+  function startConnect(e, id) {
+    const handle = e.target.closest('.connector');
+    const world = screenToWorld(e.clientX, e.clientY);
+    const anchor = getNodeBorderPoint(id, world.x, world.y);
+    tempConnection = { from: id, sx: anchor.x, sy: anchor.y };
+    edgeTemp.style.opacity = 1;
+    drawTempPath(world.x, world.y);
+    handle.setPointerCapture(e.pointerId);
+
+    function move(ev) {
+      const w = screenToWorld(ev.clientX, ev.clientY);
+      const a = getNodeBorderPoint(id, w.x, w.y);
+      tempConnection.sx = a.x;
+      tempConnection.sy = a.y;
+      drawTempPath(w.x, w.y);
+    }
+    function up(ev) {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.releasePointerCapture(ev.pointerId);
+      const targetEl = findNodeAtScreen(ev.clientX, ev.clientY);
+      if (targetEl) {
+        const toId = targetEl.dataset.id;
+        if (toId !== id) {
+          const exists = edges.some(ed => ed.from === id && ed.to === toId);
+          if (!exists) {
+            edges.push({ from: id, to: toId });
+            saveData();
+            drawEdges();
+            showToast('Connection added');
+          }
+        }
+      }
+      tempConnection = null;
+      edgeTemp.style.opacity = 0;
+      edgeTemp.setAttribute('d', '');
+    }
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+  }
+
+  function drawTempPath(mx, my) {
+    if (!tempConnection) return;
+    edgeTemp.setAttribute('d', 'M ' + tempConnection.sx + ' ' + tempConnection.sy + ' L ' + mx + ' ' + my);
+  }
+
+  function setupEvents() {
+    nodesContainer.addEventListener('pointerdown', e => {
+      const nodeEl = e.target.closest('.node');
+      if (!nodeEl) return;
+      const id = nodeEl.dataset.id;
+      if (e.target.closest('.connector')) {
+        e.stopPropagation();
+        startConnect(e, id);
+        return;
+      }
+      if (e.target.closest('.btn-delete')) {
+        e.stopPropagation();
+        deleteNode(id);
+        return;
+      }
+      if (e.target.closest('.node-title, .node-desc')) {
+        e.stopPropagation();
+        selectNode(id);
+        return;
+      }
+      e.stopPropagation();
+      selectNode(id);
+      startDragNode(e, id);
+    });
+
+    nodesContainer.addEventListener('input', e => {
+      const title = e.target.closest('.node-title');
+      const desc = e.target.closest('.node-desc');
+      if (!title && !desc) return;
+      const nodeEl = e.target.closest('.node');
+      const n = getNodeById(nodeEl.dataset.id);
+      if (title) n.title = title.value;
+      if (desc) n.desc = desc.value;
+      saveData();
+      if (selectedNodeId === n.id) updateSidebar();
+    });
+
+    edgeLayer.addEventListener('pointerdown', e => {
+      const edge = e.target.closest('.edge');
+      if (!edge) return;
+      e.stopPropagation();
+      selectEdge(+edge.dataset.index);
+    });
+
+    viewport.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      if (e.target.closest('.node, .edge, .toolbar, .sidebar')) return;
+      deselectAll();
+      startPan(e);
+    });
+
+    viewport.addEventListener('wheel', e => {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.1 : 0.9;
+      zoomAt(e.clientX, e.clientY, factor);
+    }, { passive: false });
+
+    viewport.addEventListener('dblclick', e => {
+      if (e.target.closest('.node, .toolbar, .sidebar')) return;
+      const world = screenToWorld(e.clientX, e.clientY);
+      addNodeAt(world.x, world.y, 'New Stage');
+    });
+
+    sidebarContent.addEventListener('input', e => {
+      if (!selectedNodeId) return;
+      const n = getNodeById(selectedNodeId);
+      if (e.target.id === 'sb-title') {
+        n.title = e.target.value;
+        const el = getNodeEl(selectedNodeId);
+        if (el) el.querySelector('.node-title').value = n.title;
+        saveData();
+      } else if (e.target.id === 'sb-desc') {
+        n.desc = e.target.value;
+        const el = getNodeEl(selectedNodeId);
+        if (el) el.querySelector('.node-desc').value = n.desc;
+        saveData();
+      }
+    });
+
+    sidebarContent.addEventListener('click', e => {
+      if (e.target.dataset.color) {
+        if (!selectedNodeId) return;
+        const n = getNodeById(selectedNodeId);
+        n.color = e.target.dataset.color;
+        const el = getNodeEl(selectedNodeId);
+        if (el) {
+          el.style.setProperty('--node-color', getColor(n.color));
+          el.querySelector('.node-badge').style.color = getColor(n.color);
+        }
+        selectNode(selectedNodeId);
+        saveData();
+      } else if (e.target.id === 'sb-delete-node') {
+        deleteNode(selectedNodeId);
+      } else if (e.target.id === 'sb-delete-edge') {
+        if (selectedEdgeIndex !== null) {
+          edges.splice(selectedEdgeIndex, 1);
+          selectedEdgeIndex = null;
+          saveData();
+          drawEdges();
+          updateSidebar();
+        }
+      }
+    });
+
+    window.addEventListener('keydown', e => {
+      if (e.target.closest('[contenteditable="true"], input, textarea')) return;
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedNodeId) {
+          deleteNode(selectedNodeId);
+        } else if (selectedEdgeIndex !== null) {
+          edges.splice(selectedEdgeIndex, 1);
+          selectedEdgeIndex = null;
+          saveData();
+          drawEdges();
+          updateSidebar();
+        }
+      } else if (e.key === 'Escape') {
+        deselectAll();
+      }
+    });
+
+    document.getElementById('addStageBtn').addEventListener('click', addNode);
+    document.getElementById('layoutBtn').addEventListener('click', autoLayout);
+    document.getElementById('resetBtn').addEventListener('click', () => {
+      if (confirm('Reset to the demo journey? This will replace your current map.')) {
+        const d = { ...defaultData, scale: 1, panX: 80, panY: 120 };
+        nodes = d.nodes.map(n => ({ ...n }));
+        edges = d.edges.map(e => ({ ...e }));
+        scale = 1; panX = 80; panY = 120;
+        deselectAll();
+        renderNodes();
+        drawEdges();
+        updateWorldTransform();
+        fitView();
+        saveData();
+        showToast('Demo journey reset');
+      }
+    });
+    document.getElementById('zoomInBtn').addEventListener('click', () => zoomAtCenter(1.2));
+    document.getElementById('zoomOutBtn').addEventListener('click', () => zoomAtCenter(0.8));
+    document.getElementById('fitBtn').addEventListener('click', fitView);
+    document.getElementById('exportBtn').addEventListener('click', exportJSON);
+    document.getElementById('importBtn').addEventListener('click', () => importInput.click());
+    importInput.addEventListener('change', e => {
+      if (e.target.files && e.target.files[0]) importJSON(e.target.files[0]);
+      importInput.value = '';
+    });
+  }
+
+  const data = loadData();
+  nodes = data.nodes;
+  edges = data.edges;
+  scale = data.scale;
+  panX = data.panX;
+  panY = data.panY;
+
+  renderNodes();
+  drawEdges();
+  updateWorldTransform();
+  updateSidebar();
+  setupEvents();
+
+  if (!data.loaded) fitView();
+})();
+</script>
+</body>
+</html>

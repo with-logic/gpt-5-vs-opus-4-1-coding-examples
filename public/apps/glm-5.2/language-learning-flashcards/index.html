@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Lingo Flip — Travel Flashcards</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg1:#0b1020; --bg2:#1a1140; --bg3:#2a1a5e;
+    --glass: rgba(255,255,255,.08);
+    --glass-brd: rgba(255,255,255,.14);
+  }
+  *{ -webkit-tap-highlight-color: transparent; }
+  html,body{ height:100%; }
+  body{
+    font-family:'Inter','Noto Sans JP',system-ui,sans-serif;
+    color:#f4f4ff;
+    background:
+      radial-gradient(1200px 800px at 10% -10%, #3a2a7a 0%, transparent 55%),
+      radial-gradient(1000px 700px at 100% 0%, #6d28d9 0%, transparent 50%),
+      radial-gradient(900px 900px at 50% 120%, #1e3a8a 0%, transparent 55%),
+      linear-gradient(160deg, var(--bg1), var(--bg2) 50%, var(--bg3));
+    background-attachment: fixed;
+    overflow-x:hidden;
+  }
+  .font-jp{ font-family:'Noto Sans JP','Inter',sans-serif; }
+
+  /* Floating ambient orbs */
+  .orb{ position:fixed; border-radius:9999px; filter:blur(70px); opacity:.45; z-index:0; pointer-events:none; }
+  .orb.a{ width:380px;height:380px; background:#7c3aed; top:-120px; left:-100px; animation:float1 18s ease-in-out infinite; }
+  .orb.b{ width:300px;height:300px; background:#2563eb; bottom:-120px; right:-80px; animation:float2 22s ease-in-out infinite; }
+  .orb.c{ width:240px;height:240px; background:#db2777; top:40%; right:10%; opacity:.25; animation:float1 26s ease-in-out infinite; }
+  @keyframes float1{ 0%,100%{ transform:translate(0,0) } 50%{ transform:translate(40px,30px) } }
+  @keyframes float2{ 0%,100%{ transform:translate(0,0) } 50%{ transform:translate(-50px,-30px) } }
+
+  .glass{
+    background:var(--glass);
+    backdrop-filter:blur(16px) saturate(140%);
+    -webkit-backdrop-filter:blur(16px) saturate(140%);
+    border:1px solid var(--glass-brd);
+  }
+
+  /* 3D flip */
+  .scene{ perspective:1400px; }
+  .card-inner{
+    position:relative; width:100%; height:100%;
+    transform-style:preserve-3d;
+    transition:transform .65s cubic-bezier(.2,.85,.25,1);
+    will-change:transform;
+  }
+  .card-inner.flipped{ transform:rotateY(180deg); }
+  .card-face{
+    position:absolute; inset:0;
+    backface-visibility:hidden; -webkit-backface-visibility:hidden;
+    border-radius:26px;
+    overflow:hidden;
+    display:flex; flex-direction:column; justify-content:center; align-items:center;
+    padding:40px 28px;
+    box-shadow:0 30px 60px -20px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.25);
+  }
+  .card-back{ transform:rotateY(180deg); }
+  .card-face::after{
+    content:""; position:absolute; inset:0;
+    background:linear-gradient(135deg, rgba(255,255,255,.18), transparent 40%, rgba(0,0,0,.12));
+    pointer-events:none;
+  }
+
+  /* Entry animations applied to .scene */
+  .anim-right{ animation:slideR .5s cubic-bezier(.2,.8,.25,1) both; }
+  .anim-left{ animation:slideL .5s cubic-bezier(.2,.8,.25,1) both; }
+  .anim-shuffle{ animation:shuffleIn .55s cubic-bezier(.2,.8,.25,1) both; }
+  .anim-pop{ animation:popIn .45s cubic-bezier(.2,.8,.25,1) both; }
+  @keyframes slideR{ from{opacity:0; transform:translateX(60px) scale(.96)} to{opacity:1; transform:translateX(0) scale(1)} }
+  @keyframes slideL{ from{opacity:0; transform:translateX(-60px) scale(.96)} to{opacity:1; transform:translateX(0) scale(1)} }
+  @keyframes shuffleIn{
+    0%{opacity:0; transform:translateY(18px) scale(.86) rotate(-4deg)}
+    60%{opacity:1; transform:translateY(-4px) scale(1.02) rotate(1deg)}
+    100%{opacity:1; transform:translateY(0) scale(1) rotate(0)}
+  }
+  @keyframes popIn{ from{opacity:0; transform:scale(.9)} to{opacity:1; transform:scale(1)} }
+
+  /* Learned badge pop */
+  .badge-pop{ animation:badgePop .5s cubic-bezier(.2,.8,.25,1) both; }
+  @keyframes badgePop{
+    0%{ opacity:0; transform:scale(0) rotate(-30deg) }
+    60%{ transform:scale(1.25) rotate(8deg) }
+    100%{ opacity:1; transform:scale(1) rotate(0) }
+  }
+
+  /* Learned ring glow on card front */
+  .is-learned .card-front{ box-shadow:0 30px 60px -20px rgba(0,0,0,.55), inset 0 0 0 3px rgba(74,222,128,.9), inset 0 1px 0 rgba(255,255,255,.25); }
+
+  /* Buttons */
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    padding:12px 18px; border-radius:14px; font-weight:600; font-size:14px;
+    transition:transform .15s ease, background .2s ease, box-shadow .2s ease, opacity .2s;
+    user-select:none; cursor:pointer; border:1px solid transparent;
+  }
+  .btn:active{ transform:scale(.96); }
+  .btn-primary{ background:linear-gradient(135deg,#7c3aed,#6366f1); color:#fff; box-shadow:0 10px 24px -8px rgba(124,58,237,.7); }
+  .btn-primary:hover{ box-shadow:0 14px 30px -8px rgba(124,58,237,.85); }
+  .btn-ghost{ background:rgba(255,255,255,.08); border-color:var(--glass-brd); color:#eef; }
+  .btn-ghost:hover{ background:rgba(255,255,255,.16); }
+  .btn-learned{ background:linear-gradient(135deg,#16a34a,#22c55e); color:#fff; box-shadow:0 10px 24px -8px rgba(34,197,94,.7); }
+
+  /* Lang select tiles */
+  .lang-tile{
+    position:relative; border-radius:22px; padding:30px 22px; cursor:pointer;
+    transition:transform .25s cubic-bezier(.2,.8,.25,1), box-shadow .25s;
+    overflow:hidden; border:1px solid var(--glass-brd);
+  }
+  .lang-tile:hover{ transform:translateY(-6px) scale(1.02); }
+  .lang-tile .flag{ font-size:54px; line-height:1; filter:drop-shadow(0 6px 12px rgba(0,0,0,.4)); }
+  .lang-tile::after{
+    content:""; position:absolute; inset:0;
+    background:linear-gradient(180deg, transparent 30%, rgba(0,0,0,.25));
+    pointer-events:none;
+  }
+
+  /* Progress bar */
+  .progress-track{ background:rgba(255,255,255,.12); border-radius:999px; height:10px; overflow:hidden; }
+  .progress-fill{ height:100%; background:linear-gradient(90deg,#34d399,#22c55e,#16a34a); border-radius:999px; transition:width .6s cubic-bezier(.2,.8,.25,1); box-shadow:0 0 16px rgba(34,197,94,.6); }
+
+  /* Dots */
+  .dot{ width:10px; height:10px; border-radius:999px; background:rgba(255,255,255,.22); transition:all .25s; cursor:pointer; }
+  .dot.current{ background:#fff; transform:scale(1.5); box-shadow:0 0 10px rgba(255,255,255,.8); }
+  .dot.learned{ background:#22c55e; }
+  .dot.learned.current{ background:#4ade80; }
+
+  .screen{ transition:opacity .4s ease, transform .4s ease; }
+  .screen.hidden-screen{ opacity:0; transform:translateY(10px); pointer-events:none; position:absolute; inset:0; }
+
+  .select-clean{ appearance:none; -webkit-appearance:none; background:rgba(255,255,255,.08); border:1px solid var(--glass-brd); color:#eef; border-radius:12px; padding:8px 30px 8px 12px; font-size:13px; font-weight:600; cursor:pointer; background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23eef' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>"); background-repeat:no-repeat; background-position:right 9px center; }
+  .select-clean option{ background:#1a1140; color:#fff; }
+
+  .celebrate{ animation:celebrate .8s ease both; }
+  @keyframes celebrate{ 0%{transform:scale(.8);opacity:0} 50%{transform:scale(1.05)} 100%{transform:scale(1);opacity:1} }
+
+  /* Confetti */
+  .confetti{ position:fixed; width:10px; height:14px; top:-20px; z-index:50; pointer-events:none; border-radius:2px; }
+</style>
+</head>
+<body class="min-h-screen relative">
+  <div class="orb a"></div><div class="orb b"></div><div class="orb c"></div>
+
+  <div class="relative z-10 min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="px-5 sm:px-8 py-5 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-11 h-11 rounded-2xl flex items-center justify-center text-xl" style="background:linear-gradient(135deg,#7c3aed,#6366f1); box-shadow:0 8px 20px -6px rgba(124,58,237,.8)">🌐</div>
+        <div>
+          <h1 class="text-lg sm:text-xl font-extrabold tracking-tight leading-none">Lingo Flip</h1>
+          <p id="brandSub" class="text-[11px] sm:text-xs text-white/60 font-medium mt-1"></p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="hidden sm:flex items-center gap-2 text-xs text-white/60 font-medium">
+          <span id="uiLangLabel"></span>
+          <select id="uiLangSelect" class="select-clean"></select>
+        </label>
+        <select id="uiLangSelectMobile" class="select-clean sm:hidden"></select>
+      </div>
+    </header>
+
+    <!-- Main -->
+    <main class="flex-1 flex items-center justify-center px-5 sm:px-8 pb-10 relative">
+
+      <!-- ============ SELECT SCREEN ============ -->
+      <section id="selectScreen" class="screen w-full max-w-4xl mx-auto text-center">
+        <div class="anim-pop">
+          <span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-widest text-white/60 glass rounded-full px-4 py-1.5 mb-6">✈️ <span id="selectTag"></span></span>
+          <h2 id="selectPrompt" class="text-3xl sm:text-5xl font-extrabold tracking-tight leading-tight"></h2>
+          <p id="selectHint" class="text-white/60 mt-3 text-sm sm:text-base mb-10"></p>
+        </div>
+
+        <div id="langGrid" class="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-5"></div>
+
+        <p class="text-white/40 text-xs mt-10" id="selectFoot"></p>
+      </section>
+
+      <!-- ============ STUDY SCREEN ============ -->
+      <section id="studyScreen" class="screen hidden-screen w-full max-w-2xl mx-auto">
+        <!-- Top bar: progress -->
+        <div class="glass rounded-2xl p-4 sm:p-5 mb-5">
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <button id="backBtn" class="btn btn-ghost !py-2 !px-3 !text-xs">
+              <span style="font-size:14px">←</span> <span id="backLabel"></span>
+            </button>
+            <div class="text-right">
+              <div id="progressLabel" class="text-sm font-bold"></div>
+              <div id="cardCount" class="text-[11px] text-white/50 font-medium"></div>
+            </div>
+          </div>
+          <div class="progress-track"><div id="progressFill" class="progress-fill" style="width:0%"></div></div>
+          <div id="dotsRow" class="flex items-center justify-center gap-2 mt-4 flex-wrap"></div>
+        </div>
+
+        <!-- Card -->
+        <div id="cardWrap" class="scene mx-auto" style="width:100%; max-width:420px; height:300px;">
+          <div id="cardInner" class="card-inner">
+            <div id="cardFront" class="card-face card-front"></div>
+            <div id="cardBack" class="card-face card-back glass" style="background:rgba(255,255,255,.92); color:#1a1140;"></div>
+          </div>
+        </div>
+
+        <p id="flipHint" class="text-center text-white/45 text-xs mt-4 mb-5"></p>
+
+        <!-- Controls -->
+        <div class="flex items-center justify-center gap-2 sm:gap-3 flex-wrap">
+          <button id="prevBtn" class="btn btn-ghost"><span style="font-size:16px">‹</span> <span id="prevLabel"></span></button>
+          <button id="shuffleBtn" class="btn btn-primary">🔀 <span id="shuffleLabel"></span></button>
+          <button id="learnedBtn" class="btn btn-learned">✓ <span id="learnedLabel"></span></button>
+          <button id="nextBtn" class="btn btn-ghost"><span id="nextLabel"></span> <span style="font-size:16px">›</span></button>
+        </div>
+
+        <div class="flex items-center justify-center gap-3 mt-5">
+          <button id="resetBtn" class="text-xs text-white/45 hover:text-white/80 underline underline-offset-4 transition"></button>
+        </div>
+
+        <!-- Celebration banner -->
+        <div id="celebrateBanner" class="hidden glass rounded-2xl p-5 mt-6 text-center celebrate">
+          <div class="text-3xl mb-2">🎉</div>
+          <p id="celebrateText" class="font-bold text-base"></p>
+          <p id="celebrateSub" class="text-white/60 text-sm mt-1"></p>
+        </div>
+      </section>
+
+    </main>
+
+    <footer class="text-center text-white/30 text-[11px] pb-5 px-4">Lingo Flip · 10 travel phrases · tap card to flip</footer>
+  </div>
+
+<script>
+/* ============================================================
+   Lingo Flip — single-file language flashcards
+   ============================================================ */
+
+const LANGS = [
+  { code:'en', name:'English',  flag:'🇺🇸', grad:'linear-gradient(135deg,#10b981,#0d9488)' },
+  { code:'es', name:'Español',  flag:'🇪🇸', grad:'linear-gradient(135deg,#f59e0b,#ea580c)' },
+  { code:'fr', name:'Français', flag:'🇫🇷', grad:'linear-gradient(135deg,#3b82f6,#4f46e5)' },
+  { code:'ja', name:'日本語',    flag:'🇯🇵', grad:'linear-gradient(135deg,#fb7185,#dc2626)' },
+];
+const LANG_BY_CODE = Object.fromEntries(LANGS.map(l=>[l.code,l]));
+
+/* 10 travel phrases — each with translation in all four languages.
+   ja uses {text, romaji}; others are plain strings. */
+const PHRASES = [
+  { icon:'👋', en:'Hello',                    es:'Hola',                    fr:'Bonjour',                  ja:{text:'こんにちは',romaji:'Konnichiwa'} },
+  { icon:'🙏', en:'Thank you',                es:'Gracias',                 fr:'Merci',                    ja:{text:'ありがとう',romaji:'Arigatō'} },
+  { icon:'🚻', en:'Where is the restroom?',   es:'¿Dónde está el baño?',    fr:'Où sont les toilettes ?',  ja:{text:'トイレはどこですか？',romaji:'Toire wa doko desu ka?'} },
+  { icon:'💰', en:'How much is this?',        es:'¿Cuánto cuesta esto?',    fr:'Combien ça coûte ?',       ja:{text:'これはいくらですか？',romaji:'Kore wa ikura desu ka?'} },
+  { icon:'☕', en:"I'd like a coffee, please.",es:'Quisiera un café, por favor.', fr:'Je voudrais un café, s\'il vous plaît.', ja:{text:'コーヒーをお願いします',romaji:'Kōhī o onegaishimasu'} },
+  { icon:'🤝', en:'Can you help me?',         es:'¿Puede ayudarme?',        fr:'Pouvez-vous m\'aider ?',   ja:{text:'手伝ってくれますか？',romaji:'Tetsudatte kuremasu ka?'} },
+  { icon:'🚆', en:'Where is the train station?',es:'¿Dónde está la estación de tren?', fr:'Où est la gare ?',     ja:{text:'駅はどこですか？',romaji:'Eki wa doko desu ka?'} },
+  { icon:'🤷', en:"I don't understand.",      es:'No entiendo.',            fr:'Je ne comprends pas.',     ja:{text:'わかりません',romaji:'Wakarimasen'} },
+  { icon:'🙇', en:'Excuse me.',               es:'Disculpe.',               fr:'Excusez-moi.',             ja:{text:'すみません',romaji:'Sumimasen'} },
+  { icon:'👋', en:'Goodbye.',                 es:'Adiós.',                  fr:'Au revoir.',               ja:{text:'さようなら',romaji:'Sayōnara'} },
+];
+
+/* UI strings per interface language */
+const I18N = {
+  en:{
+    brandSub:'Travel-ready flashcards', selectTag:'Travel essentials', selectPrompt:'Which language would you like to learn?',
+    selectHint:'Pick one to start flipping cards.', selectFoot:'10 useful phrases for your next trip.',
+    back:'Change language', shuffle:'Shuffle', learned:'Mark learned', unlearn:'Unmark', prev:'Prev', next:'Next',
+    flipHint:'Tap the card to flip it', progressLabel:'Learned', cardOf:'Card {n} of {total}',
+    uiLang:'Interface', reset:'Reset progress', celebrate:'All phrases learned — nice work!', celebrateSub:'Keep practicing to stay sharp.', review:'Keep practicing',
+  },
+  es:{
+    brandSub:'Tarjetas para viajar', selectTag:'Lo esencial del viaje', selectPrompt:'¿Qué idioma te gustaría aprender?',
+    selectHint:'Elige uno para empezar.', selectFoot:'10 frases útiles para tu próximo viaje.',
+    back:'Cambiar idioma', shuffle:'Mezclar', learned:'Aprendido', unlearn:'Desmarcar', prev:'Anterior', next:'Siguiente',
+    flipHint:'Toca la tarjeta para girarla', progressLabel:'Aprendidas', cardOf:'Tarjeta {n} de {total}',
+    uiLang:'Interfaz', reset:'Reiniciar progreso', celebrate:'¡Todas las frases aprendidas! Bien hecho.', celebrateSub:'Sigue practicando para no olvidarlas.', review:'Sigue practicando',
+  },
+  fr:{
+    brandSub:'Cartes pour voyager', selectTag:'L\'essentiel du voyage', selectPrompt:'Quelle langue souhaitez-vous apprendre ?',
+    selectHint:'Choisissez-en une pour commencer.', selectFoot:'10 phrases utiles pour votre prochain voyage.',
+    back:'Changer de langue', shuffle:'Mélanger', learned:'Appris', unlearn:'Annuler', prev:'Précédent', next:'Suivant',
+    flipHint:'Touchez la carte pour la retourner', progressLabel:'Apprises', cardOf:'Carte {n} sur {total}',
+    uiLang:'Interface', reset:'Réinitialiser', celebrate:'Toutes les phrases sont apprises. Bravo !', celebrateSub:'Continuez à pratiquer pour progresser.', review:'Continuez à pratiquer',
+  },
+  ja:{
+    brandSub:'旅行に役立つフラッシュカード', selectTag:'旅行の基本フレーズ', selectPrompt:'どの言語を学びたいですか？',
+    selectHint:'一つ選んで始めましょう。', selectFoot:'次の旅行に役立つ10のフレーズ。',
+    back:'言語を変更', shuffle:'シャッフル', learned:'覚えた', unlearn:'解除', prev:'前へ', next:'次へ',
+    flipHint:'カードをタップしてめくる', progressLabel:'覚えた数', cardOf:'{total}枚中 {n} 枚目',
+    uiLang:'表示言語', reset:'進捗をリセット', celebrate:'すべてのフレーズを覚えました！', celebrateSub:'忘れないように練習を続けましょう。', review:'練習を続ける',
+  },
+};
+
+/* ---------- State ---------- */
+const state = {
+  uiLang: 'en',
+  learnLang: null,        // code of language being learned
+  order: [],              // array of phrase indices, current deck order
+  pos: 0,                 // current position in order
+  flipped: false,
+  learned: new Set(),     // phrase indices marked learned
+};
+
+/* ---------- Persistence (best-effort) ---------- */
+const STORE_KEY = 'lingo-flip-v1';
+function save(){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify({
+    uiLang: state.uiLang, learnLang: state.learnLang,
+    order: state.order, pos: state.pos, learned:[...state.learned],
+  })); }catch(e){}
+}
+function load(){
+  try{
+    const d = JSON.parse(localStorage.getItem(STORE_KEY));
+    if(d){
+      state.uiLang = d.uiLang || state.uiLang;
+      state.learnLang = d.learnLang || null;
+      state.order = Array.isArray(d.order)? d.order : [];
+      state.pos = d.pos || 0;
+      state.learned = new Set(d.learned || []);
+      return true;
+    }
+  }catch(e){}
+  return false;
+}
+
+/* ---------- Locale detection ---------- */
+function detectUiLang(){
+  const nav = (navigator.languages && navigator.languages[0]) || navigator.language || 'en';
+  const lc = nav.toLowerCase();
+  if(lc.startsWith('es')) return 'es';
+  if(lc.startsWith('fr')) return 'fr';
+  if(lc.startsWith('ja')) return 'ja';
+  return 'en';
+}
+
+/* ---------- Helpers ---------- */
+const t = (k) => (I18N[state.uiLang] && I18N[state.uiLang][k]) || I18N.en[k] || k;
+const fmt = (s,o) => s.replace(/\{(\w+)\}/g, (_,m)=> (o[m]!==undefined? o[m] : `{${m}}`));
+const phraseText = (p, code) => {
+  const v = p[code];
+  return typeof v === 'object' ? v.text : v;
+};
+const phraseRomaji = (p, code) => {
+  const v = p[code];
+  return (typeof v === 'object' && v.romaji) ? v.romaji : null;
+};
+
+/* ---------- Render: UI chrome ---------- */
+function applyI18n(){
+  document.documentElement.lang = state.uiLang;
+  document.getElementById('brandSub').textContent = t('brandSub');
+  document.getElementById('selectTag').textContent = t('selectTag');
+  document.getElementById('selectPrompt').textContent = t('selectPrompt');
+  document.getElementById('selectHint').textContent = t('selectHint');
+  document.getElementById('selectFoot').textContent = t('selectFoot');
+  document.getElementById('backLabel').textContent = t('back');
+  document.getElementById('shuffleLabel').textContent = t('shuffle');
+  document.getElementById('prevLabel').textContent = t('prev');
+  document.getElementById('nextLabel').textContent = t('next');
+  document.getElementById('flipHint').textContent = t('flipHint');
+  document.getElementById('uiLangLabel').textContent = t('uiLang');
+  document.getElementById('resetBtn').textContent = t('reset');
+  document.getElementById('celebrateText').textContent = t('celebrate');
+  document.getElementById('celebrateSub').textContent = t('celebrateSub');
+
+  // populate UI lang selects
+  const opts = LANGS.map(l=>`<option value="${l.code}">${l.name}</option>`).join('');
+  const sel1 = document.getElementById('uiLangSelect');
+  const sel2 = document.getElementById('uiLangSelectMobile');
+  sel1.innerHTML = opts; sel2.innerHTML = opts;
+  sel1.value = state.uiLang; sel2.value = state.uiLang;
+
+  renderLangGrid();
+}
+
+function renderLangGrid(){
+  const grid = document.getElementById('langGrid');
+  grid.innerHTML = LANGS.map(l=>`
+    <button class="lang-tile anim-pop" style="background:${l.grad}" data-lang="${l.code}">
+      <div class="flag">${l.flag}</div>
+      <div class="mt-4 text-xl font-extrabold ${l.code==='ja'?'font-jp':''}">${l.name}</div>
+      <div class="text-white/80 text-xs font-medium mt-1">${l.code==='ja'?'Japanese':l.code==='es'?'Spanish':l.code==='fr'?'French':'English'}</div>
+    </button>
+  `).join('');
+  grid.querySelectorAll('[data-lang]').forEach(btn=>{
+    btn.addEventListener('click', ()=> startLearning(btn.dataset.lang));
+  });
+}
+
+/* ---------- Screens ---------- */
+const selectScreen = document.getElementById('selectScreen');
+const studyScreen  = document.getElementById('studyScreen');
+
+function showSelect(){
+  state.learnLang = null;
+  selectScreen.classList.remove('hidden-screen');
+  studyScreen.classList.add('hidden-screen');
+  save();
+}
+
+function showStudy(){
+  selectScreen.classList.add('hidden-screen');
+  studyScreen.classList.remove('hidden-screen');
+}
+
+/* ---------- Learning flow ---------- */
+function startLearning(code){
+  state.learnLang = code;
+  state.flipped = false;
+  if(state.order.length !== PHRASES.length){
+    state.order = PHRASES.map((_,i)=>i);
+    state.pos = 0;
+  }
+  showStudy();
+  renderDots();
+  renderCard('anim-shuffle');
+  renderProgress();
+  save();
+}
+
+function currentPhrase(){ return PHRASES[state.order[state.pos]]; }
+
+function renderCard(animClass){
+  const inner = document.getElementById('cardInner');
+  inner.classList.toggle('flipped', state.flipped);
+
+  const wrap = document.getElementById('cardWrap');
+  wrap.classList.remove('anim-right','anim-left','anim-shuffle','anim-pop');
+  // force reflow so animation restarts
+  void wrap.offsetWidth;
+  if(animClass) wrap.classList.add(animClass);
+
+  const p = currentPhrase();
+  const lang = LANG_BY_CODE[state.learnLang];
+  const isJa = state.learnLang === 'ja';
+  const frontText = phraseText(p, state.learnLang);
+  const romaji = phraseRomaji(p, state.learnLang);
+  const backText = phraseText(p, state.uiLang);
+  const uiLangName = LANG_BY_CODE[state.uiLang].name;
+
+  const learned = state.learned.has(state.order[state.pos]);
+
+  // FRONT: target language
+  document.getElementById('cardFront').style.background = lang.grad;
+  document.getElementById('cardFront').innerHTML = `
+    <div class="absolute top-5 left-5 text-3xl">${p.icon}</div>
+    <div class="absolute top-5 right-5 text-[11px] font-bold tracking-wide text-white/70 ${isJa?'font-jp':''}">${lang.name}</div>
+    ${learned ? `<div class="badge-pop absolute bottom-5 right-5 flex items-center gap-1 bg-white text-emerald-600 rounded-full px-3 py-1 text-xs font-extrabold shadow-lg">✓ ${t('learned').split(' ')[0]}</div>` : ''}
+    <div class="text-3xl sm:text-4xl font-extrabold text-white text-center leading-snug drop-shadow ${isJa?'font-jp':''}" style="max-width:100%">
+      ${frontText}
+    </div>
+    ${romaji ? `<div class="text-white/80 text-base font-medium mt-3">${romaji}</div>` : ''}
+    <div class="absolute bottom-5 left-0 right-0 text-center text-white/70 text-xs font-medium ${learned?'opacity-0':''}">${t('flipHint')}</div>
+  `;
+
+  // BACK: translation in UI language
+  const backIsJa = state.uiLang === 'ja';
+  document.getElementById('cardBack').innerHTML = `
+    <div class="absolute top-5 left-5 text-3xl">${p.icon}</div>
+    <div class="absolute top-5 right-5 text-[11px] font-bold tracking-wide text-slate-400 ${backIsJa?'font-jp':''}">${uiLangName}</div>
+    <div class="text-2xl sm:text-3xl font-extrabold text-center leading-snug ${backIsJa?'font-jp':''}" style="max-width:100%; color:#1a1140">
+      ${backText}
+    </div>
+    <div class="absolute bottom-5 left-0 right-0 text-center text-slate-400 text-xs font-medium">${LANG_BY_CODE[state.learnLang].name} → ${uiLangName}</div>
+  `;
+
+  // learned ring + button state
+  wrap.classList.toggle('is-learned', learned);
+  const lb = document.getElementById('learnedBtn');
+  lb.classList.toggle('btn-learned', !learned);
+  lb.classList.toggle('btn-ghost', learned);
+  lb.querySelector('span').textContent = learned ? t('unlearn') : t('learned');
+
+  // card counter
+  document.getElementById('cardCount').textContent = fmt(t('cardOf'), { n: state.pos+1, total: PHRASES.length });
+}
+
+function renderProgress(){
+  const total = PHRASES.length;
+  const learned = state.learned.size;
+  document.getElementById('progressLabel').textContent = `${t('progressLabel')}: ${learned}/${total}`;
+  document.getElementById('progressFill').style.width = (learned/total*100) + '%';
+  renderDots();
+  // celebration
+  const banner = document.getElementById('celebrateBanner');
+  if(learned === total){
+    banner.classList.remove('hidden');
+    banner.classList.remove('celebrate'); void banner.offsetWidth; banner.classList.add('celebrate');
+    burstConfetti();
+  } else {
+    banner.classList.add('hidden');
+  }
+}
+
+function renderDots(){
+  const row = document.getElementById('dotsRow');
+  row.innerHTML = PHRASES.map((_,i)=>{
+    const cls = ['dot'];
+    if(state.order[state.pos] === i) cls.push('current');
+    if(state.learned.has(i)) cls.push('learned');
+    return `<div class="${cls.join(' ')}" data-i="${i}"></div>`;
+  }).join('');
+  row.querySelectorAll('.dot').forEach(d=>{
+    d.addEventListener('click', ()=>{
+      const i = +d.dataset.i;
+      const pos = state.order.indexOf(i);
+      if(pos >= 0){ state.pos = pos; state.flipped = false; renderCard('anim-pop'); renderProgress(); save(); }
+    });
+  });
+}
+
+/* ---------- Actions ---------- */
+function flip(){
+  state.flipped = !state.flipped;
+  document.getElementById('cardInner').classList.toggle('flipped', state.flipped);
+}
+
+function go(dir){
+  const n = PHRASES.length;
+  state.pos = (state.pos + dir + n) % n;
+  state.flipped = false;
+  renderCard(dir > 0 ? 'anim-right' : 'anim-left');
+  renderProgress();
+  save();
+}
+
+function shuffleDeck(){
+  // Fisher–Yates
+  const a = state.order.slice();
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  state.order = a;
+  state.pos = 0;
+  state.flipped = false;
+  renderCard('anim-shuffle');
+  renderProgress();
+  save();
+}
+
+function toggleLearned(){
+  const idx = state.order[state.pos];
+  const wasLearned = state.learned.has(idx);
+  if(wasLearned) state.learned.delete(idx);
+  else { state.learned.add(idx); if(!wasLearned) miniBurst(); }
+  renderCard('anim-pop');
+  renderProgress();
+  save();
+}
+
+function resetProgress(){
+  state.learned.clear();
+  renderCard('anim-pop');
+  renderProgress();
+  save();
+}
+
+/* ---------- Confetti ---------- */
+function makeConfetti(count, opts={}){
+  const colors = ['#7c3aed','#6366f1','#22c55e','#f59e0b','#ec4899','#3b82f6'];
+  for(let i=0;i<count;i++){
+    const el = document.createElement('div');
+    el.className = 'confetti';
+    el.style.left = (opts.originX ?? Math.random()*100) + '%';
+    el.style.background = colors[Math.floor(Math.random()*colors.length)];
+    el.style.transform = `rotate(${Math.random()*360}deg)`;
+    const dur = 1.6 + Math.random()*1.4;
+    const drift = (Math.random()*2-1)*220;
+    el.animate([
+      { transform:`translateY(0) rotate(0deg)`, opacity:1 },
+      { transform:`translateY(110vh) translateX(${drift}px) rotate(${720*Math.random()}deg)`, opacity:0.9 }
+    ], { duration: dur*1000, easing:'cubic-bezier(.2,.6,.4,1)' });
+    document.body.appendChild(el);
+    setTimeout(()=> el.remove(), dur*1000 + 100);
+  }
+}
+function burstConfetti(){ makeConfetti(80); }
+function miniBurst(){
+  const r = document.getElementById('learnedBtn').getBoundingClientRect();
+  makeConfetti(16, { originX: (r.left + r.width/2)/window.innerWidth*100 });
+}
+
+/* ---------- Wire up controls ---------- */
+document.getElementById('cardWrap').addEventListener('click', flip);
+document.getElementById('prevBtn').addEventListener('click', ()=> go(-1));
+document.getElementById('nextBtn').addEventListener('click', ()=> go(1));
+document.getElementById('shuffleBtn').addEventListener('click', shuffleDeck);
+document.getElementById('learnedBtn').addEventListener('click', toggleLearned);
+document.getElementById('backBtn').addEventListener('click', showSelect);
+document.getElementById('resetBtn').addEventListener('click', resetProgress);
+
+function setUiLang(code){
+  state.uiLang = code;
+  applyI18n();
+  if(state.learnLang){ renderCard('anim-pop'); renderProgress(); }
+  save();
+}
+document.getElementById('uiLangSelect').addEventListener('change', e=> setUiLang(e.target.value));
+document.getElementById('uiLangSelectMobile').addEventListener('change', e=> setUiLang(e.target.value));
+
+/* Keyboard */
+document.addEventListener('keydown', e=>{
+  if(state.learnLang === null) return;
+  if(e.target.tagName === 'SELECT') return;
+  switch(e.key){
+    case ' ': case 'Enter': e.preventDefault(); flip(); break;
+    case 'ArrowRight': go(1); break;
+    case 'ArrowLeft': go(-1); break;
+    case 's': case 'S': shuffleDeck(); break;
+    case 'l': case 'L': toggleLearned(); break;
+  }
+});
+
+/* ---------- Init ---------- */
+(function init(){
+  state.uiLang = detectUiLang();
+  const restored = load();
+  // sanitize restored order
+  if(!state.order.length || state.order.length !== PHRASES.length){
+    state.order = PHRASES.map((_,i)=>i);
+  }
+  state.pos = Math.min(state.pos, PHRASES.length-1);
+
+  applyI18n();
+
+  if(restored && state.learnLang){
+    showStudy();
+    renderDots();
+    renderCard('anim-pop');
+    renderProgress();
+  } else {
+    showSelect();
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Markdown → Slides</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" id="hljs-light" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" id="hljs-dark" disabled />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Merriweather:wght@300;400;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --font-body: 'Inter', system-ui, sans-serif;
+      --font-display: 'Inter', system-ui, sans-serif;
+      --transition: 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; overflow: hidden; }
+    body {
+      font-family: var(--font-body);
+      background: #f8fafc;
+      color: #0f172a;
+    }
+
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    /* Editor */
+    #editor {
+      font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+      font-size: 14px;
+      line-height: 1.65;
+      resize: none;
+      tab-size: 2;
+    }
+
+    /* Resizer */
+    #resizer {
+      width: 6px;
+      cursor: col-resize;
+      background: #e2e8f0;
+      transition: background 0.2s;
+    }
+    #resizer:hover, #resizer.active { background: #3b82f6; }
+
+    /* Slide deck container */
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 3rem 4rem;
+      opacity: 0;
+      transform: translateX(40px);
+      transition: opacity var(--transition), transform var(--transition);
+      pointer-events: none;
+      overflow: hidden;
+    }
+    .slide.active {
+      opacity: 1;
+      transform: translateX(0);
+      pointer-events: auto;
+      z-index: 10;
+    }
+    .slide.prev {
+      transform: translateX(-40px);
+    }
+
+    /* Slide content */
+    .slide-content {
+      width: 100%;
+      max-width: 1000px;
+      max-height: 100%;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+    .slide-content h1 { font-size: 2.75rem; font-weight: 800; line-height: 1.1; margin-bottom: 1rem; }
+    .slide-content h2 { font-size: 2.1rem; font-weight: 700; line-height: 1.2; margin-bottom: 0.75rem; margin-top: 1.5rem; }
+    .slide-content h3 { font-size: 1.6rem; font-weight: 600; margin-bottom: 0.5rem; margin-top: 1.25rem; }
+    .slide-content p { font-size: 1.15rem; line-height: 1.7; margin-bottom: 1rem; }
+    .slide-content ul, .slide-content ol { font-size: 1.15rem; margin-bottom: 1rem; padding-left: 1.5rem; }
+    .slide-content li { margin-bottom: 0.5rem; line-height: 1.6; }
+    .slide-content blockquote {
+      border-left: 4px solid currentColor;
+      padding-left: 1.25rem;
+      font-style: italic;
+      opacity: 0.9;
+      margin: 1.5rem 0;
+    }
+    .slide-content code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9em;
+      padding: 0.15em 0.4em;
+      border-radius: 4px;
+      background: rgba(0,0,0,0.08);
+    }
+    .slide-content pre {
+      background: rgba(0,0,0,0.08);
+      border-radius: 12px;
+      padding: 1rem;
+      overflow-x: auto;
+      margin: 1rem 0;
+    }
+    .slide-content pre code { background: transparent; padding: 0; }
+    .slide-content img { max-width: 100%; border-radius: 8px; margin: 1rem 0; }
+    .slide-content table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 1rem; }
+    .slide-content th, .slide-content td { border: 1px solid rgba(0,0,0,0.15); padding: 0.6rem 0.75rem; text-align: left; }
+    .slide-content th { font-weight: 600; }
+
+    /* Fullscreen overlay */
+    #fs-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: none;
+      background: #0f172a;
+    }
+    #fs-overlay.active { display: flex; }
+
+    /* Progress bar */
+    #progress-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      height: 4px;
+      background: #3b82f6;
+      transition: width var(--transition);
+      z-index: 50;
+    }
+
+    /* Themes */
+    .theme-business {
+      --bg: #0f172a;
+      --fg: #f8fafc;
+      --accent: #3b82f6;
+      --muted: #94a3b8;
+      background: radial-gradient(circle at 20% 30%, #1e293b 0%, #0f172a 60%);
+      color: var(--fg);
+    }
+    .theme-business .slide-content h1 { color: #60a5fa; }
+    .theme-business .slide-content h2 { color: #93c5fd; }
+    .theme-business .slide-content blockquote { border-color: #3b82f6; }
+    .theme-business .slide-content pre { background: rgba(255,255,255,0.08); }
+    .theme-business .slide-content th { background: rgba(59,130,246,0.15); }
+
+    .theme-executive {
+      --bg: #18181b;
+      --fg: #fafafa;
+      --accent: #d97706;
+      --muted: #a1a1aa;
+      background: linear-gradient(135deg, #18181b 0%, #27272a 100%);
+      color: var(--fg);
+    }
+    .theme-executive .slide-content h1 { color: #fbbf24; text-transform: uppercase; letter-spacing: -0.02em; }
+    .theme-executive .slide-content h2 { color: #f59e0b; }
+    .theme-executive .slide-content blockquote { border-color: #d97706; }
+    .theme-executive .slide-content pre { background: rgba(255,255,255,0.07); }
+    .theme-executive .slide-content th { background: rgba(217,119,6,0.15); }
+
+    .theme-slate {
+      --bg: #f1f5f9;
+      --fg: #334155;
+      --accent: #0f766e;
+      --muted: #64748b;
+      background: #f8fafc;
+      color: var(--fg);
+    }
+    .theme-slate .slide-content h1 { color: #0f766e; }
+    .theme-slate .slide-content h2 { color: #115e59; }
+    .theme-slate .slide-content blockquote { border-color: #0f766e; }
+    .theme-slate .slide-content code { background: rgba(15,118,110,0.1); }
+    .theme-slate .slide-content pre { background: rgba(15,118,110,0.08); }
+    .theme-slate .slide-content th { background: rgba(15,118,110,0.12); }
+
+    .theme-elegant {
+      --bg: #ffffff;
+      --fg: #1e293b;
+      --accent: #7c3aed;
+      --muted: #64748b;
+      background: linear-gradient(180deg, #ffffff 0%, #f5f3ff 100%);
+      color: var(--fg);
+    }
+    .theme-elegant .slide-content h1 { color: #7c3aed; font-family: 'Merriweather', serif; font-weight: 700; }
+    .theme-elegant .slide-content h2 { color: #6d28d9; font-family: 'Merriweather', serif; }
+    .theme-elegant .slide-content blockquote { border-color: #7c3aed; }
+    .theme-elegant .slide-content pre { background: rgba(124,58,237,0.06); }
+    .theme-elegant .slide-content th { background: rgba(124,58,237,0.1); }
+
+    .theme-rose {
+      --bg: #fff1f2;
+      --fg: #881337;
+      --accent: #e11d48;
+      --muted: #9f1239;
+      background: linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%);
+      color: var(--fg);
+    }
+    .theme-rose .slide-content h1 { color: #be123c; }
+    .theme-rose .slide-content h2 { color: #9f1239; }
+    .theme-rose .slide-content blockquote { border-color: #e11d48; }
+    .theme-rose .slide-content pre { background: rgba(225,29,72,0.08); }
+    .theme-rose .slide-content th { background: rgba(225,29,72,0.12); }
+
+    /* Preview mode specific */
+    #preview-stage .slide {
+      position: relative;
+      opacity: 0;
+      transform: none;
+      display: none;
+      inset: auto;
+      width: 100%;
+      height: 100%;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px -15px rgba(0,0,0,0.25);
+      padding: 2.5rem 3rem;
+    }
+    #preview-stage .slide.active {
+      display: flex;
+      opacity: 1;
+    }
+    #preview-stage .slide-content {
+      transform: scale(0.75);
+      transform-origin: center center;
+      transition: transform 0.3s ease;
+    }
+    #preview-stage .slide.active .slide-content { transform: scale(1); }
+    #preview-stage .slide-content h1 { font-size: 2rem; }
+    #preview-stage .slide-content h2 { font-size: 1.5rem; }
+    #preview-stage .slide-content h3 { font-size: 1.2rem; }
+    #preview-stage .slide-content p, #preview-stage .slide-content li { font-size: 0.95rem; }
+
+    /* Buttons & UI */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.5rem 0.85rem;
+      border-radius: 8px;
+      font-weight: 500;
+      font-size: 0.85rem;
+      transition: all 0.2s;
+      border: 1px solid transparent;
+      cursor: pointer;
+    }
+    .btn-primary { background: #3b82f6; color: white; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-secondary { background: white; color: #334155; border-color: #e2e8f0; }
+    .btn-secondary:hover { background: #f1f5f9; border-color: #cbd5e1; }
+    .btn-dark { background: #1e293b; color: white; }
+    .btn-dark:hover { background: #0f172a; }
+
+    /* Toolbar dropdowns */
+    select {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 0.45rem 0.75rem;
+      font-size: 0.85rem;
+      color: #334155;
+      outline: none;
+    }
+    select:focus { border-color: #3b82f6; }
+
+    /* Floating badge */
+    .badge {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      background: rgba(0,0,0,0.5);
+      color: white;
+      padding: 0.35rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      backdrop-filter: blur(8px);
+      z-index: 60;
+    }
+
+    /* Animated background for full screen */
+    .bg-shapes::before, .bg-shapes::after {
+      content: '';
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(80px);
+      opacity: 0.25;
+      z-index: 0;
+      pointer-events: none;
+    }
+    .bg-shapes::before {
+      width: 600px;
+      height: 600px;
+      top: -200px;
+      right: -200px;
+      background: var(--accent, #3b82f6);
+    }
+    .bg-shapes::after {
+      width: 500px;
+      height: 500px;
+      bottom: -150px;
+      left: -150px;
+      background: var(--accent, #3b82f6);
+    }
+
+    /* Mobile */
+    @media (max-width: 1024px) {
+      #app { flex-direction: column; }
+      #editor-pane { height: 45%; width: 100% !important; }
+      #resizer { display: none; }
+      #preview-pane { height: 55%; }
+    }
+
+    /* Toast */
+    #toast {
+      position: fixed;
+      bottom: 1.5rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(120%);
+      background: #1e293b;
+      color: white;
+      padding: 0.65rem 1.25rem;
+      border-radius: 10px;
+      font-size: 0.85rem;
+      z-index: 2000;
+      transition: transform 0.3s ease;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body class="h-screen w-screen overflow-hidden">
+
+  <!-- App -->
+  <div id="app" class="flex h-full w-full bg-slate-50">
+    
+    <!-- Editor Pane -->
+    <div id="editor-pane" class="flex flex-col bg-white border-r border-slate-200 shadow-sm" style="width: 40%;">
+      <!-- Header -->
+      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-slate-50/80 backdrop-blur">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm">MS</div>
+          <div>
+            <h1 class="text-sm font-semibold text-slate-800 leading-tight">Markdown → Slides</h1>
+            <p class="text-xs text-slate-500">Live deck generator</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="btn btn-secondary" onclick="loadSample()" title="Load sample deck">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+            Sample
+          </button>
+        </div>
+      </div>
+
+      <!-- Editor -->
+      <textarea id="editor" class="flex-1 w-full p-4 bg-white text-slate-700 outline-none" placeholder="Type markdown here. Use --- to separate slides."></textarea>
+
+      <!-- Editor Footer -->
+      <div class="px-4 py-2 bg-slate-50 border-t border-slate-200 text-xs text-slate-500 flex justify-between items-center">
+        <span id="stats">0 slides • 0 words</span>
+        <span class="hidden sm:inline">Tip: <kbd class="px-1 py-0.5 bg-white border rounded text-slate-600 font-mono">Ctrl+Enter</kbd> to present</span>
+      </div>
+    </div>
+
+    <!-- Resizer -->
+    <div id="resizer"></div>
+
+    <!-- Preview Pane -->
+    <div id="preview-pane" class="flex-1 flex flex-col relative bg-slate-100/50">
+      <!-- Toolbar -->
+      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white/80 backdrop-blur z-20">
+        <div class="flex items-center gap-2">
+          <button class="btn btn-secondary" onclick="prevSlide()" title="Previous slide">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+          </button>
+          <button class="btn btn-secondary" onclick="nextSlide()" title="Next slide">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+          </button>
+          <span id="slide-counter" class="text-sm text-slate-600 font-medium ml-1">1 / 1</span>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <select id="theme-select" onchange="changeTheme(this.value)" class="cursor-pointer">
+            <option value="theme-business">Business Blue</option>
+            <option value="theme-executive">Executive Dark</option>
+            <option value="theme-slate">Slate Light</option>
+            <option value="theme-elegant">Elegant Purple</option>
+            <option value="theme-rose">Rose Accent</option>
+          </select>
+          <button class="btn btn-primary" onclick="toggleFullscreen()">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 4l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path></svg>
+            Present
+          </button>
+        </div>
+      </div>
+
+      <!-- Preview Stage -->
+      <div class="flex-1 p-6 overflow-hidden relative">
+        <div id="preview-stage" class="w-full h-full relative rounded-2xl overflow-hidden bg-shapes theme-business">
+          <!-- Slides injected here -->
+        </div>
+        <!-- Progress bar -->
+        <div id="progress-bar" style="width: 0%"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fullscreen Overlay -->
+  <div id="fs-overlay" class="bg-shapes theme-business">
+    <div id="fs-stage" class="relative w-full h-full">
+      <!-- Slides cloned here -->
+    </div>
+    <div class="badge" id="fs-counter">1 / 1</div>
+
+    <!-- Controls hint -->
+    <div class="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3 text-white/70 text-sm z-50 bg-black/30 backdrop-blur px-4 py-2 rounded-full opacity-0 hover:opacity-100 transition-opacity">
+      <span><kbd>←</kbd> Prev</span>
+      <span><kbd>→</kbd> / <kbd>Space</kbd> Next</span>
+      <span><kbd>Esc</kbd> Exit</span>
+    </div>
+
+    <button class="absolute top-4 right-4 z-50 btn btn-dark" onclick="toggleFullscreen()">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+    </button>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast"></div>
+
+  <script>
+    // Sample markdown deck
+    const sampleMarkdown = `# Markdown → Slides
+
+### Turn markdown into a polished business deck in seconds
+
+Use \`---\` as a slide break. Edit on the left, preview on the right.
+
+> "Simplicity is the ultimate sophistication." — Leonardo da Vinci
+
+---
+
+## The Problem
+
+Traditional presentation tools are slow and distracting.
+
+- **Cluttered interfaces** hide your content behind ribbons and tabs
+- **Version control** becomes a nightmare with binary files
+- **Collaboration** requires manual exports and email chains
+- **Formatting** is inconsistent across teams and devices
+
+Markdown lets you focus on *what matters*: the message.
+
+---
+
+## Our Solution
+
+A lightweight, markdown-first slide deck builder.
+
+| Feature | Benefit |
+|--------|---------|
+| Live preview | See changes instantly as you type |
+| Keyboard nav | Present without touching the mouse |
+| Theme toggle | Match your brand or audience |
+| Full screen | Cinema-style presentation mode |
+| Sample loader | Start with a professional deck |
+
+---
+
+## Market Opportunity
+
+\`\`\`
+Traditional tools:  $8B market, 12% CAGR
+Markdown tools:     $400M market, 34% CAGR
+Hybrid solutions:   Projected $1.2B by 2028
+\`\`\`
+
+The shift toward **plain-text workflows** is accelerating.
+
+---
+
+## Roadmap
+
+1. **Q1** — Core editor & live preview *(done)*
+2. **Q2** — Export to PDF and PowerPoint
+3. **Q3** — Real-time collaboration & comments
+4. **Q4** — AI-assisted slide outlines and design
+
+---
+
+## Thank You
+
+### Questions?
+
+Press **Present** to view this deck full-screen.
+
+Use **← / →** or **Space** to navigate slides.
+
+Built with markdown, Tailwind, and a little imagination.`;
+
+    // State
+    let currentSlide = 0;
+    let slides = [];
+    let currentTheme = 'theme-business';
+    let isFullscreen = false;
+
+    const editor = document.getElementById('editor');
+    const previewStage = document.getElementById('preview-stage');
+    const fsOverlay = document.getElementById('fs-overlay');
+    const fsStage = document.getElementById('fs-stage');
+    const slideCounter = document.getElementById('slide-counter');
+    const fsCounter = document.getElementById('fs-counter');
+    const progressBar = document.getElementById('progress-bar');
+    const stats = document.getElementById('stats');
+    const themeSelect = document.getElementById('theme-select');
+    const toast = document.getElementById('toast');
+
+    // Configure marked
+    marked.use({
+      gfm: true,
+      breaks: false
+    });
+
+    // Parse markdown into slides
+    function parseSlides(md) {
+      const raw = md.split(/^\s*-{3,}\s*$/m).map(s => s.trim()).filter(Boolean);
+      return raw.map(text => {
+        const html = DOMPurify.sanitize(marked.parse(text));
+        return { text, html };
+      });
+    }
+
+    function render() {
+      const md = editor.value;
+      slides = parseSlides(md);
+
+      // Render preview
+      previewStage.innerHTML = slides.map((slide, i) => `
+        <div class="slide ${i === currentSlide ? 'active' : ''}" data-index="${i}">
+          <div class="slide-content">${slide.html}</div>
+        </div>
+      `).join('');
+
+      // Render fullscreen clone
+      fsStage.innerHTML = slides.map((slide, i) => `
+        <div class="slide ${i === currentSlide ? 'active' : ''}" data-index="${i}">
+          <div class="slide-content">${slide.html}</div>
+        </div>
+      `).join('');
+
+      // Highlight code blocks
+      document.querySelectorAll('pre code').forEach(block => {
+        hljs.highlightElement(block);
+      });
+
+      // Update UI
+      const total = slides.length || 1;
+      const current = Math.min(currentSlide + 1, total);
+      slideCounter.textContent = `${current} / ${total}`;
+      fsCounter.textContent = `${current} / ${total}`;
+      progressBar.style.width = total > 1 ? `${(currentSlide / (total - 1)) * 100}%` : '100%';
+
+      const wordCount = md.split(/\s+/).filter(w => w.length > 0).length;
+      stats.textContent = `${slides.length} slide${slides.length !== 1 ? 's' : ''} • ${wordCount} word${wordCount !== 1 ? 's' : ''}`;
+
+      // Ensure theme classes applied
+      applyTheme(currentTheme);
+    }
+
+    function goToSlide(index) {
+      if (slides.length === 0) return;
+      currentSlide = Math.max(0, Math.min(index, slides.length - 1));
+
+      [previewStage, fsStage].forEach(stage => {
+        const slidesEls = stage.querySelectorAll('.slide');
+        slidesEls.forEach((el, i) => {
+          el.classList.toggle('active', i === currentSlide);
+          el.classList.toggle('prev', i < currentSlide);
+        });
+      });
+
+      render();
+    }
+
+    function nextSlide() {
+      if (currentSlide < slides.length - 1) goToSlide(currentSlide + 1);
+    }
+
+    function prevSlide() {
+      if (currentSlide > 0) goToSlide(currentSlide - 1);
+    }
+
+    function changeTheme(theme) {
+      currentTheme = theme;
+      applyTheme(theme);
+      themeSelect.value = theme;
+    }
+
+    function applyTheme(theme) {
+      const themes = ['theme-business', 'theme-executive', 'theme-slate', 'theme-elegant', 'theme-rose'];
+      previewStage.classList.remove(...themes);
+      fsOverlay.classList.remove(...themes);
+      previewStage.classList.add(theme);
+      fsOverlay.classList.add(theme);
+
+      // Highlight.js theme
+      const hljsLight = document.getElementById('hljs-light');
+      const hljsDark = document.getElementById('hljs-dark');
+      if (theme === 'theme-slate' || theme === 'theme-elegant' || theme === 'theme-rose') {
+        hljsLight.disabled = false;
+        hljsDark.disabled = true;
+      } else {
+        hljsLight.disabled = true;
+        hljsDark.disabled = false;
+      }
+    }
+
+    function toggleFullscreen() {
+      isFullscreen = !isFullscreen;
+      fsOverlay.classList.toggle('active', isFullscreen);
+      if (isFullscreen) {
+        if (fsOverlay.requestFullscreen) fsOverlay.requestFullscreen().catch(() => {});
+        else if (fsOverlay.webkitRequestFullscreen) fsOverlay.webkitRequestFullscreen();
+      } else {
+        if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      }
+      render();
+    }
+
+    function loadSample() {
+      editor.value = sampleMarkdown;
+      currentSlide = 0;
+      render();
+      showToast('Sample business deck loaded');
+    }
+
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2000);
+    }
+
+    // Keyboard navigation
+    document.addEventListener('keydown', (e) => {
+      if (e.target === editor) {
+        if (e.ctrlKey && e.key === 'Enter') {
+          e.preventDefault();
+          toggleFullscreen();
+        }
+        return;
+      }
+      if (['ArrowRight', 'ArrowDown', ' ', 'PageDown'].includes(e.key)) {
+        e.preventDefault();
+        nextSlide();
+      } else if (['ArrowLeft', 'ArrowUp', 'PageUp'].includes(e.key)) {
+        e.preventDefault();
+        prevSlide();
+      } else if (e.key === 'Escape' && isFullscreen) {
+        toggleFullscreen();
+      } else if (e.key === 'f' && !e.ctrlKey && !e.metaKey) {
+        toggleFullscreen();
+      }
+    });
+
+    // Resizing
+    const resizer = document.getElementById('resizer');
+    const editorPane = document.getElementById('editor-pane');
+    let isResizing = false;
+
+    resizer.addEventListener('mousedown', (e) => {
+      isResizing = true;
+      resizer.classList.add('active');
+      document.body.style.cursor = 'col-resize';
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isResizing) return;
+      const pct = (e.clientX / window.innerWidth) * 100;
+      editorPane.style.width = `${Math.max(20, Math.min(60, pct))}%`;
+    });
+
+    document.addEventListener('mouseup', () => {
+      isResizing = false;
+      resizer.classList.remove('active');
+      document.body.style.cursor = '';
+    });
+
+    // Fullscreen change events
+    document.addEventListener('fullscreenchange', () => {
+      if (!document.fullscreenElement && isFullscreen) {
+        isFullscreen = false;
+        fsOverlay.classList.remove('active');
+      }
+    });
+
+    // Editor input
+    editor.addEventListener('input', () => {
+      render();
+    });
+
+    // Tab support in textarea
+    editor.addEventListener('keydown', (e) => {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const start = editor.selectionStart;
+        const end = editor.selectionEnd;
+        editor.value = editor.value.substring(0, start) + '  ' + editor.value.substring(end);
+        editor.selectionStart = editor.selectionEnd = start + 2;
+        render();
+      }
+    });
+
+    // Initialize
+    editor.value = sampleMarkdown;
+    render();
+    changeTheme('theme-business');
+  </script>
+</body>
+</html>

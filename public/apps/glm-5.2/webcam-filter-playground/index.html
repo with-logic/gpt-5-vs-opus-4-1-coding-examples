@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Webcam Filter Playground</title>
+<style>
+  :root{
+    --bg:#0a0a0f;
+    --panel:#12121a;
+    --panel-2:#181826;
+    --ink:#f5f5fa;
+    --muted:#8a8aa0;
+    --line:rgba(255,255,255,.08);
+    --accent:#7c5cff;
+    --accent-2:#ff4d8d;
+    --good:#34d399;
+    --r-sm:10px;
+    --r-md:14px;
+    --r-lg:20px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;
+    background:
+      radial-gradient(1200px 800px at 80% -10%, rgba(124,92,255,.18), transparent 60%),
+      radial-gradient(900px 700px at -10% 110%, rgba(255,77,141,.14), transparent 60%),
+      var(--bg);
+    color:var(--ink);
+    font-family:"Inter",system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+  }
+  header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:14px 22px;border-bottom:1px solid var(--line);
+    background:rgba(10,10,15,.6);backdrop-filter:blur(12px);
+    z-index:5;
+  }
+  .brand{display:flex;align-items:center;gap:12px}
+  .logo{
+    width:34px;height:34px;border-radius:9px;
+    background:conic-gradient(from 140deg,var(--accent),var(--accent-2),var(--accent));
+    box-shadow:0 0 24px rgba(124,92,255,.5);
+    display:grid;place-items:center;
+  }
+  .logo::after{
+    content:"";width:14px;height:14px;border-radius:50%;
+    background:#0a0a0f;border:2px solid #fff;
+  }
+  .brand h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.2px}
+  .brand p{margin:0;font-size:12px;color:var(--muted)}
+  .header-actions{display:flex;gap:10px}
+  .btn{
+    appearance:none;border:1px solid var(--line);background:var(--panel-2);
+    color:var(--ink);font-size:13px;font-weight:600;font-family:inherit;
+    padding:9px 14px;border-radius:var(--r-sm);cursor:pointer;
+    display:inline-flex;align-items:center;gap:8px;
+    transition:transform .08s ease, background .15s ease, border-color .15s ease, opacity .15s;
+  }
+  .btn:hover{background:#22223a;border-color:rgba(255,255,255,.18)}
+  .btn:active{transform:translateY(1px)}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn.primary{
+    background:linear-gradient(135deg,var(--accent),var(--accent-2));
+    border:none;box-shadow:0 6px 20px rgba(124,92,255,.35);
+  }
+  .btn.primary:hover{filter:brightness(1.08)}
+  .btn .dot{width:8px;height:8px;border-radius:50%;background:currentColor;opacity:.9}
+
+  main{
+    flex:1;display:grid;grid-template-columns:1fr 300px;
+    min-height:0;
+  }
+  .stage{
+    position:relative;display:grid;place-items:center;
+    padding:28px;min-height:0;overflow:hidden;
+  }
+  .frame{
+    position:relative;width:min(100%,960px);aspect-ratio:16/9;
+    border-radius:var(--r-lg);overflow:hidden;
+    background:#000;border:1px solid var(--line);
+    box-shadow:0 30px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(124,92,255,.08);
+  }
+  video{display:none}
+  canvas#view{
+    width:100%;height:100%;display:block;object-fit:cover;
+    transform:scaleX(-1); /* mirror */
+    background:#06060a;
+  }
+  .flash{
+    position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;
+    transition:opacity .12s ease;
+  }
+  .flash.fire{opacity:.85;transition:none}
+
+  /* live badge + status overlay */
+  .live{
+    position:absolute;top:14px;left:14px;display:flex;align-items:center;gap:8px;
+    padding:6px 10px;border-radius:999px;background:rgba(0,0,0,.45);
+    backdrop-filter:blur(8px);border:1px solid var(--line);font-size:12px;font-weight:600;
+    z-index:3;
+  }
+  .live .pulse{
+    width:8px;height:8px;border-radius:50%;background:var(--good);
+    box-shadow:0 0 0 0 rgba(52,211,153,.7);animation:pulse 1.6s infinite;
+  }
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 rgba(52,211,153,.6)}
+    70%{box-shadow:0 0 0 10px rgba(52,211,153,0)}
+    100%{box-shadow:0 0 0 0 rgba(52,211,153,0)}
+  }
+  .live.off .pulse{background:#666;animation:none;box-shadow:none}
+
+  .filter-tag{
+    position:absolute;top:14px;right:14px;z-index:3;
+    padding:6px 12px;border-radius:999px;background:rgba(0,0,0,.45);
+    backdrop-filter:blur(8px);border:1px solid var(--line);
+    font-size:12px;font-weight:600;letter-spacing:.3px;text-transform:uppercase;
+    color:var(--ink);
+  }
+
+  /* permission / error states */
+  .overlay{
+    position:absolute;inset:0;z-index:4;display:grid;place-items:center;
+    text-align:center;padding:24px;background:rgba(6,6,10,.85);backdrop-filter:blur(6px);
+  }
+  .overlay .card{max-width:340px}
+  .overlay .icon{
+    width:56px;height:56px;border-radius:14px;margin:0 auto 16px;
+    background:var(--panel-2);border:1px solid var(--line);
+    display:grid;place-items:center;font-size:26px;
+  }
+  .overlay h2{margin:0 0 8px;font-size:18px}
+  .overlay p{margin:0 0 18px;color:var(--muted);font-size:13px;line-height:1.5}
+  .overlay .btn{margin:0 auto}
+  .hidden{display:none !important}
+
+  /* sidebar */
+  aside{
+    border-left:1px solid var(--line);background:var(--panel);
+    display:flex;flex-direction:column;min-height:0;
+  }
+  .side-section{padding:16px 16px;border-bottom:1px solid var(--line)}
+  .side-title{
+    font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);
+    margin:0 0 12px;display:flex;justify-content:space-between;align-items:center;
+  }
+  .filter-grid{
+    display:grid;grid-template-columns:repeat(2,1fr);gap:8px;
+  }
+  .chip{
+    position:relative;cursor:pointer;border:1px solid var(--line);
+    background:var(--panel-2);border-radius:var(--r-sm);overflow:hidden;
+    padding:0;color:var(--ink);font-family:inherit;
+    transition:border-color .15s, transform .08s;
+  }
+  .chip:hover{border-color:rgba(255,255,255,.22)}
+  .chip:active{transform:translateY(1px)}
+  .chip.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent), 0 6px 18px rgba(124,92,255,.25)}
+  .chip .thumb{height:46px;display:block;background:#000}
+  .chip .label{
+    font-size:12px;font-weight:600;padding:7px 9px;text-align:left;
+    display:flex;justify-content:space-between;align-items:center;gap:6px;
+  }
+  .chip .check{
+    width:14px;height:14px;border-radius:50%;background:var(--accent);
+    opacity:0;transition:opacity .15s;display:grid;place-items:center;
+  }
+  .chip.active .check{opacity:1}
+  .chip.active .check::after{
+    content:"";width:4px;height:7px;border:solid #fff;border-width:0 2px 2px 0;
+    transform:rotate(45deg) translate(-1px,-1px);
+  }
+
+  /* intensity slider */
+  .slider-row{display:flex;align-items:center;gap:10px}
+  .slider-row .val{
+    font-size:12px;color:var(--ink);width:34px;text-align:right;
+    font-variant-numeric:tabular-nums;
+  }
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;flex:1;height:6px;border-radius:999px;
+    background:linear-gradient(90deg,var(--accent) 0%, var(--accent) var(--p,50%), #2a2a3d var(--p,50%), #2a2a3d 100%);
+    outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:50%;
+    background:#fff;cursor:pointer;box-shadow:0 0 0 3px rgba(124,92,255,.4);
+  }
+  input[type=range]::-moz-range-thumb{
+    width:16px;height:16px;border:none;border-radius:50%;background:#fff;cursor:pointer;
+    box-shadow:0 0 0 3px rgba(124,92,255,.4);
+  }
+  .sub-label{font-size:12px;color:var(--muted);margin:2px 0 10px}
+  .toggle-row{
+    display:flex;align-items:center;justify-content:space-between;
+    font-size:13px;margin-top:10px;
+  }
+  .switch{position:relative;width:38px;height:22px;flex-shrink:0}
+  .switch input{display:none}
+  .switch .track{
+    position:absolute;inset:0;border-radius:999px;background:#2a2a3d;
+    transition:background .15s;cursor:pointer;
+  }
+  .switch .knob{
+    position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;
+    background:#fff;transition:transform .15s;
+  }
+  .switch input:checked + .track{background:var(--accent)}
+  .switch input:checked + .track + .knob,
+  .switch input:checked ~ .knob{transform:translateX(16px)}
+
+  /* snapshots strip */
+  .snap-wrap{flex:1;min-height:0;display:flex;flex-direction:column;padding:16px 16px 0}
+  .snap-strip{
+    flex:1;min-height:0;overflow-y:auto;display:grid;
+    grid-template-columns:repeat(2,1fr);gap:8px;align-content:start;
+    padding-bottom:16px;
+  }
+  .snap{
+    position:relative;border-radius:var(--r-sm);overflow:hidden;
+    border:1px solid var(--line);background:#000;aspect-ratio:16/9;cursor:pointer;
+  }
+  .snap img{width:100%;height:100%;object-fit:cover;display:block}
+  .snap .acts{
+    position:absolute;inset:auto 0 0 0;display:flex;gap:4px;padding:6px;
+    background:linear-gradient(transparent,rgba(0,0,0,.7));opacity:0;
+    transition:opacity .15s;
+  }
+  .snap:hover .acts{opacity:1}
+  .snap .acts button{
+    flex:1;border:none;background:rgba(255,255,255,.15);color:#fff;
+    border-radius:6px;padding:5px 4px;font-size:11px;font-weight:600;cursor:pointer;
+    backdrop-filter:blur(4px);
+  }
+  .snap .acts button:hover{background:rgba(255,255,255,.28)}
+  .snap .acts button.del:hover{background:var(--accent-2)}
+  .empty{
+    grid-column:1/-1;text-align:center;color:var(--muted);font-size:12px;
+    padding:30px 10px;border:1px dashed var(--line);border-radius:var(--r-sm);
+  }
+
+  /* toast */
+  .toast{
+    position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);
+    background:var(--panel-2);border:1px solid var(--line);color:var(--ink);
+    padding:10px 16px;border-radius:999px;font-size:13px;font-weight:600;
+    box-shadow:0 12px 30px rgba(0,0,0,.5);opacity:0;pointer-events:none;
+    transition:opacity .2s, transform .2s;z-index:50;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* scrollbar */
+  ::-webkit-scrollbar{width:8px;height:8px}
+  ::-webkit-scrollbar-thumb{background:#2a2a3d;border-radius:999px}
+  ::-webkit-scrollbar-track{background:transparent}
+
+  @media (max-width:780px){
+    main{grid-template-columns:1fr;grid-template-rows:1fr auto}
+    aside{border-left:none;border-top:1px solid var(--line);max-height:46vh}
+    .header-actions .lbl{display:none}
+  }
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="logo"></div>
+      <div>
+        <h1>Webcam Filter Playground</h1>
+        <p>Real-time filters · snapshots · save</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="btn" id="mirrorBtn" title="Toggle mirror"><span class="dot"></span><span class="lbl">Mirror</span></button>
+      <button class="btn" id="snapBtn" disabled><span class="lbl">📸 Snapshot</span></button>
+      <button class="btn primary" id="startBtn"><span class="lbl">▶ Start camera</span></button>
+    </div>
+  </header>
+
+  <main>
+    <section class="stage">
+      <div class="frame" id="frame">
+        <video id="cam" autoplay playsinline muted></video>
+        <canvas id="view"></canvas>
+        <div class="flash" id="flash"></div>
+        <div class="live off" id="live"><span class="pulse"></span><span id="liveText">Off</span></div>
+        <div class="filter-tag" id="filterTag">Normal</div>
+
+        <div class="overlay" id="overlay">
+          <div class="card">
+            <div class="icon">📷</div>
+            <h2>Ready to play?</h2>
+            <p>Grant camera access to see yourself through a dozen surprising filters. Nothing leaves your device.</p>
+            <button class="btn primary" id="overlayStart">▶ Start camera</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <aside>
+      <div class="side-section">
+        <p class="side-title">Effects <span id="effectCount"></span></p>
+        <div class="filter-grid" id="filterGrid"></div>
+      </div>
+
+      <div class="side-section">
+        <p class="side-title">Intensity</p>
+        <div class="slider-row">
+          <input type="range" id="intensity" min="0" max="100" value="100" />
+          <span class="val" id="intVal">100</span>
+        </div>
+        <p class="sub-label">How strongly the effect is applied</p>
+        <div class="toggle-row">
+          <span>Auto-snapshot flash</span>
+          <label class="switch">
+            <input type="checkbox" id="flashToggle" checked />
+            <span class="track"></span><span class="knob"></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <span>Mirror preview</span>
+          <label class="switch">
+            <input type="checkbox" id="mirrorToggle" checked />
+            <span class="track"></span><span class="knob"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="snap-wrap">
+        <p class="side-title">Snapshots <span id="snapCount" style="color:var(--accent)">0</span></p>
+        <div class="snap-strip" id="snapStrip">
+          <div class="empty" id="emptyState">No snapshots yet — hit 📸 to capture one</div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  // ---------- element refs ----------
+  const video = document.getElementById('cam');
+  const canvas = document.getElementById('view');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const overlay = document.getElementById('overlay');
+  const startBtn = document.getElementById('startBtn');
+  const overlayStart = document.getElementById('overlayStart');
+  const snapBtn = document.getElementById('snapBtn');
+  const live = document.getElementById('live');
+  const liveText = document.getElementById('liveText');
+  const filterTag = document.getElementById('filterTag');
+  const filterGrid = document.getElementById('filterGrid');
+  const effectCount = document.getElementById('effectCount');
+  const intensity = document.getElementById('intensity');
+  const intVal = document.getElementById('intVal');
+  const flashEl = document.getElementById('flash');
+  const flashToggle = document.getElementById('flashToggle');
+  const mirrorToggle = document.getElementById('mirrorToggle');
+  const mirrorBtn = document.getElementById('mirrorBtn');
+  const snapStrip = document.getElementById('snapStrip');
+  const emptyState = document.getElementById('emptyState');
+  const snapCount = document.getElementById('snapCount');
+  const toast = document.getElementById('toast');
+
+  // ---------- state ----------
+  let stream = null;
+  let currentFilter = 'normal';
+  let intensityVal = 1.0;
+  let mirror = true;
+  let snapshots = []; // {dataUrl}
+  let rafId = null;
+  let running = false;
+
+  // ---------- filter definitions ----------
+  // Each filter can have a css pre-pass (applied via ctx.filter on draw)
+  // and a pixel post-pass function applied to ImageData.
+  const FILTERS = {
+    normal: {
+      name: 'Normal', css: 'none',
+      thumb: 'linear-gradient(135deg,#3a3a55,#6a6a8a)'
+    },
+    noir: {
+      name: 'Noir', css: 'grayscale(1) contrast(1.3) brightness(1.05)',
+      thumb: 'linear-gradient(135deg,#101015,#555)'
+    },
+    vintage: {
+      name: 'Vintage', css: 'sepia(.6) contrast(1.05) saturate(1.2)',
+      thumb: 'linear-gradient(135deg,#7a5c3a,#d8b48a)'
+    },
+    thermal: {
+      name: 'Thermal', css: 'none', post: 'thermal',
+      thumb: 'linear-gradient(135deg,#000,#ff3300,#ffe800)'
+    },
+    invert: {
+      name: 'Invert', css: 'invert(1) hue-rotate(180deg)',
+      thumb: 'linear-gradient(135deg,#00e5ff,#ff00d4)'
+    },
+    neon: {
+      name: 'Neon', css: 'saturate(2.2) contrast(1.2) brightness(1.05)', post: 'edgeGlow',
+      thumb: 'linear-gradient(135deg,#00ffd5,#7c5cff)'
+    },
+    pixelate: {
+      name: 'Pixelate', css: 'none', post: 'pixelate',
+      thumb: 'repeating-conic-gradient(#7c5cff 0 25%,#1a1a2a 0 50%) 0/18px 18px'
+    },
+    glitch: {
+      name: 'Glitch', css: 'none', post: 'glitch',
+      thumb: 'linear-gradient(90deg,#ff4d8d 0 30%,#0a0a0f 30% 70%,#00e5ff 70%)'
+    },
+    ascii: {
+      name: 'ASCII', css: 'none', post: 'ascii',
+      thumb: 'linear-gradient(135deg,#0f0,#030)'
+    },
+    mosaic: {
+      name: 'Mosaic', css: 'none', post: 'mosaic',
+      thumb: 'conic-gradient(from 0deg,#7c5cff,#ff4d8d,#7c5cff)'
+    },
+    dream: {
+      name: 'Dream', css: 'blur(2px) saturate(1.4) brightness(1.08)', post: 'vignette',
+      thumb: 'linear-gradient(135deg,#cdb4ff,#ffd0e6)'
+    },
+    xray: {
+      name: 'X-Ray', css: 'invert(1) grayscale(1) contrast(1.4)',
+      thumb: 'linear-gradient(135deg,#0aa,#aff)'
+    },
+    sunset: {
+      name: 'Sunset', css: 'sepia(.3) saturate(1.6) hue-rotate(-15deg) brightness(1.05)',
+      thumb: 'linear-gradient(135deg,#ff7e5f,#feb47b)'
+    },
+    poster: {
+      name: 'Poster', css: 'contrast(1.4) saturate(1.6)', post: 'posterize',
+      thumb: 'linear-gradient(135deg,#ff4d8d,#7c5cff,#34d399)'
+    },
+    scanlines: {
+      name: 'CRT', css: 'contrast(1.15) saturate(1.2)', post: 'scanlines',
+      thumb: 'repeating-linear-gradient(#0a0a0f 0 3px,#7c5cff 3px 4px)'
+    }
+  };
+
+  // ---------- build filter chips ----------
+  function buildChips(){
+    const keys = Object.keys(FILTERS);
+    effectCount.textContent = keys.length;
+    filterGrid.innerHTML = '';
+    keys.forEach(key => {
+      const f = FILTERS[key];
+      const chip = document.createElement('button');
+      chip.className = 'chip' + (key === currentFilter ? ' active' : '');
+      chip.dataset.key = key;
+      chip.innerHTML = `
+        <div class="thumb" style="background:${f.thumb}"></div>
+        <div class="label">${f.name}<span class="check"></span></div>
+      `;
+      chip.addEventListener('click', () => selectFilter(key));
+      filterGrid.appendChild(chip);
+    });
+  }
+
+  function selectFilter(key){
+    currentFilter = key;
+    filterTag.textContent = FILTERS[key].name;
+    [...filterGrid.children].forEach(c =>
+      c.classList.toggle('active', c.dataset.key === key));
+  }
+
+  // ---------- camera ----------
+  async function startCamera(){
+    if(stream) return;
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+        audio: false
+      });
+      video.srcObject = stream;
+      await video.play();
+      // size canvas to video
+      const track = stream.getVideoTracks()[0];
+      const s = track.getSettings();
+      canvas.width = s.width || video.videoWidth || 1280;
+      canvas.height = s.height || video.videoHeight || 720;
+
+      overlay.classList.add('hidden');
+      snapBtn.disabled = false;
+      startBtn.querySelector('.lbl').textContent = '⏹ Stop';
+      live.classList.remove('off');
+      liveText.textContent = 'Live';
+      running = true;
+      loop();
+    }catch(err){
+      showError(err);
+    }
+  }
+
+  function stopCamera(){
+    if(!stream) return;
+    running = false;
+    cancelAnimationFrame(rafId);
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+    video.srcObject = null;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    snapBtn.disabled = true;
+    startBtn.querySelector('.lbl').textContent = '▶ Start camera';
+    live.classList.add('off');
+    liveText.textContent = 'Off';
+    overlay.classList.remove('hidden');
+    overlay.querySelector('h2').textContent = 'Camera stopped';
+    overlay.querySelector('p').textContent = 'Press start to resume the fun.';
+  }
+
+  function showError(err){
+    overlay.classList.remove('hidden');
+    overlay.querySelector('.icon').textContent = '🚫';
+    overlay.querySelector('h2').textContent = 'Camera unavailable';
+    overlay.querySelector('p').textContent =
+      (err && err.name === 'NotAllowedError')
+        ? 'Camera permission was denied. Enable it in your browser settings and try again.'
+        : (err && err.message) ? err.message : 'Could not access the webcam. Please check your device.';
+  }
+
+  // ---------- render loop ----------
+  function loop(){
+    if(!running) return;
+    if(video.readyState >= 2){
+      render();
+    }
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function render(){
+    const w = canvas.width, h = canvas.height;
+    const f = FILTERS[currentFilter];
+
+    // CSS pre-pass via ctx.filter (draws video with filter applied)
+    ctx.save();
+    ctx.filter = (f.css && f.css !== 'none') ? f.css : 'none';
+    // video is drawn unmirrored here; mirror handled via CSS transform on canvas element
+    ctx.drawImage(video, 0, 0, w, h);
+    ctx.restore();
+
+    // pixel post-pass
+    if(f.post && intensityVal > 0){
+      try{
+        POST[f.post](ctx, w, h, intensityVal);
+      }catch(e){ /* keep frame on error */ }
+    }
+  }
+
+  // ---------- pixel post-passes ----------
+  const POST = {
+    thermal(ctx, w, h, t){
+      const img = ctx.getImageData(0,0,w,h);
+      const d = img.data;
+      for(let i=0;i<d.length;i+=4){
+        const lum = 0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+        const n = lum/255;
+        // map luminance to thermal gradient: black -> purple -> red -> yellow -> white
+        let r,g,b;
+        if(n<0.25){ const k=n/0.25; r=0; g=0; b=80*k+40; }
+        else if(n<0.5){ const k=(n-0.25)/0.25; r=180*k; g=0; b=140-120*k; }
+        else if(n<0.75){ const k=(n-0.5)/0.25; r=255; g=120*k+40; b=20-20*k; }
+        else { const k=(n-0.75)/0.25; r=255; g=200+55*k; b=150*k+100; }
+        // blend by intensity
+        d[i]   = d[i]*(1-t)+r*t;
+        d[i+1] = d[i+1]*(1-t)+g*t;
+        d[i+2] = d[i+2]*(1-t)+b*t;
+      }
+      ctx.putImageData(img,0,0);
+    },
+
+    edgeGlow(ctx, w, h, t){
+      // Sobel-ish edge detection blended with neon color
+      const img = ctx.getImageData(0,0,w,h);
+      const d = img.data;
+      const gray = new Float32Array(w*h);
+      for(let i=0,j=0;i<d.length;i+=4,j++){
+        gray[j]=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+      }
+      const out = new Uint8ClampedArray(d.length);
+      for(let y=1;y<h-1;y++){
+        for(let x=1;x<w-1;x++){
+          const idx=y*w+x;
+          const gx = -gray[idx-w-1]-2*gray[idx-1]-gray[idx+w-1]
+                     +gray[idx-w+1]+2*gray[idx+1]+gray[idx+w+1];
+          const gy = -gray[idx-w-1]-2*gray[idx-w]-gray[idx-w+1]
+                     +gray[idx+w-1]+2*gray[idx+w]+gray[idx+w+1];
+          let mag = Math.sqrt(gx*gx+gy*gy);
+          mag = mag>255?255:mag;
+          const m = mag/255;
+          // neon gradient between accent and pink
+          const r = (124*m + 255*(1-m))|0;
+          const g = (92*m + 77*(1-m))|0;
+          const b = (255*m + 141*(1-m))|0;
+          const o = (y*w+x)*4;
+          out[o]   = d[o]*(1-t)+r*m*t;
+          out[o+1] = d[o+1]*(1-t)+g*m*t;
+          out[o+2] = d[o+2]*(1-t)+b*m*t;
+          out[o+3] = 255;
+        }
+      }
+      ctx.putImageData(new ImageData(out,w,h),0,0);
+    },
+
+    pixelate(ctx, w, h, t){
+      // block size scales with intensity (1 -> 2px, 100 -> ~32px)
+      const size = Math.max(2, Math.round(2 + (t*30)));
+      const sw = Math.max(1, Math.floor(w/size));
+      const sh = Math.max(1, Math.floor(h/size));
+      const tmp = document.createElement('canvas');
+      tmp.width = sw; tmp.height = sh;
+      const tctx = tmp.getContext('2d');
+      tctx.imageSmoothingEnabled = true;
+      tctx.drawImage(canvas, 0,0, sw, sh);
+      ctx.imageSmoothingEnabled = false;
+      ctx.clearRect(0,0,w,h);
+      ctx.drawImage(tmp, 0,0, sw, sh, 0,0, w, h);
+      ctx.imageSmoothingEnabled = true;
+    },
+
+    glitch(ctx, w, h, t){
+      const img = ctx.getImageData(0,0,w,h);
+      const d = img.data;
+      const shift = Math.round(2 + t*18);
+      const copy = new Uint8ClampedArray(d);
+      // RGB channel split
+      for(let y=0;y<h;y++){
+        for(let x=0;x<w;x++){
+          const o=(y*w+x)*4;
+          const xr = Math.min(w-1, Math.max(0, x+shift));
+          const xb = Math.min(w-1, Math.max(0, x-shift));
+          const or=(y*w+xr)*4, ob=(y*w+xb)*4;
+          d[o]=copy[or];     // R from right-shifted
+          d[o+1]=copy[o+1];  // G original
+          d[o+2]=copy[ob+2]; // B from left-shifted
+        }
+      }
+      // random horizontal tear bands
+      const bands = Math.round(2 + t*8);
+      for(let b=0;b<bands;b++){
+        const y = Math.floor(Math.random()*h);
+        const bh = 2 + Math.floor(Math.random()*14);
+        const dx = Math.floor((Math.random()-0.5)*shift*4);
+        const tmp = ctx.getImageData(0, y, w, Math.min(bh, h-y));
+        ctx.putImageData(tmp, dx, y);
+      }
+      // scanline flicker
+      for(let y=0;y<h;y+=2){
+        for(let x=0;x<w;x++){
+          const o=(y*w+x)*4;
+          d[o]=d[o]*0.7; d[o+1]=d[o+1]*0.7; d[o+2]=d[o+2]*0.7;
+        }
+      }
+      // re-put the channel-split data before band edits would override —
+      // simpler: put the RGB-split then bands drawn on top already applied above.
+      ctx.putImageData(new ImageData(d,w,h),0,0);
+    },
+
+    ascii(ctx, w, h, t){
+      const cell = Math.max(4, Math.round(6 + (1-t)*4)); // smaller when high intensity
+      const sw = Math.floor(w/cell), sh = Math.floor(h/cell);
+      const img = ctx.getImageData(0,0,w,h);
+      const d = img.data;
+      const chars = ' .:-=+*#%@';
+      ctx.fillStyle = '#05050a';
+      ctx.fillRect(0,0,w,h);
+      ctx.font = `${cell}px monospace`;
+      ctx.textBaseline = 'top';
+      for(let y=0;y<sh;y++){
+        for(let x=0;x<sw;x++){
+          const sx=x*cell, sy=y*cell;
+          let sum=0,cnt=0;
+          for(let yy=0;yy<cell;yy+=2){
+            for(let xx=0;xx<cell;xx+=2){
+              const o=((sy+yy)*w+(sx+xx))*4;
+              if(o<d.length){
+                sum += 0.299*d[o]+0.587*d[o+1]+0.114*d[o+2];
+                cnt++;
+              }
+            }
+          }
+          const lum = sum/cnt/255;
+          const ci = Math.min(chars.length-1, Math.floor(lum*chars.length));
+          const ch = chars[ci];
+          // green tint
+          const g = Math.round(80 + lum*175);
+          ctx.fillStyle = `rgb(${Math.round(lum*60)},${g},${Math.round(lum*40)})`;
+          ctx.fillText(ch, sx, sy);
+        }
+      }
+    },
+
+    mosaic(ctx, w, h, t){
+      const cell = Math.max(6, Math.round(8 + t*16));
+      const sw = Math.floor(w/cell), sh = Math.floor(h/cell);
+      const tmp = document.createElement('canvas');
+      tmp.width=sw; tmp.height=sh;
+      const tctx = tmp.getContext('2d');
+      tctx.drawImage(canvas,0,0,sw,sh);
+      const td = tctx.getImageData(0,0,sw,sh).data;
+      ctx.fillStyle='#0a0a0f';
+      ctx.fillRect(0,0,w,h);
+      const r = cell*0.46;
+      for(let y=0;y<sh;y++){
+        for(let x=0;x<sw;x++){
+          const o=(y*sw+x)*4;
+          ctx.fillStyle = `rgb(${td[o]},${td[o+1]},${td[o+2]})`;
+          ctx.beginPath();
+          ctx.arc(x*cell+cell/2, y*cell+cell/2, r, 0, Math.PI*2);
+          ctx.fill();
+        }
+      }
+    },
+
+    vignette(ctx, w, h, t){
+      const g = ctx.createRadialGradient(w/2,h/2, Math.min(w,h)*0.25, w/2,h/2, Math.max(w,h)*0.7);
+      g.addColorStop(0,'rgba(0,0,0,0)');
+      g.addColorStop(1,`rgba(0,0,0,${0.55*t})`);
+      ctx.fillStyle = g;
+      ctx.fillRect(0,0,w,h);
+      // soft bloom
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.12*t;
+      ctx.filter = 'blur(8px) brightness(1.2)';
+      ctx.drawImage(canvas,0,0,w,h);
+      ctx.restore();
+    },
+
+    posterize(ctx, w, h, t){
+      const img = ctx.getImageData(0,0,w,h);
+      const d = img.data;
+      const levels = Math.max(2, Math.round(6 - t*4)); // 2..6
+      const step = 255/(levels-1);
+      for(let i=0;i<d.length;i+=4){
+        d[i]   = Math.round(d[i]/step)*step;
+        d[i+1] = Math.round(d[i+1]/step)*step;
+        d[i+2] = Math.round(d[i+2]/step)*step;
+      }
+      ctx.putImageData(img,0,0);
+    },
+
+    scanlines(ctx, w, h, t){
+      const img = ctx.getImageData(0,0,w,h);
+      const d = img.data;
+      const gap = 3;
+      for(let y=0;y<h;y++){
+        if(y%gap===0){
+          for(let x=0;x<w;x++){
+            const o=(y*w+x)*4;
+            const m = 0.55 - 0.4*t;
+            d[o]=d[o]*m; d[o+1]=d[o+1]*m; d[o+2]=d[o+2]*m;
+          }
+        }
+      }
+      ctx.putImageData(img,0,0);
+      // subtle green tint + vignette
+      ctx.save();
+      ctx.globalCompositeOperation='multiply';
+      ctx.fillStyle=`rgba(120,255,200,${0.04*t})`;
+      ctx.fillRect(0,0,w,h);
+      ctx.restore();
+      const g = ctx.createRadialGradient(w/2,h/2,Math.min(w,h)*0.3,w/2,h/2,Math.max(w,h)*0.75);
+      g.addColorStop(0,'rgba(0,0,0,0)');
+      g.addColorStop(1,`rgba(0,0,0,${0.5*t})`);
+      ctx.fillStyle=g; ctx.fillRect(0,0,w,h);
+    }
+  };
+
+  // ---------- intensity ----------
+  function setIntensity(v){
+    intensityVal = v/100;
+    intVal.textContent = v;
+    intensity.style.setProperty('--p', v + '%');
+  }
+  intensity.addEventListener('input', e => setIntensity(+e.target.value));
+
+  // ---------- mirror ----------
+  function setMirror(v){
+    mirror = v;
+    canvas.style.transform = v ? 'scaleX(-1)' : 'none';
+    mirrorToggle.checked = v;
+  }
+  mirrorToggle.addEventListener('change', e => setMirror(e.target.checked));
+  mirrorBtn.addEventListener('click', () => setMirror(!mirror));
+
+  // ---------- snapshot ----------
+  function snapshot(){
+    if(!running) return;
+    // capture the current canvas content. Because the visible canvas is mirrored via CSS,
+    // we replicate the mirror in the saved image for WYSIWYG.
+    const out = document.createElement('canvas');
+    out.width = canvas.width; out.height = canvas.height;
+    const octx = out.getContext('2d');
+    if(mirror){
+      octx.translate(out.width, 0);
+      octx.scale(-1, 1);
+    }
+    octx.drawImage(canvas, 0, 0);
+    const dataUrl = out.toDataURL('image/png');
+    snapshots.unshift({ dataUrl, filter: FILTERS[currentFilter].name, t: Date.now() });
+    renderSnaps();
+    if(flashToggle.checked){
+      flashEl.classList.add('fire');
+      requestAnimationFrame(() => {
+        flashEl.classList.remove('fire');
+      });
+    }
+    toastMsg('📸 Snapshot captured');
+  }
+
+  function renderSnaps(){
+    snapCount.textContent = snapshots.length;
+    snapStrip.innerHTML = '';
+    if(snapshots.length === 0){
+      const e = document.createElement('div');
+      e.className='empty'; e.textContent='No snapshots yet — hit 📸 to capture one';
+      snapStrip.appendChild(e);
+      return;
+    }
+    snapshots.forEach((s, i) => {
+      const div = document.createElement('div');
+      div.className = 'snap';
+      div.title = `${s.filter} — click to download`;
+      div.innerHTML = `
+        <img src="${s.dataUrl}" alt="snapshot" />
+        <div class="acts">
+          <button class="dl">Save</button>
+          <button class="del">Delete</button>
+        </div>
+      `;
+      div.querySelector('.dl').addEventListener('click', ev => {
+        ev.stopPropagation(); download(s, i);
+      });
+      div.querySelector('.del').addEventListener('click', ev => {
+        ev.stopPropagation(); snapshots.splice(i,1); renderSnaps(); toastMsg('Deleted');
+      });
+      div.addEventListener('click', () => download(s, i));
+      snapStrip.appendChild(div);
+    });
+  }
+
+  function download(s, i){
+    const a = document.createElement('a');
+    a.href = s.dataUrl;
+    const stamp = new Date(s.t).toISOString().replace(/[:.]/g,'-').slice(0,19);
+    a.download = `webcam-${s.filter.toLowerCase()}-${stamp}.png`;
+    document.body.appendChild(a); a.click(); a.remove();
+    toastMsg('💾 Image saved');
+  }
+
+  // ---------- toast ----------
+  let toastTimer = null;
+  function toastMsg(msg){
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 1600);
+  }
+
+  // ---------- wire up ----------
+  startBtn.addEventListener('click', () => stream ? stopCamera() : startCamera());
+  overlayStart.addEventListener('click', startCamera);
+  snapBtn.addEventListener('click', snapshot);
+
+  // keyboard: space = snapshot, S = save latest, 1-9 = filters
+  document.addEventListener('keydown', (e) => {
+    if(e.target.tagName === 'INPUT') return;
+    if(e.code === 'Space'){ e.preventDefault(); if(running) snapshot(); }
+    else if(e.key.toLowerCase() === 's' && snapshots.length){
+      download(snapshots[0], 0);
+    } else if(e.key >= '1' && e.key <= '9'){
+      const keys = Object.keys(FILTERS);
+      const idx = parseInt(e.key,10)-1;
+      if(keys[idx]) selectFilter(keys[idx]);
+    }
+  });
+
+  // ---------- init ----------
+  buildChips();
+  setIntensity(100);
+  setMirror(true);
+  // start with a faint idle background on canvas
+  canvas.width = 1280; canvas.height = 720;
+  ctx.fillStyle = '#06060a'; ctx.fillRect(0,0,canvas.width,canvas.height);
+})();
+</script>
+</body>
+</html>

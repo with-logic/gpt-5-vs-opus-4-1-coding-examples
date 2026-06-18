@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Online Whiteboard</title>
+<style>
+  :root{
+    --bg:#0f1115;
+    --panel:#171a21;
+    --panel-2:#1e222b;
+    --border:#2a2f3a;
+    --text:#e7e9ee;
+    --muted:#8a92a3;
+    --accent:#5b8cff;
+    --accent-soft:rgba(91,140,255,.18);
+    --danger:#ff5d6c;
+    --shadow:0 10px 40px rgba(0,0,0,.45);
+    --radius:14px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;margin:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    overflow:hidden;
+    user-select:none;
+    -webkit-user-select:none;
+  }
+
+  /* Canvas stage */
+  #stage{
+    position:fixed;
+    inset:0;
+    background:
+      radial-gradient(1200px 800px at 20% 10%, #14171f 0%, rgba(20,23,31,0) 60%),
+      radial-gradient(1000px 700px at 90% 90%, #12151c 0%, rgba(18,21,28,0) 55%),
+      #0c0e13;
+    cursor:crosshair;
+    touch-action:none;
+  }
+  #board{
+    position:absolute;
+    inset:0;
+    display:block;
+    width:100%;
+    height:100%;
+  }
+
+  /* Subtle grid overlay drawn on canvas itself; we add a faint vignette div */
+  #vignette{
+    position:fixed;inset:0;pointer-events:none;
+    box-shadow:inset 0 0 220px rgba(0,0,0,.55);
+  }
+
+  /* Top toolbar */
+  .toolbar{
+    position:fixed;
+    top:14px;left:50%;
+    transform:translateX(-50%);
+    display:flex;align-items:center;gap:6px;
+    background:rgba(23,26,33,.82);
+    backdrop-filter:blur(14px) saturate(140%);
+    -webkit-backdrop-filter:blur(14px) saturate(140%);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:8px;
+    box-shadow:var(--shadow);
+    z-index:20;
+    max-width:calc(100vw - 24px);
+  }
+  .group{display:flex;align-items:center;gap:4px}
+  .divider{width:1px;height:26px;background:var(--border);margin:0 4px}
+
+  .tbtn{
+    position:relative;
+    width:38px;height:38px;
+    display:grid;place-items:center;
+    border:none;border-radius:10px;
+    background:transparent;color:var(--text);
+    cursor:pointer;
+    transition:background .15s ease, transform .08s ease, color .15s ease;
+  }
+  .tbtn:hover{background:var(--panel-2);color:#fff}
+  .tbtn:active{transform:scale(.94)}
+  .tbtn.active{background:var(--accent-soft);color:var(--accent);box-shadow:inset 0 0 0 1px rgba(91,140,255,.45)}
+  .tbtn svg{width:20px;height:20px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .tbtn .tip{
+    position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);
+    background:#000;color:#fff;font-size:11px;font-weight:500;
+    padding:4px 8px;border-radius:6px;white-space:nowrap;
+    opacity:0;pointer-events:none;transition:opacity .12s ease;
+    box-shadow:0 4px 14px rgba(0,0,0,.4);
+  }
+  .tbtn:hover .tip{opacity:1}
+  .tbtn .tip kbd{background:#222;padding:1px 4px;border-radius:3px;margin-left:4px;font-family:inherit}
+
+  .label{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding:0 6px}
+
+  /* Color swatches */
+  .swatches{display:flex;align-items:center;gap:5px}
+  .swatch{
+    width:22px;height:22px;border-radius:50%;
+    cursor:pointer;border:2px solid transparent;
+    transition:transform .12s ease, border-color .12s ease;
+    box-shadow:inset 0 0 0 1px rgba(0,0,0,.25);
+  }
+  .swatch:hover{transform:scale(1.15)}
+  .swatch.active{border-color:#fff;transform:scale(1.15)}
+  #customColor{
+    width:26px;height:26px;border-radius:50%;
+    border:2px dashed var(--muted);background:transparent;cursor:pointer;
+    padding:0;overflow:hidden;
+  }
+  #customColor::-webkit-color-swatch-wrapper{padding:0}
+  #customColor::-webkit-color-swatch{border:none;border-radius:50%}
+  #customColor::-moz-color-swatch{border:none;border-radius:50%}
+
+  /* Size control */
+  .size-wrap{display:flex;align-items:center;gap:8px;padding:0 6px}
+  #sizeSlider{
+    -webkit-appearance:none;appearance:none;
+    width:90px;height:4px;border-radius:4px;
+    background:linear-gradient(to right,var(--accent) 0%,var(--accent) var(--p,30%),var(--border) var(--p,30%));
+    outline:none;cursor:pointer;
+  }
+  #sizeSlider::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;
+    width:14px;height:14px;border-radius:50%;background:#fff;
+    border:2px solid var(--accent);cursor:pointer;
+    box-shadow:0 1px 4px rgba(0,0,0,.4);
+  }
+  #sizeSlider::-moz-range-thumb{
+    width:14px;height:14px;border-radius:50%;background:#fff;
+    border:2px solid var(--accent);cursor:pointer;
+  }
+  .size-dot{
+    width:18px;height:18px;display:grid;place-items:center;
+  }
+  .size-dot span{display:block;background:currentColor;border-radius:50%}
+
+  /* Save / clear buttons get accent treatment */
+  .tbtn.primary{background:var(--accent);color:#fff}
+  .tbtn.primary:hover{background:#4a7dff;color:#fff}
+  .tbtn.danger:hover{background:rgba(255,93,108,.15);color:var(--danger)}
+
+  /* Bottom status bar */
+  .statusbar{
+    position:fixed;bottom:12px;left:14px;
+    display:flex;align-items:center;gap:10px;
+    background:rgba(23,26,33,.72);
+    backdrop-filter:blur(10px);
+    -webkit-backdrop-filter:blur(10px);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:6px 12px;
+    font-size:12px;color:var(--muted);
+    z-index:15;
+  }
+  .statusbar .dot{width:7px;height:7px;border-radius:50%;background:#3ad29f;box-shadow:0 0 8px #3ad29f}
+  .statusbar b{color:var(--text);font-weight:600}
+
+  /* Floating zoom / cursor indicator */
+  #cursorRing{
+    position:fixed;pointer-events:none;z-index:14;
+    border:1px solid rgba(255,255,255,.7);
+    border-radius:50%;
+    transform:translate(-50%,-50%);
+    mix-blend-mode:difference;
+    transition:width .08s ease, height .08s ease, opacity .12s ease;
+    opacity:0;
+  }
+
+  /* Toast */
+  #toast{
+    position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:#1e222b;border:1px solid var(--border);
+    color:var(--text);padding:10px 18px;border-radius:10px;
+    font-size:13px;font-weight:500;box-shadow:var(--shadow);
+    opacity:0;pointer-events:none;transition:all .25s ease;z-index:30;
+  }
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* Welcome hint */
+  #hint{
+    position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+    text-align:center;color:var(--muted);z-index:5;pointer-events:none;
+    transition:opacity .4s ease;
+  }
+  #hint h1{font-size:22px;font-weight:600;color:var(--text);margin:0 0 6px;letter-spacing:-.01em}
+  #hint p{font-size:13px;margin:0;opacity:.8}
+  #hint.hide{opacity:0}
+
+  @media (max-width:640px){
+    .toolbar{top:8px;gap:4px;padding:6px;border-radius:14px}
+    .tbtn{width:34px;height:34px}
+    #sizeSlider{width:60px}
+    .label{display:none}
+    .swatches{display:none}
+    .toolbar .mobile-color{display:flex}
+  }
+  .mobile-only{display:none}
+  @media (max-width:640px){ .mobile-only{display:grid} }
+</style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="board"></canvas>
+  </div>
+  <div id="vignette"></div>
+  <div id="cursorRing"></div>
+
+  <div id="hint">
+    <h1>Online Whiteboard</h1>
+    <p>Pick a tool and start drawing · double-tap/press Z to undo</p>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="toolbar" role="toolbar" aria-label="Whiteboard tools">
+    <!-- Tools -->
+    <div class="group" id="toolGroup">
+      <button class="tbtn active" data-tool="pen" aria-label="Pen" title="Pen">
+        <svg viewBox="0 0 24 24"><path d="M3 21l3.5-1 11-11-2.5-2.5-11 11z"/><path d="M14 6.5l3.5 3.5"/></svg>
+        <span class="tip">Pen <kbd>P</kbd></span>
+      </button>
+      <button class="tbtn" data-tool="marker" aria-label="Marker" title="Marker">
+        <svg viewBox="0 0 24 24"><path d="M4 20l4-1 10-10-3-3-10 10z"/><path d="M9 19l-2-2"/><path d="M15 6l3 3"/></svg>
+        <span class="tip">Marker <kbd>M</kbd></span>
+      </button>
+      <button class="tbtn" data-tool="highlighter" aria-label="Highlighter" title="Highlighter">
+        <svg viewBox="0 0 24 24"><path d="M4 18h7"/><path d="M9 14l8-8 3 3-8 8-4 1z"/></svg>
+        <span class="tip">Highlighter <kbd>H</kbd></span>
+      </button>
+      <button class="tbtn" data-tool="eraser" aria-label="Eraser" title="Eraser">
+        <svg viewBox="0 0 24 24"><path d="M16 3l5 5-10 10H6l-3-3z"/><path d="M9 9l6 6"/><path d="M5 21h14"/></svg>
+        <span class="tip">Eraser <kbd>E</kbd></span>
+      </button>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Shapes -->
+    <div class="group">
+      <button class="tbtn" data-tool="line" aria-label="Line" title="Line">
+        <svg viewBox="0 0 24 24"><path d="M5 19L19 5"/></svg>
+        <span class="tip">Line <kbd>L</kbd></span>
+      </button>
+      <button class="tbtn" data-tool="rect" aria-label="Rectangle" title="Rectangle">
+        <svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1"/></svg>
+        <span class="tip">Rectangle <kbd>R</kbd></span>
+      </button>
+      <button class="tbtn" data-tool="ellipse" aria-label="Ellipse" title="Ellipse">
+        <svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8" ry="6"/></svg>
+        <span class="tip">Ellipse <kbd>O</kbd></span>
+      </button>
+      <button class="tbtn" data-tool="arrow" aria-label="Arrow" title="Arrow">
+        <svg viewBox="0 0 24 24"><path d="M4 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+        <span class="tip">Arrow <kbd>A</kbd></span>
+      </button>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Colors -->
+    <div class="swatches" id="swatches">
+      <button class="swatch active" data-color="#ffffff" style="background:#ffffff" aria-label="White"></button>
+      <button class="swatch" data-color="#1a1a1a" style="background:#1a1a1a" aria-label="Black"></button>
+      <button class="swatch" data-color="#ff5d6c" style="background:#ff5d6c" aria-label="Red"></button>
+      <button class="swatch" data-color="#ff9f43" style="background:#ff9f43" aria-label="Orange"></button>
+      <button class="swatch" data-color="#ffd23f" style="background:#ffd23f" aria-label="Yellow"></button>
+      <button class="swatch" data-color="#3ad29f" style="background:#3ad29f" aria-label="Green"></button>
+      <button class="swatch" data-color="#5b8cff" style="background:#5b8cff" aria-label="Blue"></button>
+      <button class="swatch" data-color="#9b6cff" style="background:#9b6cff" aria-label="Purple"></button>
+    </div>
+    <input type="color" id="customColor" value="#5b8cff" aria-label="Custom color" title="Custom color"/>
+
+    <div class="divider"></div>
+
+    <!-- Size -->
+    <div class="size-wrap">
+      <div class="size-dot" id="sizeDot"><span style="width:6px;height:6px"></span></div>
+      <input type="range" id="sizeSlider" min="1" max="60" value="6" aria-label="Brush size"/>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Actions -->
+    <div class="group">
+      <button class="tbtn" id="undoBtn" aria-label="Undo" title="Undo">
+        <svg viewBox="0 0 24 24"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a5 5 0 0 1 0 10h-3"/></svg>
+        <span class="tip">Undo <kbd>⌘Z</kbd></span>
+      </button>
+      <button class="tbtn" id="redoBtn" aria-label="Redo" title="Redo">
+        <svg viewBox="0 0 24 24"><path d="M15 14l4-4-4-4"/><path d="M19 10h-9a5 5 0 0 0 0 10h3"/></svg>
+        <span class="tip">Redo <kbd>⌘⇧Z</kbd></span>
+      </button>
+      <button class="tbtn danger" id="clearBtn" aria-label="Clear" title="Clear">
+        <svg viewBox="0 0 24 24"><path d="M5 7h14"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/></svg>
+        <span class="tip">Clear</span>
+      </button>
+      <button class="tbtn primary" id="saveBtn" aria-label="Save image" title="Save PNG">
+        <svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M8 11l4 4 4-4"/><path d="M5 19h14"/></svg>
+        <span class="tip">Save PNG <kbd>S</kbd></span>
+      </button>
+    </div>
+  </div>
+
+  <div class="statusbar">
+    <span class="dot"></span>
+    <span>Tool: <b id="stTool">Pen</b></span>
+    <span>·</span>
+    <span>Size: <b id="stSize">6</b>px</span>
+    <span>·</span>
+    <span id="stStrokes">0 strokes</span>
+  </div>
+
+  <div id="toast"></div>
+
+<script>
+(() => {
+  "use strict";
+
+  const canvas = document.getElementById('board');
+  const ctx = canvas.getContext('2d');
+  const stage = document.getElementById('stage');
+  const ring = document.getElementById('cursorRing');
+  const hint = document.getElementById('hint');
+  const toastEl = document.getElementById('toast');
+
+  // ---------- State ----------
+  const state = {
+    tool: 'pen',
+    color: '#ffffff',
+    size: 6,
+    drawing: false,
+    startX: 0, startY: 0,
+    lastX: 0, lastY: 0,
+    snapshot: null,      // for shape preview
+    strokes: 0,
+    history: [],         // undo stack (image data URLs)
+    future: [],          // redo stack
+    dpr: 1,
+  };
+
+  const TOOL_LABELS = {
+    pen:'Pen', marker:'Marker', highlighter:'Highlighter', eraser:'Eraser',
+    line:'Line', rect:'Rectangle', ellipse:'Ellipse', arrow:'Arrow'
+  };
+
+  const isShape = t => t==='line'||t==='rect'||t==='ellipse'||t==='arrow';
+
+  // ---------- Sizing ----------
+  function resize(){
+    // Preserve current drawing across resize
+    const prev = canvas.width && canvas.height ? canvas.toDataURL() : null;
+    state.dpr = window.devicePixelRatio || 1;
+    const w = stage.clientWidth, h = stage.clientHeight;
+    canvas.width = Math.max(1, Math.floor(w * state.dpr));
+    canvas.height = Math.max(1, Math.floor(h * state.dpr));
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    ctx.setTransform(state.dpr,0,0,state.dpr,0,0);
+    paintBackground();
+    if (prev) {
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, w, h);
+      img.src = prev;
+    }
+  }
+
+  function paintBackground(){
+    ctx.save();
+    ctx.setTransform(state.dpr,0,0,state.dpr,0,0);
+    ctx.fillStyle = '#0c0e13';
+    ctx.fillRect(0,0, stage.clientWidth, stage.clientHeight);
+    // faint grid
+    ctx.strokeStyle = 'rgba(255,255,255,0.035)';
+    ctx.lineWidth = 1;
+    const gap = 32;
+    ctx.beginPath();
+    for (let x=0; x<=stage.clientWidth; x+=gap){ ctx.moveTo(x+.5,0); ctx.lineTo(x+.5,stage.clientHeight); }
+    for (let y=0; y<=stage.clientHeight; y+=gap){ ctx.moveTo(0,y+.5); ctx.lineTo(stage.clientWidth,y+.5); }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ---------- History ----------
+  const HISTORY_LIMIT = 40;
+  function pushHistory(){
+    try{
+      const data = canvas.toDataURL();
+      state.history.push(data);
+      if (state.history.length > HISTORY_LIMIT) state.history.shift();
+      state.future = [];
+    }catch(e){}
+  }
+  function restoreFromDataURL(url){
+    const img = new Image();
+    img.onload = () => {
+      ctx.save();
+      ctx.setTransform(state.dpr,0,0,state.dpr,0,0);
+      ctx.clearRect(0,0,stage.clientWidth,stage.clientHeight);
+      ctx.drawImage(img,0,0,stage.clientWidth,stage.clientHeight);
+      ctx.restore();
+    };
+    img.src = url;
+  }
+  function undo(){
+    if (state.history.length <= 1) { toast('Nothing to undo'); return; }
+    const current = state.history.pop();
+    state.future.push(current);
+    const prev = state.history[state.history.length-1];
+    restoreFromDataURL(prev);
+  }
+  function redo(){
+    if (!state.future.length) { toast('Nothing to redo'); return; }
+    const next = state.future.pop();
+    state.history.push(next);
+    restoreFromDataURL(next);
+  }
+
+  // ---------- Drawing helpers ----------
+  function pos(e){
+    const r = canvas.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return { x: t.clientX - r.left, y: t.clientY - r.top };
+  }
+
+  function applyStrokeStyle(){
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = state.size;
+
+    switch(state.tool){
+      case 'pen':
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = state.color;
+        break;
+      case 'marker':
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 0.85;
+        ctx.strokeStyle = state.color;
+        ctx.lineWidth = state.size * 1.4;
+        break;
+      case 'highlighter':
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.28;
+        ctx.strokeStyle = state.color;
+        ctx.lineCap = 'butt';
+        ctx.lineWidth = state.size * 2.4;
+        break;
+      case 'eraser':
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = 'rgba(0,0,0,1)';
+        ctx.lineWidth = state.size * 2.2;
+        break;
+      default: // shapes
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = state.color;
+        ctx.lineWidth = state.size;
+    }
+  }
+
+  function freehandSegment(x0,y0,x1,y1){
+    // smooth via quadratic midpoint
+    const midX = (x0+x1)/2, midY = (y0+y1)/2;
+    ctx.beginPath();
+    ctx.moveTo(x0,y0);
+    ctx.quadraticCurveTo(x0,y0, midX,midY);
+    ctx.stroke();
+  }
+
+  function drawShape(tool, x0,y0, x1,y1){
+    ctx.beginPath();
+    if (tool==='line'){
+      ctx.moveTo(x0,y0); ctx.lineTo(x1,y1); ctx.stroke();
+    } else if (tool==='rect'){
+      const x = Math.min(x0,x1), y = Math.min(y0,y1);
+      const w = Math.abs(x1-x0), h = Math.abs(y1-y0);
+      ctx.rect(x,y,w,h); ctx.stroke();
+    } else if (tool==='ellipse'){
+      const cx=(x0+x1)/2, cy=(y0+y1)/2;
+      const rx=Math.max(1,Math.abs(x1-x0)/2), ry=Math.max(1,Math.abs(y1-y0)/2);
+      ctx.ellipse(cx,cy,rx,ry,0,0,Math.PI*2); ctx.stroke();
+    } else if (tool==='arrow'){
+      const dx=x1-x0, dy=y1-y0;
+      const len=Math.hypot(dx,dy);
+      const head=Math.max(10, state.size*2.2);
+      const ang=Math.atan2(dy,dx);
+      ctx.moveTo(x0,y0); ctx.lineTo(x1,y1); ctx.stroke();
+      // arrowhead
+      ctx.beginPath();
+      ctx.moveTo(x1,y1);
+      ctx.lineTo(x1 - head*Math.cos(ang - Math.PI/7), y1 - head*Math.sin(ang - Math.PI/7));
+      ctx.lineTo(x1 - head*Math.cos(ang + Math.PI/7), y1 - head*Math.sin(ang + Math.PI/7));
+      ctx.closePath();
+      ctx.fillStyle = state.color;
+      ctx.fill();
+    }
+  }
+
+  function snapshot(){
+    state.snapshot = ctx.getImageData(0,0,canvas.width,canvas.height);
+  }
+  function restoreSnapshot(){
+    if (state.snapshot) ctx.putImageData(state.snapshot,0,0);
+  }
+
+  // ---------- Pointer events ----------
+  function start(e){
+    e.preventDefault();
+    const {x,y} = pos(e);
+    state.drawing = true;
+    state.startX = x; state.startY = y;
+    state.lastX = x; state.lastY = y;
+    hint.classList.add('hide');
+
+    applyStrokeStyle();
+
+    if (isShape(state.tool)){
+      snapshot();
+    } else {
+      // draw a dot so single tap leaves a mark
+      ctx.beginPath();
+      ctx.arc(x,y, ctx.lineWidth/2, 0, Math.PI*2);
+      ctx.fillStyle = state.tool==='eraser' ? 'rgba(0,0,0,1)' : state.color;
+      if (state.tool==='highlighter'){ ctx.globalCompositeOperation='lighter'; ctx.globalAlpha=0.28; }
+      ctx.fill();
+    }
+  }
+
+  function move(e){
+    const {x,y} = pos(e);
+    updateCursorRing(x,y);
+    if (!state.drawing) return;
+    e.preventDefault();
+
+    if (isShape(state.tool)){
+      restoreSnapshot();
+      applyStrokeStyle();
+      drawShape(state.tool, state.startX, state.startY, x, y);
+    } else {
+      applyStrokeStyle();
+      freehandSegment(state.lastX, state.lastY, x, y);
+      state.lastX = x; state.lastY = y;
+    }
+  }
+
+  function end(e){
+    if (!state.drawing) return;
+    state.drawing = false;
+    state.snapshot = null;
+    state.strokes++;
+    document.getElementById('stStrokes').textContent = state.strokes + (state.strokes===1?' stroke':' strokes');
+    pushHistory();
+  }
+
+  // ---------- Cursor ring ----------
+  function updateCursorRing(x,y){
+    const r = canvas.getBoundingClientRect();
+    const size = (state.tool==='eraser' ? state.size*2.2 : (state.tool==='highlighter'? state.size*2.4 : state.size));
+    const px = size;
+    ring.style.width = px + 'px';
+    ring.style.height = px + 'px';
+    ring.style.left = (r.left + x) + 'px';
+    ring.style.top = (r.top + y) + 'px';
+    ring.style.opacity = '1';
+  }
+  stage.addEventListener('mouseleave', ()=> ring.style.opacity='0');
+  stage.addEventListener('blur', ()=> ring.style.opacity='0');
+
+  // Bind pointer
+  canvas.addEventListener('mousedown', start);
+  window.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', end);
+  canvas.addEventListener('touchstart', start, {passive:false});
+  canvas.addEventListener('touchmove', move, {passive:false});
+  canvas.addEventListener('touchend', end);
+  canvas.addEventListener('touchcancel', end);
+
+  // ---------- UI wiring ----------
+  function setTool(tool){
+    state.tool = tool;
+    document.querySelectorAll('#toolGroup .tbtn, .toolbar .tbtn[data-tool]').forEach(b=>{
+      b.classList.toggle('active', b.dataset.tool===tool);
+    });
+    document.getElementById('stTool').textContent = TOOL_LABELS[tool] || tool;
+    // cursor style
+    stage.style.cursor = tool==='eraser' ? 'cell' : 'crosshair';
+  }
+  document.querySelectorAll('.tbtn[data-tool]').forEach(b=>{
+    b.addEventListener('click', ()=> setTool(b.dataset.tool));
+  });
+
+  // Swatches
+  function setColor(c){
+    state.color = c;
+    document.querySelectorAll('.swatch').forEach(s=> s.classList.toggle('active', s.dataset.color===c));
+    document.getElementById('customColor').value = c;
+  }
+  document.querySelectorAll('.swatch').forEach(s=>{
+    s.addEventListener('click', ()=> setColor(s.dataset.color));
+  });
+  document.getElementById('customColor').addEventListener('input', e=>{
+    setColor(e.target.value);
+    // deselect swatches since custom
+    document.querySelectorAll('.swatch').forEach(s=> s.classList.remove('active'));
+  });
+
+  // Size
+  const sizeSlider = document.getElementById('sizeSlider');
+  const sizeDot = document.getElementById('sizeDot').querySelector('span');
+  function setSize(v){
+    state.size = +v;
+    sizeSlider.value = v;
+    sizeSlider.style.setProperty('--p', ((v-1)/59*100)+'%');
+    const d = Math.min(18, Math.max(3, v*0.5));
+    sizeDot.style.width = d+'px'; sizeDot.style.height = d+'px';
+    document.getElementById('stSize').textContent = v;
+  }
+  sizeSlider.addEventListener('input', e=> setSize(e.target.value));
+  setSize(6);
+
+  // Actions
+  document.getElementById('undoBtn').addEventListener('click', undo);
+  document.getElementById('redoBtn').addEventListener('click', redo);
+  document.getElementById('clearBtn').addEventListener('click', ()=>{
+    pushHistory();
+    ctx.save();
+    ctx.setTransform(state.dpr,0,0,state.dpr,0,0);
+    ctx.clearRect(0,0,stage.clientWidth,stage.clientHeight);
+    ctx.restore();
+    paintBackground();
+    state.strokes = 0;
+    document.getElementById('stStrokes').textContent = '0 strokes';
+    toast('Canvas cleared');
+  });
+  document.getElementById('saveBtn').addEventListener('click', savePNG);
+
+  function savePNG(){
+    // Composite a clean export (white-ish? keep dark board look). Export current pixels.
+    const a = document.createElement('a');
+    a.download = 'whiteboard-' + Date.now() + '.png';
+    a.href = canvas.toDataURL('image/png');
+    document.body.appendChild(a); a.click(); a.remove();
+    toast('Image saved');
+  }
+
+  // ---------- Toast ----------
+  let toastTimer;
+  function toast(msg){
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=> toastEl.classList.remove('show'), 1600);
+  }
+
+  // ---------- Keyboard shortcuts ----------
+  window.addEventListener('keydown', e=>{
+    if (e.target.tagName==='INPUT' && e.target.type!=='range') return;
+    const meta = e.metaKey || e.ctrlKey;
+    if (meta && e.key.toLowerCase()==='z'){ e.preventDefault(); e.shiftKey? redo(): undo(); return; }
+    if (meta && e.key.toLowerCase()==='y'){ e.preventDefault(); redo(); return; }
+    if (meta) return;
+    const k = e.key.toLowerCase();
+    const map = {p:'pen',m:'marker',h:'highlighter',e:'eraser',l:'line',r:'rect',o:'ellipse',a:'arrow'};
+    if (map[k]) { setTool(map[k]); }
+    else if (k==='s'){ e.preventDefault(); savePNG(); }
+    else if (k==='['){ setSize(Math.max(1,state.size-2)); }
+    else if (k===']'){ setSize(Math.min(60,state.size+2)); }
+  });
+
+  // ---------- Init ----------
+  window.addEventListener('resize', ()=> {
+    // debounce light
+    clearTimeout(window._rz);
+    window._rz = setTimeout(resize, 80);
+  });
+  resize();
+  pushHistory(); // initial blank state
+
+  // hide hint once user interacts
+  stage.addEventListener('mousedown', ()=> hint.classList.add('hide'), {once:true});
+  stage.addEventListener('touchstart', ()=> hint.classList.add('hide'), {once:true});
+
+  // Initial cursor ring sizing
+  ring.style.opacity='0';
+})();
+</script>
+</body>
+</html>

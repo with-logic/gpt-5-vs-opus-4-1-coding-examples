@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Virtual Drum Kit — Studio Session</title>
+<style>
+  /* ---------- Reset & base ---------- */
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    color: #e8ecf4;
+    background: #06080f;
+    overflow-x: hidden;
+    overscroll-behavior: none;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+  }
+
+  /* ---------- Studio backdrop ---------- */
+  .stage {
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(1200px 700px at 50% -10%, rgba(94, 60, 240, 0.28), transparent 60%),
+      radial-gradient(900px 600px at 85% 110%, rgba(0, 220, 200, 0.18), transparent 60%),
+      radial-gradient(700px 500px at 10% 90%, rgba(255, 70, 130, 0.14), transparent 60%),
+      linear-gradient(180deg, #0a0e1a 0%, #060810 60%, #04050a 100%);
+    overflow-y: auto;
+  }
+  .stage::before {
+    content: "";
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, #000 30%, transparent 100%);
+    pointer-events: none;
+  }
+  .stage::after {
+    content: "";
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse 60% 40% at 50% 100%, rgba(0,0,0,0.6), transparent 70%);
+    pointer-events: none;
+  }
+
+  .wrap {
+    position: relative; z-index: 2;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 22px clamp(14px, 3vw, 36px) 60px;
+  }
+
+  /* ---------- Header ---------- */
+  header.top {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .logo {
+    width: 46px; height: 46px; border-radius: 13px;
+    background: conic-gradient(from 210deg, #5e3cf0, #00d8c8, #ff4682, #5e3cf0);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 12px 30px rgba(94,60,240,0.45);
+    display: grid; place-items: center;
+    position: relative;
+  }
+  .logo svg { width: 26px; height: 26px; }
+  .brand h1 {
+    font-size: clamp(18px, 2.4vw, 24px); font-weight: 800; letter-spacing: -0.02em;
+    background: linear-gradient(90deg,#fff, #c7d0ff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .brand p { font-size: 12px; color: #7e87a3; letter-spacing: 0.04em; text-transform: uppercase; margin-top: 2px; }
+
+  .session-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 13px; border-radius: 999px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    font-size: 12px; color: #aab2cd; font-weight: 600;
+    backdrop-filter: blur(8px);
+  }
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: #2bd47e; box-shadow: 0 0 10px #2bd47e; }
+  .chip.rec .dot { background: #ff3b5c; box-shadow: 0 0 12px #ff3b5c; animation: blink 0.9s ease-in-out infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.25} }
+
+  /* ---------- Console / visualizer ---------- */
+  .console {
+    position: relative;
+    border-radius: 22px;
+    padding: 16px;
+    background: linear-gradient(180deg, rgba(20,26,44,0.85), rgba(10,14,26,0.85));
+    border: 1px solid rgba(255,255,255,0.07);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+    margin-bottom: 18px;
+  }
+  .console-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin: 2px 6px 10px;
+  }
+  .console-title { font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; color: #6f7798; font-weight: 700; }
+  .leds { display: flex; gap: 6px; }
+  .led { width: 9px; height: 9px; border-radius: 50%; background: rgba(255,255,255,0.08); transition: all 0.08s; }
+  .led.on { background: #2bd47e; box-shadow: 0 0 8px #2bd47e; }
+
+  #scope {
+    width: 100%; height: 96px; display: block;
+    border-radius: 12px;
+    background: radial-gradient(ellipse at 50% 50%, rgba(0,216,200,0.05), transparent 70%), #060912;
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+
+  /* ---------- Transport / record ---------- */
+  .transport {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-top: 14px;
+  }
+  .tbtn {
+    appearance: none; border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.04);
+    color: #d6dcf0; font-weight: 700; font-size: 13px;
+    padding: 11px 16px; border-radius: 12px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 9px;
+    transition: transform 0.08s, background 0.18s, box-shadow 0.18s, border-color 0.18s;
+    min-height: 46px;
+  }
+  .tbtn:hover { background: rgba(255,255,255,0.09); }
+  .tbtn:active { transform: translateY(1px) scale(0.98); }
+  .tbtn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .tbtn svg { width: 16px; height: 16px; }
+  .tbtn.rec {
+    background: linear-gradient(180deg, rgba(255,59,92,0.25), rgba(255,59,92,0.1));
+    border-color: rgba(255,59,92,0.55); color: #ffd7de;
+  }
+  .tbtn.rec.active {
+    background: linear-gradient(180deg, #ff3b5c, #d8243f); color: #fff;
+    border-color: #ff5a78; box-shadow: 0 0 22px rgba(255,59,92,0.5);
+  }
+  .tbtn.play {
+    background: linear-gradient(180deg, rgba(0,216,200,0.22), rgba(0,216,200,0.08));
+    border-color: rgba(0,216,200,0.5); color: #cdfaf3;
+  }
+  .tbtn.play.active {
+    background: linear-gradient(180deg, #00d8c8, #00998f); color: #03201d;
+    box-shadow: 0 0 22px rgba(0,216,200,0.45);
+  }
+  .tbtn.danger:hover { border-color: rgba(255,90,120,0.5); color: #ffb3c0; }
+
+  .timer {
+    margin-left: auto;
+    font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 15px; font-weight: 700; color: #c7d0ff;
+    background: rgba(0,0,0,0.3); padding: 10px 14px; border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.06);
+    min-width: 92px; text-align: center;
+    letter-spacing: 0.04em;
+  }
+  .timer .label { font-size: 9px; color: #6f7798; letter-spacing: 0.18em; display: block; margin-bottom: 2px; font-family: 'Inter',sans-serif; font-weight: 700; }
+
+  /* ---------- Kit ---------- */
+  .kit-shell {
+    position: relative;
+    border-radius: 26px;
+    padding: clamp(16px, 2.5vw, 30px);
+    background:
+      radial-gradient(120% 80% at 50% 0%, rgba(94,60,240,0.12), transparent 60%),
+      linear-gradient(180deg, rgba(16,21,38,0.9), rgba(8,11,22,0.92));
+    border: 1px solid rgba(255,255,255,0.07);
+    box-shadow: 0 30px 80px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+  .kit-shell::before {
+    content: "";
+    position: absolute; inset: 0; border-radius: 26px;
+    background: repeating-linear-gradient(180deg, rgba(255,255,255,0.018) 0 2px, transparent 2px 6px);
+    pointer-events: none; mix-blend-mode: overlay;
+  }
+
+  .kit {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: clamp(10px, 1.6vw, 18px);
+  }
+
+  .pad {
+    --c: #5e3cf0;
+    --c2: #9b7bff;
+    position: relative;
+    aspect-ratio: 1 / 1;
+    border-radius: 20px;
+    cursor: pointer;
+    border: 1px solid rgba(255,255,255,0.1);
+    background:
+      radial-gradient(120% 120% at 50% 0%, rgba(255,255,255,0.10), transparent 55%),
+      linear-gradient(165deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01) 40%, rgba(0,0,0,0.35));
+    overflow: hidden;
+    transition: transform 0.06s ease, box-shadow 0.18s ease, border-color 0.18s;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.07);
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: clamp(10px, 1.4vw, 16px);
+    -webkit-user-select: none; user-select: none;
+  }
+  .pad::before {
+    content: "";
+    position: absolute; inset: 0;
+    background: radial-gradient(80% 80% at 50% 120%, var(--c), transparent 70%);
+    opacity: 0.16; transition: opacity 0.18s;
+  }
+  .pad::after {
+    content: "";
+    position: absolute; inset: 0; border-radius: inherit;
+    box-shadow: 0 0 0 0 var(--c);
+    opacity: 0; transition: opacity 0.12s;
+  }
+  .pad:hover { border-color: rgba(255,255,255,0.18); transform: translateY(-1px); }
+  .pad:hover::before { opacity: 0.28; }
+
+  .pad.hit {
+    transform: translateY(2px) scale(0.975);
+    border-color: var(--c2);
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.04), 0 0 34px var(--c), inset 0 0 30px rgba(255,255,255,0.18);
+  }
+  .pad.hit::before { opacity: 0.85; }
+  .pad.hit::after { opacity: 1; box-shadow: 0 0 40px 6px var(--c); }
+
+  .pad-top { display: flex; align-items: center; justify-content: space-between; position: relative; z-index: 2; }
+  .pad-key {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 12px; font-weight: 800;
+    color: rgba(255,255,255,0.85);
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.12);
+    padding: 3px 8px; border-radius: 7px;
+    min-width: 26px; text-align: center;
+  }
+  .pad-led {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: rgba(255,255,255,0.12);
+    transition: all 0.08s;
+  }
+  .pad.hit .pad-led { background: var(--c2); box-shadow: 0 0 12px var(--c2); }
+
+  .pad-body { position: relative; z-index: 2; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+  .pad-ico { width: clamp(30px, 4.4vw, 46px); height: clamp(30px, 4.4vw, 46px); opacity: 0.95; filter: drop-shadow(0 2px 8px rgba(0,0,0,0.5)); }
+  .pad-name { font-size: clamp(11px, 1.5vw, 14px); font-weight: 800; letter-spacing: 0.02em; color: #eef1ff; line-height: 1; }
+  .pad-sub { font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(238,241,255,0.5); font-weight: 700; }
+
+  /* ripple */
+  .ripple {
+    position: absolute; border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,255,255,0.55), transparent 70%);
+    transform: translate(-50%, -50%) scale(0);
+    pointer-events: none; z-index: 3;
+    animation: ripple 0.5s ease-out forwards;
+  }
+  @keyframes ripple { to { transform: translate(-50%,-50%) scale(4); opacity: 0; } }
+
+  /* ---------- Footer hint ---------- */
+  .hint {
+    margin-top: 16px; text-align: center;
+    font-size: 12px; color: #6f7798; letter-spacing: 0.03em;
+  }
+  .hint kbd {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+    padding: 2px 7px; border-radius: 6px; color: #c7d0ff; margin: 0 1px;
+  }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 720px) {
+    .kit { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .console-head .console-title { font-size: 10px; }
+    #scope { height: 72px; }
+  }
+  @media (min-width: 721px) and (max-width: 980px) {
+    .kit { grid-template-columns: repeat(3, 1fr); }
+  }
+
+  /* reduce motion */
+  @media (prefers-reduced-motion: reduce) {
+    .pad, .tbtn, .led, .pad-led { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="wrap">
+
+    <!-- Header -->
+    <header class="top">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <ellipse cx="12" cy="9" rx="8" ry="3.4"/>
+            <path d="M4 9v6c0 1.9 3.6 3.4 8 3.4s8-1.5 8-3.4V9"/>
+            <path d="M14 14.2l4-2.2M10 14.2L6 12"/>
+          </svg>
+        </div>
+        <div>
+          <h1>Virtual Drum Kit</h1>
+          <p>Studio Session · Web Audio Engine</p>
+        </div>
+      </div>
+      <div class="session-meta">
+        <span class="chip" id="statusChip"><span class="dot"></span><span id="statusText">Live</span></span>
+        <span class="chip" id="beatChip"><span style="color:#9b7bff">●</span> <span id="beatText">0 hits</span></span>
+      </div>
+    </header>
+
+    <!-- Console / Visualizer -->
+    <section class="console" aria-label="Visualizer and transport">
+      <div class="console-head">
+        <span class="console-title">Master Bus · Waveform</span>
+        <div class="leds" id="leds"></div>
+      </div>
+      <canvas id="scope"></canvas>
+
+      <div class="transport">
+        <button class="tbtn rec" id="recBtn" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="7"/></svg>
+          <span id="recLabel">Record</span>
+        </button>
+        <button class="tbtn play" id="playBtn" disabled>
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          <span id="playLabel">Play</span>
+        </button>
+        <button class="tbtn danger" id="clearBtn" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+          Clear
+        </button>
+        <button class="tbtn" id="loopBtn" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+          <span id="loopLabel">Loop</span>
+        </button>
+        <div class="timer"><span class="label">TIME</span><span id="timer">0:00.0</span></div>
+      </div>
+    </section>
+
+    <!-- Kit -->
+    <section class="kit-shell" aria-label="Drum kit">
+      <div class="kit" id="kit"></div>
+    </section>
+
+    <p class="hint">
+      Tap the pads or use your keyboard
+      <kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><kbd>F</kbd><kbd>G</kbd><kbd>H</kbd><kbd>J</kbd><kbd>K</kbd>
+      &nbsp;·&nbsp; Hit <kbd>R</kbd> to record · <kbd>Space</kbd> to play / stop
+    </p>
+
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   Virtual Drum Kit — Web Audio synthesis + record/playback
+   ============================================================ */
+
+const PADS = [
+  { id:'kick',  name:'Kick',     sub:'Bass',    key:'A', code:'KeyA', color:'#ff4682', c2:'#ff8aa6', icon:iconKick  },
+  { id:'snare', name:'Snare',    sub:'Snap',    key:'S', code:'KeyS', color:'#5e3cf0', c2:'#9b7bff', icon:iconSnare },
+  { id:'hatc',  name:'Hi-Hat',   sub:'Closed',  key:'D', code:'KeyD', color:'#00d8c8', c2:'#5cf2e8', icon:iconHat   },
+  { id:'hato',  name:'Hi-Hat',   sub:'Open',    key:'F', code:'KeyF', color:'#19a7d8', c2:'#5fd0ff', icon:iconHatO  },
+  { id:'clap',  name:'Clap',     sub:'Hands',   key:'G', code:'KeyG', color:'#f5a623', c2:'#ffce6b', icon:iconClap  },
+  { id:'tom',   name:'Tom',      sub:'Mid',     key:'H', code:'KeyH', color:'#e84d4d', c2:'#ff8585', icon:iconTom   },
+  { id:'floor', name:'Tom',      sub:'Floor',   key:'J', code:'KeyJ', color:'#b545ff', c2:'#d592ff', icon:iconTom   },
+  { id:'crash', name:'Crash',    sub:'Cymbal',  key:'K', code:'KeyK', color:'#ffd23b', c2:'#fff08a', icon:iconCrash },
+];
+
+/* ---------- Icon SVGs (returned as inner markup strings) ---------- */
+function iconKick(){return '<svg class="pad-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><circle cx="24" cy="24" r="15"/><circle cx="24" cy="24" r="9" opacity="0.5"/><circle cx="24" cy="24" r="2.5" fill="currentColor"/></svg>';}
+function iconSnare(){return '<svg class="pad-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><circle cx="24" cy="24" r="15"/><path d="M9 24h30M24 9v30" opacity="0.55"/><circle cx="24" cy="24" r="15" stroke-dasharray="3 3" opacity="0.35"/></svg>';}
+function iconHat(){return '<svg class="pad-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="24" cy="20" rx="17" ry="5"/><ellipse cx="24" cy="26" rx="17" ry="5"/><path d="M24 31v8"/></svg>';}
+function iconHatO(){return '<svg class="pad-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="24" cy="16" rx="17" ry="5"/><ellipse cx="24" cy="30" rx="17" ry="5"/><path d="M24 35v6M24 11v6"/></svg>';}
+function iconClap(){return '<svg class="pad-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 30c-2-6 2-12 8-12s10 6 8 12"/><path d="M18 30l-4 6M24 30l-2 8M30 30l4 6"/><path d="M12 22c-1-3 1-6 4-6"/></svg>';}
+function iconTom(){return '<svg class="pad-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="24" cy="16" rx="12" ry="4"/><path d="M12 16v16c0 3 5 5 12 5s12-2 12-5V16"/><ellipse cx="24" cy="16" rx="12" ry="4" opacity="0.4"/></svg>';}
+function iconCrash(){return '<svg class="pad-ico" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="24" cy="20" rx="20" ry="6"/><path d="M24 26v10M18 36h12" stroke-linecap="round"/><path d="M6 20l-3-2M42 20l3-2" opacity="0.5"/></svg>';}
+
+/* ---------- Audio engine ---------- */
+let ctx, master, analyser, scopeData, noiseBuffer;
+
+function ensureAudio(){
+  if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  master = ctx.createGain();
+  master.gain.value = 0.9;
+  analyser = ctx.createAnalyser();
+  analyser.fftSize = 1024;
+  scopeData = new Uint8Array(analyser.fftSize);
+  master.connect(analyser);
+  analyser.connect(ctx.destination);
+  // pre-bake white noise
+  const len = ctx.sampleRate * 1.0;
+  noiseBuffer = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = noiseBuffer.getChannelData(0);
+  for (let i=0;i<len;i++) d[i] = Math.random()*2-1;
+  drawScope();
+}
+
+/* helper: noise source */
+function noiseSrc(dur){
+  const src = ctx.createBufferSource();
+  src.buffer = noiseBuffer;
+  src.loop = true;
+  return src;
+}
+
+/* individual drum voices */
+const Voices = {
+  kick(t, vel=1){
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type='sine';
+    o.frequency.setValueAtTime(150, t);
+    o.frequency.exponentialRampToValueAtTime(45, t+0.12);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(1.0*vel, t+0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.45);
+    o.connect(g); g.connect(master);
+    o.start(t); o.stop(t+0.5);
+    // click transient
+    const c = ctx.createOscillator(); const cg = ctx.createGain();
+    c.type='triangle'; c.frequency.setValueAtTime(330,t);
+    c.frequency.exponentialRampToValueAtTime(120,t+0.04);
+    cg.gain.setValueAtTime(0.5*vel,t); cg.gain.exponentialRampToValueAtTime(0.0001,t+0.06);
+    c.connect(cg); cg.connect(master); c.start(t); c.stop(t+0.08);
+  },
+  snare(t, vel=1){
+    // noise body
+    const n = noiseSrc(); const ng = ctx.createGain(); const hp = ctx.createBiquadFilter();
+    hp.type='highpass'; hp.frequency.value=1400;
+    ng.gain.setValueAtTime(0.0001,t);
+    ng.gain.exponentialRampToValueAtTime(0.8*vel,t+0.003);
+    ng.gain.exponentialRampToValueAtTime(0.0001,t+0.18);
+    n.connect(hp); hp.connect(ng); ng.connect(master);
+    n.start(t); n.stop(t+0.2);
+    // tonal body
+    const o = ctx.createOscillator(); const og = ctx.createGain();
+    o.type='triangle'; o.frequency.setValueAtTime(190,t); o.frequency.exponentialRampToValueAtTime(130,t+0.1);
+    og.gain.setValueAtTime(0.0001,t); og.gain.exponentialRampToValueAtTime(0.55*vel,t+0.003);
+    og.gain.exponentialRampToValueAtTime(0.0001,t+0.13);
+    o.connect(og); og.connect(master); o.start(t); o.stop(t+0.15);
+  },
+  hatc(t, vel=1){
+    const n = noiseSrc(); const g = ctx.createGain();
+    const hp = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=7000;
+    const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=10000; bp.Q.value=0.8;
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.5*vel,t+0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+0.06);
+    n.connect(hp); hp.connect(bp); bp.connect(g); g.connect(master);
+    n.start(t); n.stop(t+0.08);
+  },
+  hato(t, vel=1){
+    const n = noiseSrc(); const g = ctx.createGain();
+    const hp = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=6000;
+    const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=9000; bp.Q.value=0.6;
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.45*vel,t+0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+0.45);
+    n.connect(hp); hp.connect(bp); bp.connect(g); g.connect(master);
+    n.start(t); n.stop(t+0.5);
+  },
+  clap(t, vel=1){
+    // 3 quick noise bursts + tail
+    const hp = ctx.createBiquadFilter(); hp.type='bandpass'; hp.frequency.value=1200; hp.Q.value=0.7;
+    const g = ctx.createGain();
+    const n = noiseSrc();
+    n.connect(hp); hp.connect(g); g.connect(master);
+    const offsets=[0,0.012,0.024];
+    g.gain.setValueAtTime(0.0001,t);
+    offsets.forEach(o=>{
+      g.gain.exponentialRampToValueAtTime(0.7*vel,t+o+0.001);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+o+0.03);
+    });
+    // tail
+    g.gain.exponentialRampToValueAtTime(0.25*vel,t+0.04);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+0.22);
+    n.start(t); n.stop(t+0.25);
+  },
+  tom(t, vel=1, base=160){
+    const o = ctx.createOscillator(); const g = ctx.createGain();
+    o.type='sine';
+    o.frequency.setValueAtTime(base,t);
+    o.frequency.exponentialRampToValueAtTime(base*0.5,t+0.3);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.9*vel,t+0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+0.4);
+    // noise attack
+    const n = noiseSrc(); const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.3*vel,t); ng.gain.exponentialRampToValueAtTime(0.0001,t+0.05);
+    n.connect(ng); ng.connect(master); n.start(t); n.stop(t+0.06);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t+0.45);
+  },
+  crash(t, vel=1){
+    const n = noiseSrc(); const g = ctx.createGain();
+    const hp = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=4000;
+    const bp = ctx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=6000; bp.Q.value=0.4;
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.6*vel,t+0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+1.4);
+    n.connect(hp); hp.connect(bp); bp.connect(g); g.connect(master);
+    n.start(t); n.stop(t+1.5);
+  },
+};
+
+function trigger(id, vel=1){
+  ensureAudio();
+  const t = ctx.currentTime;
+  switch(id){
+    case 'kick':  Voices.kick(t,vel); break;
+    case 'snare': Voices.snare(t,vel); break;
+    case 'hatc':  Voices.hatc(t,vel); break;
+    case 'hato':  Voices.hato(t,vel); break;
+    case 'clap':  Voices.clap(t,vel); break;
+    case 'tom':   Voices.tom(t,vel,200); break;
+    case 'floor': Voices.tom(t,vel,110); break;
+    case 'crash': Voices.crash(t,vel); break;
+  }
+  flashLED(id);
+}
+
+/* ---------- Build pads ---------- */
+const kitEl = document.getElementById('kit');
+const padNodes = {};
+PADS.forEach(p=>{
+  const el = document.createElement('div');
+  el.className = 'pad';
+  el.style.setProperty('--c', p.color);
+  el.style.setProperty('--c2', p.c2);
+  el.dataset.id = p.id;
+  el.setAttribute('role','button');
+  el.setAttribute('aria-label', `${p.name} ${p.sub} — key ${p.key}`);
+  el.setAttribute('tabindex','0');
+  el.innerHTML = `
+    <div class="pad-top">
+      <span class="pad-key">${p.key}</span>
+      <span class="pad-led"></span>
+    </div>
+    <div class="pad-body">
+      ${p.icon()}
+      <div>
+        <div class="pad-name">${p.name}</div>
+        <div class="pad-sub">${p.sub}</div>
+      </div>
+    </div>`;
+  kitEl.appendChild(el);
+  padNodes[p.id] = el;
+
+  const press = (e, origin)=>{
+    e.preventDefault();
+    ensureAudio();
+    const vel = origin === 'key' ? 1 : (0.7 + 0.3*Math.random());
+    hit(p.id, vel, e);
+    if (recording) recordHit(p.id);
+  };
+  el.addEventListener('pointerdown', e=>press(e,'pointer'));
+  el.addEventListener('keydown', e=>{ if(e.key===' '||e.key==='Enter'){ press(e,'key'); }});
+});
+
+function hit(id, vel=1, e){
+  trigger(id, vel);
+  const el = padNodes[id]; if(!el) return;
+  el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit');
+  clearTimeout(el._t); el._t = setTimeout(()=>el.classList.remove('hit'), 160);
+  // ripple at point
+  if (e){
+    const r = el.getBoundingClientRect();
+    const x = (e.clientX!=null? e.clientX : r.left+r.width/2) - r.left;
+    const y = (e.clientY!=null? e.clientY : r.top+r.height/2) - r.top;
+    const rip = document.createElement('span');
+    rip.className='ripple';
+    rip.style.left = x+'px'; rip.style.top = y+'px';
+    rip.style.width = (r.width*0.5)+'px'; rip.style.height=(r.width*0.5)+'px';
+    rip.style.background = `radial-gradient(circle, ${getComputedStyle(el).getPropertyValue('--c2')}, transparent 70%)`;
+    el.appendChild(rip);
+    setTimeout(()=>rip.remove(), 520);
+  }
+  hitCount++; updateBeatText();
+}
+
+/* ---------- Keyboard ---------- */
+const keyMap = {};
+PADS.forEach(p=>keyMap[p.code]=p.id);
+
+window.addEventListener('keydown', e=>{
+  if (e.repeat) return;
+  if (e.code==='KeyR'){ toggleRecord(); return; }
+  if (e.code==='Space'){ e.preventDefault(); togglePlay(); return; }
+  const id = keyMap[e.code];
+  if (id){
+    const p = PADS.find(x=>x.id===id);
+    hit(id, 1);
+    if (recording) recordHit(id);
+    // visual key glow handled by hit
+  }
+});
+
+/* ---------- LEDs ---------- */
+const ledsEl = document.getElementById('leds');
+PADS.forEach(()=>{ const d=document.createElement('span'); d.className='led'; ledsEl.appendChild(d); });
+const ledEls = [...ledsEl.children];
+function flashLED(id){
+  const i = PADS.findIndex(p=>p.id===id);
+  if (i<0) return;
+  const el = ledEls[i];
+  el.classList.add('on');
+  clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('on'), 120);
+}
+
+/* ---------- Scope visualizer ---------- */
+const canvas = document.getElementById('scope');
+const cctx = canvas.getContext('2d');
+function resizeScope(){
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  const r = canvas.getBoundingClientRect();
+  canvas.width = Math.max(1, r.width*dpr);
+  canvas.height = Math.max(1, r.height*dpr);
+  cctx.setTransform(dpr,0,0,dpr,0,0);
+}
+window.addEventListener('resize', resizeScope);
+
+let scopeRAF;
+function drawScope(){
+  if (!analyser) return;
+  resizeScope();
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  analyser.getByteTimeDomainData(scopeData);
+  cctx.clearRect(0,0,w,h);
+  // grid
+  cctx.strokeStyle='rgba(0,216,200,0.08)'; cctx.lineWidth=1;
+  cctx.beginPath(); cctx.moveTo(0,h/2); cctx.lineTo(w,h/2); cctx.stroke();
+  // waveform
+  const grd = cctx.createLinearGradient(0,0,w,0);
+  grd.addColorStop(0,'#5e3cf0'); grd.addColorStop(0.5,'#00d8c8'); grd.addColorStop(1,'#ff4682');
+  cctx.strokeStyle = grd; cctx.lineWidth=2; cctx.lineJoin='round';
+  cctx.shadowColor='rgba(0,216,200,0.6)'; cctx.shadowBlur=8;
+  cctx.beginPath();
+  const step = scopeData.length / w;
+  for (let x=0;x<w;x++){
+    const v = scopeData[Math.floor(x*step)]/128 - 1;
+    const y = h/2 + v*(h*0.46);
+    if (x===0) cctx.moveTo(x,y); else cctx.lineTo(x,y);
+  }
+  cctx.stroke();
+  cctx.shadowBlur=0;
+  scopeRAF = requestAnimationFrame(drawScope);
+}
+
+/* ---------- Recording & playback ---------- */
+let recording=false, playing=false, looping=false;
+let recStart=0, recorded=[];
+let playTimers=[];
+let playStart=0, playPos=0;
+let timerRAF;
+let hitCount=0;
+
+const recBtn = document.getElementById('recBtn');
+const playBtn = document.getElementById('playBtn');
+const clearBtn = document.getElementById('clearBtn');
+const loopBtn = document.getElementById('loopBtn');
+const recLabel = document.getElementById('recLabel');
+const playLabel = document.getElementById('playLabel');
+const loopLabel = document.getElementById('loopLabel');
+const statusChip = document.getElementById('statusChip');
+const statusText = document.getElementById('statusText');
+const beatText = document.getElementById('beatText');
+const timerEl = document.getElementById('timer');
+
+function setStatus(s){
+  statusChip.classList.remove('rec');
+  if (s==='rec'){ statusChip.classList.add('rec'); statusText.textContent='Recording'; }
+  else if (s==='play'){ statusText.textContent='Playing'; }
+  else { statusText.textContent='Live'; }
+}
+function updateBeatText(){ beatText.textContent = `${hitCount} hit${hitCount===1?'':'s'}`; }
+
+function recordHit(id){
+  recorded.push({ t: performance.now()-recStart, id });
+  if (!clearBtn.disabled) {}
+  playBtn.disabled = false;
+  clearBtn.disabled = false;
+}
+
+function toggleRecord(){
+  if (playing) stopPlay();
+  if (!recording){
+    ensureAudio();
+    recording=true; recorded=[]; recStart=performance.now(); hitCount=0;
+    recBtn.classList.add('active'); recBtn.setAttribute('aria-pressed','true');
+    recLabel.textContent='Stop';
+    setStatus('rec');
+    startTimer();
+    playBtn.disabled = true; clearBtn.disabled = true;
+  } else {
+    recording=false;
+    recBtn.classList.remove('active'); recBtn.setAttribute('aria-pressed','false');
+    recLabel.textContent='Record';
+    stopTimer();
+    if (recorded.length){ playBtn.disabled=false; clearBtn.disabled=false; }
+    else { playBtn.disabled=true; clearBtn.disabled=true; }
+    setStatus('live');
+  }
+}
+
+function togglePlay(){
+  if (recording) toggleRecord();
+  if (playing){ stopPlay(); return; }
+  if (!recorded.length) return;
+  ensureAudio();
+  playing=true; playStart=performance.now(); playPos=0;
+  playBtn.classList.add('active'); playLabel.textContent='Stop';
+  setStatus('play');
+  startTimer();
+  schedulePlayback();
+}
+
+function schedulePlayback(){
+  stopTimers();
+  const now = performance.now();
+  recorded.forEach(ev=>{
+    const when = ev.t - playPos;
+    const elapsed = now - playStart;
+    const delay = when - elapsed;
+    if (delay < -2) return; // already passed
+    const id = setTimeout(()=>{
+      hit(ev.id, 1);
+    }, Math.max(0, delay));
+    playTimers.push(id);
+  });
+  // end / loop
+  const last = recorded[recorded.length-1];
+  const total = last ? last.t + 600 : 0;
+  const endDelay = total - (now - playStart);
+  const endId = setTimeout(()=>{
+    if (looping){ playPos=0; playStart=performance.now(); schedulePlayback(); }
+    else stopPlay();
+  }, Math.max(0, endDelay));
+  playTimers.push(endId);
+}
+function stopTimers(){ playTimers.forEach(clearTimeout); playTimers=[]; }
+
+function stopPlay(){
+  playing=false;
+  stopTimers();
+  playBtn.classList.remove('active'); playLabel.textContent='Play';
+  setStatus('live');
+  stopTimer(); timerEl.textContent='0:00.0';
+}
+
+function clearRecording(){
+  if (recording) toggleRecord();
+  if (playing) stopPlay();
+  recorded=[]; hitCount=0; updateBeatText();
+  playBtn.disabled=true; clearBtn.disabled=true;
+  timerEl.textContent='0:00.0';
+}
+
+loopBtn.addEventListener('click', ()=>{
+  looping=!looping;
+  loopBtn.classList.toggle('active', looping);
+  loopBtn.setAttribute('aria-pressed', String(looping));
+  loopLabel.textContent = looping?'Looping':'Loop';
+  loopBtn.style.borderColor = looping?'rgba(94,60,240,0.6)':'';
+  loopBtn.style.background = looping?'linear-gradient(180deg, rgba(94,60,240,0.25), rgba(94,60,240,0.08))':'';
+  loopBtn.style.color = looping?'#d8ccff':'';
+});
+recBtn.addEventListener('click', toggleRecord);
+playBtn.addEventListener('click', togglePlay);
+clearBtn.addEventListener('click', clearRecording);
+
+/* ---------- Timer ---------- */
+function startTimer(){
+  cancelAnimationFrame(timerRAF);
+  const base = recording ? recStart : playStart;
+  function tick(){
+    if (!recording && !playing){ return; }
+    const ms = performance.now() - base;
+    timerEl.textContent = fmt(ms);
+    timerRAF = requestAnimationFrame(tick);
+  }
+  tick();
+}
+function stopTimer(){ cancelAnimationFrame(timerRAF); }
+function fmt(ms){
+  const s = ms/1000;
+  const m = Math.floor(s/60);
+  const rest = s - m*60;
+  return `${m}:${rest.toFixed(1).padStart(4,'0')}`;
+}
+
+/* ---------- init ---------- */
+updateBeatText();
+setStatus('live');
+// start scope idle animation (draws flat line until audio inits)
+(function idleScope(){
+  if (!analyser){
+    resizeScope();
+    const w=canvas.clientWidth,h=canvas.clientHeight;
+    cctx.clearRect(0,0,w,h);
+    cctx.strokeStyle='rgba(0,216,200,0.12)'; cctx.lineWidth=1.5;
+    cctx.beginPath();
+    for(let x=0;x<w;x++){ const y=h/2 + Math.sin(x*0.04 + performance.now()*0.002)*1.2; if(x===0)cctx.moveTo(x,y);else cctx.lineTo(x,y);}
+    cctx.stroke();
+    requestAnimationFrame(idleScope);
+  }
+})();
+</script>
+</body>
+</html>

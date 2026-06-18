@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Online Poll Board</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap');
+
+    body {
+      font-family: 'Nunito', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    /* Animated soft gradient background */
+    .bg-gradient-animated {
+      background: linear-gradient(135deg, #fff7ed 0%, #fdf2f8 50%, #eff6ff 100%);
+      background-size: 400% 400%;
+      animation: gradientMove 24s ease infinite;
+    }
+
+    @keyframes gradientMove {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    /* Floating decorative blobs */
+    .bg-shape {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(90px);
+      opacity: 0.45;
+      z-index: -1;
+      animation: float 18s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translate(0, 0); }
+      50% { transform: translate(20px, -20px); }
+    }
+
+    /* Card entrance animation */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .poll-card {
+      animation: fadeInUp 0.6s ease-out both;
+    }
+
+    .poll-card:hover {
+      transform: translateY(-3px);
+    }
+
+    /* Confetti burst */
+    .confetti {
+      position: fixed;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 100;
+      animation: confetti-pop 0.85s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+    }
+
+    @keyframes confetti-pop {
+      0% { transform: translate(0, 0) scale(1); opacity: 1; }
+      100% { transform: translate(var(--tx), var(--ty)) scale(0); opacity: 0; }
+    }
+
+    /* Create panel expand/collapse */
+    #createPanel {
+      max-height: 0;
+      opacity: 0;
+      pointer-events: none;
+      transition: max-height 0.5s ease, opacity 0.3s ease;
+    }
+
+    #createPanel.open {
+      max-height: 1000px;
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* Result bar glow */
+    .result-bar {
+      box-shadow: 0 0 12px rgba(99, 102, 241, 0.25);
+    }
+  </style>
+</head>
+<body class="antialiased text-gray-800 relative overflow-x-hidden min-h-screen flex flex-col">
+  <!-- Background -->
+  <div class="fixed inset-0 bg-gradient-animated -z-20"></div>
+  <div class="bg-shape bg-indigo-300 w-96 h-96 -top-20 -left-20"></div>
+  <div class="bg-shape bg-pink-300 w-80 h-80 -bottom-20 -right-20" style="animation-delay: -9s;"></div>
+
+  <!-- Header -->
+  <header class="sticky top-0 z-50 bg-white/70 backdrop-blur-md border-b border-white/50 shadow-sm">
+    <div class="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-500 to-pink-500 flex items-center justify-center text-white shadow-lg">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-2xl font-extrabold text-gray-800 tracking-tight">Online Poll Board</h1>
+          <p class="text-xs text-gray-500 font-semibold">Vote, create, and watch results unfold</p>
+        </div>
+      </div>
+      <button id="toggleCreate" class="px-5 py-2.5 rounded-full bg-indigo-600 text-white font-bold shadow-md hover:bg-indigo-700 hover:scale-105 active:scale-95 transition whitespace-nowrap">
+        + Create Poll
+      </button>
+    </div>
+  </header>
+
+  <!-- Create Poll Panel -->
+  <div id="createPanel" class="max-w-3xl mx-auto px-4 w-full">
+    <div class="mt-6 bg-white/80 backdrop-blur rounded-2xl shadow-xl border border-white/60 p-6">
+      <h2 class="text-lg font-bold text-gray-800 mb-4">Create a new poll</h2>
+      <input id="newQuestion" type="text" placeholder="What do you want to ask?" maxlength="140"
+        class="w-full px-4 py-3 rounded-xl border border-gray-200 bg-white/70 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition mb-4 font-medium">
+      <div id="optionInputs" class="space-y-3"></div>
+      <button id="addOption" type="button" class="mt-3 text-sm font-bold text-indigo-600 hover:text-indigo-800 transition flex items-center gap-1">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
+        Add another option
+      </button>
+      <p id="formError" class="text-rose-500 text-sm mt-2 hidden font-medium"></p>
+      <div class="mt-6 flex justify-end gap-3">
+        <button id="cancelCreate" type="button" class="px-5 py-2 rounded-xl text-gray-600 font-semibold hover:bg-gray-100 transition">Cancel</button>
+        <button id="submitCreate" type="button" class="px-6 py-2 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-md transition">Create Poll</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Poll List -->
+  <main class="max-w-3xl mx-auto px-4 py-8 w-full flex-1">
+    <div id="polls" class="space-y-6"></div>
+  </main>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 px-6 py-2.5 rounded-full bg-gray-900/90 text-white shadow-2xl opacity-0 transition-opacity duration-300 pointer-events-none z-50 text-sm font-bold backdrop-blur">
+    Vote recorded!
+  </div>
+
+  <!-- Footer -->
+  <footer class="text-center py-8 text-gray-500 text-sm px-4">
+    <p class="font-medium">Your votes are stored locally for this delightful demo.</p>
+    <button id="resetData" class="mt-2 text-indigo-600 hover:text-indigo-800 font-semibold hover:underline transition">Reset demo data</button>
+  </footer>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const STORAGE_KEY = 'pollboard_polls_v1';
+
+      const DEFAULT_POLLS = [
+        {
+          id: 1,
+          question: 'Which frontend framework do you prefer?',
+          options: [
+            { id: 'a', label: 'React', votes: 124 },
+            { id: 'b', label: 'Vue', votes: 98 },
+            { id: 'c', label: 'Svelte', votes: 67 },
+            { id: 'd', label: 'Angular', votes: 45 }
+          ]
+        },
+        {
+          id: 2,
+          question: 'When do you do your best work?',
+          options: [
+            { id: 'a', label: 'Early morning', votes: 89 },
+            { id: 'b', label: 'Late night', votes: 112 },
+            { id: 'c', label: 'Midday', votes: 34 }
+          ]
+        },
+        {
+          id: 3,
+          question: 'Cats or dogs?',
+          options: [
+            { id: 'a', label: 'Cats', votes: 156 },
+            { id: 'b', label: 'Dogs', votes: 203 },
+            { id: 'c', label: 'Both!', votes: 87 }
+          ]
+        },
+        {
+          id: 4,
+          question: 'How do you take your coffee?',
+          options: [
+            { id: 'a', label: 'Black', votes: 74 },
+            { id: 'b', label: 'With milk', votes: 96 },
+            { id: 'c', label: 'I prefer tea', votes: 58 },
+            { id: 'd', label: 'Decaf', votes: 21 }
+          ]
+        }
+      ];
+
+      const container = document.getElementById('polls');
+      const createPanel = document.getElementById('createPanel');
+      const toggleCreateBtn = document.getElementById('toggleCreate');
+      const cancelCreateBtn = document.getElementById('cancelCreate');
+      const submitCreateBtn = document.getElementById('submitCreate');
+      const addOptionBtn = document.getElementById('addOption');
+      const optionInputs = document.getElementById('optionInputs');
+      const newQuestion = document.getElementById('newQuestion');
+      const formError = document.getElementById('formError');
+      const toast = document.getElementById('toast');
+      const resetDataBtn = document.getElementById('resetData');
+
+      function loadPolls() {
+        try {
+          const saved = localStorage.getItem(STORAGE_KEY);
+          if (saved) return JSON.parse(saved);
+        } catch (e) {
+          console.error('Failed to load polls', e);
+        }
+        return DEFAULT_POLLS.map(p => ({
+          ...p,
+          totalVotes: p.options.reduce((sum, o) => sum + o.votes, 0),
+          userVote: null
+        }));
+      }
+
+      function savePolls() {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(polls));
+        } catch (e) {
+          console.error('Failed to save polls', e);
+        }
+      }
+
+      let polls = loadPolls();
+
+      function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = String(str);
+        return div.innerHTML;
+      }
+
+      function animateValue(el, start, end, duration, formatter = v => Math.round(v).toLocaleString()) {
+        const startTime = performance.now();
+        function tick(now) {
+          const t = Math.min((now - startTime) / duration, 1);
+          const eased = 1 - Math.pow(1 - t, 3);
+          const value = start + (end - start) * eased;
+          el.textContent = formatter(value);
+          if (t < 1) requestAnimationFrame(tick);
+        }
+        requestAnimationFrame(tick);
+      }
+
+      function spawnConfetti(x, y, count = 30) {
+        const palette = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6'];
+        for (let i = 0; i < count; i++) {
+          const p = document.createElement('span');
+          p.className = 'confetti';
+          const size = Math.random() * 6 + 4;
+          const color = palette[Math.floor(Math.random() * palette.length)];
+          const angle = Math.random() * Math.PI * 2;
+          const distance = Math.random() * 90 + 40;
+          const tx = Math.cos(angle) * distance;
+          const ty = Math.sin(angle) * distance - 50;
+          p.style.cssText = `left:${x}px; top:${y}px; width:${size}px; height:${size}px; background:${color}; --tx:${tx}px; --ty:${ty}px;`;
+          document.body.appendChild(p);
+          setTimeout(() => p.remove(), 900);
+        }
+      }
+
+      function showToast(message) {
+        toast.textContent = message;
+        toast.classList.remove('opacity-0');
+        setTimeout(() => toast.classList.add('opacity-0'), 2200);
+      }
+
+      function renderOptions(poll) {
+        const colors = [
+          'bg-indigo-50 text-indigo-600',
+          'bg-pink-50 text-pink-600',
+          'bg-amber-50 text-amber-600',
+          'bg-emerald-50 text-emerald-600',
+          'bg-sky-50 text-sky-600',
+          'bg-rose-50 text-rose-600'
+        ];
+        return `
+          <div class="space-y-3">
+            ${poll.options.map((opt, i) => {
+              const c = colors[i % colors.length];
+              return `
+                <button class="option-btn w-full text-left px-4 py-3.5 rounded-xl border border-gray-200 bg-white hover:shadow-md hover:border-indigo-300 hover:scale-[1.01] active:scale-[0.98] transition-all duration-200 flex items-center group" data-poll="${poll.id}" data-opt="${opt.id}">
+                  <span class="w-9 h-9 rounded-lg ${c} flex items-center justify-center mr-3 font-bold transition group-hover:scale-110">${opt.label[0].toUpperCase()}</span>
+                  <span class="font-semibold text-gray-700 group-hover:text-gray-900">${escapeHtml(opt.label)}</span>
+                  <span class="ml-auto text-xs font-bold text-indigo-600 opacity-0 group-hover:opacity-100 transition">Vote →</span>
+                </button>
+              `;
+            }).join('')}
+          </div>
+        `;
+      }
+
+      function renderResults(poll, initialVotes, initialTotal) {
+        const maxVotes = Math.max(...poll.options.map(o => o.votes), 0);
+        return poll.options.map((opt, i) => {
+          const targetPct = poll.totalVotes ? (opt.votes / poll.totalVotes * 100) : 0;
+          const startCount = initialVotes ? (initialVotes[i] || 0) : 0;
+          const startPct = initialTotal ? ((initialVotes[i] || 0) / initialTotal * 100) : 0;
+          const isSelected = poll.userVote == opt.id;
+          const isLeading = opt.votes === maxVotes && maxVotes > 0;
+          return `
+            <div class="mb-4">
+              <div class="flex justify-between items-center mb-1.5">
+                <span class="font-bold text-gray-800 flex items-center gap-2">
+                  ${escapeHtml(opt.label)}
+                  ${isSelected ? `<span class="text-[10px] uppercase tracking-wider font-extrabold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">You</span>` : ''}
+                  ${isLeading ? `<span class="text-[10px] uppercase tracking-wider font-extrabold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Leading</span>` : ''}
+                </span>
+                <span class="text-sm font-bold text-gray-700 tabular-nums" data-count="${startCount}" data-target="${opt.votes}">${startCount}</span>
+              </div>
+              <div class="h-3 bg-gray-100 rounded-full overflow-hidden">
+                <div class="result-bar h-full rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 transition-all duration-700 ease-out" style="width: ${startPct.toFixed(1)}%" data-target="${targetPct.toFixed(1)}"></div>
+              </div>
+              <div class="flex justify-between text-xs text-gray-500 mt-1">
+                <span class="result-pct font-semibold tabular-nums" data-target="${targetPct.toFixed(1)}">${startPct.toFixed(1)}%</span>
+                <span>of ${poll.totalVotes.toLocaleString()} votes</span>
+              </div>
+            </div>
+          `;
+        }).join('') + `
+          <button class="change-vote mt-2 text-sm font-bold text-indigo-600 hover:text-indigo-800 hover:underline transition" data-poll="${poll.id}">Change vote</button>
+        `;
+      }
+
+      function animateResults(card, poll, initialVotes, initialTotal) {
+        const countEls = card.querySelectorAll('[data-count]');
+        const barEls = card.querySelectorAll('.result-bar');
+        const pctEls = card.querySelectorAll('.result-pct');
+        const totalEl = card.querySelector('.total-votes');
+
+        const startTotal = initialTotal || 0;
+        const endTotal = poll.totalVotes;
+        if (totalEl) {
+          totalEl.textContent = startTotal.toLocaleString();
+          animateValue(totalEl, startTotal, endTotal, 700);
+        }
+
+        countEls.forEach(el => {
+          const start = parseInt(el.dataset.count, 10) || 0;
+          const end = parseInt(el.dataset.target, 10) || 0;
+          animateValue(el, start, end, 700);
+        });
+
+        barEls.forEach(bar => {
+          const target = parseFloat(bar.dataset.target) || 0;
+          requestAnimationFrame(() => { bar.style.width = target + '%'; });
+        });
+
+        pctEls.forEach(el => {
+          const start = parseFloat(el.textContent) || 0;
+          const end = parseFloat(el.dataset.target) || 0;
+          animateValue(el, start, end, 700, v => v.toFixed(1) + '%');
+        });
+      }
+
+      function updateCardContent(card, poll, initialVotes = null, initialTotal = null) {
+        const hasVoted = poll.userVote != null;
+        const total = poll.totalVotes || 0;
+        card.innerHTML = `
+          <div class="p-6">
+            <h3 class="text-xl font-bold text-gray-800 mb-1 leading-snug">${escapeHtml(poll.question)}</h3>
+            <p class="text-sm text-gray-500 mb-5">${hasVoted ? 'Live results from everyone voting.' : 'Pick an option to cast your vote.'}</p>
+            ${hasVoted ? renderResults(poll, initialVotes, initialTotal) : renderOptions(poll)}
+            <div class="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between text-sm text-gray-500">
+              <span class="flex items-center gap-1.5">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                <span class="total-votes font-bold tabular-nums">${total.toLocaleString()}</span> vote${total !== 1 ? 's' : ''}
+              </span>
+              <span class="font-medium">${poll.options.length} options</span>
+            </div>
+          </div>
+        `;
+
+        if (hasVoted) {
+          animateResults(card, poll, initialVotes, initialTotal);
+        } else if (initialTotal !== null && initialTotal !== total) {
+          const totalEl = card.querySelector('.total-votes');
+          if (totalEl) animateValue(totalEl, initialTotal, total, 700);
+        }
+      }
+
+      function renderPoll(poll, index) {
+        const card = document.createElement('div');
+        card.className = 'poll-card bg-white/80 backdrop-blur rounded-2xl shadow-lg border border-white/60 transition-all duration-300';
+        card.style.animationDelay = `${index * 80}ms`;
+        card.dataset.pollId = poll.id;
+        updateCardContent(card, poll);
+        return card;
+      }
+
+      function renderAll() {
+        container.innerHTML = '';
+        polls.forEach((poll, i) => {
+          container.appendChild(renderPoll(poll, i));
+        });
+      }
+
+      // Vote interactions
+      container.addEventListener('click', e => {
+        const optionBtn = e.target.closest('.option-btn');
+        if (optionBtn) {
+          const pollId = optionBtn.dataset.poll;
+          const optId = optionBtn.dataset.opt;
+          const poll = polls.find(p => p.id == pollId);
+          if (!poll || poll.userVote != null) return;
+
+          const card = container.querySelector(`.poll-card[data-poll-id="${pollId}"]`);
+          const rect = optionBtn.getBoundingClientRect();
+          const oldVotes = poll.options.map(o => o.votes);
+          const oldTotal = poll.totalVotes;
+
+          const option = poll.options.find(o => o.id == optId);
+          option.votes++;
+          poll.totalVotes++;
+          poll.userVote = optId;
+          savePolls();
+
+          updateCardContent(card, poll, oldVotes, oldTotal);
+          spawnConfetti(rect.left + rect.width / 2, rect.top + rect.height / 2);
+          showToast('Vote recorded!');
+          return;
+        }
+
+        const changeBtn = e.target.closest('.change-vote');
+        if (changeBtn) {
+          const pollId = changeBtn.dataset.poll;
+          const poll = polls.find(p => p.id == pollId);
+          if (!poll || poll.userVote == null) return;
+
+          const card = container.querySelector(`.poll-card[data-poll-id="${pollId}"]`);
+          const oldVotes = poll.options.map(o => o.votes);
+          const oldTotal = poll.totalVotes;
+          const prev = poll.options.find(o => o.id == poll.userVote);
+          if (prev) {
+            prev.votes = Math.max(0, prev.votes - 1);
+            poll.totalVotes = Math.max(0, poll.totalVotes - 1);
+          }
+          poll.userVote = null;
+          savePolls();
+          updateCardContent(card, poll, oldVotes, oldTotal);
+          return;
+        }
+      });
+
+      // Create poll form
+      function renderOptionInput(value = '') {
+        const div = document.createElement('div');
+        div.className = 'flex gap-2 items-center';
+        div.innerHTML = `
+          <input type="text" placeholder="Option ${optionInputs.children.length + 1}" maxlength="60"
+            class="option-field flex-1 px-4 py-2.5 rounded-xl border border-gray-200 bg-white/70 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition font-medium" value="${escapeHtml(value)}">
+          <button type="button" class="remove-option text-gray-400 hover:text-rose-500 hover:bg-rose-50 p-2 rounded-lg transition" title="Remove option">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+            </svg>
+          </button>
+        `;
+        return div;
+      }
+
+      function updateRemoveButtons() {
+        const buttons = optionInputs.querySelectorAll('.remove-option');
+        const disable = optionInputs.children.length <= 2;
+        buttons.forEach(btn => {
+          btn.disabled = disable;
+          btn.style.opacity = disable ? '0.3' : '1';
+          btn.style.pointerEvents = disable ? 'none' : 'auto';
+        });
+      }
+
+      function resetForm() {
+        newQuestion.value = '';
+        optionInputs.innerHTML = '';
+        optionInputs.appendChild(renderOptionInput());
+        optionInputs.appendChild(renderOptionInput());
+        updateRemoveButtons();
+        formError.classList.add('hidden');
+      }
+
+      function openCreate() {
+        createPanel.classList.add('open');
+        toggleCreateBtn.textContent = 'Close';
+        toggleCreateBtn.classList.replace('bg-indigo-600', 'bg-gray-700');
+        toggleCreateBtn.classList.replace('hover:bg-indigo-700', 'hover:bg-gray-800');
+        setTimeout(() => newQuestion.focus(), 100);
+      }
+
+      function closeCreate() {
+        createPanel.classList.remove('open');
+        toggleCreateBtn.textContent = '+ Create Poll';
+        toggleCreateBtn.classList.replace('bg-gray-700', 'bg-indigo-600');
+        toggleCreateBtn.classList.replace('hover:bg-gray-800', 'hover:bg-indigo-700');
+      }
+
+      toggleCreateBtn.addEventListener('click', () => {
+        createPanel.classList.contains('open') ? closeCreate() : openCreate();
+      });
+
+      cancelCreateBtn.addEventListener('click', () => {
+        resetForm();
+        closeCreate();
+      });
+
+      addOptionBtn.addEventListener('click', () => {
+        optionInputs.appendChild(renderOptionInput());
+        updateRemoveButtons();
+        const lastInput = optionInputs.lastElementChild.querySelector('input');
+        lastInput.focus();
+      });
+
+      optionInputs.addEventListener('click', e => {
+        const btn = e.target.closest('.remove-option');
+        if (!btn || btn.disabled) return;
+        btn.parentElement.remove();
+        updateRemoveButtons();
+      });
+
+      submitCreateBtn.addEventListener('click', () => {
+        const question = newQuestion.value.trim();
+        const labels = [...optionInputs.querySelectorAll('.option-field')].map(i => i.value.trim()).filter(Boolean);
+        if (!question) return showFormError('Please enter a question.');
+        if (labels.length < 2) return showFormError('Please provide at least 2 valid options.');
+
+        const options = labels.map((label, i) => ({ id: `opt-${i}`, label, votes: 0 }));
+        const newPoll = { id: Date.now(), question, options, totalVotes: 0, userVote: null };
+        polls.unshift(newPoll);
+        savePolls();
+        renderAll();
+        resetForm();
+        closeCreate();
+        showToast('Poll created!');
+        setTimeout(() => {
+          const first = container.firstElementChild;
+          if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+      });
+
+      function showFormError(msg) {
+        formError.textContent = msg;
+        formError.classList.remove('hidden');
+      }
+
+      resetDataBtn.addEventListener('click', () => {
+        if (confirm('Reset all polls and votes to the demo defaults?')) {
+          localStorage.removeItem(STORAGE_KEY);
+          polls = loadPolls();
+          renderAll();
+          showToast('Demo data reset');
+        }
+      });
+
+      // Initialize
+      resetForm();
+      renderAll();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Color Match Challenge</title>
+<style>
+  :root{
+    --bg-0:#0b1020;
+    --bg-1:#131a35;
+    --ink:#f5f7ff;
+    --muted:#9aa3c7;
+    --line:rgba(255,255,255,.08);
+    --good:#34d399;
+    --bad:#fb7185;
+    --c-red:#ff4d5e;
+    --c-green:#34d399;
+    --c-blue:#3b82f6;
+    --c-yellow:#fbbf24;
+    --c-purple:#a855f7;
+    --c-orange:#fb923c;
+  }
+
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    margin:0;
+    font-family:"Inter",system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    color:var(--ink);
+    background:
+      radial-gradient(1200px 800px at 15% -10%, #1b2550 0%, transparent 55%),
+      radial-gradient(1000px 700px at 110% 120%, #2a1a4a 0%, transparent 50%),
+      linear-gradient(160deg,var(--bg-0),var(--bg-1));
+    background-attachment:fixed;
+    min-height:100dvh;
+    overflow-x:hidden;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:18px;
+    user-select:none;
+    -webkit-user-select:none;
+  }
+
+  /* ambient drifting blobs */
+  body::before,body::after{
+    content:"";
+    position:fixed;
+    width:46vmin;height:46vmin;
+    border-radius:50%;
+    filter:blur(60px);
+    opacity:.35;
+    pointer-events:none;
+    z-index:0;
+  }
+  body::before{background:#3b82f6;top:-12vmin;left:-10vmin;animation:float1 16s ease-in-out infinite}
+  body::after{background:#a855f7;bottom:-14vmin;right:-10vmin;animation:float2 19s ease-in-out infinite}
+  @keyframes float1{50%{transform:translate(8vmin,6vmin) scale(1.1)}}
+  @keyframes float2{50%{transform:translate(-7vmin,-5vmin) scale(1.05)}}
+
+  .stage{
+    position:relative;
+    z-index:1;
+    width:min(680px,100%);
+    background:rgba(18,24,48,.55);
+    border:1px solid var(--line);
+    border-radius:28px;
+    box-shadow:0 30px 80px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06);
+    backdrop-filter:blur(14px) saturate(140%);
+    -webkit-backdrop-filter:blur(14px) saturate(140%);
+    padding:clamp(20px,4vw,36px);
+    overflow:hidden;
+  }
+
+  /* top bar */
+  .topbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    margin-bottom:18px;
+  }
+  .brand{
+    display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.3px;
+    font-size:15px;
+  }
+  .brand .dot{
+    width:12px;height:12px;border-radius:50%;
+    background:conic-gradient(from 0deg,var(--c-red),var(--c-yellow),var(--c-green),var(--c-blue),var(--c-purple),var(--c-red));
+    box-shadow:0 0 14px rgba(168,85,247,.6);
+    animation:spin 6s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .stats{display:flex;gap:10px}
+  .stat{
+    background:rgba(255,255,255,.04);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:8px 14px;
+    text-align:center;
+    min-width:78px;
+  }
+  .stat .k{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted)}
+  .stat .v{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1}
+  .stat.time .v{transition:color .2s ease}
+  .stat.time.low .v{color:var(--bad);animation:tick .9s ease-in-out infinite}
+  @keyframes tick{50%{transform:scale(1.12)}}
+
+  /* progress / timer bar */
+  .timebar{
+    height:6px;border-radius:99px;
+    background:rgba(255,255,255,.07);
+    overflow:hidden;margin-bottom:22px;
+  }
+  .timebar > i{
+    display:block;height:100%;width:100%;
+    background:linear-gradient(90deg,var(--c-green),var(--c-yellow),var(--c-red));
+    transform-origin:left;
+    transition:transform .25s linear;
+  }
+
+  /* play area */
+  .play{display:flex;flex-direction:column;align-items:center;gap:22px}
+
+  .prompt-wrap{
+    width:100%;
+    min-height:clamp(180px,38vw,250px);
+    display:flex;align-items:center;justify-content:center;
+    border-radius:22px;
+    background:
+      radial-gradient(120% 120% at 50% 0%, rgba(255,255,255,.05), transparent 60%),
+      rgba(255,255,255,.02);
+    border:1px solid var(--line);
+    position:relative;
+    overflow:hidden;
+  }
+  .prompt-wrap .hint{
+    position:absolute;top:12px;left:0;right:0;
+    text-align:center;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);
+  }
+
+  #word{
+    font-weight:900;
+    font-size:clamp(56px,16vw,120px);
+    line-height:1;
+    letter-spacing:2px;
+    text-transform:uppercase;
+    transition:transform .08s ease;
+    will-change:transform;
+    text-shadow:0 6px 30px rgba(0,0,0,.35);
+  }
+  #word.enter{animation:wordIn .28s cubic-bezier(.2,.9,.3,1.2)}
+  #word.shake{animation:shake .4s}
+  #word.pop{animation:pop .26s ease}
+  @keyframes wordIn{from{opacity:0;transform:translateY(14px) scale(.86)}}
+  @keyframes shake{20%{transform:translateX(-10px)}40%{transform:translateX(9px)}60%{transform:translateX(-6px)}80%{transform:translateX(4px)}}
+  @keyframes pop{50%{transform:scale(1.08)}}
+
+  /* buttons */
+  .pad{
+    width:100%;
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:12px;
+  }
+  .btn{
+    --col:#fff;
+    position:relative;
+    border:none;
+    cursor:pointer;
+    border-radius:18px;
+    padding:22px 10px;
+    font-size:clamp(16px,3.4vw,20px);
+    font-weight:800;
+    letter-spacing:.5px;
+    color:#0b1020;
+    background:var(--col);
+    box-shadow:
+      0 10px 22px rgba(0,0,0,.35),
+      inset 0 -4px 0 rgba(0,0,0,.18),
+      inset 0 2px 0 rgba(255,255,255,.35);
+    transition:transform .08s ease, box-shadow .08s ease, filter .12s ease;
+    overflow:hidden;
+  }
+  .btn::after{
+    content:"";position:absolute;inset:0;border-radius:18px;
+    background:radial-gradient(120% 80% at 50% -20%, rgba(255,255,255,.55), transparent 55%);
+    pointer-events:none;
+  }
+  .btn:hover{filter:brightness(1.06)}
+  .btn:active{transform:translateY(4px) scale(.985);box-shadow:0 5px 12px rgba(0,0,0,.35),inset 0 -2px 0 rgba(0,0,0,.18),inset 0 2px 0 rgba(255,255,255,.35)}
+  .btn.flash-correct{animation:flashGood .4s ease}
+  .btn.flash-wrong{animation:flashBad .4s ease}
+  .btn.dimmed{opacity:.45;filter:saturate(.7)}
+  @keyframes flashGood{0%{box-shadow:0 0 0 0 rgba(52,211,153,.0)}30%{box-shadow:0 0 0 8px rgba(52,211,153,.45)}100%{box-shadow:0 10px 22px rgba(0,0,0,.35)}}
+  @keyframes flashBad{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}50%{transform:translateX(6px)}75%{transform:translateX(-3px)}}
+
+  /* ripple */
+  .ripple{position:absolute;border-radius:50%;background:rgba(255,255,255,.45);transform:scale(0);animation:ripple .55s ease-out;pointer-events:none;mix-blend-mode:overlay}
+  @keyframes ripple{to{transform:scale(2.4);opacity:0}}
+
+  /* overlay screens */
+  .overlay{
+    position:absolute;inset:0;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    text-align:center;gap:14px;
+    background:rgba(11,16,32,.72);
+    backdrop-filter:blur(8px);
+    -webkit-backdrop-filter:blur(8px);
+    border-radius:28px;
+    padding:24px;
+    z-index:5;
+    animation:fade .3s ease;
+  }
+  @keyframes fade{from{opacity:0}}
+
+  .overlay h1{
+    margin:0;font-size:clamp(34px,9vw,56px);font-weight:900;letter-spacing:1px;
+    background:linear-gradient(90deg,#ff4d5e,#fbbf24,#34d399,#3b82f6,#a855f7);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    text-shadow:0 8px 40px rgba(168,85,247,.25);
+  }
+  .overlay p{margin:0;color:var(--muted);max-width:46ch;font-size:14px;line-height:1.5}
+  .overlay .big{font-size:clamp(48px,12vw,80px);font-weight:900;font-variant-numeric:tabular-nums}
+
+  .cta{
+    margin-top:6px;
+    border:none;cursor:pointer;
+    background:linear-gradient(90deg,#6366f1,#a855f7);
+    color:#fff;font-weight:800;font-size:16px;letter-spacing:.4px;
+    padding:15px 30px;border-radius:14px;
+    box-shadow:0 12px 30px rgba(124,58,237,.45), inset 0 2px 0 rgba(255,255,255,.25);
+    transition:transform .08s ease, box-shadow .08s ease;
+  }
+  .cta:active{transform:translateY(3px) scale(.98)}
+  .cta:hover{filter:brightness(1.08)}
+
+  .endstats{display:flex;gap:22px;margin-top:4px}
+  .endstats .es .k{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted)}
+  .endstats .es .v{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums}
+
+  .badge{display:inline-block;font-size:12px;font-weight:700;letter-spacing:.6px;color:#fde68a;background:rgba(251,191,36,.14);border:1px solid rgba(251,191,36,.35);padding:5px 12px;border-radius:99px}
+
+  .combo{
+    position:absolute;top:12px;right:14px;z-index:3;
+    font-weight:800;font-size:13px;color:#fde68a;
+    background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.3);
+    padding:5px 11px;border-radius:99px;
+    opacity:0;transform:translateY(-6px);transition:.2s ease;
+  }
+  .combo.show{opacity:1;transform:translateY(0)}
+  .combo.bump{animation:pop .26s ease}
+
+  .foot{margin-top:18px;text-align:center;color:var(--muted);font-size:12px;letter-spacing:.4px}
+  .foot kbd{background:rgba(255,255,255,.08);border:1px solid var(--line);border-radius:6px;padding:1px 7px;font-family:inherit;font-size:11px}
+
+  @media (max-width:480px){
+    .pad{gap:10px}
+    .btn{padding:18px 6px}
+    .stat{min-width:64px;padding:7px 10px}
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{animation-duration:.001ms !important;animation-iteration-count:1 !important}
+  }
+</style>
+</head>
+<body>
+  <main class="stage" id="stage">
+    <span class="combo" id="combo">COMBO ×2</span>
+
+    <div class="topbar">
+      <div class="brand"><span class="dot"></span> Color Match</div>
+      <div class="stats">
+        <div class="stat"><div class="k">Score</div><div class="v" id="score">0</div></div>
+        <div class="stat time" id="timeStat"><div class="k">Time</div><div class="v" id="time">30</div></div>
+      </div>
+    </div>
+
+    <div class="timebar"><i id="timebar"></i></div>
+
+    <section class="play" id="play">
+      <div class="prompt-wrap">
+        <span class="hint">Tap the color you <b>see</b>, not the word</span>
+        <div id="word">READY?</div>
+      </div>
+      <div class="pad" id="pad"></div>
+    </section>
+
+    <div class="foot">
+      Tip: ignore the meaning of the word — match its <b>font color</b>. &nbsp;Keys: <kbd>1</kbd>–<kbd>6</kbd>
+    </div>
+
+    <!-- Start overlay -->
+    <div class="overlay" id="startScreen">
+      <h1>Color Match<br>Challenge</h1>
+      <p>A word appears in a random color. Tap the button that matches the <b>color you see</b> — not what the word says. You have <b>30 seconds</b>. Wrong answers cost you points. How sharp is your brain?</p>
+      <button class="cta" id="startBtn">Start Game</button>
+    </div>
+
+    <!-- End overlay -->
+    <div class="overlay" id="endScreen" style="display:none">
+      <div class="badge" id="endBadge">Time's up!</div>
+      <div class="big" id="endScore">0</div>
+      <p id="endMsg">Nice run!</p>
+      <div class="endstats">
+        <div class="es"><div class="k">Correct</div><div class="v" id="endCorrect">0</div></div>
+        <div class="es"><div class="k">Wrong</div><div class="v" id="endWrong">0</div></div>
+        <div class="es"><div class="k">Best Combo</div><div class="v" id="endCombo">0</div></div>
+      </div>
+      <button class="cta" id="restartBtn">Play Again</button>
+    </div>
+  </main>
+
+<script>
+(function(){
+  "use strict";
+
+  const COLORS = [
+    {name:"RED",    key:"red",    hex:"#ff4d5e"},
+    {name:"GREEN",  key:"green",  hex:"#34d399"},
+    {name:"BLUE",   key:"blue",   hex:"#3b82f6"},
+    {name:"YELLOW", key:"yellow", hex:"#fbbf24"},
+    {name:"PURPLE", key:"purple", hex:"#a855f7"},
+    {name:"ORANGE", key:"orange", hex:"#fb923c"},
+  ];
+
+  const DURATION = 30;            // seconds
+  const POINTS_CORRECT = 10;
+  const PENALTY_WRONG  = 5;
+  const COMBO_BONUS_PER = 2;      // bonus per combo step beyond 2
+
+  const el = {
+    stage:      document.getElementById("stage"),
+    word:       document.getElementById("word"),
+    pad:        document.getElementById("pad"),
+    score:      document.getElementById("score"),
+    time:       document.getElementById("time"),
+    timeStat:   document.getElementById("timeStat"),
+    timebar:    document.getElementById("timebar"),
+    combo:      document.getElementById("combo"),
+    startScreen:document.getElementById("startScreen"),
+    endScreen:  document.getElementById("endScreen"),
+    startBtn:   document.getElementById("startBtn"),
+    restartBtn: document.getElementById("restartBtn"),
+    endScore:   document.getElementById("endScore"),
+    endCorrect: document.getElementById("endCorrect"),
+    endWrong:   document.getElementById("endWrong"),
+    endCombo:   document.getElementById("endCombo"),
+    endMsg:     document.getElementById("endMsg"),
+    endBadge:   document.getElementById("endBadge"),
+  };
+
+  let state = null;
+  let timer = null;
+  let endTime = 0;
+  let rafId = null;
+
+  function buildButtons(){
+    el.pad.innerHTML = "";
+    COLORS.forEach((c, i) => {
+      const b = document.createElement("button");
+      b.className = "btn";
+      b.style.setProperty("--col", c.hex);
+      b.textContent = c.name;
+      b.dataset.key = c.key;
+      b.dataset.index = i;
+      b.addEventListener("pointerdown", (e) => {
+        spawnRipple(b, e);
+        handleAnswer(c.key, b);
+      });
+      el.pad.appendChild(b);
+    });
+  }
+
+  function spawnRipple(btn, e){
+    const rect = btn.getBoundingClientRect();
+    const size = Math.max(rect.width, rect.height);
+    const x = (e.clientX || rect.left + rect.width/2) - rect.left - size/2;
+    const y = (e.clientY || rect.top + rect.height/2) - rect.top - size/2;
+    const r = document.createElement("span");
+    r.className = "ripple";
+    r.style.width = r.style.height = size + "px";
+    r.style.left = x + "px";
+    r.style.top = y + "px";
+    btn.appendChild(r);
+    setTimeout(() => r.remove(), 560);
+  }
+
+  function pickWord(){
+    // word text and font color are independent (core of the Stroop mechanic)
+    const textIdx  = Math.floor(Math.random() * COLORS.length);
+    let colorIdx   = Math.floor(Math.random() * COLORS.length);
+    // avoid matching word==color occasionally to keep it interesting,
+    // but allow some matches too. 75% chance to force a mismatch.
+    if (Math.random() < 0.75 && colorIdx === textIdx){
+      colorIdx = (colorIdx + 1 + Math.floor(Math.random()*(COLORS.length-1))) % COLORS.length;
+    }
+    return { text: COLORS[textIdx], color: COLORS[colorIdx] };
+  }
+
+  function nextRound(){
+    state.current = pickWord();
+    el.word.textContent = state.current.text.name;
+    el.word.style.color = state.current.color.hex;
+    el.word.classList.remove("enter");
+    void el.word.offsetWidth; // reflow to restart animation
+    el.word.classList.add("enter");
+    // re-enable all buttons
+    [...el.pad.children].forEach(b => b.classList.remove("flash-correct","flash-wrong","dimmed"));
+  }
+
+  function handleAnswer(key, btn){
+    if (!state || state.over) return;
+    const correctKey = state.current.color.key;
+
+    if (key === correctKey){
+      state.combo += 1;
+      const bonus = state.combo >= 2 ? (state.combo - 1) * COMBO_BONUS_PER : 0;
+      const gained = POINTS_CORRECT + bonus;
+      state.score += gained;
+      state.correct += 1;
+      state.bestCombo = Math.max(state.bestCombo, state.combo);
+
+      btn.classList.add("flash-correct");
+      el.word.classList.remove("pop"); void el.word.offsetWidth; el.word.classList.add("pop");
+      showCombo(state.combo);
+      bumpScore();
+    } else {
+      state.combo = 0;
+      state.wrong += 1;
+      state.score = Math.max(0, state.score - PENALTY_WRONG);
+
+      btn.classList.add("flash-wrong");
+      el.word.classList.remove("shake"); void el.word.offsetWidth; el.word.classList.add("shake");
+      // briefly highlight the correct button
+      const correctBtn = el.pad.querySelector('[data-key="'+correctKey+'"]');
+      if (correctBtn && correctBtn !== btn){
+        correctBtn.classList.add("flash-correct");
+        setTimeout(()=>correctBtn.classList.remove("flash-correct"), 360);
+      }
+      hideCombo();
+    }
+
+    renderScore();
+    // advance after a tiny beat so the feedback is visible
+    setTimeout(() => { if (state && !state.over) nextRound(); }, key === correctKey ? 160 : 320);
+  }
+
+  let comboTimer = null;
+  function showCombo(n){
+    if (n < 2){ hideCombo(); return; }
+    el.combo.textContent = "COMBO ×" + n;
+    el.combo.classList.add("show");
+    el.combo.classList.remove("bump"); void el.combo.offsetWidth; el.combo.classList.add("bump");
+    clearTimeout(comboTimer);
+  }
+  function hideCombo(){
+    clearTimeout(comboTimer);
+    el.combo.classList.remove("show");
+  }
+
+  function bumpScore(){
+    el.score.style.transform = "scale(1.18)";
+    el.score.style.color = "var(--good)";
+    setTimeout(() => { el.score.style.transform = ""; el.score.style.color = ""; }, 160);
+  }
+  function renderScore(){
+    el.score.textContent = state.score;
+  }
+
+  function tick(now){
+    if (!state || state.over) return;
+    const remain = Math.max(0, (endTime - now) / 1000);
+    const secs = Math.ceil(remain);
+    el.time.textContent = secs;
+    const pct = remain / DURATION;
+    el.timebar.style.transform = "scaleX(" + pct + ")";
+    if (remain <= 6){ el.timeStat.classList.add("low"); } else { el.timeStat.classList.remove("low"); }
+    if (remain <= 0){ endGame(); return; }
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function startGame(){
+    state = {
+      score:0, correct:0, wrong:0, combo:0, bestCombo:0,
+      current:null, over:false,
+    };
+    renderScore();
+    el.time.textContent = DURATION;
+    el.timebar.style.transform = "scaleX(1)";
+    el.timeStat.classList.remove("low");
+    hideCombo();
+    el.startScreen.style.display = "none";
+    el.endScreen.style.display = "none";
+    nextRound();
+    endTime = performance.now() + DURATION * 1000;
+    cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function endGame(){
+    state.over = true;
+    cancelAnimationFrame(rafId);
+    hideCombo();
+    el.endScore.textContent = state.score;
+    el.endCorrect.textContent = state.correct;
+    el.endWrong.textContent = state.wrong;
+    el.endCombo.textContent = state.bestCombo;
+
+    let msg = "Solid effort! Try to beat your score.";
+    let badge = "Time's up!";
+    const total = state.correct + state.wrong;
+    const acc = total ? Math.round(state.correct / total * 100) : 0;
+    if (state.score >= 250)      { msg = "Lightning reflexes! You're a Color Match ace."; badge = "★ Elite"; }
+    else if (state.score >= 160) { msg = "Sharp eyes and quick fingers — great run."; badge = "Great job"; }
+    else if (state.score >= 80)  { msg = "Getting there. Keep training that brain."; badge = "Nice"; }
+    else if (total === 0)        { msg = "You didn't answer in time — give it another go!"; badge = "Time's up!"; }
+    else                          { msg = "Keep practicing — the brain adapts fast."; badge = "Warming up"; }
+
+    el.endMsg.textContent = msg + " Accuracy " + acc + "%.";
+    el.endBadge.textContent = badge;
+    el.endScreen.style.display = "flex";
+  }
+
+  // Keyboard support 1..6
+  document.addEventListener("keydown", (e) => {
+    if (e.repeat) return;
+    const idx = parseInt(e.key, 10) - 1;
+    if (!isNaN(idx) && idx >= 0 && idx < COLORS.length){
+      const btn = el.pad.children[idx];
+      if (btn && state && !state.over){
+        handleAnswer(COLORS[idx].key, btn);
+      }
+    } else if ((e.key === " " || e.key === "Enter")){
+      if (!state || state.over){
+        if (el.startScreen.style.display !== "none" || el.endScreen.style.display !== "none"){
+          startGame();
+        }
+      }
+    }
+  });
+
+  el.startBtn.addEventListener("click", startGame);
+  el.restartBtn.addEventListener("click", startGame);
+
+  buildButtons();
+})();
+</script>
+</body>
+</html>

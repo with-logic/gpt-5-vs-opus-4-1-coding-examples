@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ocean Wave Simulation</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.22);
+      outline: none;
+      transition: background 0.2s;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #ffffff;
+      cursor: pointer;
+      box-shadow: 0 0 12px rgba(0, 0, 0, 0.35);
+      transition: transform 0.15s;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
+    input[type="range"]::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border: none;
+      border-radius: 50%;
+      background: #ffffff;
+      cursor: pointer;
+      box-shadow: 0 0 12px rgba(0, 0, 0, 0.35);
+    }
+    .glass {
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
+    }
+  </style>
+</head>
+<body>
+  <div class="absolute top-5 left-5 z-10 glass rounded-2xl p-6 text-white w-80 select-none">
+    <h1 class="text-2xl font-light tracking-wider mb-1">Ocean Wave Simulation</h1>
+    <p class="text-xs text-white/60 mb-6">Drag to rotate • Scroll to zoom</p>
+
+    <div class="space-y-5">
+      <div>
+        <label class="flex justify-between text-sm font-medium mb-1.5">
+          <span>Wind Speed</span>
+          <span id="windVal" class="tabular-nums text-white/80">0.50</span>
+        </label>
+        <input id="wind" type="range" min="0" max="1" step="0.01" value="0.5" />
+      </div>
+      <div>
+        <label class="flex justify-between text-sm font-medium mb-1.5">
+          <span>Wave Height</span>
+          <span id="waveVal" class="tabular-nums text-white/80">0.50</span>
+        </label>
+        <input id="wave" type="range" min="0" max="1" step="0.01" value="0.5" />
+      </div>
+      <div>
+        <label class="flex justify-between text-sm font-medium mb-1.5">
+          <span>Lighting</span>
+          <span id="lightVal" class="tabular-nums text-white/80">0.50</span>
+        </label>
+        <input id="light" type="range" min="0" max="1" step="0.01" value="0.5" />
+      </div>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    THREE.ColorManagement.enabled = true;
+
+    // --- Scene setup ---
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 6000);
+    camera.position.set(0, 35, 220);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.maxPolarAngle = Math.PI / 2 - 0.02;
+    controls.minDistance = 20;
+    controls.maxDistance = 800;
+    controls.target.set(0, 0, 0);
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.3;
+
+    // --- Lighting ---
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+    scene.add(ambientLight);
+
+    const sunLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    sunLight.position.set(100, 300, -200);
+    sunLight.target.position.set(0, 0, 0);
+    scene.add(sunLight);
+    scene.add(sunLight.target);
+
+    // --- Sky gradient ---
+    const skyCanvas = document.createElement('canvas');
+    skyCanvas.width = 512;
+    skyCanvas.height = 512;
+    const skyCtx = skyCanvas.getContext('2d', { willReadFrequently: false });
+    const skyTexture = new THREE.CanvasTexture(skyCanvas);
+    skyTexture.colorSpace = THREE.SRGBColorSpace;
+    scene.background = skyTexture;
+
+    const fog = new THREE.FogExp2(0x87ceeb, 0.0004);
+    scene.fog = fog;
+
+    // --- Sun sprite ---
+    const sunSpriteCanvas = document.createElement('canvas');
+    sunSpriteCanvas.width = 256;
+    sunSpriteCanvas.height = 256;
+    const sctx = sunSpriteCanvas.getContext('2d');
+    const sunGrad = sctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+    sunGrad.addColorStop(0.0, 'rgba(255, 255, 255, 1)');
+    sunGrad.addColorStop(0.2, 'rgba(255, 255, 240, 0.9)');
+    sunGrad.addColorStop(0.5, 'rgba(255, 200, 120, 0.4)');
+    sunGrad.addColorStop(1.0, 'rgba(255, 200, 120, 0)');
+    sctx.fillStyle = sunGrad;
+    sctx.fillRect(0, 0, 256, 256);
+    const sunSpriteTexture = new THREE.CanvasTexture(sunSpriteCanvas);
+    sunSpriteTexture.colorSpace = THREE.SRGBColorSpace;
+    const sunSprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: sunSpriteTexture,
+        color: 0xffffff,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      })
+    );
+    sunSprite.scale.set(60, 60, 1);
+    scene.add(sunSprite);
+
+    // --- Water shader ---
+    const waterGeometry = new THREE.PlaneGeometry(4000, 4000, 300, 300);
+    const waterMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uWaveHeight: { value: 1.2 },
+        uWindSpeed: { value: 1.0 },
+        uSunDirection: { value: new THREE.Vector3(0.2, 0.7, -0.5).normalize() },
+        uSunColor: { value: new THREE.Color(1.0, 1.0, 0.95) },
+        uAmbientColor: { value: new THREE.Color(0.25, 0.38, 0.48) },
+        uWaterColor: { value: new THREE.Color(0.0, 0.36, 0.7) },
+        uViewPosition: { value: camera.position },
+        uSkyTop: { value: new THREE.Color(0x87ceeb) },
+        uHorizonColor: { value: new THREE.Color(0xe0f7fa) },
+        uFogColor: { value: new THREE.Color(0x87ceeb) },
+        uFogDensity: { value: 0.0004 }
+      },
+      vertexShader: `
+        uniform float uTime;
+        uniform float uWaveHeight;
+        uniform float uWindSpeed;
+        uniform vec3 uViewPosition;
+        uniform vec3 uFogColor;
+        uniform float uFogDensity;
+
+        varying vec3 vWorldPos;
+        varying vec3 vNormal;
+        varying float vHeight;
+        varying float vFogDepth;
+
+        void main() {
+          vec3 pos = position;
+          float h = 0.0;
+          float dhx = 0.0;
+          float dhz = 0.0;
+
+          for (int i = 0; i < 6; i++) {
+            float fi = float(i);
+            float angle = fi * 0.75 + 0.2 * sin(fi * 1.7);
+            vec2 dir = normalize(vec2(cos(angle), sin(angle)));
+            float freq = 0.05 + fi * 0.035;
+            float amp = (1.0 / (fi + 1.0)) * (1.0 - fi * 0.04);
+            float speed = 1.0 + fi * 0.45;
+            float phase = dot(pos.xz, dir) * freq + uTime * speed * uWindSpeed;
+            h += amp * sin(phase);
+            float d = amp * freq * cos(phase);
+            dhx += d * dir.x;
+            dhz += d * dir.y;
+          }
+
+          pos.y += h * uWaveHeight;
+          vHeight = pos.y;
+          vWorldPos = (modelMatrix * vec4(pos, 1.0)).xyz;
+          vNormal = normalize(normalMatrix * vec3(-dhx * uWaveHeight, 1.0, -dhz * uWaveHeight));
+          vFogDepth = length(vWorldPos - uViewPosition);
+
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uSunDirection;
+        uniform vec3 uSunColor;
+        uniform vec3 uAmbientColor;
+        uniform vec3 uWaterColor;
+        uniform vec3 uViewPosition;
+        uniform vec3 uSkyTop;
+        uniform vec3 uHorizonColor;
+        uniform vec3 uFogColor;
+        uniform float uFogDensity;
+
+        varying vec3 vWorldPos;
+        varying vec3 vNormal;
+        varying float vHeight;
+        varying float vFogDepth;
+
+        void main() {
+          vec3 n = normalize(vNormal);
+          vec3 sunDir = normalize(uSunDirection);
+          vec3 viewDir = normalize(uViewPosition - vWorldPos);
+
+          float NdotL = max(dot(n, sunDir), 0.0);
+          float diffuse = NdotL;
+
+          vec3 halfDir = normalize(sunDir + viewDir);
+          float specAngle = max(dot(n, halfDir), 0.0);
+          float specular = pow(specAngle, 120.0) * 0.7;
+
+          float fresnel = pow(1.0 - max(dot(n, viewDir), 0.0), 4.0);
+          vec3 skyReflection = mix(uHorizonColor, uSkyTop, pow(fresnel, 0.55));
+
+          vec3 water = uAmbientColor * 0.8 + uSunColor * uWaterColor * diffuse;
+          vec3 color = mix(water, skyReflection, fresnel * 0.4);
+          color += uSunColor * specular * NdotL;
+
+          // Foam on wave tips
+          float foam = smoothstep(0.55, 0.85, vHeight * 0.5 + 0.1);
+          color = mix(color, vec3(1.0), foam * 0.3);
+
+          // Exponential fog
+          float fogFactor = exp(-uFogDensity * uFogDensity * vFogDepth * vFogDepth);
+          color = mix(uFogColor, color, clamp(fogFactor, 0.0, 1.0));
+
+          gl_FragColor = vec4(color, 0.98);
+        }
+      `,
+      transparent: true,
+      side: THREE.DoubleSide
+    });
+
+    const water = new THREE.Mesh(waterGeometry, waterMaterial);
+    water.rotation.x = -Math.PI / 2;
+    scene.add(water);
+
+    // --- Color palette helpers ---
+    const colorNoon = {
+      sun: new THREE.Color(0xfffee0),
+      ambient: new THREE.Color(0x4a6e8a),
+      water: new THREE.Color(0x0077be),
+      skyTop: new THREE.Color(0x87ceeb),
+      skyBottom: new THREE.Color(0xe0f7fa),
+      fog: new THREE.Color(0xc9e9f6)
+    };
+    const colorSunset = {
+      sun: new THREE.Color(0xff9f43),
+      ambient: new THREE.Color(0x1a1a2a),
+      water: new THREE.Color(0x1a3c5a),
+      skyTop: new THREE.Color(0x0f172a),
+      skyBottom: new THREE.Color(0xff9f43),
+      fog: new THREE.Color(0x7c4a2e)
+    };
+
+    function lerp(a, b, t) { return a + (b - a) * t; }
+
+    function drawSky(top, bottom) {
+      // Convert from linear working color space to sRGB for the canvas
+      const topSRGB = top.clone().convertLinearToSRGB();
+      const bottomSRGB = bottom.clone().convertLinearToSRGB();
+      const midSRGB = top.clone().lerp(bottom, 0.6).convertLinearToSRGB();
+      const grd = skyCtx.createLinearGradient(0, 0, 0, 512);
+      grd.addColorStop(0.0, '#' + topSRGB.getHexString());
+      grd.addColorStop(0.5, '#' + midSRGB.getHexString());
+      grd.addColorStop(1.0, '#' + bottomSRGB.getHexString());
+      skyCtx.fillStyle = grd;
+      skyCtx.fillRect(0, 0, 512, 512);
+      skyTexture.needsUpdate = true;
+    }
+
+    function updateLighting(t) {
+      // t = 0 sunrise, 0.5 noon, 1 sunset
+      const warm = 1.0 - Math.abs(t - 0.5) * 2.0; // 0 at noon, 1 at sunrise/sunset
+      const day = 1.0 - warm;
+
+      const sunColor = colorSunset.sun.clone().lerp(colorNoon.sun, day);
+      const ambientColor = colorSunset.ambient.clone().lerp(colorNoon.ambient, day);
+      const waterColor = colorSunset.water.clone().lerp(colorNoon.water, day);
+      const skyTop = colorSunset.skyTop.clone().lerp(colorNoon.skyTop, day);
+      const skyBottom = colorSunset.skyBottom.clone().lerp(colorNoon.skyBottom, day);
+      const fogColor = colorSunset.fog.clone().lerp(colorNoon.fog, day);
+
+      const sunAngle = t * Math.PI;
+      const sunDir = new THREE.Vector3(
+        0.2,
+        Math.sin(sunAngle) * 0.95 + 0.05,
+        -Math.cos(sunAngle)
+      ).normalize();
+
+      sunLight.position.copy(sunDir).multiplyScalar(1000);
+      sunLight.color.copy(sunColor);
+      sunLight.intensity = lerp(0.6, 1.8, day);
+
+      ambientLight.color.copy(ambientColor);
+      ambientLight.intensity = lerp(0.7, 1.0, day);
+
+      waterMaterial.uniforms.uSunDirection.value.copy(sunDir);
+      waterMaterial.uniforms.uSunColor.value.copy(sunColor);
+      waterMaterial.uniforms.uAmbientColor.value.copy(ambientColor);
+      waterMaterial.uniforms.uWaterColor.value.copy(waterColor);
+      waterMaterial.uniforms.uSkyTop.value.copy(skyTop);
+      waterMaterial.uniforms.uHorizonColor.value.copy(skyBottom);
+      waterMaterial.uniforms.uFogColor.value.copy(fogColor);
+
+      fog.color.copy(fogColor);
+      drawSky(skyTop, skyBottom);
+
+      sunSprite.position.copy(sunDir).multiplyScalar(900);
+      sunSprite.material.color.copy(sunColor);
+      sunSprite.material.opacity = 0.6 + day * 0.3;
+    }
+
+    // --- UI controls ---
+    const windInput = document.getElementById('wind');
+    const waveInput = document.getElementById('wave');
+    const lightInput = document.getElementById('light');
+    const windVal = document.getElementById('windVal');
+    const waveVal = document.getElementById('waveVal');
+    const lightVal = document.getElementById('lightVal');
+
+    function updateParams() {
+      const wind = parseFloat(windInput.value);
+      const wave = parseFloat(waveInput.value);
+      const light = parseFloat(lightInput.value);
+
+      windVal.textContent = wind.toFixed(2);
+      waveVal.textContent = wave.toFixed(2);
+      lightVal.textContent = light.toFixed(2);
+
+      waterMaterial.uniforms.uWindSpeed.value = 0.2 + wind * 2.0;
+      waterMaterial.uniforms.uWaveHeight.value = 0.15 + wave * 2.3;
+
+      updateLighting(light);
+    }
+
+    windInput.addEventListener('input', updateParams);
+    waveInput.addEventListener('input', updateParams);
+    lightInput.addEventListener('input', updateParams);
+
+    // --- Resize ---
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // --- Animation ---
+    updateParams();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const time = performance.now() * 0.001;
+      waterMaterial.uniforms.uTime.value = time;
+      waterMaterial.uniforms.uViewPosition.value.copy(camera.position);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
