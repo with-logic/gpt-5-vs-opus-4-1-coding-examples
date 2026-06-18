@@ -26,12 +26,15 @@ const APPS_DIR = path.join(REPO_ROOT, "public", "apps");
 // URLs whose content is mutable or served dynamically — skip SRI for these.
 const UNVERSIONABLE_PATTERNS = [
   /@latest/,
-  /@\d+\.x/,                    // e.g. @3.x.x
-  /npm\/chart\.js"$/,            // chart.js with no version pin
-  /npm\/marked\//,               // marked with no version pin
-  /@phosphor-icons\/web$/,       // no version
-  /fonts\.googleapis\.com/,      // serves different CSS per User-Agent
-  /fonts\.gstatic\.com/,         // font files vary by request
+  /@\d+\.x/,                          // e.g. @3.x.x
+  /npm\/chart\.js"$/,                  // chart.js with no version pin
+  /npm\/marked\//,                     // marked with no version pin
+  /@phosphor-icons\/web$/,             // no version
+  /fonts\.googleapis\.com/,            // serves different CSS per User-Agent
+  /fonts\.gstatic\.com/,               // font files vary by request
+  /cdn\.tailwindcss\.com/,             // always serves latest, no version in URL
+  /jsdelivr\.net\/npm\/[^@"]*\//,      // jsdelivr without @version pin
+  /unpkg\.com\/[^@"]*\//,              // unpkg without @version pin
 ];
 
 function isVersioned(url) {
