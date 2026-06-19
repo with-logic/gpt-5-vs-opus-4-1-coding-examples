@@ -1,4 +1,4 @@
-export type Provider = "openai" | "anthropic" | "google" | "moonshot" | "z-ai";
+export type Provider = "openai" | "anthropic" | "google" | "moonshot" | "z-ai" | "qwen";
 
 export interface ProviderConfig {
   id: Provider;
@@ -11,6 +11,7 @@ export const providers: ProviderConfig[] = [
   { id: "google", name: "Google" },
   { id: "moonshot", name: "Moonshot AI" },
   { id: "z-ai", name: "Z.ai" },
+  { id: "qwen", name: "Qwen" },
 ];
 
 export interface ModelConfig {
@@ -188,6 +189,15 @@ export const models: ModelConfig[] = [
     model: "accounts/fireworks/models/kimi-k2p7-code",
     color: "bg-purple-600",
     provider: "moonshot",
+  },
+  {
+    id: "qwen-3.7-plus",
+    name: "Qwen 3.7 Plus",
+    cli: "anthropic-proxy",
+    model: "accounts/fireworks/models/qwen3p7-plus",
+    color: "bg-sky-600",
+    provider: "qwen",
+    supportsVision: false,
   },
   {
     id: "glm-5.2",

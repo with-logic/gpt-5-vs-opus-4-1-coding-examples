@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Webcam Filter Playground</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#09090b;--surface:rgba(255,255,255,0.06);--surface-h:rgba(255,255,255,0.12);
+  --border:rgba(255,255,255,0.08);--text:#fafafa;--muted:#71717a;
+  --accent:#a855f7;--accent2:#06b6d4;--glow:rgba(168,85,247,0.4);
+}
+html,body{height:100%;overflow:hidden}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text)}
+
+/* Start Screen */
+#start-screen{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;background:var(--bg)}
+#start-screen .logo{font-size:64px;margin-bottom:16px;animation:pulse 2s ease-in-out infinite}
+#start-screen h1{font-size:28px;font-weight:700;margin-bottom:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+#start-screen p{color:var(--muted);margin-bottom:32px;font-size:14px}
+#start-btn{padding:14px 36px;border:none;border-radius:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:16px;font-weight:600;cursor:pointer;transition:transform .2s,box-shadow .2s;box-shadow:0 4px 24px var(--glow)}
+#start-btn:hover{transform:scale(1.05);box-shadow:0 8px 32px var(--glow)}
+#error-msg{color:#ef4444;margin-top:16px;font-size:13px;display:none;max-width:300px;text-align:center}
+
+/* App Layout */
+#app{display:none;height:100vh;flex-direction:column;position:relative}
+#app.active{display:flex}
+
+/* Canvas Area */
+#canvas-wrap{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;background:#000}
+#canvas{border-radius:12px;box-shadow:0 0 60px rgba(0,0,0,0.5)}
+
+/* Top Bar */
+#top-bar{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:linear-gradient(180deg,rgba(0,0,0,0.7) 0%,transparent 100%);z-index:10;pointer-events:none}
+#top-bar>*{pointer-events:auto}
+.app-title{font-size:15px;font-weight:600;opacity:0.9;display:flex;align-items:center;gap:8px}
+.app-title span{background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.top-actions{display:flex;gap:8px}
+.icon-btn{width:40px;height:40px;border:none;border-radius:10px;background:var(--surface);backdrop-filter:blur(12px);color:var(--text);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;border:1px solid var(--border)}
+.icon-btn:hover{background:var(--surface-h);transform:scale(1.08)}
+.icon-btn:active{transform:scale(0.95)}
+
+/* Bottom Bar */
+#bottom-bar{position:absolute;bottom:0;left:0;right:0;z-index:10;background:linear-gradient(0deg,rgba(0,0,0,0.8) 0%,transparent 100%);padding:8px 0 16px}
+#intensity-row{display:flex;align-items:center;gap:12px;padding:4px 20px 10px;font-size:12px;color:var(--muted)}
+#intensity-row label{white-space:nowrap;min-width:58px}
+#intensity{-webkit-appearance:none;appearance:none;flex:1;height:4px;border-radius:2px;background:rgba(255,255,255,0.15);outline:none;max-width:200px}
+#intensity::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--accent);cursor:pointer;box-shadow:0 0 10px var(--glow)}
+#intensity::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--accent);cursor:pointer;border:none;box-shadow:0 0 10px var(--glow)}
+#intensity-val{min-width:28px;text-align:right;font-variant-numeric:tabular-nums}
+
+#filter-strip{display:flex;gap:6px;overflow-x:auto;padding:4px 16px;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+#filter-strip::-webkit-scrollbar{display:none}
+.filter-btn{scroll-snap-align:center;flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 12px;border:1px solid var(--border);border-radius:10px;background:var(--surface);backdrop-filter:blur(8px);color:var(--text);cursor:pointer;transition:all .25s;min-width:68px;font-size:10px;user-select:none}
+.filter-btn .f-icon{font-size:20px;line-height:1}
+.filter-btn .f-name{white-space:nowrap;opacity:0.7;transition:opacity .2s}
+.filter-btn:hover{background:var(--surface-h);border-color:rgba(255,255,255,0.15)}
+.filter-btn.active{background:linear-gradient(135deg,rgba(168,85,247,0.25),rgba(6,182,212,0.15));border-color:var(--accent);box-shadow:0 0 20px rgba(168,85,247,0.2)}
+.filter-btn.active .f-name{opacity:1}
+
+/* Flash */
+#flash-overlay{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:50;transition:opacity .1s}
+#flash-overlay.flash{opacity:0.8;transition:opacity 0s}
+
+/* Snapshot Preview */
+#snapshot-preview{position:fixed;bottom:120px;right:20px;width:220px;background:#fff;padding:8px 8px 28px;border-radius:6px;box-shadow:0 12px 40px rgba(0,0,0,0.6);z-index:40;transform:translateY(30px) scale(0.9);opacity:0;transition:all .35s cubic-bezier(.4,0,.2,1);pointer-events:none}
+#snapshot-preview.visible{transform:translateY(0) scale(1);opacity:1;pointer-events:auto}
+#preview-canvas{width:100%;display:block;border-radius:3px}
+.preview-actions{display:flex;justify-content:space-between;align-items:center;padding:6px 4px 0}
+.preview-actions button{border:none;background:none;cursor:pointer;font-size:13px;color:#555;padding:4px 8px;border-radius:4px;transition:background .2s}
+.preview-actions button:hover{background:rgba(0,0,0,0.08)}
+#save-snap-btn{font-weight:600;color:var(--accent)!important}
+.preview-caption{font-size:10px;color:#999;text-align:center;padding-top:2px;font-style:italic}
+
+/* FPS Counter */
+#fps{position:absolute;top:12px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;z-index:10;opacity:0.5}
+
+/* Loading */
+.loading-spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 12px}
+
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+/* Responsive */
+@media(max-width:600px){
+  .filter-btn{min-width:58px;padding:6px 8px}
+  .filter-btn .f-icon{font-size:18px}
+  .filter-btn .f-name{font-size:9px}
+  #snapshot-preview{width:160px;right:10px;bottom:110px}
+  .app-title{font-size:13px}
+}
+</style>
+</head>
+<body>
+
+<!-- Start Screen -->
+<div id="start-screen">
+  <div class="logo">🎬</div>
+  <h1>Webcam Filter Playground</h1>
+  <p>Apply fun & surprising filters to your live webcam feed</p>
+  <button id="start-btn">Enable Camera</button>
+  <div id="error-msg"></div>
+</div>
+
+<!-- Main App -->
+<div id="app">
+  <div id="canvas-wrap">
+    <video id="video" playsinline autoplay muted style="display:none"></video>
+    <canvas id="canvas"></canvas>
+    <div id="fps"></div>
+  </div>
+  
+  <header id="top-bar">
+    <div class="app-title">🎬 <span>Filter Playground</span></div>
+    <div class="top-actions">
+      <button class="icon-btn" id="flip-btn" title="Flip Camera (F)">🔄</button>
+      <button class="icon-btn" id="snap-btn" title="Snapshot (Space)">📸</button>
+    </div>
+  </header>
+  
+  <footer id="bottom-bar">
+    <div id="intensity-row">
+      <label>Intensity</label>
+      <input type="range" id="intensity" min="0" max="100" value="75">
+      <span id="intensity-val">75%</span>
+    </div>
+    <div id="filter-strip"></div>
+  </footer>
+  
+  <div id="flash-overlay"></div>
+  
+  <div id="snapshot-preview">
+    <canvas id="preview-canvas"></canvas>
+    <div class="preview-caption" id="preview-filter-name"></div>
+    <div class="preview-actions">
+      <button id="save-snap-btn">💾 Save</button>
+      <button id="close-preview-btn">✕ Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+let video, canvas, ctx;
+let currentFilter = 0, intensityVal = 0.75;
+let stream = null, facingMode = 'user';
+let animId = null, startTime = 0;
+let tempCanvas, tempCtx;
+let lastSnapshot = null;
+let previewTimeout = null;
+let frameCount = 0, lastFpsTime = 0;
+
+// ─── Utility ─────────────────────────────────────────────────────────
+function getTemp(w, h) {
+  if (!tempCanvas || tempCanvas.width !== w || tempCanvas.height !== h) {
+    tempCanvas = document.createElement('canvas');
+    tempCanvas.width = w; tempCanvas.height = h;
+    tempCtx = tempCanvas.getContext('2d');
+  }
+  return tempCanvas;
+}
+
+function hsl2rgb(h, s, l) {
+  let r, g, b;
+  if (s === 0) { r = g = b = l; }
+  else {
+    const hue2rgb = (p, q, t) => { if(t<0)t+=1; if(t>1)t-=1; if(t<1/6)return p+(q-p)*6*t; if(t<1/2)return q; if(t<2/3)return p+(q-p)*(2/3-t)*6; return p; };
+    const q = l < 0.5 ? l*(1+s) : l+s-l*s, p = 2*l-q;
+    r = hue2rgb(p,q,h+1/3); g = hue2rgb(p,q,h); b = hue2rgb(p,q,h-1/3);
+  }
+  return [Math.round(r*255), Math.round(g*255), Math.round(b*255)];
+}
+
+function thermalColor(t) {
+  t = Math.max(0, Math.min(1, t));
+  let r, g, b;
+  if (t < 0.2) { r=0; g=0; b=Math.floor(t/0.2*180); }
+  else if (t < 0.4) { const s=(t-0.2)/0.2; r=0; g=Math.floor(s*200); b=Math.floor(180-s*180); }
+  else if (t < 0.6) { const s=(t-0.4)/0.2; r=Math.floor(s*255); g=Math.floor(200+s*55); b=0; }
+  else if (t < 0.8) { const s=(t-0.6)/0.2; r=255; g=Math.floor(255-s*155); b=0; }
+  else { const s=(t-0.8)/0.2; r=255; g=Math.floor(100+s*155); b=Math.floor(s*200); }
+  return [r, g, b];
+}
+
+// ─── Filter Definitions ──────────────────────────────────────────────
+const filters = [
+  { id:'original', name:'Original', icon:'✨',
+    apply(ctx,w,h,int,t){} },
+  
+  { id:'pixelate', name:'Pixelate', icon:'🧊',
+    apply(ctx,w,h,int,t){
+      const bs = Math.max(2, Math.floor(int * 28) + 2);
+      const tc = getTemp(w,h);
+      const sw = Math.max(1, Math.floor(w/bs)), sh = Math.max(1, Math.floor(h/bs));
+      tempCtx.drawImage(canvas, 0, 0, sw, sh);
+      ctx.imageSmoothingEnabled = false;
+      ctx.clearRect(0,0,w,h);
+      ctx.drawImage(tc, 0, 0, sw, sh, 0, 0, w, h);
+      ctx.imageSmoothingEnabled = true;
+    }},
+  
+  { id:'glitch', name:'Glitch', icon:'⚡',
+    apply(ctx,w,h,int,t){
+      const id = ctx.getImageData(0,0,w,h);
+      const d = id.data, cp = new Uint8ClampedArray(d);
+      const shift = Math.floor(int * 15) + 2;
+      // RGB shift
+      for(let y=0;y<h;y++){
+        for(let x=0;x<w;x++){
+          const i=(y*w+x)*4;
+          const rx=Math.max(0,x-shift);
+          d[i]=cp[(y*w+rx)*4];
+          const bx=Math.min(w-1,x+shift);
+          d[i+2]=cp[(y*w+bx)*4+2];
+        }
+      }
+      // Random slice displacement
+      const numSlices = Math.floor(int * 6) + 1;
+      for(let s=0;s<numSlices;s++){
+        if(Math.random()>0.5+int*0.3) continue;
+        const sy=Math.floor(Math.random()*h);
+        const sh=Math.floor(Math.random()*30*int)+3;
+        const off=Math.floor((Math.random()-0.5)*60*int);
+        for(let y=sy;y<Math.min(sy+sh,h);y++){
+          const row=new Uint8ClampedArray(w*4);
+          for(let x=0;x<w;x++){const i=(y*w+x)*4;row[x*4]=d[i];row[x*4+1]=d[i+1];row[x*4+2]=d[i+2];row[x*4+3]=d[i+3];}
+          for(let x=0;x<w;x++){
+            const sx=x-off;
+            if(sx>=0&&sx<w){
+              const i=(y*w+x)*4,si=(y*w+sx)*4;
+              d[i]=row[sx*4];d[i+1]=row[sx*4+1];d[i+2]=row[sx*4+2];
+            }
+          }
+        }
+      }
+      ctx.putImageData(id,0,0);
+    }},
+  
+  { id:'mirror', name:'Mirror', icon:'🪞',
+    apply(ctx,w,h,int,t){
+      const half=Math.floor(w/2);
+      const tc=getTemp(w,h);
+      tempCtx.drawImage(canvas,0,0);
+      if(int>0.5){
+        // Mirror left to right
+        ctx.save();
+        ctx.translate(w,0);ctx.scale(-1,1);
+        ctx.drawImage(tc,0,0,half,h,0,0,half,h);
+        ctx.restore();
+      } else {
+        // Mirror right to left
+        ctx.drawImage(tc,w-half,0,half,h,0,0,half,h);
+      }
+    }},
+  
+  { id:'kaleidoscope', name:'Kaleido', icon:'🔮',
+    apply(ctx,w,h,int,t){
+      const segs = Math.max(3, Math.floor(int*6)+3);
+      const tc=getTemp(w,h);
+      tempCtx.drawImage(canvas,0,0);
+      const cx=w/2, cy=h/2;
+      const angle=Math.PI*2/segs;
+      ctx.clearRect(0,0,w,h);
+      ctx.fillStyle='#000';
+      ctx.fillRect(0,0,w,h);
+      for(let i=0;i<segs;i++){
+        ctx.save();
+        ctx.translate(cx,cy);
+        ctx.rotate(angle*i + t*0.0003*int);
+        if(i%2===1) ctx.scale(1,-1);
+        ctx.beginPath();
+        ctx.moveTo(0,0);
+        ctx.lineTo(w,0);
+        ctx.lineTo(w*Math.cos(angle), w*Math.sin(angle));
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(tc,-cx,-cy);
+        ctx.restore();
+      }
+    }},
+  
+  { id:'thermal', name:'Thermal', icon:'🔥',
+    apply(ctx,w,h,int,t){
+      const id=ctx.getImageData(0,0,w,h);
+      const d=id.data;
+      for(let i=0;i<d.length;i+=4){
+        const avg=(d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114)/255;
+        const [r,g,b]=thermalColor(avg);
+        const bl=int;
+        d[i]=Math.floor(d[i]*(1-bl)+r*bl);
+        d[i+1]=Math.floor(d[i+1]*(1-bl)+g*bl);
+        d[i+2]=Math.floor(d[i+2]*(1-bl)+b*bl);
+      }
+      ctx.putImageData(id,0,0);
+    }},
+  
+  { id:'edges', name:'Edges', icon:'✏️',
+    apply(ctx,w,h,int,t){
+      const id=ctx.getImageData(0,0,w,h);
+      const d=id.data, cp=new Uint8ClampedArray(d);
+      const thresh = 50 - int*35;
+      for(let y=1;y<h-1;y++){
+        for(let x=1;x<w-1;x++){
+          const i=(y*w+x)*4;
+          let gx=0,gy=0;
+          for(let c=0;c<3;c++){
+            const tl=cp[((y-1)*w+(x-1))*4+c], tc2=cp[((y-1)*w+x)*4+c], tr=cp[((y-1)*w+(x+1))*4+c];
+            const l=cp[(y*w+(x-1))*4+c], r=cp[(y*w+(x+1))*4+c];
+            const bl=cp[((y+1)*w+(x-1))*4+c], bc=cp[((y+1)*w+x)*4+c], br=cp[((y+1)*w+(x+1))*4+c];
+            gx+=(-tl-2*l-bl+tr+2*r+br)/3;
+            gy+=(-tl-2*tc2-tr+bl+2*bc+br)/3;
+          }
+          const mag=Math.sqrt(gx*gx+gy*gy);
+          const v=mag>thresh?255:0;
+          d[i]=d[i+1]=d[i+2]=v; d[i+3]=255;
+        }
+      }
+      ctx.putImageData(id,0,0);
+    }},
+  
+  { id:'vhs', name:'VHS', icon:'📼',
+    apply(ctx,w,h,int,t){
+      const id=ctx.getImageData(0,0,w,h);
+      const d=id.data, cp=new Uint8ClampedArray(d);
+      const shift=Math.floor(int*8)+1;
+      // Chromatic aberration
+      for(let y=0;y<h;y++){
+        for(let x=0;x<w;x++){
+          const i=(y*w+x)*4;
+          const rx=Math.max(0,x-shift);
+          const bx=Math.min(w-1,x+shift);
+          d[i]=cp[(y*w+rx)*4];
+          d[i+2]=cp[(y*w+bx)*4+2];
+        }
+      }
+      // Scanlines
+      for(let y=0;y<h;y+=2){
+        for(let x=0;x<w;x++){
+          const i=(y*w+x)*4;
+          d[i]=Math.floor(d[i]*0.7);
+          d[i+1]=Math.floor(d[i+1]*0.7);
+          d[i+2]=Math.floor(d[i+2]*0.7);
+        }
+      }
+      // Noise
+      const noiseAmt=int*30;
+      for(let i=0;i<d.length;i+=4){
+        const n=(Math.random()-0.5)*noiseAmt;
+        d[i]=Math.max(0,Math.min(255,d[i]+n));
+        d[i+1]=Math.max(0,Math.min(255,d[i+1]+n));
+        d[i+2]=Math.max(0,Math.min(255,d[i+2]+n));
+      }
+      ctx.putImageData(id,0,0);
+      // Tracking bar
+      const barY=((t*0.05*int)%h+h)%h;
+      const barH=Math.floor(8+int*20);
+      ctx.fillStyle='rgba(255,255,255,0.06)';
+      ctx.fillRect(0,barY,w,barH);
+      // REC indicator
+      ctx.save();
+      const blink=Math.sin(t*0.005)>0;
+      if(blink){
+        ctx.fillStyle='#ff0000';
+        ctx.beginPath();ctx.arc(28,28,5,0,Math.PI*2);ctx.fill();
+      }
+      ctx.fillStyle='#fff';ctx.font='bold 13px monospace';ctx.textBaseline='top';
+      ctx.shadowColor='rgba(0,0,0,0.8)';ctx.shadowBlur=4;
+      ctx.fillText('● REC',18,40);
+      const date=new Date();
+      const ts=`${date.getFullYear()}.${String(date.getMonth()+1).padStart(2,'0')}.${String(date.getDate()).padStart(2,'0')}  ${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}:${String(date.getSeconds()).padStart(2,'0')}`;
+      ctx.fillText(ts,18,h-26);
+      ctx.fillText('SP',w-30,40);
+      ctx.restore();
+    }},
+  
+  { id:'neon', name:'Neon', icon:'💜',
+    apply(ctx,w,h,int,t){
+      const id=ctx.getImageData(0,0,w,h);
+      const d=id.data, cp=new Uint8ClampedArray(d);
+      const thresh=40-int*25;
+      for(let y=1;y<h-1;y++){
+        for(let x=1;x<w-1;x++){
+          const i=(y*w+x)*4;
+          let gx=0,gy=0;
+          for(let c=0;c<3;c++){
+            const tl=cp[((y-1)*w+(x-1))*4+c],tc2=cp[((y-1)*w+x)*4+c],tr=cp[((y-1)*w+(x+1))*4+c];
+            const l=cp[(y*w+(x-1))*4+c],r=cp[(y*w+(x+1))*4+c];
+            const bl=cp[((y+1)*w+(x-1))*4+c],bc=cp[((y+1)*w+x)*4+c],br=cp[((y+1)*w+(x+1))*4+c];
+            gx+=(-tl-2*l-bl+tr+2*r+br)/3;
+            gy+=(-tl-2*tc2-tr+bl+2*bc+br)/3;
+          }
+          const mag=Math.sqrt(gx*gx+gy*gy);
+          if(mag>thresh){
+            const hue=((x/w*360+t*0.08)%360)/360;
+            const[r,g,b]=hsl2rgb(hue,1,0.55);
+            d[i]=r;d[i+1]=g;d[i+2]=b;
+          } else {
+            d[i]=d[i+1]=d[i+2]=0;
+          }
+          d[i+3]=255;
+        }
+      }
+      ctx.putImageData(id,0,0);
+      // Glow pass
+      ctx.save();
+      ctx.filter=`blur(${Math.floor(3+int*8)}px)`;
+      ctx.globalCompositeOperation='lighter';
+      ctx.globalAlpha=0.5+int*0.3;
+      ctx.drawImage(canvas,0,0);
+      ctx.restore();
+    }},
+  
+  { id:'ascii', name:'ASCII', icon:'💻',
+    apply(ctx,w,h,int,t){
+      const cellSize=Math.max(4, Math.floor(14-int*10));
+      const cols=Math.floor(w/cellSize), rows=Math.floor(h/cellSize);
+      const tc=getTemp(cols,rows);
+      tempCtx.drawImage(canvas,0,0,cols,rows);
+      const id=tempCtx.getImageData(0,0,cols,rows);
+      const d=id.data;
+      const chars=' .·:-=+*#%@█';
+      ctx.fillStyle='#0a0a0f';
+      ctx.fillRect(0,0,w,h);
+      ctx.font=`${cellSize}px monospace`;
+      ctx.textBaseline='top';
+      for(let row=0;row<rows;row++){
+        for(let col=0;col<cols;col++){
+          const i=(row*cols+col)*4;
+          const r=d[i],g=d[i+1],b=d[i+2];
+          const avg=(r+g+b)/3;
+          const ci=Math.min(chars.length-1, Math.floor(avg/256*chars.length));
+          if(ci===0) continue;
+          ctx.fillStyle=`rgb(${r},${g},${b})`;
+          ctx.fillText(chars[ci], col*cellSize, row*cellSize);
+        }
+      }
+    }},
+  
+  { id:'comic', name:'Comic', icon:'💥',
+    apply(ctx,w,h,int,t){
+      const id=ctx.getImageData(0,0,w,h);
+      const d=id.data, cp=new Uint8ClampedArray(d);
+      const levels=Math.max(2, Math.floor(6-int*4));
+      const step=256/levels;
+      const thresh=40-int*25;
+      for(let y=1;y<h-1;y++){
+        for(let x=1;x<w-1;x++){
+          const i=(y*w+x)*4;
+          // Posterize
+          for(let c=0;c<3;c++){
+            d[i+c]=Math.floor(cp[i+c]/step)*step+step/2;
+          }
+          // Edge
+          const c0=(cp[i]+cp[i+1]+cp[i+2])/3;
+          const t2=(cp[((y-1)*w+x)*4]+cp[((y-1)*w+x)*4+1]+cp[((y-1)*w+x)*4+2])/3;
+          const b2=(cp[((y+1)*w+x)*4]+cp[((y+1)*w+x)*4+1]+cp[((y+1)*w+x)*4+2])/3;
+          const l2=(cp[(y*w+x-1)*4]+cp[(y*w+x-1)*4+1]+cp[(y*w+x-1)*4+2])/3;
+          const r2=(cp[(y*w+x+1)*4]+cp[(y*w+x+1)*4+1]+cp[(y*w+x+1)*4+2])/3;
+          const edge=Math.abs(c0-t2)+Math.abs(c0-b2)+Math.abs(c0-l2)+Math.abs(c0-r2);
+          if(edge>thresh){d[i]=d[i+1]=d[i+2]=0;}
+          d[i+3]=255;
+        }
+      }
+      ctx.putImageData(id,0,0);
+    }},
+  
+  { id:'wave', name:'Wave', icon:'🌊',
+    apply(ctx,w,h,int,t){
+      const tc=getTemp(w,h);
+      tempCtx.drawImage(canvas,0,0);
+      ctx.clearRect(0,0,w,h);
+      const amp=int*25+3;
+      const freq=0.015+int*0.015;
+      const stripH=2;
+      for(let y=0;y<h;y+=stripH){
+        const off=Math.sin(y*freq+t*0.003)*amp;
+        ctx.drawImage(tc,0,y,w,stripH,off,y,w,stripH);
+      }
+    }},
+  
+  { id:'emboss', name:'Emboss', icon:'🗿',
+    apply(ctx,w,h,int,t){
+      const id=ctx.getImageData(0,0,w,h);
+      const d=id.data, cp=new Uint8ClampedArray(d);
+      const strength=1+int*3;
+      for(let y=1;y<h-1;y++){
+        for(let x=1;x<w-1;x++){
+          const i=(y*w+x)*4;
+          for(let c=0;c<3;c++){
+            const tl=cp[((y-1)*w+(x-1))*4+c];
+            const br=cp[((y+1)*w+(x+1))*4+c];
+            let v=128+(br-tl)*strength;
+            d[i+c]=Math.max(0,Math.min(255,v));
+          }
+          d[i+3]=255;
+        }
+      }
+      ctx.putImageData(id,0,0);
+    }},
+  
+  { id:'posterize', name:'Posterize', icon:'🎨',
+    apply(ctx,w,h,int,t){
+      const id=ctx.getImageData(0,0,w,h);
+      const d=id.data;
+      const levels=Math.max(2, Math.floor(8-int*6));
+      const step=255/(levels-1);
+      for(let i=0;i<d.length;i+=4){
+        d[i]=Math.round(Math.round(d[i]/step)*step);
+        d[i+1]=Math.round(Math.round(d[i+1]/step)*step);
+        d[i+2]=Math.round(Math.round(d[i+2]/step)*step);
+      }
+      ctx.putImageData(id,0,0);
+    }},
+  
+  { id:'infrared', name:'Infrared', icon:'📡',
+    apply(ctx,w,h,int,t){
+      const id=ctx.getImageData(0,0,w,h);
+      const d=id.data;
+      for(let i=0;i<d.length;i+=4){
+        const r=d[i],g=d[i+1],b=d[i+2];
+        const avg=(r+g+b)/3;
+        const n=avg/255;
+        let nr,ng,nb;
+        if(n<0.33){nr=0;ng=0;nb=Math.floor(n/0.33*200);}
+        else if(n<0.66){const s=(n-0.33)/0.33;nr=Math.floor(s*255);ng=Math.floor(s*80);nb=Math.floor((1-s)*200);}
+        else{const s=(n-0.66)/0.34;nr=255;ng=Math.floor(80+s*175);nb=Math.floor(s*180);}
+        d[i]=Math.floor(r*(1-int)+nr*int);
+        d[i+1]=Math.floor(g*(1-int)+ng*int);
+        d[i+2]=Math.floor(b*(1-int)+nb*int);
+      }
+      ctx.putImageData(id,0,0);
+    }},
+  
+  { id:'prism', name:'Prism', icon:'🌈',
+    apply(ctx,w,h,int,t){
+      const id=ctx.getImageData(0,0,w,h);
+      const d=id.data, cp=new Uint8ClampedArray(d);
+      const shift=Math.floor(int*20)+3;
+      for(let y=0;y<h;y++){
+        for(let x=0;x<w;x++){
+          const i=(y*w+x)*4;
+          // Shift R, G, B in different directions
+          const rx=Math.max(0,Math.min(w-1, x-shift));
+          const gx=x;
+          const bx=Math.max(0,Math.min(w-1, x+shift));
+          const ry=Math.max(0,Math.min(h-1, y-Math.floor(shift/2)));
+          const by=Math.max(0,Math.min(h-1, y+Math.floor(shift/2)));
+          d[i]=cp[(ry*w+rx)*4];
+          d[i+1]=cp[(y*w+gx)*4+1];
+          d[i+2]=cp[(by*w+bx)*4+2];
+        }
+      }
+      ctx.putImageData(id,0,0);
+    }},
+  
+  { id:'vignette', name:'Vignette', icon:'⭕',
+    apply(ctx,w,h,int,t){
+      const cx=w/2, cy=h/2;
+      const maxR=Math.sqrt(cx*cx+cy*cy);
+      const inner=maxR*(0.4-int*0.25);
+      const grad=ctx.createRadialGradient(cx,cy,inner,cx,cy,maxR);
+      grad.addColorStop(0,'rgba(0,0,0,0)');
+      grad.addColorStop(0.5,`rgba(0,0,0,${int*0.3})`);
+      grad.addColorStop(1,`rgba(0,0,0,${0.3+int*0.7})`);
+      ctx.fillStyle=grad;
+      ctx.fillRect(0,0,w,h);
+    }},
+  
+  { id:'dream', name:'Dream', icon:'💫',
+    apply(ctx,w,h,int,t){
+      const tc=getTemp(w,h);
+      tempCtx.drawImage(canvas,0,0);
+      ctx.save();
+      ctx.filter=`blur(${Math.floor(int*16)+2}px)`;
+      ctx.globalAlpha=0.4+int*0.3;
+      ctx.drawImage(tc,0,0);
+      ctx.restore();
+      ctx.save();
+      ctx.globalCompositeOperation='lighter';
+      ctx.globalAlpha=int*0.15;
+      ctx.drawImage(tc,0,0);
+      ctx.restore();
+      // Slight warm tint
+      ctx.save();
+      ctx.globalCompositeOperation='overlay';
+      ctx.globalAlpha=int*0.1;
+      ctx.fillStyle='#ffcc88';
+      ctx.fillRect(0,0,w,h);
+      ctx.restore();
+    }},
+];
+
+// ─── Camera ──────────────────────────────────────────────────────────
+async function startCamera() {
+  const errEl = $('error-msg');
+  const btn = $('start-btn');
+  btn.innerHTML = '<div class="loading-spinner" style="width:20px;height:20px;border-width:2px;margin:0 auto"></div>';
+  btn.disabled = true;
+  
+  try {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { width:{ideal:1280}, height:{ideal:720}, facingMode }
+    });
+    video = $('video');
+    video.srcObject = stream;
+    await video.play();
+    
+    canvas = $('canvas');
+    ctx = canvas.getContext('2d', { willReadFrequently: true });
+    
+    video.addEventListener('loadedmetadata', () => {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      resizeCanvasDisplay();
+      startTime = performance.now();
+      render(startTime);
+    });
+    
+    $('start-screen').style.display = 'none';
+    $('app').classList.add('active');
+    buildFilterStrip();
+  } catch(e) {
+    console.error(e);
+    errEl.style.display = 'block';
+    if (e.name === 'NotAllowedError') {
+      errEl.textContent = 'Camera access denied. Please allow camera permissions and try again.';
+    } else if (e.name === 'NotFoundError') {
+      errEl.textContent = 'No camera found. Please connect a camera and try again.';
+    } else {
+      errEl.textContent = 'Could not access camera: ' + e.message;
+    }
+    btn.textContent = 'Try Again';
+    btn.disabled = false;
+  }
+}
+
+function resizeCanvasDisplay() {
+  if (!canvas || !video) return;
+  const wrap = $('canvas-wrap');
+  const ww = wrap.clientWidth - 24, wh = wrap.clientHeight - 24;
+  const aspect = video.videoWidth / video.videoHeight;
+  let dw, dh;
+  if (ww / wh > aspect) { dh = wh; dw = dh * aspect; }
+  else { dw = ww; dh = dw / aspect; }
+  canvas.style.width = Math.floor(dw) + 'px';
+  canvas.style.height = Math.floor(dh) + 'px';
+}
+
+async function flipCamera() {
+  facingMode = facingMode === 'user' ? 'environment' : 'user';
+  if (animId) cancelAnimationFrame(animId);
+  await startCamera();
+}
+
+// ─── Render Loop ─────────────────────────────────────────────────────
+function render(timestamp) {
+  if (!video || video.paused || video.readyState < 2) {
+    animId = requestAnimationFrame(render);
+    return;
+  }
+  
+  const w = canvas.width, h = canvas.height;
+  ctx.drawImage(video, 0, 0, w, h);
+  
+  const f = filters[currentFilter];
+  f.apply(ctx, w, h, intensityVal, timestamp - startTime);
+  
+  // FPS
+  frameCount++;
+  if (timestamp - lastFpsTime > 1000) {
+    $('fps').textContent = Math.round(frameCount * 1000 / (timestamp - lastFpsTime)) + ' fps';
+    frameCount = 0;
+    lastFpsTime = timestamp;
+  }
+  
+  animId = requestAnimationFrame(render);
+}
+
+// ─── UI ──────────────────────────────────────────────────────────────
+function buildFilterStrip() {
+  const strip = $('filter-strip');
+  strip.innerHTML = '';
+  filters.forEach((f, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'filter-btn' + (i === currentFilter ? ' active' : '');
+    btn.innerHTML = `<span class="f-icon">${f.icon}</span><span class="f-name">${f.name}</span>`;
+    btn.addEventListener('click', () => selectFilter(i));
+    strip.appendChild(btn);
+  });
+}
+
+function selectFilter(idx) {
+  currentFilter = idx;
+  document.querySelectorAll('.filter-btn').forEach((b, i) => {
+    b.classList.toggle('active', i === idx);
+  });
+  // Scroll active into view
+  const active = document.querySelector('.filter-btn.active');
+  if (active) active.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
+}
+
+// ─── Snapshot ────────────────────────────────────────────────────────
+function takeSnapshot() {
+  // Flash
+  const flash = $('flash-overlay');
+  flash.classList.add('flash');
+  requestAnimationFrame(() => {
+    flash.classList.remove('flash');
+  });
+  
+  // Capture
+  const pc = $('preview-canvas');
+  const maxW = 400;
+  const scale = Math.min(1, maxW / canvas.width);
+  pc.width = Math.floor(canvas.width * scale);
+  pc.height = Math.floor(canvas.height * scale);
+  const pctx = pc.getContext('2d');
+  pctx.drawImage(canvas, 0, 0, pc.width, pc.height);
+  
+  lastSnapshot = canvas.toDataURL('image/png');
+  
+  $('preview-filter-name').textContent = filters[currentFilter].icon + ' ' + filters[currentFilter].name;
+  
+  // Show preview
+  const preview = $('snapshot-preview');
+  preview.classList.add('visible');
+  if (previewTimeout) clearTimeout(previewTimeout);
+  previewTimeout = setTimeout(() => preview.classList.remove('visible'), 5000);
+}
+
+function saveSnapshot() {
+  if (!lastSnapshot) {
+    // Save current frame
+    lastSnapshot = canvas.toDataURL('image/png');
+  }
+  const a = document.createElement('a');
+  a.href = lastSnapshot;
+  a.download = `filter-playground-${Date.now()}.png`;
+  a.click();
+  $('snapshot-preview').classList.remove('visible');
+}
+
+// ─── Event Listeners ─────────────────────────────────────────────────
+$('start-btn').addEventListener('click', startCamera);
+
+$('flip-btn').addEventListener('click', flipCamera);
+
+$('snap-btn').addEventListener('click', takeSnapshot);
+
+$('save-snap-btn').addEventListener('click', saveSnapshot);
+
+$('close-preview-btn').addEventListener('click', () => {
+  $('snapshot-preview').classList.remove('visible');
+});
+
+$('intensity').addEventListener('input', e => {
+  intensityVal = e.target.value / 100;
+  $('intensity-val').textContent = e.target.value + '%';
+});
+
+window.addEventListener('resize', resizeCanvasDisplay);
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if ($('start-screen').style.display !== 'none') return;
+  switch(e.key) {
+    case ' ': e.preventDefault(); takeSnapshot(); break;
+    case 'ArrowRight': selectFilter((currentFilter + 1) % filters.length); break;
+    case 'ArrowLeft': selectFilter((currentFilter - 1 + filters.length) % filters.length); break;
+    case 'f': case 'F': flipCamera(); break;
+    case 's': case 'S': saveSnapshot(); break;
+  }
+});
+
+// Touch swipe for filter navigation
+let touchStartX = 0;
+$('canvas-wrap')?.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, {passive:true});
+$('canvas-wrap')?.addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  if (Math.abs(dx) > 50) {
+    if (dx < 0) selectFilter((currentFilter + 1) % filters.length);
+    else selectFilter((currentFilter - 1 + filters.length) % filters.length);
+  }
+}, {passive:true});
+</script>
+</body>
+</html>

@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Target Clicker</title>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none}
+
+#game-container{position:fixed;inset:0;background:linear-gradient(135deg,#f0f4ff 0%,#e8eeff 30%,#f5f0ff 60%,#fef0f5 100%);overflow:hidden}
+#game-container::before{content:'';position:absolute;inset:0;background-image:radial-gradient(circle at 1px 1px,rgba(0,0,0,0.03) 1px,transparent 0);background-size:40px 40px;pointer-events:none;z-index:0}
+
+canvas#particles{position:absolute;inset:0;z-index:50;pointer-events:none}
+
+/* ===== HUD ===== */
+#hud{position:absolute;top:0;left:0;right:0;z-index:40;display:flex;justify-content:center;gap:6px;padding:12px 16px;opacity:0;transition:opacity .4s}
+#hud.visible{opacity:1}
+.hud-item{background:rgba(255,255,255,0.75);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.9);border-radius:16px;padding:8px 20px;text-align:center;min-width:100px;box-shadow:0 4px 20px rgba(0,0,0,0.06),0 1px 3px rgba(0,0,0,0.04);transition:box-shadow .3s,transform .15s}
+.hud-label{display:block;font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#94a3b8;margin-bottom:2px}
+.hud-value{display:block;font-size:28px;font-weight:800;color:#1e293b;line-height:1.1;transition:transform .15s}
+.hud-value.bump{animation:bump .2s ease}
+@keyframes bump{0%{transform:scale(1)}50%{transform:scale(1.2)}100%{transform:scale(1)}}
+
+#hud-item-timer .hud-value{font-variant-numeric:tabular-nums}
+#hud-item-timer.warning .hud-value{color:#ef4444;animation:pulse-text .5s ease infinite alternate}
+@keyframes pulse-text{from{opacity:1}to{opacity:.6}}
+
+#hud.combo-3{filter:drop-shadow(0 0 8px rgba(251,191,36,0.25))}
+#hud.combo-5{filter:drop-shadow(0 0 12px rgba(249,115,22,0.35))}
+#hud.combo-8{filter:drop-shadow(0 0 18px rgba(239,68,68,0.4))}
+#hud.combo-10{filter:drop-shadow(0 0 24px rgba(236,72,153,0.5))}
+
+.streak-fire{font-size:16px;margin-left:2px}
+
+/* ===== TARGET AREA ===== */
+#target-area{position:absolute;inset:0;z-index:10;cursor:crosshair}
+#target-area.no-cursor{cursor:none}
+
+/* ===== TARGETS ===== */
+.target{position:absolute;border-radius:50%;pointer-events:none;transform:translate(-50%,-50%) scale(0);z-index:20;transition:filter .1s}
+.target.active{pointer-events:auto;cursor:crosshair}
+.target-inner{width:100%;height:100%;border-radius:50%;position:relative;overflow:hidden}
+
+.target.appearing{animation:target-appear .35s cubic-bezier(0.34,1.56,0.64,1) forwards}
+.target.alive{animation:target-pulse 1.2s ease-in-out infinite}
+.target.hit-anim{animation:target-hit .25s ease-out forwards!important;pointer-events:none}
+.target.expire-anim{animation:target-expire .3s ease-in forwards!important;pointer-events:none}
+
+@keyframes target-appear{
+    0%{transform:translate(-50%,-50%) scale(0);opacity:0}
+    60%{transform:translate(-50%,-50%) scale(1.12);opacity:1}
+    80%{transform:translate(-50%,-50%) scale(0.95)}
+    100%{transform:translate(-50%,-50%) scale(1);opacity:1}
+}
+@keyframes target-pulse{
+    0%,100%{transform:translate(-50%,-50%) scale(1)}
+    50%{transform:translate(-50%,-50%) scale(1.04)}
+}
+@keyframes target-hit{
+    0%{transform:translate(-50%,-50%) scale(1);opacity:1}
+    40%{transform:translate(-50%,-50%) scale(1.35);opacity:.7}
+    100%{transform:translate(-50%,-50%) scale(0);opacity:0}
+}
+@keyframes target-expire{
+    0%{transform:translate(-50%,-50%) scale(1);opacity:.7}
+    100%{transform:translate(-50%,-50%) scale(.4);opacity:0}
+}
+
+/* Countdown ring */
+.target-ring{position:absolute;inset:-6px;border-radius:50%;border:3px solid rgba(255,255,255,0.6);pointer-events:none;animation:ring-shrink var(--lifetime) linear forwards}
+@keyframes ring-shrink{
+    0%{transform:scale(1.35);opacity:.7}
+    70%{opacity:.4}
+    100%{transform:scale(1);opacity:0}
+}
+
+/* Warning flash for expiring targets */
+.target.warning{animation:target-warn .25s ease-in-out infinite alternate!important}
+@keyframes target-warn{
+    from{transform:translate(-50%,-50%) scale(1);filter:brightness(1)}
+    to{transform:translate(-50%,-50%) scale(1.06);filter:brightness(1.2)}
+}
+
+/* ===== SCORE POPUPS ===== */
+.score-popup{position:absolute;pointer-events:none;z-index:60;font-weight:800;font-size:22px;text-shadow:0 2px 8px rgba(0,0,0,0.15);animation:score-float .8s ease-out forwards;white-space:nowrap}
+@keyframes score-float{
+    0%{transform:translate(-50%,-50%) scale(.5);opacity:0}
+    20%{transform:translate(-50%,-80%) scale(1.1);opacity:1}
+    100%{transform:translate(-50%,-180%) scale(.9);opacity:0}
+}
+
+/* ===== CLICK RIPPLE ===== */
+.click-ripple{position:absolute;pointer-events:none;z-index:15;width:30px;height:30px;border:2px solid rgba(100,116,139,0.25);border-radius:50%;animation:ripple-expand .4s ease-out forwards}
+@keyframes ripple-expand{
+    0%{transform:translate(-50%,-50%) scale(0);opacity:1}
+    100%{transform:translate(-50%,-50%) scale(3);opacity:0}
+}
+
+/* ===== OVERLAYS ===== */
+.overlay{position:absolute;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:rgba(240,244,255,0.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);opacity:0;pointer-events:none;transition:opacity .4s}
+.overlay.visible{opacity:1;pointer-events:auto}
+
+.overlay-card{background:rgba(255,255,255,0.9);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.95);border-radius:28px;padding:48px 52px;text-align:center;box-shadow:0 25px 60px rgba(0,0,0,0.08),0 4px 16px rgba(0,0,0,0.04);max-width:460px;width:90%;transform:translateY(20px) scale(0.95);transition:transform .4s cubic-bezier(0.34,1.56,0.64,1);position:relative;overflow:hidden}
+.overlay.visible .overlay-card{transform:translateY(0) scale(1)}
+.overlay-card::before{content:'';position:absolute;top:-50%;left:-50%;width:200%;height:200%;background:conic-gradient(from 0deg,transparent,rgba(99,102,241,0.03),transparent,rgba(236,72,153,0.03),transparent);animation:card-shimmer 8s linear infinite;pointer-events:none}
+@keyframes card-shimmer{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+
+.game-title{font-size:42px;font-weight:900;letter-spacing:-1px;margin-bottom:4px;background:linear-gradient(135deg,#6366f1,#ec4899,#f59e0b);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1.2}
+.game-subtitle{font-size:15px;color:#64748b;margin-bottom:32px;line-height:1.5}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:16px 44px;border:none;border-radius:16px;font-size:18px;font-weight:700;cursor:pointer;transition:all .2s;letter-spacing:0.5px;position:relative;overflow:hidden}
+.btn-primary{background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;box-shadow:0 8px 24px rgba(99,102,241,0.35)}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 12px 32px rgba(99,102,241,0.45)}
+.btn-primary:active{transform:translateY(0);box-shadow:0 4px 16px rgba(99,102,241,0.3)}
+
+.btn::after{content:'';position:absolute;inset:0;background:linear-gradient(rgba(255,255,255,0.15),transparent);pointer-events:none}
+
+.instructions{display:flex;gap:16px;justify-content:center;margin-bottom:28px;flex-wrap:wrap}
+.instruction-item{display:flex;align-items:center;gap:6px;font-size:13px;color:#64748b;background:rgba(99,102,241,0.06);padding:6px 14px;border-radius:10px}
+.instruction-icon{font-size:16px}
+
+/* ===== END SCREEN ===== */
+.end-title{font-size:20px;font-weight:700;color:#64748b;margin-bottom:4px;text-transform:uppercase;letter-spacing:2px}
+.end-score{font-size:72px;font-weight:900;line-height:1;margin-bottom:4px;background:linear-gradient(135deg,#6366f1,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.end-rating{font-size:20px;margin-bottom:28px;color:#475569}
+
+.stats-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:32px}
+.stat-item{background:rgba(99,102,241,0.05);border-radius:14px;padding:14px 10px}
+.stat-value{font-size:24px;font-weight:800;color:#1e293b;display:block}
+.stat-label{font-size:11px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;display:block;margin-top:2px}
+
+/* ===== DECORATIVE TARGETS (menu) ===== */
+.deco-target{position:absolute;border-radius:50%;opacity:0.12;pointer-events:none;animation:deco-float linear infinite}
+@keyframes deco-float{
+    0%{transform:translateY(0) rotate(0deg)}
+    50%{transform:translateY(-30px) rotate(180deg)}
+    100%{transform:translateY(0) rotate(360deg)}
+}
+
+/* ===== COUNTDOWN OVERLAY ===== */
+#countdown-overlay{position:absolute;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;background:rgba(240,244,255,0.7);backdrop-filter:blur(6px);opacity:0;pointer-events:none;transition:opacity .2s}
+#countdown-overlay.visible{opacity:1}
+#countdown-number{font-size:120px;font-weight:900;color:#6366f1;animation:countdown-pop .6s ease-out;line-height:1}
+@keyframes countdown-pop{
+    0%{transform:scale(2);opacity:0}
+    40%{transform:scale(.9);opacity:1}
+    60%{transform:scale(1.05)}
+    100%{transform:scale(1);opacity:1}
+}
+
+/* ===== RESPONSIVE ===== */
+@media(max-width:600px){
+    .hud-item{min-width:70px;padding:6px 12px;border-radius:12px}
+    .hud-value{font-size:22px}
+    .hud-label{font-size:8px}
+    .game-title{font-size:32px}
+    .overlay-card{padding:32px 28px;border-radius:22px}
+    .end-score{font-size:56px}
+    .stats-grid{grid-template-columns:1fr 1fr;gap:8px}
+    #hud{gap:4px;padding:8px 8px}
+}
+</style>
+</head>
+<body>
+<div id="game-container">
+    <canvas id="particles"></canvas>
+    
+    <div id="hud">
+        <div class="hud-item" id="hud-item-timer">
+            <span class="hud-label">Time</span>
+            <span class="hud-value" id="timer-display">20.0</span>
+        </div>
+        <div class="hud-item" id="hud-item-score">
+            <span class="hud-label">Score</span>
+            <span class="hud-value" id="score-display">0</span>
+        </div>
+        <div class="hud-item" id="hud-item-streak">
+            <span class="hud-label">Streak</span>
+            <span class="hud-value" id="streak-display">0</span>
+        </div>
+        <div class="hud-item" id="hud-item-accuracy">
+            <span class="hud-label">Accuracy</span>
+            <span class="hud-value" id="accuracy-display">—</span>
+        </div>
+    </div>
+    
+    <div id="target-area"></div>
+    
+    <!-- Start Overlay -->
+    <div class="overlay visible" id="start-overlay">
+        <div class="overlay-card">
+            <div class="game-title">Target Clicker</div>
+            <p class="game-subtitle">Click the targets as fast as you can!<br>Smaller targets = more points. Build streaks for bonus points!</p>
+            <div class="instructions">
+                <div class="instruction-item"><span class="instruction-icon">🎯</span> Click targets</div>
+                <div class="instruction-item"><span class="instruction-icon">⏱</span> 20 seconds</div>
+                <div class="instruction-item"><span class="instruction-icon">🔥</span> Build streaks</div>
+            </div>
+            <button class="btn btn-primary" id="start-btn">Start Game</button>
+        </div>
+    </div>
+    
+    <!-- Countdown Overlay -->
+    <div id="countdown-overlay">
+        <div id="countdown-number">3</div>
+    </div>
+    
+    <!-- End Overlay -->
+    <div class="overlay" id="end-overlay">
+        <div class="overlay-card">
+            <div class="end-title">Game Over</div>
+            <div class="end-score" id="final-score">0</div>
+            <div class="end-rating" id="final-rating">🎯 Keep Practicing!</div>
+            <div class="stats-grid">
+                <div class="stat-item"><span class="stat-value" id="stat-accuracy">0%</span><span class="stat-label">Accuracy</span></div>
+                <div class="stat-item"><span class="stat-value" id="stat-hits">0</span><span class="stat-label">Hits</span></div>
+                <div class="stat-item"><span class="stat-value" id="stat-missed">0</span><span class="stat-label">Missed</span></div>
+                <div class="stat-item"><span class="stat-value" id="stat-streak">0</span><span class="stat-label">Best Streak</span></div>
+                <div class="stat-item"><span class="stat-value" id="stat-clicks">0</span><span class="stat-label">Clicks</span></div>
+                <div class="stat-item"><span class="stat-value" id="stat-avg">0ms</span><span class="stat-label">Avg Time</span></div>
+            </div>
+            <button class="btn btn-primary" id="restart-btn">Play Again</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ===== CONFIGURATION =====
+const CONFIG = {
+    GAME_DURATION: 20,
+    MAX_TARGETS: 5,
+    HUD_PADDING: 90,
+    EDGE_PADDING: 60,
+    PHASES: [
+        { time: 0,  spawnInterval: 1200, lifetime: 2200, minSize: 52, maxSize: 88 },
+        { time: 5,  spawnInterval: 1000, lifetime: 1900, minSize: 46, maxSize: 80 },
+        { time: 10, spawnInterval: 800,  lifetime: 1600, minSize: 40, maxSize: 72 },
+        { time: 15, spawnInterval: 650,  lifetime: 1300, minSize: 34, maxSize: 65 },
+    ],
+    PALETTES: [
+        { rings: ['#ff6b6b','#ee5a5a','#ff8787','#ffb3b3'], glow: 'rgba(255,107,107,0.4)', name: 'red' },
+        { rings: ['#4ecdc4','#3db8b0','#6ee7de','#a8f0ea'], glow: 'rgba(78,205,196,0.4)', name: 'teal' },
+        { rings: ['#a78bfa','#8b5cf6','#c4b5fd','#ddd6fe'], glow: 'rgba(167,139,250,0.4)', name: 'purple' },
+        { rings: ['#fb923c','#f97316','#fdba74','#fed7aa'], glow: 'rgba(251,146,60,0.4)', name: 'orange' },
+        { rings: ['#34d399','#10b981','#6ee7b7','#a7f3d0'], glow: 'rgba(52,211,153,0.4)', name: 'green' },
+        { rings: ['#f472b6','#ec4899','#f9a8d4','#fbcfe8'], glow: 'rgba(244,114,182,0.4)', name: 'pink' },
+        { rings: ['#38bdf8','#0ea5e9','#7dd3fc','#bae6fd'], glow: 'rgba(56,189,248,0.4)', name: 'blue' },
+        { rings: ['#fbbf24','#f59e0b','#fcd34d','#fde68a'], glow: 'rgba(251,191,36,0.4)', name: 'amber' },
+    ],
+};
+
+// ===== AUDIO SYSTEM =====
+class AudioSystem {
+    constructor() {
+        this.ctx = null;
+        this.initialized = false;
+    }
+    init() {
+        if (this.initialized) return;
+        try {
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+            this.initialized = true;
+        } catch(e) {}
+    }
+    play(freq, duration, type = 'sine', volume = 0.12) {
+        if (!this.ctx) return;
+        try {
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+            gain.gain.setValueAtTime(volume, this.ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+            osc.connect(gain);
+            gain.connect(this.ctx.destination);
+            osc.start();
+            osc.stop(this.ctx.currentTime + duration);
+        } catch(e) {}
+    }
+    hit(streak = 0) {
+        const baseFreq = 600 + Math.min(streak, 15) * 40;
+        this.play(baseFreq, 0.15, 'sine', 0.1);
+        this.play(baseFreq * 1.5, 0.1, 'sine', 0.05);
+    }
+    miss() {
+        this.play(200, 0.12, 'triangle', 0.06);
+    }
+    countdown() {
+        this.play(440, 0.15, 'sine', 0.08);
+    }
+    go() {
+        this.play(880, 0.2, 'sine', 0.1);
+        setTimeout(() => this.play(1100, 0.3, 'sine', 0.08), 100);
+    }
+    end() {
+        this.play(600, 0.3, 'sine', 0.08);
+        setTimeout(() => this.play(450, 0.3, 'sine', 0.06), 150);
+        setTimeout(() => this.play(350, 0.5, 'sine', 0.05), 300);
+    }
+}
+
+// ===== PARTICLE SYSTEM =====
+class ParticleSystem {
+    constructor(canvas) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.particles = [];
+        this.resize();
+        window.addEventListener('resize', () => this.resize());
+    }
+    resize() {
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+    }
+    spawn(x, y, colors, count = 18) {
+        for (let i = 0; i < count; i++) {
+            const angle = (Math.PI * 2 * i / count) + (Math.random() - 0.5) * 0.8;
+            const speed = 3 + Math.random() * 6;
+            this.particles.push({
+                x, y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed - 2,
+                size: 2.5 + Math.random() * 4.5,
+                color: colors[Math.floor(Math.random() * colors.length)],
+                life: 1,
+                decay: 0.018 + Math.random() * 0.018,
+                gravity: 0.12 + Math.random() * 0.08,
+            });
+        }
+    }
+    spawnMiss(x, y) {
+        for (let i = 0; i < 5; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 1 + Math.random() * 2;
+            this.particles.push({
+                x, y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                size: 2 + Math.random() * 2,
+                color: '#94a3b8',
+                life: 1,
+                decay: 0.04,
+                gravity: 0.05,
+            });
+        }
+    }
+    spawnConfetti(count = 80) {
+        const colors = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#ef4444','#8b5cf6','#14b8a6'];
+        for (let i = 0; i < count; i++) {
+            const x = Math.random() * this.canvas.width;
+            this.particles.push({
+                x,
+                y: -10 - Math.random() * 40,
+                vx: (Math.random() - 0.5) * 4,
+                vy: 2 + Math.random() * 4,
+                size: 3 + Math.random() * 5,
+                color: colors[Math.floor(Math.random() * colors.length)],
+                life: 1,
+                decay: 0.004 + Math.random() * 0.004,
+                gravity: 0.04 + Math.random() * 0.03,
+            });
+        }
+    }
+    update() {
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        this.particles = this.particles.filter(p => p.life > 0);
+        for (const p of this.particles) {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vy += p.gravity;
+            p.vx *= 0.99;
+            p.life -= p.decay;
+            p.size *= 0.995;
+            this.ctx.globalAlpha = Math.max(0, p.life);
+            this.ctx.fillStyle = p.color;
+            this.ctx.beginPath();
+            this.ctx.arc(p.x, p.y, Math.max(0.5, p.size), 0, Math.PI * 2);
+            this.ctx.fill();
+        }
+        this.ctx.globalAlpha = 1;
+    }
+}
+
+// ===== TARGET MANAGER =====
+class TargetManager {
+    constructor(container) {
+        this.container = container;
+        this.targets = [];
+        this.idCounter = 0;
+    }
+    getPhase(elapsed) {
+        let phase = CONFIG.PHASES[0];
+        for (const p of CONFIG.PHASES) {
+            if (elapsed >= p.time) phase = p;
+        }
+        return phase;
+    }
+    getSpawnPos(size) {
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        const pad = CONFIG.EDGE_PADDING + size / 2;
+        const topPad = CONFIG.HUD_PADDING + size / 2 + 10;
+        const margin = size + 10;
+        
+        for (let attempt = 0; attempt < 30; attempt++) {
+            const x = pad + Math.random() * (w - 2 * pad);
+            const y = topPad + Math.random() * (h - topPad - pad);
+            let overlap = false;
+            for (const t of this.targets) {
+                if (!t.alive) continue;
+                const dx = x - t.x;
+                const dy = y - t.y;
+                const minDist = (size + t.size) / 2 + 10;
+                if (Math.sqrt(dx*dx + dy*dy) < minDist) {
+                    overlap = true;
+                    break;
+                }
+            }
+            if (!overlap) return { x, y };
+        }
+        return { x: pad + Math.random() * (w - 2*pad), y: topPad + Math.random() * (h - topPad - pad) };
+    }
+    spawn(elapsed) {
+        if (this.targets.filter(t => t.alive).length >= CONFIG.MAX_TARGETS) return null;
+        const phase = this.getPhase(elapsed);
+        const size = phase.minSize + Math.random() * (phase.maxSize - phase.minSize);
+        const pos = this.getSpawnPos(size);
+        const palette = CONFIG.PALETTES[Math.floor(Math.random() * CONFIG.PALETTES.length)];
+        const lifetime = phase.lifetime + (Math.random() - 0.5) * 400;
+        
+        // Points based on size
+        let points;
+        if (size < 45) points = 50;
+        else if (size < 60) points = 25;
+        else points = 10;
+        
+        const id = ++this.idCounter;
+        
+        // Create DOM element
+        const el = document.createElement('div');
+        el.className = 'target appearing';
+        el.dataset.id = id;
+        el.style.width = size + 'px';
+        el.style.height = size + 'px';
+        el.style.left = pos.x + 'px';
+        el.style.top = pos.y + 'px';
+        el.style.setProperty('--lifetime', lifetime + 'ms');
+        
+        // Inner visual (bullseye)
+        const inner = document.createElement('div');
+        inner.className = 'target-inner';
+        const r = palette.rings;
+        inner.style.background = `radial-gradient(circle, #fff 0%, #fff 13%, ${r[3]} 13%, ${r[3]} 28%, ${r[2]} 28%, ${r[2]} 45%, ${r[1]} 45%, ${r[1]} 65%, ${r[0]} 65%, ${r[0]} 100%)`;
+        inner.style.boxShadow = `0 0 ${size*0.35}px ${palette.glow}, 0 4px 12px rgba(0,0,0,0.1), inset 0 -${size*0.06}px ${size*0.12}px rgba(0,0,0,0.08)`;
+        el.appendChild(inner);
+        
+        // Countdown ring
+        const ring = document.createElement('div');
+        ring.className = 'target-ring';
+        ring.style.setProperty('--lifetime', lifetime + 'ms');
+        el.appendChild(ring);
+        
+        this.container.appendChild(el);
+        
+        const target = {
+            id, el, inner, ring,
+            x: pos.x, y: pos.y,
+            size, palette, lifetime, points,
+            createdAt: performance.now(),
+            alive: true,
+            phase: 'appearing',
+        };
+        
+        // Transition from appearing to alive
+        setTimeout(() => {
+            if (target.alive && target.phase === 'appearing') {
+                el.classList.remove('appearing');
+                el.classList.add('alive', 'active');
+                target.phase = 'alive';
+            }
+        }, 350);
+        
+        // Warning phase (last 30% of lifetime)
+        const warningTime = lifetime * 0.7;
+        setTimeout(() => {
+            if (target.alive && target.phase === 'alive') {
+                el.classList.remove('alive');
+                el.classList.add('warning');
+                target.phase = 'warning';
+            }
+        }, warningTime);
+        
+        // Auto-expire
+        setTimeout(() => {
+            if (target.alive) {
+                this.expire(target);
+            }
+        }, lifetime);
+        
+        this.targets.push(target);
+        return target;
+    }
+    hitTarget(target) {
+        if (!target.alive) return;
+        target.alive = false;
+        target.el.classList.remove('appearing', 'alive', 'warning', 'active');
+        target.el.classList.add('hit-anim');
+        setTimeout(() => {
+            if (target.el.parentNode) target.el.remove();
+        }, 300);
+    }
+    expire(target) {
+        if (!target.alive) return;
+        target.alive = false;
+        target.el.classList.remove('appearing', 'alive', 'warning', 'active');
+        target.el.classList.add('expire-anim');
+        setTimeout(() => {
+            if (target.el.parentNode) target.el.remove();
+        }, 350);
+    }
+    hitTest(x, y) {
+        // Check in reverse (topmost first)
+        for (let i = this.targets.length - 1; i >= 0; i--) {
+            const t = this.targets[i];
+            if (!t.alive) continue;
+            const dx = x - t.x;
+            const dy = y - t.y;
+            if (Math.sqrt(dx*dx + dy*dy) <= t.size / 2) {
+                return t;
+            }
+        }
+        return null;
+    }
+    clearAll() {
+        for (const t of this.targets) {
+            if (t.el.parentNode) t.el.remove();
+        }
+        this.targets = [];
+    }
+    cleanup() {
+        this.targets = this.targets.filter(t => {
+            if (!t.alive && !t.el.parentNode) return false;
+            return true;
+        });
+    }
+}
+
+// ===== GAME =====
+class Game {
+    constructor() {
+        this.state = 'menu'; // menu, countdown, playing, ended
+        this.score = 0;
+        this.hits = 0;
+        this.misses = 0;
+        this.totalClicks = 0;
+        this.streak = 0;
+        this.bestStreak = 0;
+        this.targetsExpired = 0;
+        this.targetsSpawned = 0;
+        this.reactionTimes = [];
+        this.startTime = 0;
+        this.lastSpawnTime = 0;
+        this.animFrameId = null;
+        
+        // DOM refs
+        this.container = document.getElementById('game-container');
+        this.targetArea = document.getElementById('target-area');
+        this.hud = document.getElementById('hud');
+        this.timerDisplay = document.getElementById('timer-display');
+        this.scoreDisplay = document.getElementById('score-display');
+        this.streakDisplay = document.getElementById('streak-display');
+        this.accuracyDisplay = document.getElementById('accuracy-display');
+        this.timerItem = document.getElementById('hud-item-timer');
+        
+        this.startOverlay = document.getElementById('start-overlay');
+        this.endOverlay = document.getElementById('end-overlay');
+        this.countdownOverlay = document.getElementById('countdown-overlay');
+        this.countdownNumber = document.getElementById('countdown-number');
+        
+        // Systems
+        this.audio = new AudioSystem();
+        this.particles = new ParticleSystem(document.getElementById('particles'));
+        this.targetMgr = new TargetManager(this.targetArea);
+        
+        this.bindEvents();
+        this.createDecoTargets();
+        this.startLoop();
+    }
+    
+    bindEvents() {
+        document.getElementById('start-btn').addEventListener('click', () => this.startCountdown());
+        document.getElementById('restart-btn').addEventListener('click', () => this.restart());
+        
+        this.targetArea.addEventListener('pointerdown', (e) => {
+            if (this.state !== 'playing') return;
+            e.preventDefault();
+            const x = e.clientX;
+            const y = e.clientY;
+            this.handleClick(x, y);
+        });
+        
+        // Keyboard
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' || e.code === 'Enter') {
+                if (this.state === 'menu') { e.preventDefault(); this.startCountdown(); }
+                else if (this.state === 'ended') { e.preventDefault(); this.restart(); }
+            }
+        });
+    }
+    
+    createDecoTargets() {
+        const decoContainer = this.startOverlay;
+        for (let i = 0; i < 8; i++) {
+            const d = document.createElement('div');
+            d.className = 'deco-target';
+            const size = 30 + Math.random() * 60;
+            const palette = CONFIG.PALETTES[Math.floor(Math.random() * CONFIG.PALETTES.length)];
+            const r = palette.rings;
+            d.style.width = size + 'px';
+            d.style.height = size + 'px';
+            d.style.left = (5 + Math.random() * 85) + '%';
+            d.style.top = (5 + Math.random() * 85) + '%';
+            d.style.background = `radial-gradient(circle, ${r[3]} 0%, ${r[3]} 25%, ${r[1]} 25%, ${r[1]} 50%, ${r[0]} 50%, ${r[0]} 100%)`;
+            d.style.animationDuration = (4 + Math.random() * 6) + 's';
+            d.style.animationDelay = (-Math.random() * 5) + 's';
+            decoContainer.appendChild(d);
+        }
+    }
+    
+    startCountdown() {
+        this.audio.init();
+        this.startOverlay.classList.remove('visible');
+        this.countdownOverlay.classList.add('visible');
+        this.state = 'countdown';
+        
+        let count = 3;
+        this.countdownNumber.textContent = count;
+        this.countdownNumber.style.animation = 'none';
+        void this.countdownNumber.offsetWidth;
+        this.countdownNumber.style.animation = 'countdown-pop .6s ease-out';
+        this.audio.countdown();
+        
+        const interval = setInterval(() => {
+            count--;
+            if (count > 0) {
+                this.countdownNumber.textContent = count;
+                this.countdownNumber.style.animation = 'none';
+                void this.countdownNumber.offsetWidth;
+                this.countdownNumber.style.animation = 'countdown-pop .6s ease-out';
+                this.audio.countdown();
+            } else if (count === 0) {
+                this.countdownNumber.textContent = 'GO!';
+                this.countdownNumber.style.color = '#10b981';
+                this.countdownNumber.style.animation = 'none';
+                void this.countdownNumber.offsetWidth;
+                this.countdownNumber.style.animation = 'countdown-pop .6s ease-out';
+                this.audio.go();
+            } else {
+                clearInterval(interval);
+                this.countdownOverlay.classList.remove('visible');
+                this.countdownNumber.style.color = '#6366f1';
+                this.startGame();
+            }
+        }, 700);
+    }
+    
+    startGame() {
+        this.state = 'playing';
+        this.score = 0;
+        this.hits = 0;
+        this.misses = 0;
+        this.totalClicks = 0;
+        this.streak = 0;
+        this.bestStreak = 0;
+        this.targetsExpired = 0;
+        this.targetsSpawned = 0;
+        this.reactionTimes = [];
+        this.startTime = performance.now();
+        this.lastSpawnTime = 0;
+        
+        this.targetMgr.clearAll();
+        this.hud.classList.add('visible');
+        this.updateHUD();
+        
+        // Spawn first target immediately
+        this.targetMgr.spawn(0);
+        this.targetsSpawned++;
+        this.lastSpawnTime = this.startTime;
+    }
+    
+    handleClick(x, y) {
+        this.totalClicks++;
+        const target = this.targetMgr.hitTest(x, y);
+        
+        if (target) {
+            // HIT
+            this.hits++;
+            this.streak++;
+            if (this.streak > this.bestStreak) this.bestStreak = this.streak;
+            
+            // Reaction time
+            const reactionTime = performance.now() - target.createdAt;
+            this.reactionTimes.push(reactionTime);
+            
+            // Score calculation
+            const streakBonus = Math.floor(this.streak * 5);
+            const points = target.points + streakBonus;
+            this.score += points;
+            
+            // Visual feedback
+            this.targetMgr.hitTarget(target);
+            this.particles.spawn(target.x, target.y, target.palette.rings, 20);
+            this.showScorePopup(target.x, target.y, points, target.palette.rings[0]);
+            this.audio.hit(this.streak);
+            
+            // Bump animation on score
+            this.scoreDisplay.classList.remove('bump');
+            void this.scoreDisplay.offsetWidth;
+            this.scoreDisplay.classList.add('bump');
+        } else {
+            // MISS
+            this.misses++;
+            this.streak = 0;
+            this.particles.spawnMiss(x, y);
+            this.showClickRipple(x, y);
+            this.audio.miss();
+        }
+        
+        this.updateHUD();
+    }
+    
+    showScorePopup(x, y, points, color) {
+        const popup = document.createElement('div');
+        popup.className = 'score-popup';
+        popup.textContent = '+' + points;
+        popup.style.left = x + 'px';
+        popup.style.top = y + 'px';
+        popup.style.color = color;
+        if (this.streak >= 5) {
+            popup.textContent += ' 🔥';
+        }
+        this.container.appendChild(popup);
+        setTimeout(() => popup.remove(), 850);
+    }
+    
+    showClickRipple(x, y) {
+        const ripple = document.createElement('div');
+        ripple.className = 'click-ripple';
+        ripple.style.left = x + 'px';
+        ripple.style.top = y + 'px';
+        this.container.appendChild(ripple);
+        setTimeout(() => ripple.remove(), 450);
+    }
+    
+    updateHUD() {
+        const elapsed = (performance.now() - this.startTime) / 1000;
+        const timeLeft = Math.max(0, CONFIG.GAME_DURATION - elapsed);
+        this.timerDisplay.textContent = timeLeft.toFixed(1);
+        this.scoreDisplay.textContent = this.score;
+        
+        const streakText = this.streak > 0 ? this.streak + (this.streak >= 3 ? ' 🔥' : '') : '0';
+        this.streakDisplay.textContent = streakText;
+        
+        if (this.totalClicks > 0) {
+            const acc = Math.round((this.hits / this.totalClicks) * 100);
+            this.accuracyDisplay.textContent = acc + '%';
+        } else {
+            this.accuracyDisplay.textContent = '—';
+        }
+        
+        // Timer warning
+        if (timeLeft <= 5) {
+            this.timerItem.classList.add('warning');
+        } else {
+            this.timerItem.classList.remove('warning');
+        }
+        
+        // Combo HUD effects
+        this.hud.classList.remove('combo-3','combo-5','combo-8','combo-10');
+        if (this.streak >= 10) this.hud.classList.add('combo-10');
+        else if (this.streak >= 8) this.hud.classList.add('combo-8');
+        else if (this.streak >= 5) this.hud.classList.add('combo-5');
+        else if (this.streak >= 3) this.hud.classList.add('combo-3');
+    }
+    
+    endGame() {
+        this.state = 'ended';
+        this.audio.end();
+        
+        // Clear remaining targets
+        for (const t of this.targetMgr.targets) {
+            if (t.alive) {
+                t.alive = false;
+                this.targetsExpired++;
+            }
+        }
+        this.targetMgr.clearAll();
+        
+        // Populate end screen
+        document.getElementById('final-score').textContent = this.score;
+        
+        const accuracy = this.totalClicks > 0 ? Math.round((this.hits / this.totalClicks) * 100) : 0;
+        const avgReaction = this.reactionTimes.length > 0 
+            ? Math.round(this.reactionTimes.reduce((a,b)=>a+b,0) / this.reactionTimes.length) 
+            : 0;
+        
+        document.getElementById('stat-accuracy').textContent = accuracy + '%';
+        document.getElementById('stat-hits').textContent = this.hits;
+        document.getElementById('stat-missed').textContent = this.targetsExpired;
+        document.getElementById('stat-streak').textContent = this.bestStreak;
+        document.getElementById('stat-clicks').textContent = this.totalClicks;
+        document.getElementById('stat-avg').textContent = avgReaction + 'ms';
+        
+        // Rating
+        let rating;
+        if (this.score >= 800) rating = '👑 Legendary!';
+        else if (this.score >= 500) rating = '⚡ Lightning Fast!';
+        else if (this.score >= 300) rating = '🔥 Sharpshooter!';
+        else if (this.score >= 150) rating = '🏹 Nice Shots!';
+        else if (this.score >= 50) rating = '🎯 Getting There!';
+        else rating = '💪 Keep Practicing!';
+        document.getElementById('final-rating').textContent = rating;
+        
+        // Show end overlay
+        setTimeout(() => {
+            this.endOverlay.classList.add('visible');
+            // Confetti for good scores
+            if (this.score >= 150) {
+                this.particles.spawnConfetti(this.score >= 500 ? 120 : 60);
+            }
+        }, 500);
+    }
+    
+    restart() {
+        this.endOverlay.classList.remove('visible');
+        this.hud.classList.remove('visible');
+        this.timerItem.classList.remove('warning');
+        this.hud.classList.remove('combo-3','combo-5','combo-8','combo-10');
+        this.targetMgr.clearAll();
+        
+        // Remove any lingering popups/ripples
+        this.container.querySelectorAll('.score-popup,.click-ripple').forEach(el => el.remove());
+        
+        setTimeout(() => this.startCountdown(), 300);
+    }
+    
+    startLoop() {
+        const tick = () => {
+            this.animFrameId = requestAnimationFrame(tick);
+            this.particles.update();
+            
+            if (this.state === 'playing') {
+                const elapsed = (performance.now() - this.startTime) / 1000;
+                const timeLeft = CONFIG.GAME_DURATION - elapsed;
+                
+                // Update timer display
+                this.timerDisplay.textContent = Math.max(0, timeLeft).toFixed(1);
+                if (timeLeft <= 5) {
+                    this.timerItem.classList.add('warning');
+                }
+                
+                // Check game over
+                if (timeLeft <= 0) {
+                    this.endGame();
+                    return;
+                }
+                
+                // Spawn targets
+                const phase = this.targetMgr.getPhase(elapsed);
+                const now = performance.now();
+                if (now - this.lastSpawnTime >= phase.spawnInterval) {
+                    this.targetMgr.spawn(elapsed);
+                    this.targetsSpawned++;
+                    this.lastSpawnTime = now;
+                }
+                
+                // Cleanup dead targets
+                this.targetMgr.cleanup();
+            }
+        };
+        tick();
+    }
+}
+
+// ===== INIT =====
+window.addEventListener('DOMContentLoaded', () => {
+    new Game();
+});
+</script>
+</body>
+</html>
