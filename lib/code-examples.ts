@@ -23,7 +23,6 @@ export interface CodeExample {
   microphone?: boolean;
 }
 
-const CDN_BASE_URL = "https://cdn.openai.com/devhub/gpt5prompts";
 const IFRAME_BASE_URL = "/";
 
 // --- helpers to normalize YAML fields ---
@@ -50,7 +49,7 @@ function toCodeExample(
     id,
     title: data.title,
     prompt: data.prompt,
-    poster: `${CDN_BASE_URL}/${id}.png`,
+    poster: `/posters/${id}.png`,
     iframeUrl: `${IFRAME_BASE_URL}${id}`,
     tags: data.tags ?? [],
     camera: data.camera,

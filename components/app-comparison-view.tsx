@@ -289,7 +289,7 @@ export function AppComparisonView({
             </button>
 
             {isModelPickerOpen && (
-              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-56 bg-white border border-neutral-200 shadow-lg z-50 py-1">
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-56 bg-white border border-neutral-200 shadow-lg z-50 py-1 max-h-[min(480px,80vh)] overflow-y-auto">
                 {MODELS_BY_PROVIDER.map((group, gi) => (
                   <div key={group.id}>
                     {gi > 0 && <div className="border-t border-neutral-100 my-1" />}
