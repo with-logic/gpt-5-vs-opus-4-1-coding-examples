@@ -1,0 +1,1351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Customer Journey Flow</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root {
+    --bg: #f5f6fa;
+    --grid-color: #dfe2ea;
+    --node-bg: #ffffff;
+    --node-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
+    --node-shadow-hover: 0 4px 16px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.06);
+    --node-shadow-drag: 0 12px 40px rgba(0,0,0,0.15), 0 4px 12px rgba(0,0,0,0.08);
+    --text-primary: #1a1d26;
+    --text-secondary: #6b7085;
+    --text-muted: #9ca0b0;
+    --border: #e2e5ed;
+    --accent: #6366f1;
+    --accent-light: rgba(99,102,241,0.12);
+    --danger: #ef4444;
+    --danger-light: #fee2e2;
+    --toolbar-bg: rgba(255,255,255,0.92);
+    --connection-color: #94a3b8;
+  }
+  html, body {
+    width: 100%; height: 100%;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text-primary);
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* ── Header ─────────────────────────────────── */
+  .header {
+    position: fixed; top: 0; left: 0; right: 0;
+    height: 52px;
+    background: var(--toolbar-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center;
+    padding: 0 16px;
+    z-index: 100;
+    gap: 12px;
+  }
+  .header-logo {
+    display: flex; align-items: center; gap: 9px;
+    font-weight: 700; font-size: 15px; color: var(--text-primary);
+    letter-spacing: -0.2px;
+  }
+  .header-logo svg { flex-shrink: 0; }
+  .header-divider { width: 1px; height: 24px; background: var(--border); }
+  .header-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12.5px; font-weight: 550;
+    border: 1px solid var(--border);
+    background: var(--node-bg);
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+    font-family: inherit;
+  }
+  .btn:hover { background: #f1f3f8; border-color: #d0d3de; }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { background: #5254cc; border-color: #5254cc; }
+  .btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+  /* ── Canvas ─────────────────────────────────── */
+  .canvas-container {
+    position: fixed;
+    top: 52px; left: 0; right: 0; bottom: 0;
+    overflow: hidden;
+    cursor: grab;
+    background: var(--bg);
+  }
+  .canvas-container.grabbing { cursor: grabbing; }
+  .canvas {
+    position: absolute;
+    transform-origin: 0 0;
+    width: 8000px; height: 8000px;
+  }
+  .canvas-grid {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background-image: radial-gradient(circle, var(--grid-color) 0.8px, transparent 0.8px);
+    background-size: 24px 24px;
+    pointer-events: none;
+    opacity: 0.7;
+  }
+
+  /* ── SVG Connections ────────────────────────── */
+  .connections-svg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .connection-path {
+    fill: none;
+    stroke: var(--connection-color);
+    stroke-width: 2;
+    stroke-linecap: round;
+    pointer-events: none;
+    transition: stroke 0.15s ease, stroke-width 0.15s ease;
+  }
+  .connection-hit {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 18;
+    pointer-events: stroke;
+    cursor: pointer;
+  }
+  .connection-group:hover .connection-path {
+    stroke: #ef4444;
+    stroke-width: 2.5;
+  }
+  .connection-group:hover .connection-delete-hint {
+    opacity: 1;
+  }
+  .connection-delete-hint {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    pointer-events: none;
+  }
+  .temp-connection {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 2.5;
+    stroke-dasharray: 6 4;
+    stroke-linecap: round;
+    pointer-events: none;
+    opacity: 0.7;
+  }
+
+  /* ── Nodes ──────────────────────────────────── */
+  .node {
+    position: absolute;
+    width: 220px;
+    background: var(--node-bg);
+    border-radius: 12px;
+    box-shadow: var(--node-shadow);
+    border: 1.5px solid var(--border);
+    z-index: 2;
+    cursor: grab;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+    overflow: visible;
+  }
+  .node:hover {
+    box-shadow: var(--node-shadow-hover);
+    border-color: #c8cbd6;
+  }
+  .node.dragging {
+    box-shadow: var(--node-shadow-drag);
+    cursor: grabbing;
+    z-index: 50;
+    border-color: var(--accent);
+    transition: box-shadow 0.1s ease, border-color 0.1s ease;
+  }
+  .node.selected {
+    border-color: var(--accent);
+    box-shadow: var(--node-shadow-hover), 0 0 0 3px var(--accent-light);
+  }
+  .node-color-bar {
+    height: 5px;
+    border-radius: 12px 12px 0 0;
+  }
+  .node-body {
+    padding: 12px 14px 14px;
+  }
+  .node-header {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .node-icon {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    font-size: 16px;
+  }
+  .node-info { flex: 1; min-width: 0; }
+  .node-step {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    line-height: 1;
+    margin-bottom: 3px;
+  }
+  .node-title {
+    font-size: 13.5px; font-weight: 650;
+    color: var(--text-primary);
+    line-height: 1.3;
+    outline: none;
+    min-width: 0;
+    word-break: break-word;
+    border-radius: 3px;
+    padding: 0 2px;
+    margin: 0 -2px;
+  }
+  .node-title[contenteditable="true"] {
+    background: #eef0ff;
+    cursor: text;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .node-desc {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    line-height: 1.45;
+    margin-top: 8px;
+    outline: none;
+    word-break: break-word;
+    border-radius: 3px;
+    padding: 0 2px;
+    margin-left: -2px;
+    margin-right: -2px;
+  }
+  .node-desc[contenteditable="true"] {
+    background: #eef0ff;
+    cursor: text;
+    user-select: text;
+    -webkit-user-select: text;
+  }
+  .node-delete {
+    position: absolute;
+    top: -7px; right: -7px;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--danger);
+    color: #fff;
+    border: 2px solid #fff;
+    display: none;
+    align-items: center; justify-content: center;
+    cursor: pointer;
+    font-size: 10px;
+    line-height: 1;
+    z-index: 5;
+    transition: transform 0.12s ease;
+    box-shadow: 0 1px 4px rgba(239,68,68,0.3);
+  }
+  .node:hover .node-delete { display: flex; }
+  .node-delete:hover { transform: scale(1.15); }
+
+  /* ── Connection Ports ───────────────────────── */
+  .port {
+    position: absolute;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    border: 2.5px solid var(--connection-color);
+    z-index: 4;
+    cursor: crosshair;
+    transition: all 0.15s ease;
+    opacity: 0;
+  }
+  .node:hover .port, .node.selected .port, .node.dragging .port { opacity: 1; }
+  .port:hover {
+    border-color: var(--accent);
+    background: var(--accent-light);
+    box-shadow: 0 0 0 4px rgba(99,102,241,0.15);
+  }
+  .port.port-out {
+    right: -7px; top: 50%;
+    transform: translateY(-50%);
+  }
+  .port.port-out:hover { transform: translateY(-50%) scale(1.2); }
+  .port.port-in {
+    left: -7px; top: 50%;
+    transform: translateY(-50%);
+  }
+  .port.port-in:hover { transform: translateY(-50%) scale(1.2); }
+  .port.compatible {
+    border-color: var(--accent);
+    background: rgba(99,102,241,0.15);
+    opacity: 1;
+    animation: portPulse 1.2s ease-in-out infinite;
+  }
+  @keyframes portPulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(99,102,241,0.25); }
+    50% { box-shadow: 0 0 0 5px rgba(99,102,241,0); }
+  }
+
+  /* ── Zoom Controls ──────────────────────────── */
+  .zoom-controls {
+    position: fixed;
+    bottom: 16px; left: 50%;
+    transform: translateX(-50%);
+    display: flex; align-items: center; gap: 2px;
+    background: var(--toolbar-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 3px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    z-index: 90;
+  }
+  .zoom-btn {
+    width: 30px; height: 30px;
+    border-radius: 7px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-primary);
+    font-size: 15px;
+    transition: background 0.12s ease;
+    font-family: inherit;
+  }
+  .zoom-btn:hover { background: #f1f3f8; }
+  .zoom-btn:active { background: #e8eaf0; }
+  .zoom-level {
+    font-size: 11.5px; font-weight: 600;
+    color: var(--text-secondary);
+    min-width: 42px;
+    text-align: center;
+    cursor: pointer;
+    padding: 4px 2px;
+    border-radius: 5px;
+    transition: color 0.12s ease;
+  }
+  .zoom-level:hover { color: var(--accent); }
+
+  /* ── Context Menu ───────────────────────────── */
+  .context-menu {
+    position: fixed;
+    background: var(--toolbar-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.06);
+    padding: 4px;
+    z-index: 200;
+    min-width: 170px;
+    display: none;
+    animation: menuIn 0.12s ease;
+  }
+  @keyframes menuIn {
+    from { opacity: 0; transform: scale(0.95) translateY(-4px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  .context-menu.visible { display: block; }
+  .context-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    font-size: 12.5px; font-weight: 450;
+    cursor: pointer;
+    color: var(--text-primary);
+    transition: background 0.08s ease;
+  }
+  .context-item:hover { background: #f1f3f8; }
+  .context-item.danger { color: var(--danger); }
+  .context-item.danger:hover { background: var(--danger-light); }
+  .context-sep { height: 1px; background: var(--border); margin: 3px 6px; }
+  .context-item svg { width: 14px; height: 14px; flex-shrink: 0; opacity: 0.7; }
+
+  /* ── Welcome Hint ───────────────────────────── */
+  .welcome-hint {
+    position: fixed;
+    top: 68px; left: 50%;
+    transform: translateX(-50%);
+    background: var(--toolbar-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 18px;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.06);
+    z-index: 90;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    display: flex; align-items: center; gap: 8px;
+    transition: opacity 0.4s ease, transform 0.4s ease;
+    max-width: 90vw;
+  }
+  .welcome-hint.hidden {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-8px);
+    pointer-events: none;
+  }
+  .welcome-hint kbd {
+    background: #f1f3f8;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 10.5px;
+    font-family: inherit;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .welcome-hint .dot { color: var(--text-muted); }
+
+  /* ── Stage Colors ───────────────────────────── */
+  .stage-awareness { --stage-color: #6366f1; --stage-bg: #eef0ff; }
+  .stage-interest { --stage-color: #8b5cf6; --stage-bg: #f0ebff; }
+  .stage-consideration { --stage-color: #a855f7; --stage-bg: #f3eaff; }
+  .stage-intent { --stage-color: #d946ef; --stage-bg: #fce7fb; }
+  .stage-evaluation { --stage-color: #ec4899; --stage-bg: #fce7f0; }
+  .stage-purchase { --stage-color: #f43f5e; --stage-bg: #ffe4e8; }
+  .stage-retention { --stage-color: #f97316; --stage-bg: #fff1e0; }
+  .stage-advocacy { --stage-color: #eab308; --stage-bg: #fef9c3; }
+  .stage-custom { --stage-color: #64748b; --stage-bg: #f1f5f9; }
+
+  /* ── Node count badge ───────────────────────── */
+  .node-count {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding: 3px 8px;
+    background: #f1f3f8;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-logo">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+      <rect width="24" height="24" rx="6" fill="#6366f1"/>
+      <path d="M6 12h2.5l1.5-3.5 2.5 7 2-3.5h3.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    Customer Journey Flow
+  </div>
+  <div class="header-divider"></div>
+  <span class="node-count" id="nodeCount">6 stages</span>
+  <div class="header-actions">
+    <button class="btn btn-primary" onclick="addNode()" title="Add a new journey stage">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"/></svg>
+      Add Stage
+    </button>
+    <button class="btn" onclick="autoLayout()" title="Auto-arrange nodes">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 4a1 1 0 011-1h3a1 1 0 010 2H5v2h2a1 1 0 010 2H5v2h2a1 1 0 010 2H4a1 1 0 01-1-1V4zm7 0a1 1 0 011-1h3a1 1 0 011 1v3a1 1 0 01-2 0V5h-2v2a1 1 0 01-2 0V5a1 1 0 011-1zm-1 6a1 1 0 011 1v1h2a1 1 0 010 2h-2v1a1 1 0 01-2 0v-1H7a1 1 0 010-2h2v-1a1 1 0 011-1zm7-2a1 1 0 011 1v7a1 1 0 01-1 1h-3a1 1 0 01-1-1v-7a1 1 0 011-1h3z" clip-rule="evenodd"/></svg>
+      Layout
+    </button>
+    <button class="btn" onclick="fitToView()" title="Fit all nodes in view">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M5 4a1 1 0 00-2 0v2a1 1 0 002 0V4zm3 2a1 1 0 00-2 0v1H5a1 1 0 000 2h1v1a1 1 0 102 0V9h1a1 1 0 100-2H9V6zM5 12a1 1 0 00-2 0v2a1 1 0 001 1h2a1 1 0 100-2H5v-1zm8-8a1 1 0 10-2 0v1h-1a1 1 0 000 2h1v1a1 1 0 102 0V7h1a1 1 0 100-2h-1V4zm2 8a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-2a1 1 0 00-1-1h-1v-1z"/></svg>
+      Fit
+    </button>
+    <button class="btn" onclick="resetFlow()" title="Reset to default journey">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
+      Reset
+    </button>
+  </div>
+</div>
+
+<!-- Welcome hint -->
+<div class="welcome-hint" id="welcomeHint">
+  <svg width="14" height="14" viewBox="0 0 20 20" fill="#6366f1"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/></svg>
+  Drag to move <span class="dot">·</span> Hover for ports <span class="dot">·</span> Drag ports to connect <span class="dot">·</span> Double-click to edit <span class="dot">·</span> <kbd>Del</kbd> to remove
+</div>
+
+<!-- Canvas -->
+<div class="canvas-container" id="canvasContainer">
+  <div class="canvas" id="canvas">
+    <div class="canvas-grid"></div>
+    <svg class="connections-svg" id="connectionsSvg">
+      <defs>
+        <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7.5" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0.5 L7,3 L0,5.5 L1.5,3 Z" fill="#94a3b8"/>
+        </marker>
+        <marker id="arrowhead-hover" markerWidth="8" markerHeight="6" refX="7.5" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0.5 L7,3 L0,5.5 L1.5,3 Z" fill="#ef4444"/>
+        </marker>
+      </defs>
+    </svg>
+  </div>
+</div>
+
+<!-- Zoom Controls -->
+<div class="zoom-controls">
+  <button class="zoom-btn" onclick="zoomBy(-0.1)" title="Zoom out">
+    <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5 10a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>
+  </button>
+  <span class="zoom-level" id="zoomLevel" onclick="resetZoom()" title="Click to reset zoom">100%</span>
+  <button class="zoom-btn" onclick="zoomBy(0.1)" title="Zoom in">
+    <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"/></svg>
+  </button>
+</div>
+
+<!-- Context Menu -->
+<div class="context-menu" id="contextMenu">
+  <div class="context-item" onclick="contextAction('edit')">
+    <svg viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"/></svg>
+    Edit Text
+  </div>
+  <div class="context-item" onclick="contextAction('duplicate')">
+    <svg viewBox="0 0 20 20" fill="currentColor"><path d="M7 9a2 2 0 012-2h6a2 2 0 012 2v6a2 2 0 01-2 2H9a2 2 0 01-2-2V9z"/><path d="M5 3a2 2 0 00-2 2v6a2 2 0 002 2V5h8a2 2 0 00-2-2H5z"/></svg>
+    Duplicate
+  </div>
+  <div class="context-sep"></div>
+  <div class="context-item" onclick="contextAction('color')">
+    <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 2a2 2 0 00-2 2v11a3 3 0 106 0V4a2 2 0 00-2-2H4zm1 14a1 1 0 100-2 1 1 0 000 2zm5-1.757l4.9-4.9a2 2 0 000-2.828L13.485 5.1a2 2 0 00-2.828 0L10 5.757v8.486zM16 18H9.071l6-6H16a2 2 0 012 2v2a2 2 0 01-2 2z" clip-rule="evenodd"/></svg>
+    Change Color
+  </div>
+  <div class="context-sep"></div>
+  <div class="context-item danger" onclick="contextAction('delete')">
+    <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+    Delete Stage
+  </div>
+</div>
+
+<script>
+// ── Configuration ────────────────────────────────────────────────────
+const DEFAULT_STAGES = [
+  { name: 'Awareness', icon: '👁️', desc: 'Customer discovers your brand through marketing channels', cssClass: 'stage-awareness' },
+  { name: 'Interest', icon: '💡', desc: 'Customer engages with content and shows interest', cssClass: 'stage-interest' },
+  { name: 'Consideration', icon: '🤔', desc: 'Customer evaluates your solution against needs', cssClass: 'stage-consideration' },
+  { name: 'Intent', icon: '🎯', desc: 'Customer demonstrates intent to purchase', cssClass: 'stage-intent' },
+  { name: 'Evaluation', icon: '📊', desc: 'Customer compares options and reviews details', cssClass: 'stage-evaluation' },
+  { name: 'Purchase', icon: '🛒', desc: 'Customer completes the purchase transaction', cssClass: 'stage-purchase' },
+];
+
+const STAGE_PRESETS = [
+  { name: 'Awareness', icon: '👁️', cssClass: 'stage-awareness' },
+  { name: 'Interest', icon: '💡', cssClass: 'stage-interest' },
+  { name: 'Consideration', icon: '🤔', cssClass: 'stage-consideration' },
+  { name: 'Intent', icon: '🎯', cssClass: 'stage-intent' },
+  { name: 'Evaluation', icon: '📊', cssClass: 'stage-evaluation' },
+  { name: 'Purchase', icon: '🛒', cssClass: 'stage-purchase' },
+  { name: 'Retention', icon: '🔄', cssClass: 'stage-retention' },
+  { name: 'Advocacy', icon: '⭐', cssClass: 'stage-advocacy' },
+];
+
+const COLORS = [
+  { cls: 'stage-awareness' },
+  { cls: 'stage-interest' },
+  { cls: 'stage-consideration' },
+  { cls: 'stage-intent' },
+  { cls: 'stage-evaluation' },
+  { cls: 'stage-purchase' },
+  { cls: 'stage-retention' },
+  { cls: 'stage-advocacy' },
+  { cls: 'stage-custom' },
+];
+
+// ── State ────────────────────────────────────────────────────────────
+let nodes = [];
+let connections = [];
+let nextId = 1;
+let selectedNodeId = null;
+let contextNodeId = null;
+
+let panX = 0, panY = 0, zoom = 1;
+let isPanning = false, panStartX = 0, panStartY = 0, panStartPanX = 0, panStartPanY = 0;
+
+let dragNode = null, dragOffsetX = 0, dragOffsetY = 0;
+
+let drawingConnection = false;
+let connStartNodeId = null;
+let connStartPortType = 'out';
+let tempPathEl = null;
+
+const canvas = document.getElementById('canvas');
+const canvasContainer = document.getElementById('canvasContainer');
+const connectionsSvg = document.getElementById('connectionsSvg');
+const contextMenu = document.getElementById('contextMenu');
+
+// ── Helpers ──────────────────────────────────────────────────────────
+function getNodeHeight(node) {
+  const el = canvas.querySelector(`.node[data-id="${node.id}"]`);
+  return el ? el.offsetHeight : 100;
+}
+
+function getNodeCenterY(node) {
+  return node.y + getNodeHeight(node) / 2;
+}
+
+function updateNodeCount() {
+  document.getElementById('nodeCount').textContent = nodes.length + ' stage' + (nodes.length !== 1 ? 's' : '');
+}
+
+// ── Initialize ───────────────────────────────────────────────────────
+function init() {
+  const startX = 160;
+  const startY = 260;
+  const spacingX = 280;
+
+  DEFAULT_STAGES.forEach((stage, i) => {
+    nodes.push({
+      id: nextId++,
+      x: startX + i * spacingX,
+      y: startY,
+      width: 220,
+      title: stage.name,
+      desc: stage.desc,
+      icon: stage.icon,
+      cssClass: stage.cssClass,
+      stepNum: i + 1,
+    });
+  });
+
+  for (let i = 0; i < nodes.length - 1; i++) {
+    connections.push({ from: nodes[i].id, to: nodes[i + 1].id });
+  }
+
+  renderAllNodes();
+  renderAllConnections();
+  updateNodeCount();
+  requestAnimationFrame(() => fitToView());
+
+  setTimeout(() => {
+    document.getElementById('welcomeHint').classList.add('hidden');
+  }, 7000);
+}
+
+// ── Rendering ────────────────────────────────────────────────────────
+function renderAllNodes() {
+  canvas.querySelectorAll('.node').forEach(el => el.remove());
+  nodes.forEach(node => renderNode(node));
+}
+
+function renderNode(node) {
+  const el = document.createElement('div');
+  el.className = `node ${node.cssClass}`;
+  el.dataset.id = node.id;
+  el.style.left = node.x + 'px';
+  el.style.top = node.y + 'px';
+  el.style.width = node.width + 'px';
+
+  el.innerHTML = `
+    <div class="node-color-bar" style="background: var(--stage-color)"></div>
+    <div class="node-body">
+      <div class="node-header">
+        <div class="node-icon" style="background: var(--stage-bg)">${node.icon}</div>
+        <div class="node-info">
+          <div class="node-step" style="color: var(--stage-color)">Step ${node.stepNum}</div>
+          <div class="node-title">${escHtml(node.title)}</div>
+        </div>
+      </div>
+      <div class="node-desc">${escHtml(node.desc)}</div>
+    </div>
+    <div class="node-delete" title="Delete stage">✕</div>
+    <div class="port port-in" data-node="${node.id}" data-type="in"></div>
+    <div class="port port-out" data-node="${node.id}" data-type="out"></div>
+  `;
+
+  canvas.appendChild(el);
+
+  // ── Events ──
+  el.addEventListener('mousedown', (e) => onNodeMouseDown(e, node));
+  el.addEventListener('dblclick', (e) => onNodeDblClick(e, node));
+  el.addEventListener('contextmenu', (e) => onNodeContext(e, node));
+
+  // Delete button
+  el.querySelector('.node-delete').addEventListener('click', (e) => {
+    e.stopPropagation();
+    deleteNode(node.id);
+  });
+
+  // Port events
+  el.querySelector('.port-out').addEventListener('mousedown', (e) => onPortMouseDown(e, node.id, 'out'));
+  el.querySelector('.port-in').addEventListener('mousedown', (e) => onPortMouseDown(e, node.id, 'in'));
+
+  // Editable text
+  setupEditable(el.querySelector('.node-title'), node, 'title');
+  setupEditable(el.querySelector('.node-desc'), node, 'desc');
+}
+
+function setupEditable(el, node, field) {
+  el.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    el.setAttribute('contenteditable', 'true');
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+  });
+
+  el.addEventListener('blur', () => {
+    el.setAttribute('contenteditable', 'false');
+    const val = el.textContent.trim();
+    if (val) {
+      node[field] = val;
+    } else {
+      el.textContent = node[field];
+    }
+  });
+
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      el.blur();
+    }
+    e.stopPropagation();
+  });
+
+  el.addEventListener('mousedown', (e) => {
+    if (el.getAttribute('contenteditable') === 'true') {
+      e.stopPropagation();
+    }
+  });
+}
+
+function escHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function updateNodePosition(node) {
+  const el = canvas.querySelector(`.node[data-id="${node.id}"]`);
+  if (el) {
+    el.style.left = node.x + 'px';
+    el.style.top = node.y + 'px';
+  }
+}
+
+// ── Connections ──────────────────────────────────────────────────────
+function renderAllConnections() {
+  connectionsSvg.querySelectorAll('.connection-group').forEach(el => el.remove());
+  connections.forEach(conn => renderConnection(conn));
+}
+
+function renderConnection(conn) {
+  const fromNode = nodes.find(n => n.id === conn.from);
+  const toNode = nodes.find(n => n.id === conn.to);
+  if (!fromNode || !toNode) return;
+
+  const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  group.classList.add('connection-group');
+
+  const fromEl = canvas.querySelector(`.node[data-id="${conn.from}"]`);
+  const toEl = canvas.querySelector(`.node[data-id="${conn.to}"]`);
+  const fromH = fromEl ? fromEl.offsetHeight : 100;
+  const toH = toEl ? toEl.offsetHeight : 100;
+
+  const fromX = fromNode.x + fromNode.width + 5;
+  const fromY = fromNode.y + fromH / 2;
+  const toX = toNode.x - 5;
+  const toY = toNode.y + toH / 2;
+
+  const pathD = calcBezierPath(fromX, fromY, toX, toY);
+
+  // Hit area
+  const hitPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  hitPath.setAttribute('d', pathD);
+  hitPath.classList.add('connection-hit');
+  hitPath.addEventListener('click', (e) => {
+    e.stopPropagation();
+    deleteConnection(conn.from, conn.to);
+  });
+
+  // Visible path
+  const mainPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  mainPath.setAttribute('d', pathD);
+  mainPath.classList.add('connection-path');
+  mainPath.setAttribute('marker-end', 'url(#arrowhead)');
+
+  // Delete hint (x icon at midpoint)
+  const midX = (fromX + toX) / 2;
+  const midY = (fromY + toY) / 2;
+  const deleteHint = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  deleteHint.classList.add('connection-delete-hint');
+  deleteHint.style.cursor = 'pointer';
+  deleteHint.style.pointerEvents = 'all';
+  deleteHint.innerHTML = `
+    <circle cx="${midX}" cy="${midY}" r="9" fill="#fff" stroke="#ef4444" stroke-width="1.5"/>
+    <line x1="${midX-3}" y1="${midY-3}" x2="${midX+3}" y2="${midY+3}" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="${midX+3}" y1="${midY-3}" x2="${midX-3}" y2="${midY+3}" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round"/>
+  `;
+  deleteHint.addEventListener('click', (e) => {
+    e.stopPropagation();
+    deleteConnection(conn.from, conn.to);
+  });
+
+  group.appendChild(hitPath);
+  group.appendChild(mainPath);
+  group.appendChild(deleteHint);
+  connectionsSvg.appendChild(group);
+}
+
+function calcBezierPath(x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const absDx = Math.abs(dx);
+  const cp = Math.max(absDx * 0.4, 50);
+
+  // If going backwards, route around
+  if (dx < 0) {
+    const detour = 60;
+    const topY = Math.min(y1, y2) - detour;
+    return `M${x1},${y1} C${x1 + cp},${y1} ${x1 + cp},${topY} ${(x1+x2)/2},${topY} S${x2 - cp},${y2} ${x2},${y2}`;
+  }
+
+  return `M${x1},${y1} C${x1 + cp},${y1} ${x2 - cp},${y2} ${x2},${y2}`;
+}
+
+function updateConnections() {
+  renderAllConnections();
+}
+
+// ── Node Interactions ────────────────────────────────────────────────
+function onNodeMouseDown(e, node) {
+  if (e.target.classList.contains('port')) return;
+  if (e.target.classList.contains('node-delete')) return;
+  if (e.target.getAttribute('contenteditable') === 'true') return;
+  if (e.button !== 0) return;
+
+  e.stopPropagation();
+  selectNode(node.id);
+  hideContextMenu();
+
+  const rect = canvas.getBoundingClientRect();
+  dragNode = node;
+  dragOffsetX = (e.clientX - rect.left) / zoom - node.x;
+  dragOffsetY = (e.clientY - rect.top) / zoom - node.y;
+
+  const el = canvas.querySelector(`.node[data-id="${node.id}"]`);
+  el.classList.add('dragging');
+}
+
+function onNodeDblClick(e, node) {
+  if (e.target.classList.contains('port') || e.target.classList.contains('node-delete')) return;
+  if (e.target.getAttribute('contenteditable') === 'true') return;
+  const el = canvas.querySelector(`.node[data-id="${node.id}"]`);
+  const titleEl = el.querySelector('.node-title');
+  titleEl.setAttribute('contenteditable', 'true');
+  titleEl.focus();
+  const range = document.createRange();
+  range.selectNodeContents(titleEl);
+  window.getSelection().removeAllRanges();
+  window.getSelection().addRange(range);
+}
+
+function onNodeContext(e, node) {
+  e.preventDefault();
+  e.stopPropagation();
+  contextNodeId = node.id;
+  selectNode(node.id);
+  showContextMenu(e.clientX, e.clientY);
+}
+
+function selectNode(id) {
+  selectedNodeId = id;
+  canvas.querySelectorAll('.node').forEach(el => el.classList.remove('selected'));
+  if (id) {
+    const el = canvas.querySelector(`.node[data-id="${id}"]`);
+    if (el) el.classList.add('selected');
+  }
+}
+
+function deleteNode(id) {
+  nodes = nodes.filter(n => n.id !== id);
+  connections = connections.filter(c => c.from !== id && c.to !== id);
+  if (selectedNodeId === id) selectedNodeId = null;
+  renderAllNodes();
+  updateConnections();
+  updateNodeCount();
+  updateStepNumbers();
+}
+
+function addNode() {
+  const containerRect = canvasContainer.getBoundingClientRect();
+  const centerX = (-panX + containerRect.width / 2) / zoom;
+  const centerY = (-panY + containerRect.height / 2) / zoom;
+
+  let x = centerX - 110 + (Math.random() - 0.5) * 80;
+  let y = centerY - 50 + (Math.random() - 0.5) * 80;
+
+  const presetIdx = nodes.length % STAGE_PRESETS.length;
+  const preset = STAGE_PRESETS[presetIdx];
+
+  const node = {
+    id: nextId++,
+    x: Math.round(x),
+    y: Math.round(y),
+    width: 220,
+    title: 'New Stage',
+    desc: 'Describe this journey stage',
+    icon: preset.icon,
+    cssClass: preset.cssClass,
+    stepNum: nodes.length + 1,
+  };
+  nodes.push(node);
+  renderNode(node);
+  selectNode(node.id);
+  updateStepNumbers();
+  updateNodeCount();
+}
+
+function duplicateNode(id) {
+  const orig = nodes.find(n => n.id === id);
+  if (!orig) return;
+  const node = {
+    id: nextId++,
+    x: orig.x + 30,
+    y: orig.y + 30,
+    width: orig.width,
+    title: orig.title + ' (copy)',
+    desc: orig.desc,
+    icon: orig.icon,
+    cssClass: orig.cssClass,
+    stepNum: nodes.length + 1,
+  };
+  nodes.push(node);
+  renderNode(node);
+  selectNode(node.id);
+  updateStepNumbers();
+  updateNodeCount();
+}
+
+function updateStepNumbers() {
+  const sorted = [...nodes].sort((a, b) => a.x - b.x);
+  sorted.forEach((node, i) => {
+    node.stepNum = i + 1;
+    const el = canvas.querySelector(`.node[data-id="${node.id}"]`);
+    if (el) {
+      const stepEl = el.querySelector('.node-step');
+      stepEl.textContent = `Step ${node.stepNum}`;
+    }
+  });
+}
+
+// ── Connection Drawing ───────────────────────────────────────────────
+function onPortMouseDown(e, nodeId, portType) {
+  e.stopPropagation();
+  e.preventDefault();
+
+  drawingConnection = true;
+  connStartNodeId = nodeId;
+  connStartPortType = portType;
+
+  canvas.querySelectorAll('.port').forEach(p => {
+    const pType = p.dataset.type;
+    const pNode = parseInt(p.dataset.node);
+    if (pNode !== nodeId && pType !== portType) {
+      p.classList.add('compatible');
+    }
+  });
+
+  tempPathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  tempPathEl.classList.add('temp-connection');
+  connectionsSvg.appendChild(tempPathEl);
+
+  document.addEventListener('mousemove', onDrawConnectionMove);
+  document.addEventListener('mouseup', onDrawConnectionEnd);
+}
+
+function onDrawConnectionMove(e) {
+  if (!drawingConnection || !tempPathEl) return;
+
+  const fromNode = nodes.find(n => n.id === connStartNodeId);
+  if (!fromNode) return;
+
+  const fromEl = canvas.querySelector(`.node[data-id="${connStartNodeId}"]`);
+  const fromH = fromEl ? fromEl.offsetHeight : 100;
+
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) / zoom;
+  const my = (e.clientY - rect.top) / zoom;
+
+  let fromX, fromY;
+  if (connStartPortType === 'out') {
+    fromX = fromNode.x + fromNode.width + 5;
+    fromY = fromNode.y + fromH / 2;
+  } else {
+    fromX = fromNode.x - 5;
+    fromY = fromNode.y + fromH / 2;
+  }
+
+  let x1, y1, x2, y2;
+  if (connStartPortType === 'out') {
+    x1 = fromX; y1 = fromY; x2 = mx; y2 = my;
+  } else {
+    x1 = mx; y1 = my; x2 = fromX; y2 = fromY;
+  }
+
+  tempPathEl.setAttribute('d', calcBezierPath(x1, y1, x2, y2));
+}
+
+function onDrawConnectionEnd(e) {
+  document.removeEventListener('mousemove', onDrawConnectionMove);
+  document.removeEventListener('mouseup', onDrawConnectionEnd);
+
+  canvas.querySelectorAll('.port.compatible').forEach(p => p.classList.remove('compatible'));
+
+  if (tempPathEl) {
+    tempPathEl.remove();
+    tempPathEl = null;
+  }
+
+  const target = document.elementFromPoint(e.clientX, e.clientY);
+  if (target && target.classList.contains('port')) {
+    const targetNodeId = parseInt(target.dataset.node);
+    const targetPortType = target.dataset.type;
+
+    if (targetNodeId !== connStartNodeId && targetPortType !== connStartPortType) {
+      let fromId, toId;
+      if (connStartPortType === 'out') {
+        fromId = connStartNodeId;
+        toId = targetNodeId;
+      } else {
+        fromId = targetNodeId;
+        toId = connStartNodeId;
+      }
+
+      const exists = connections.some(c => c.from === fromId && c.to === toId);
+      if (!exists) {
+        connections.push({ from: fromId, to: toId });
+        renderAllConnections();
+      }
+    }
+  }
+
+  drawingConnection = false;
+  connStartNodeId = null;
+}
+
+function deleteConnection(fromId, toId) {
+  connections = connections.filter(c => !(c.from === fromId && c.to === toId));
+  renderAllConnections();
+}
+
+// ── Canvas Pan & Zoom ────────────────────────────────────────────────
+canvasContainer.addEventListener('mousedown', (e) => {
+  if (e.target === canvasContainer || e.target.classList.contains('canvas-grid') || e.target === canvas) {
+    if (e.button === 0) {
+      isPanning = true;
+      panStartX = e.clientX;
+      panStartY = e.clientY;
+      panStartPanX = panX;
+      panStartPanY = panY;
+      canvasContainer.classList.add('grabbing');
+      selectNode(null);
+      hideContextMenu();
+    }
+  }
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (dragNode) {
+    const rect = canvas.getBoundingClientRect();
+    dragNode.x = Math.round((e.clientX - rect.left) / zoom - dragOffsetX);
+    dragNode.y = Math.round((e.clientY - rect.top) / zoom - dragOffsetY);
+    updateNodePosition(dragNode);
+    updateConnections();
+    return;
+  }
+  if (isPanning) {
+    panX = panStartPanX + (e.clientX - panStartX);
+    panY = panStartPanY + (e.clientY - panStartY);
+    updateCanvasTransform();
+  }
+});
+
+document.addEventListener('mouseup', () => {
+  if (dragNode) {
+    const el = canvas.querySelector(`.node[data-id="${dragNode.id}"]`);
+    if (el) el.classList.remove('dragging');
+    dragNode = null;
+    updateStepNumbers();
+  }
+  if (isPanning) {
+    isPanning = false;
+    canvasContainer.classList.remove('grabbing');
+  }
+});
+
+canvasContainer.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const delta = -e.deltaY * 0.001;
+  const newZoom = Math.min(3, Math.max(0.15, zoom + delta));
+
+  const rect = canvasContainer.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  panX = mx - (mx - panX) * (newZoom / zoom);
+  panY = my - (my - panY) * (newZoom / zoom);
+  zoom = newZoom;
+
+  updateCanvasTransform();
+}, { passive: false });
+
+function updateCanvasTransform() {
+  canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+  document.getElementById('zoomLevel').textContent = Math.round(zoom * 100) + '%';
+}
+
+function zoomBy(delta) {
+  const containerRect = canvasContainer.getBoundingClientRect();
+  const cx = containerRect.width / 2;
+  const cy = containerRect.height / 2;
+  const newZoom = Math.min(3, Math.max(0.15, zoom + delta));
+  panX = cx - (cx - panX) * (newZoom / zoom);
+  panY = cy - (cy - panY) * (newZoom / zoom);
+  zoom = newZoom;
+  updateCanvasTransform();
+}
+
+function resetZoom() {
+  const containerRect = canvasContainer.getBoundingClientRect();
+  const cx = containerRect.width / 2;
+  const cy = containerRect.height / 2;
+  panX = cx - (cx - panX) * (1 / zoom);
+  panY = cy - (cy - panY) * (1 / zoom);
+  zoom = 1;
+  updateCanvasTransform();
+}
+
+function fitToView() {
+  if (nodes.length === 0) return;
+  const containerRect = canvasContainer.getBoundingClientRect();
+  const padding = 60;
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  nodes.forEach(n => {
+    const h = getNodeHeight(n) || 100;
+    minX = Math.min(minX, n.x - 10);
+    minY = Math.min(minY, n.y - 10);
+    maxX = Math.max(maxX, n.x + n.width + 10);
+    maxY = Math.max(maxY, n.y + h + 10);
+  });
+
+  const contentW = maxX - minX;
+  const contentH = maxY - minY;
+  const scaleX = (containerRect.width - padding * 2) / contentW;
+  const scaleY = (containerRect.height - padding * 2) / contentH;
+  zoom = Math.min(scaleX, scaleY, 1.5);
+  zoom = Math.max(zoom, 0.2);
+
+  panX = (containerRect.width - contentW * zoom) / 2 - minX * zoom;
+  panY = (containerRect.height - contentH * zoom) / 2 - minY * zoom;
+
+  updateCanvasTransform();
+}
+
+// ── Auto Layout ──────────────────────────────────────────────────────
+function autoLayout() {
+  if (nodes.length === 0) return;
+
+  const sorted = topologicalSort();
+  const startX = 200;
+  const startY = 280;
+  const spacingX = 280;
+  const spacingY = 160;
+
+  const levels = {};
+  sorted.forEach(id => {
+    levels[id] = getLevel(id);
+  });
+
+  // Group by level
+  const byLevel = {};
+  Object.entries(levels).forEach(([id, lvl]) => {
+    if (!byLevel[lvl]) byLevel[lvl] = [];
+    byLevel[lvl].push(parseInt(id));
+  });
+
+  Object.entries(byLevel).forEach(([lvl, ids]) => {
+    const li = parseInt(lvl);
+    ids.forEach((id, ci) => {
+      const node = nodes.find(n => n.id === id);
+      if (node) {
+        node.x = startX + li * spacingX;
+        node.y = startY + ci * spacingY - (ids.length - 1) * spacingY / 2;
+      }
+    });
+  });
+
+  renderAllNodes();
+  updateConnections();
+  updateStepNumbers();
+  requestAnimationFrame(() => fitToView());
+}
+
+function topologicalSort() {
+  const inDegree = {};
+  const adj = {};
+  nodes.forEach(n => { inDegree[n.id] = 0; adj[n.id] = []; });
+  connections.forEach(c => {
+    if (inDegree[c.to] !== undefined) inDegree[c.to]++;
+    if (adj[c.from]) adj[c.from].push(c.to);
+  });
+
+  const queue = nodes.filter(n => inDegree[n.id] === 0).map(n => n.id);
+  const result = [];
+
+  while (queue.length) {
+    const id = queue.shift();
+    result.push(id);
+    (adj[id] || []).forEach(to => {
+      inDegree[to]--;
+      if (inDegree[to] === 0) queue.push(to);
+    });
+  }
+
+  nodes.forEach(n => { if (!result.includes(n.id)) result.push(n.id); });
+  return result;
+}
+
+function getLevel(nodeId) {
+  const levels = {};
+  const roots = nodes.filter(n => !connections.some(c => c.to === n.id));
+
+  if (roots.length === 0 && nodes.length > 0) {
+    // All nodes are in cycles; just assign level 0
+    return 0;
+  }
+
+  const queue = roots.map(r => ({ id: r.id, level: 0 }));
+  const visited = new Set();
+
+  while (queue.length) {
+    const { id, level } = queue.shift();
+    if (visited.has(id)) {
+      levels[id] = Math.max(levels[id] || 0, level);
+      continue;
+    }
+    visited.add(id);
+    levels[id] = Math.max(levels[id] || 0, level);
+    connections.filter(c => c.from === id).forEach(c => {
+      if (!visited.has(c.to)) {
+        queue.push({ id: c.to, level: level + 1 });
+      }
+    });
+  }
+
+  nodes.forEach(n => {
+    if (levels[n.id] === undefined) levels[n.id] = 0;
+  });
+
+  return levels[nodeId] || 0;
+}
+
+// ── Context Menu ─────────────────────────────────────────────────────
+function showContextMenu(x, y) {
+  contextMenu.style.left = x + 'px';
+  contextMenu.style.top = y + 'px';
+  contextMenu.classList.add('visible');
+
+  requestAnimationFrame(() => {
+    const rect = contextMenu.getBoundingClientRect();
+    if (rect.right > window.innerWidth - 8) {
+      contextMenu.style.left = (x - rect.width) + 'px';
+    }
+    if (rect.bottom > window.innerHeight - 8) {
+      contextMenu.style.top = (y - rect.height) + 'px';
+    }
+  });
+}
+
+function hideContextMenu() {
+  contextMenu.classList.remove('visible');
+}
+
+function contextAction(action) {
+  const id = contextNodeId || selectedNodeId;
+  hideContextMenu();
+  if (!id) return;
+
+  switch (action) {
+    case 'edit': {
+      const el = canvas.querySelector(`.node[data-id="${id}"]`);
+      if (el) {
+        const titleEl = el.querySelector('.node-title');
+        titleEl.setAttribute('contenteditable', 'true');
+        titleEl.focus();
+        const range = document.createRange();
+        range.selectNodeContents(titleEl);
+        window.getSelection().removeAllRanges();
+        window.getSelection().addRange(range);
+      }
+      break;
+    }
+    case 'duplicate':
+      duplicateNode(id);
+      break;
+    case 'delete':
+      deleteNode(id);
+      break;
+    case 'color':
+      cycleColor(id);
+      break;
+  }
+  contextNodeId = null;
+}
+
+function cycleColor(id) {
+  const node = nodes.find(n => n.id === id);
+  if (!node) return;
+  const currentIdx = COLORS.findIndex(c => c.cls === node.cssClass);
+  const nextIdx = (currentIdx + 1) % COLORS.length;
+  node.cssClass = COLORS[nextIdx].cls;
+
+  const el = canvas.querySelector(`.node[data-id="${id}"]`);
+  if (el) {
+    COLORS.forEach(c => el.classList.remove(c.cls));
+    el.classList.add(node.cssClass);
+  }
+}
+
+// ── Keyboard ─────────────────────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  if (document.activeElement && document.activeElement.getAttribute('contenteditable') === 'true') return;
+
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (selectedNodeId) {
+      e.preventDefault();
+      deleteNode(selectedNodeId);
+    }
+  }
+  if (e.key === 'Escape') {
+    selectNode(null);
+    hideContextMenu();
+    // Also blur any focused element
+    if (document.activeElement) document.activeElement.blur();
+  }
+});
+
+// Close context menu on click outside
+document.addEventListener('mousedown', (e) => {
+  if (!contextMenu.contains(e.target)) {
+    hideContextMenu();
+  }
+});
+
+// Prevent default context menu on canvas
+canvasContainer.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// ── Reset ────────────────────────────────────────────────────────────
+function resetFlow() {
+  nodes = [];
+  connections = [];
+  nextId = 1;
+  selectedNodeId = null;
+  init();
+}
+
+// ── Start ────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
