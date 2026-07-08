@@ -27,6 +27,7 @@ const TW_HEX: Record<string, string> = {
   "bg-sky-600": "#0284c7",
   "bg-blue-600": "#2563eb",
   "bg-yellow-600": "#ca8a04",
+  "bg-indigo-600": "#4f46e5",
 };
 
 export function getModelHex(color: string): string {

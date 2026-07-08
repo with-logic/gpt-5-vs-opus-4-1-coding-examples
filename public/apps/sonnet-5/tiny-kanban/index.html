@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tiny Kanban</title>
+<style>
+  :root{
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --ink: #1c2330;
+    --muted: #6b7280;
+    --line: #e3e6ea;
+    --todo: #64748b;
+    --doing: #2563eb;
+    --done: #16a34a;
+    --radius: 14px;
+    --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08);
+    --shadow-lift: 0 12px 28px rgba(16,24,40,.18), 0 4px 10px rgba(16,24,40,.10);
+    --p-low: #22c55e;
+    --p-med: #f59e0b;
+    --p-high: #ef4444;
+    --p-crit: #b91c1c;
+  }
+
+  *{ box-sizing: border-box; }
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- Top bar ---------- */
+  .topbar{
+    position: sticky;
+    top:0;
+    z-index: 50;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    padding: 14px 24px;
+    display:flex;
+    align-items:center;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-weight: 800;
+    font-size: 22px;
+    letter-spacing: -0.02em;
+    margin-right: 8px;
+  }
+  .brand .logo{
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    background: linear-gradient(135deg, var(--doing), #7c3aed);
+    display:flex; align-items:center; justify-content:center;
+    color:white;
+    font-size:18px;
+  }
+  .search-wrap{
+    position: relative;
+    flex: 1 1 280px;
+    max-width: 420px;
+  }
+  .search-wrap input{
+    width:100%;
+    padding: 10px 14px 10px 38px;
+    border-radius: 10px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    font-size: 15px;
+    color: var(--ink);
+    outline: none;
+    transition: box-shadow .15s, border-color .15s;
+  }
+  .search-wrap input:focus{
+    border-color: var(--doing);
+    box-shadow: 0 0 0 3px rgba(37,99,235,.15);
+    background: white;
+  }
+  .search-wrap svg{
+    position:absolute;
+    left:12px;
+    top:50%;
+    transform: translateY(-50%);
+    width:16px;height:16px;
+    color: var(--muted);
+    pointer-events:none;
+  }
+  .filter-people{
+    display:flex;
+    gap:6px;
+    align-items:center;
+    flex-wrap: wrap;
+  }
+  .avatar-pill{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    padding: 5px 10px 5px 5px;
+    border-radius: 999px;
+    border: 1.5px solid var(--line);
+    background: white;
+    cursor:pointer;
+    font-size: 13px;
+    font-weight:600;
+    color: var(--muted);
+    transition: all .12s;
+    user-select:none;
+  }
+  .avatar-pill:hover{ border-color:#c7cdd6; }
+  .avatar-pill.active{
+    border-color: var(--doing);
+    color: var(--doing);
+    background: #eef3ff;
+  }
+  .avatar-pill .dot{
+    width:20px;height:20px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    color:white;font-size:10px;font-weight:800;
+    flex-shrink:0;
+  }
+  .btn{
+    border:none;
+    border-radius:10px;
+    padding:10px 16px;
+    font-size:14px;
+    font-weight:700;
+    cursor:pointer;
+    transition: transform .08s ease, box-shadow .15s, background .15s;
+    white-space: nowrap;
+  }
+  .btn:active{ transform: scale(.96); }
+  .btn-primary{
+    background: var(--ink);
+    color: white;
+  }
+  .btn-primary:hover{ background:#000; }
+  .btn-ghost{
+    background: transparent;
+    color: var(--muted);
+    border: 1.5px solid var(--line);
+  }
+  .btn-ghost:hover{ border-color:#c7cdd6; color:var(--ink); }
+
+  .standup-clock{
+    margin-left:auto;
+    text-align:right;
+    color:var(--muted);
+    font-size:13px;
+    line-height:1.3;
+    min-width: 140px;
+  }
+  .standup-clock .time{
+    font-size:20px;
+    font-weight:800;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- Board ---------- */
+  .board{
+    display:grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    padding: 24px;
+    max-width: 1600px;
+    margin: 0 auto;
+    align-items: start;
+  }
+  @media (max-width: 980px){
+    .board{ grid-template-columns: 1fr; }
+  }
+
+  .column{
+    background: var(--panel);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    display:flex;
+    flex-direction:column;
+    max-height: calc(100vh - 110px);
+    min-height: 200px;
+    transition: box-shadow .15s, background .15s;
+  }
+  .column.drag-over{
+    box-shadow: 0 0 0 3px var(--col-accent, #2563eb) inset, var(--shadow-lift);
+    background: #fafbff;
+  }
+  .column.wip-violate.drag-over{
+    --col-accent: var(--p-high);
+  }
+
+  .column-head{
+    padding: 18px 20px 14px;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    border-bottom: 1px solid var(--line);
+  }
+  .col-dot{
+    width:11px;height:11px;border-radius:50%;
+    flex-shrink:0;
+  }
+  .col-title{
+    font-size:17px;
+    font-weight:800;
+    letter-spacing:-0.01em;
+  }
+  .col-count{
+    margin-left:auto;
+    font-size:13px;
+    font-weight:700;
+    color: var(--muted);
+    background: var(--bg);
+    padding: 3px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+  }
+  .col-count.over{
+    color: white;
+    background: var(--p-high);
+    border-color: var(--p-high);
+  }
+  .wip-input-wrap{
+    display:flex;
+    align-items:center;
+    gap:4px;
+    font-size:12px;
+    color:var(--muted);
+    margin-left:8px;
+  }
+  .wip-input-wrap input{
+    width:38px;
+    text-align:center;
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:2px 4px;
+    font-size:12px;
+    font-weight:700;
+    color: var(--ink);
+  }
+  .wip-banner{
+    margin: 10px 16px 0;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: #fef2f2;
+    color: var(--p-crit);
+    font-size: 12.5px;
+    font-weight: 700;
+    display:none;
+    align-items:center;
+    gap:6px;
+  }
+  .wip-banner.show{ display:flex; }
+
+  .card-list{
+    flex:1;
+    overflow-y: auto;
+    padding: 14px;
+    display:flex;
+    flex-direction:column;
+    gap: 10px;
+    min-height: 80px;
+  }
+  .card-list::-webkit-scrollbar{ width:8px; }
+  .card-list::-webkit-scrollbar-thumb{ background:#dfe3e8; border-radius:8px; }
+
+  .empty-hint{
+    margin: auto;
+    text-align:center;
+    color: #b7bdc7;
+    font-size: 14px;
+    padding: 30px 10px;
+  }
+
+  /* ---------- Card ---------- */
+  .card{
+    background: var(--panel);
+    border-radius: 11px;
+    border: 1px solid var(--line);
+    border-left: 5px solid var(--p-med);
+    padding: 12px 12px 10px;
+    cursor: grab;
+    box-shadow: var(--shadow);
+    transition: box-shadow .15s, transform .12s, opacity .15s;
+    position: relative;
+  }
+  .card:hover{ box-shadow: 0 4px 14px rgba(16,24,40,.12); }
+  .card.dragging{
+    opacity: .4;
+  }
+  .card.flying{
+    box-shadow: var(--shadow-lift);
+  }
+  .card.fade-hidden{
+    display:none;
+  }
+
+  .card-top{
+    display:flex;
+    align-items:flex-start;
+    gap:8px;
+    margin-bottom: 6px;
+  }
+  .card-title{
+    font-size: 15.5px;
+    font-weight: 700;
+    line-height:1.3;
+    flex:1;
+    word-break: break-word;
+  }
+  .card-del{
+    border:none;
+    background:transparent;
+    color: #c2c7d0;
+    cursor:pointer;
+    padding:2px 4px;
+    border-radius:6px;
+    font-size:16px;
+    line-height:1;
+    flex-shrink:0;
+  }
+  .card-del:hover{ color: var(--p-crit); background:#fef2f2; }
+
+  .card-meta{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-top:8px;
+  }
+  .prio-chip{
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    padding: 3px 8px;
+    border-radius: 999px;
+  }
+  .prio-low{ background:#dcfce7; color:#15803d; }
+  .prio-medium{ background:#fef3c7; color:#b45309; }
+  .prio-high{ background:#fee2e2; color:#b91c1c; }
+  .prio-critical{ background:#7f1d1d; color:#fff; }
+
+  .assignee{
+    margin-left:auto;
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .assignee select{
+    appearance:none;
+    border:none;
+    background:transparent;
+    font-size:12px;
+    font-weight:700;
+    color: var(--muted);
+    cursor:pointer;
+    text-align:right;
+    padding-right: 2px;
+  }
+  .person-dot{
+    width:24px;height:24px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    color:white;font-size:10.5px;font-weight:800;
+    flex-shrink:0;
+    border: 2px solid white;
+    box-shadow: 0 0 0 1px var(--line);
+  }
+
+  .card-id{
+    font-size:11px;
+    color:#c2c7d0;
+    font-weight:700;
+    margin-top:6px;
+  }
+
+  /* ---------- Add card row ---------- */
+  .add-row{
+    padding: 10px 14px 14px;
+    border-top: 1px solid var(--line);
+  }
+  .add-form{
+    display:flex;
+    gap:8px;
+  }
+  .add-form input{
+    flex:1;
+    padding: 9px 12px;
+    border-radius: 9px;
+    border: 1.5px solid var(--line);
+    font-size: 14px;
+    outline:none;
+  }
+  .add-form input:focus{
+    border-color: var(--doing);
+    box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+  }
+  .add-form button{
+    background: var(--doing);
+    color:white;
+    border:none;
+    border-radius:9px;
+    padding: 0 16px;
+    font-weight:800;
+    font-size: 18px;
+    cursor:pointer;
+  }
+  .add-form button:hover{ background:#1d4ed8; }
+
+  /* ---------- New-card modal ---------- */
+  .modal-backdrop{
+    position:fixed; inset:0;
+    background: rgba(15,18,25,.45);
+    display:flex; align-items:center; justify-content:center;
+    z-index: 200;
+    opacity:0;
+    pointer-events:none;
+    transition: opacity .15s;
+  }
+  .modal-backdrop.show{ opacity:1; pointer-events:auto; }
+  .modal{
+    background:white;
+    border-radius: 16px;
+    padding: 22px;
+    width: 380px;
+    max-width: 92vw;
+    box-shadow: var(--shadow-lift);
+    transform: translateY(10px) scale(.98);
+    transition: transform .15s;
+  }
+  .modal-backdrop.show .modal{ transform: translateY(0) scale(1); }
+  .modal h3{ margin:0 0 14px; font-size:18px; }
+  .field{ margin-bottom: 14px; }
+  .field label{
+    display:block;
+    font-size:12.5px;
+    font-weight:700;
+    color:var(--muted);
+    margin-bottom:5px;
+  }
+  .field select, .field input{
+    width:100%;
+    padding:9px 10px;
+    border-radius:8px;
+    border:1.5px solid var(--line);
+    font-size:14px;
+    outline:none;
+  }
+  .field select:focus, .field input:focus{
+    border-color: var(--doing);
+  }
+  .modal-actions{
+    display:flex;
+    justify-content:flex-end;
+    gap:8px;
+    margin-top: 18px;
+  }
+
+  /* ---------- Legend / footer ---------- */
+  .legend{
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 0 24px 24px;
+    display:flex;
+    gap:18px;
+    flex-wrap:wrap;
+    color: var(--muted);
+    font-size: 13px;
+    align-items:center;
+  }
+  .legend-item{ display:flex; align-items:center; gap:6px; }
+  .legend .swatch{ width:11px;height:11px;border-radius:3px; }
+
+  .toast{
+    position: fixed;
+    bottom: 22px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--ink);
+    color:white;
+    padding: 11px 18px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight:600;
+    opacity:0;
+    pointer-events:none;
+    transition: all .25s;
+    z-index: 300;
+    box-shadow: var(--shadow-lift);
+  }
+  .toast.show{
+    opacity:1;
+    transform: translateX(-50%) translateY(0);
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand"><span class="logo">▦</span> Tiny Kanban</div>
+
+  <div class="search-wrap">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input id="searchInput" type="text" placeholder="Search cards…">
+  </div>
+
+  <div class="filter-people" id="peopleFilter"></div>
+
+  <button class="btn btn-ghost" id="clearFiltersBtn" title="Clear search & person filters">Clear filters</button>
+  <button class="btn btn-primary" id="newCardBtn">+ New card</button>
+
+  <div class="standup-clock">
+    <div class="time" id="clockTime">--:--</div>
+    <div id="clockDate">Standup view</div>
+  </div>
+</div>
+
+<div class="board" id="board"></div>
+
+<div class="legend" id="legend"></div>
+
+<!-- New / Edit Card Modal -->
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal">
+    <h3 id="modalTitle">New card</h3>
+    <div class="field">
+      <label for="cardTitleInput">Title</label>
+      <input type="text" id="cardTitleInput" placeholder="e.g. Fix login redirect bug" maxlength="140">
+    </div>
+    <div class="field">
+      <label for="cardColumnSelect">Column</label>
+      <select id="cardColumnSelect">
+        <option value="todo">Todo</option>
+        <option value="doing">Doing</option>
+        <option value="done">Done</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="cardPrioritySelect">Priority</label>
+      <select id="cardPrioritySelect">
+        <option value="low">Low</option>
+        <option value="medium" selected>Medium</option>
+        <option value="high">High</option>
+        <option value="critical">Critical</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="cardAssigneeSelect">Assignee</label>
+      <select id="cardAssigneeSelect"></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="modalCancelBtn">Cancel</button>
+      <button class="btn btn-primary" id="modalSaveBtn">Add card</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------------- Data ---------------- */
+
+  const PEOPLE = [
+    { id: "u1", name: "Maya R.",  color: "#2563eb" },
+    { id: "u2", name: "Jon K.",   color: "#7c3aed" },
+    { id: "u3", name: "Priya S.", color: "#db2777" },
+    { id: "u4", name: "Tom W.",   color: "#0891b2" },
+    { id: "u5", name: "Aisha N.", color: "#ea580c" },
+    { id: "unassigned", name: "Unassigned", color: "#9ca3af" }
+  ];
+
+  const COLUMNS = [
+    { id: "todo",  title: "Todo",  color: "var(--todo)",  wip: null },
+    { id: "doing", title: "Doing", color: "var(--doing)", wip: 3 },
+    { id: "done",  title: "Done",  color: "var(--done)",  wip: null }
+  ];
+
+  const PRIORITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
+
+  const STORAGE_KEY = "tiny-kanban-state-v1";
+
+  function uid(){ return 'c' + Math.random().toString(36).slice(2, 10); }
+
+  function seedCards(){
+    return [
+      { id: uid(), title: "Set up CI pipeline for staging", col: "todo", priority: "medium", assignee: "u4" },
+      { id: uid(), title: "Design empty states for inbox", col: "todo", priority: "low", assignee: "u3" },
+      { id: uid(), title: "Investigate flaky checkout test", col: "todo", priority: "high", assignee: "unassigned" },
+      { id: uid(), title: "Customer escalation: data export bug", col: "todo", priority: "critical", assignee: "u1" },
+      { id: uid(), title: "Migrate auth tokens to rotating keys", col: "doing", priority: "high", assignee: "u2" },
+      { id: uid(), title: "Refactor card drag handlers", col: "doing", priority: "medium", assignee: "u1" },
+      { id: uid(), title: "Write onboarding email sequence", col: "doing", priority: "low", assignee: "u5" },
+      { id: uid(), title: "Ship dark mode toggle", col: "done", priority: "medium", assignee: "u2" },
+      { id: uid(), title: "Fix avatar upload crash on Safari", col: "done", priority: "high", assignee: "u4" },
+      { id: uid(), title: "Q2 roadmap review doc", col: "done", priority: "low", assignee: "u3" }
+    ];
+  }
+
+  function loadState(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return null;
+      const parsed = JSON.parse(raw);
+      if(!Array.isArray(parsed.cards)) return null;
+      return parsed;
+    }catch(e){ return null; }
+  }
+
+  function saveState(){
+    const wipLimits = {};
+    COLUMNS.forEach(c => wipLimits[c.id] = c.wip);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ cards, wipLimits }));
+  }
+
+  const loaded = loadState();
+  let cards = loaded ? loaded.cards : seedCards();
+  if(loaded && loaded.wipLimits){
+    COLUMNS.forEach(c => { if(c.id in loaded.wipLimits) c.wip = loaded.wipLimits[c.id]; });
+  }
+
+  let activeFilters = new Set(); // person ids
+  let searchTerm = "";
+  let draggedCardId = null;
+
+  /* ---------------- Helpers ---------------- */
+
+  function personById(id){ return PEOPLE.find(p => p.id === id) || PEOPLE[PEOPLE.length-1]; }
+
+  function initials(name){
+    return name.split(/\s+/).filter(Boolean).map(w => w[0]).join("").slice(0,2).toUpperCase();
+  }
+
+  function escapeHtml(str){
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function showToast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(showToast._timer);
+    showToast._timer = setTimeout(()=> t.classList.remove('show'), 1800);
+  }
+
+  /* ---------------- Rendering ---------------- */
+
+  function cardMatchesFilters(card){
+    if(searchTerm){
+      const hay = card.title.toLowerCase();
+      if(!hay.includes(searchTerm)) return false;
+    }
+    if(activeFilters.size > 0){
+      if(!activeFilters.has(card.assignee)) return false;
+    }
+    return true;
+  }
+
+  function renderPeopleFilter(){
+    const wrap = document.getElementById('peopleFilter');
+    wrap.innerHTML = PEOPLE.map(p => {
+      const active = activeFilters.has(p.id) ? 'active' : '';
+      return `<div class="avatar-pill ${active}" data-person="${p.id}" title="Filter by ${escapeHtml(p.name)}">
+        <span class="dot" style="background:${p.color}">${escapeHtml(initials(p.name))}</span>
+        ${escapeHtml(p.name.split(' ')[0])}
+      </div>`;
+    }).join('');
+
+    wrap.querySelectorAll('.avatar-pill').forEach(el => {
+      el.addEventListener('click', () => {
+        const id = el.dataset.person;
+        if(activeFilters.has(id)) activeFilters.delete(id);
+        else activeFilters.add(id);
+        renderAll();
+      });
+    });
+  }
+
+  function buildAssigneeOptions(selectEl, selectedId){
+    selectEl.innerHTML = PEOPLE.map(p => `<option value="${p.id}" ${p.id===selectedId?'selected':''}>${escapeHtml(p.name)}</option>`).join('');
+  }
+
+  function cardEl(card){
+    const p = personById(card.assignee);
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.draggable = true;
+    div.dataset.id = card.id;
+    div.style.borderLeftColor = ({
+      low: 'var(--p-low)', medium: 'var(--p-med)', high: 'var(--p-high)', critical: 'var(--p-crit)'
+    })[card.priority];
+
+    div.innerHTML = `
+      <div class="card-top">
+        <div class="card-title">${escapeHtml(card.title)}</div>
+        <button class="card-del" title="Delete card" data-id="${card.id}">✕</button>
+      </div>
+      <div class="card-meta">
+        <span class="prio-chip prio-${card.priority}">${card.priority}</span>
+        <div class="assignee">
+          <div class="person-dot" style="background:${p.color}" title="${escapeHtml(p.name)}">${escapeHtml(initials(p.name))}</div>
+          <select data-id="${card.id}" class="assignee-select" title="Reassign"></select>
+        </div>
+      </div>
+    `;
+
+    const sel = div.querySelector('.assignee-select');
+    buildAssigneeOptions(sel, card.assignee);
+    sel.addEventListener('change', (e) => {
+      const c = cards.find(c => c.id === card.id);
+      c.assignee = e.target.value;
+      saveState();
+      renderAll();
+    });
+    sel.addEventListener('click', e => e.stopPropagation());
+
+    div.querySelector('.card-del').addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteCard(card.id);
+    });
+
+    div.addEventListener('dragstart', (e) => {
+      draggedCardId = card.id;
+      div.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', card.id);
+    });
+    div.addEventListener('dragend', () => {
+      div.classList.remove('dragging');
+      draggedCardId = null;
+      document.querySelectorAll('.column').forEach(c => c.classList.remove('drag-over'));
+    });
+
+    return div;
+  }
+
+  function deleteCard(id){
+    const card = cards.find(c => c.id === id);
+    if(!card) return;
+    cards = cards.filter(c => c.id !== id);
+    saveState();
+    renderAll();
+    showToast(`Deleted "${card.title}"`);
+  }
+
+  function renderColumn(col){
+    const colCards = cards
+      .filter(c => c.col === col.id)
+      .sort((a,b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]);
+
+    const visibleCards = colCards.filter(cardMatchesFilters);
+    const count = colCards.length;
+    const overWip = col.wip != null && count > col.wip;
+
+    const section = document.createElement('div');
+    section.className = 'column' + (overWip ? ' wip-violate' : '');
+    section.dataset.col = col.id;
+
+    section.innerHTML = `
+      <div class="column-head">
+        <span class="col-dot" style="background:${col.color}"></span>
+        <span class="col-title">${col.title}</span>
+        <span class="col-count ${overWip ? 'over' : ''}">${count}${col.wip != null ? ' / ' + col.wip : ''}</span>
+        <div class="wip-input-wrap">
+          WIP
+          <input type="number" min="0" placeholder="∞" value="${col.wip ?? ''}" data-col="${col.id}" class="wip-input">
+        </div>
+      </div>
+      <div class="wip-banner ${overWip ? 'show' : ''}">⚠ Over WIP limit — finish something before adding more</div>
+      <div class="card-list" data-col="${col.id}"></div>
+      <div class="add-row">
+        <form class="add-form" data-col="${col.id}">
+          <input type="text" placeholder="Quick add to ${col.title}…" maxlength="140" required>
+          <button type="submit">+</button>
+        </form>
+      </div>
+    `;
+
+    const list = section.querySelector('.card-list');
+    if(visibleCards.length === 0){
+      const hint = document.createElement('div');
+      hint.className = 'empty-hint';
+      hint.textContent = (searchTerm || activeFilters.size) ? 'No matching cards' : 'No cards yet';
+      list.appendChild(hint);
+    } else {
+      visibleCards.forEach(c => list.appendChild(cardEl(c)));
+    }
+
+    // drag/drop handlers
+    list.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      section.classList.add('drag-over');
+    });
+    list.addEventListener('dragleave', (e) => {
+      if(!section.contains(e.relatedTarget)) section.classList.remove('drag-over');
+    });
+    list.addEventListener('drop', (e) => {
+      e.preventDefault();
+      section.classList.remove('drag-over');
+      const id = draggedCardId || e.dataTransfer.getData('text/plain');
+      if(!id) return;
+      const card = cards.find(c => c.id === id);
+      if(!card) return;
+      card.col = col.id;
+      saveState();
+      renderAll();
+    });
+
+    section.querySelector('.wip-input').addEventListener('change', (e) => {
+      const val = e.target.value.trim();
+      col.wip = val === '' ? null : Math.max(0, parseInt(val, 10) || 0);
+      saveState();
+      renderAll();
+    });
+
+    section.querySelector('.add-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = e.target.querySelector('input');
+      const title = input.value.trim();
+      if(!title) return;
+      cards.push({ id: uid(), title, col: col.id, priority: 'medium', assignee: 'unassigned' });
+      saveState();
+      renderAll();
+      input.value = '';
+    });
+
+    return section;
+  }
+
+  function renderLegend(){
+    const legend = document.getElementById('legend');
+    legend.innerHTML = `
+      <div class="legend-item"><span class="swatch" style="background:var(--p-low)"></span> Low</div>
+      <div class="legend-item"><span class="swatch" style="background:var(--p-med)"></span> Medium</div>
+      <div class="legend-item"><span class="swatch" style="background:var(--p-high)"></span> High</div>
+      <div class="legend-item"><span class="swatch" style="background:var(--p-crit)"></span> Critical</div>
+      <div class="legend-item">· Drag cards between columns · Click a card's avatar to reassign · WIP limits flag overloaded columns</div>
+    `;
+  }
+
+  function renderBoard(){
+    const board = document.getElementById('board');
+    board.innerHTML = '';
+    COLUMNS.forEach(col => board.appendChild(renderColumn(col)));
+  }
+
+  function renderAll(){
+    renderPeopleFilter();
+    renderBoard();
+  }
+
+  /* ---------------- Search & filter controls ---------------- */
+
+  document.getElementById('searchInput').addEventListener('input', (e) => {
+    searchTerm = e.target.value.trim().toLowerCase();
+    renderBoard();
+  });
+
+  document.getElementById('clearFiltersBtn').addEventListener('click', () => {
+    searchTerm = '';
+    activeFilters.clear();
+    document.getElementById('searchInput').value = '';
+    renderAll();
+  });
+
+  /* ---------------- New card modal ---------------- */
+
+  const modalBackdrop = document.getElementById('modalBackdrop');
+  const cardTitleInput = document.getElementById('cardTitleInput');
+  const cardColumnSelect = document.getElementById('cardColumnSelect');
+  const cardPrioritySelect = document.getElementById('cardPrioritySelect');
+  const cardAssigneeSelect = document.getElementById('cardAssigneeSelect');
+
+  buildAssigneeOptions(cardAssigneeSelect, 'unassigned');
+
+  function openModal(){
+    modalBackdrop.classList.add('show');
+    cardTitleInput.value = '';
+    cardColumnSelect.value = 'todo';
+    cardPrioritySelect.value = 'medium';
+    cardAssigneeSelect.value = 'unassigned';
+    setTimeout(()=> cardTitleInput.focus(), 50);
+  }
+  function closeModal(){
+    modalBackdrop.classList.remove('show');
+  }
+
+  document.getElementById('newCardBtn').addEventListener('click', openModal);
+  document.getElementById('modalCancelBtn').addEventListener('click', closeModal);
+  modalBackdrop.addEventListener('click', (e) => { if(e.target === modalBackdrop) closeModal(); });
+  document.addEventListener('keydown', (e) => { if(e.key === 'Escape' && modalBackdrop.classList.contains('show')) closeModal(); });
+
+  document.getElementById('modalSaveBtn').addEventListener('click', () => {
+    const title = cardTitleInput.value.trim();
+    if(!title){ cardTitleInput.focus(); return; }
+    cards.push({
+      id: uid(),
+      title,
+      col: cardColumnSelect.value,
+      priority: cardPrioritySelect.value,
+      assignee: cardAssigneeSelect.value
+    });
+    saveState();
+    renderAll();
+    closeModal();
+  });
+
+  cardTitleInput.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter'){ e.preventDefault(); document.getElementById('modalSaveBtn').click(); }
+  });
+
+  /* ---------------- Standup clock ---------------- */
+
+  function tickClock(){
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2,'0');
+    const mm = String(now.getMinutes()).padStart(2,'0');
+    document.getElementById('clockTime').textContent = `${hh}:${mm}`;
+    document.getElementById('clockDate').textContent = now.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
+  }
+  tickClock();
+  setInterval(tickClock, 15000);
+
+  /* ---------------- Init ---------------- */
+
+  renderLegend();
+  renderAll();
+
+})();
+</script>
+</body>
+</html>

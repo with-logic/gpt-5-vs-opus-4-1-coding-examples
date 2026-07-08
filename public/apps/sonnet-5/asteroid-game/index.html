@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>VOIDRUNNER — 2D Space Combat</title>
+<style>
+  :root {
+    --cyan: #4df3ff;
+    --cyan-dim: #0b5c66;
+    --amber: #ffb340;
+    --red: #ff4d5e;
+    --green: #48ff9e;
+    --purple: #b06bff;
+    --bg: #05070d;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: var(--bg);
+    overflow: hidden;
+    font-family: 'Consolas', 'Menlo', 'Courier New', monospace;
+    color: var(--cyan);
+    user-select: none;
+  }
+  #root { width: 100%; height: 100%; }
+  #gameWrap {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: radial-gradient(ellipse at 50% 40%, #0a1020 0%, #05060b 60%, #020204 100%);
+  }
+  canvas {
+    display: block;
+    position: absolute;
+    top: 0; left: 0;
+    image-rendering: pixelated;
+  }
+  #ui {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .hud-panel {
+    position: absolute;
+    background: rgba(6, 14, 24, 0.55);
+    border: 1px solid rgba(77, 243, 255, 0.35);
+    border-radius: 6px;
+    padding: 8px 12px;
+    backdrop-filter: blur(2px);
+    box-shadow: 0 0 12px rgba(77,243,255,0.08) inset;
+  }
+  #topLeft {
+    top: 14px; left: 14px;
+    width: 260px;
+  }
+  .bar-row { display: flex; align-items: center; margin: 4px 0; gap: 8px; }
+  .bar-label { width: 46px; font-size: 11px; letter-spacing: 1px; opacity: 0.85; }
+  .bar-track {
+    flex: 1; height: 12px; background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.15); border-radius: 3px; overflow: hidden;
+  }
+  .bar-fill { height: 100%; transition: width 0.12s linear; }
+  .fill-hull { background: linear-gradient(90deg, #ff4d5e, #ff9d4d); }
+  .fill-shield { background: linear-gradient(90deg, #2fb9ff, #4df3ff); }
+  .fill-boost { background: linear-gradient(90deg, #ffb340, #fff040); }
+  .fill-weapon { background: linear-gradient(90deg, #b06bff, #ff6bf0); }
+
+  #topRight {
+    top: 14px; right: 14px;
+    text-align: right;
+    min-width: 200px;
+  }
+  #score { font-size: 22px; color: var(--amber); text-shadow: 0 0 8px rgba(255,179,64,0.6); }
+  #wave { font-size: 12px; opacity: 0.85; margin-top: 2px;}
+  #combo { font-size: 12px; color: var(--green); margin-top: 2px; height: 14px; }
+
+  #centerMsg {
+    position: absolute;
+    top: 40%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    pointer-events: none;
+  }
+  #centerMsg h1 {
+    font-size: 52px;
+    margin: 0;
+    letter-spacing: 8px;
+    color: var(--cyan);
+    text-shadow: 0 0 20px rgba(77,243,255,0.7), 0 0 60px rgba(77,243,255,0.3);
+  }
+  #centerMsg .sub {
+    font-size: 15px;
+    color: #cde;
+    margin-top: 14px;
+    letter-spacing: 2px;
+    opacity: 0.9;
+  }
+  #centerMsg .kbd {
+    display:inline-block; border:1px solid #9cd; border-radius:4px; padding:1px 7px; margin:0 3px;
+    background: rgba(255,255,255,0.06);
+  }
+  #startBtn {
+    pointer-events: all;
+    margin-top: 26px;
+    padding: 12px 34px;
+    font-size: 16px;
+    letter-spacing: 3px;
+    font-family: inherit;
+    background: linear-gradient(180deg, rgba(77,243,255,0.25), rgba(77,243,255,0.08));
+    border: 1px solid var(--cyan);
+    color: var(--cyan);
+    border-radius: 4px;
+    cursor: pointer;
+    text-shadow: 0 0 8px rgba(77,243,255,0.8);
+    box-shadow: 0 0 18px rgba(77,243,255,0.25);
+  }
+  #startBtn:hover { background: rgba(77,243,255,0.3); }
+
+  #minimap {
+    position: absolute;
+    bottom: 14px; right: 14px;
+    width: 170px; height: 170px;
+    border-radius: 50%;
+  }
+  #bottomLeft {
+    bottom: 14px; left: 14px;
+    font-size: 11px;
+    line-height: 1.6;
+    opacity: 0.8;
+    max-width: 260px;
+  }
+  #bottomLeft b { color: var(--amber); }
+  .flash {
+    position: absolute; top:0; left:0; width:100%; height:100%;
+    background: rgba(255,60,60,0.0);
+    pointer-events: none;
+    transition: background 0.08s ease-out;
+  }
+  #killFeed {
+    position: absolute;
+    top: 100px; right: 14px;
+    text-align: right;
+    font-size: 12px;
+    color: #cde;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    width: 260px;
+  }
+  #killFeed div { opacity: 0.9; text-shadow: 0 0 4px #000; }
+  #radioChatter {
+    position: absolute;
+    top: 14px; left: 50%; transform: translateX(-50%);
+    font-size: 12px;
+    color: var(--purple);
+    text-shadow: 0 0 6px rgba(176,107,255,0.7);
+    letter-spacing: 0.5px;
+    max-width: 500px;
+    text-align: center;
+  }
+  #gameOverPanel {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    text-align: center;
+    pointer-events: none;
+  }
+  #gameOverPanel h1 { font-size: 46px; color: var(--red); text-shadow: 0 0 24px rgba(255,77,94,0.7); margin:0; letter-spacing:6px;}
+  #gameOverPanel .stat { margin-top: 14px; font-size: 15px; color: #cde; }
+  #crosshair {
+    position: absolute;
+    width: 26px; height: 26px;
+    margin-left: -13px; margin-top: -13px;
+    pointer-events: none;
+    z-index: 9;
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- React + ReactDOM (UMD) + Babel standalone for in-browser JSX -->
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script id="game-source" type="text/plain">
+
+const { useEffect, useRef, useState, useCallback } = React;
+
+/* =========================================================================
+   VOIDRUNNER — a self-contained 2D space combat game.
+   Single-file implementation intended to be pasted into a Next.js page.tsx.
+   All game logic lives in a plain-JS engine driven from a canvas + rAF loop;
+   React only owns the HUD chrome around it.
+   ========================================================================= */
+
+// ---------------------------------------------------------------------------
+// Utility math
+// ---------------------------------------------------------------------------
+const TAU = Math.PI * 2;
+function rand(a, b) { return a + Math.random() * (b - a); }
+function randInt(a, b) { return Math.floor(rand(a, b + 1)); }
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function dist2(ax, ay, bx, by) { const dx = ax-bx, dy = ay-by; return dx*dx+dy*dy; }
+function dist(ax, ay, bx, by) { return Math.sqrt(dist2(ax,ay,bx,by)); }
+function angDiff(a, b) { let d = (b - a) % TAU; if (d > Math.PI) d -= TAU; if (d < -Math.PI) d += TAU; return d; }
+function vecFromAngle(a, mag) { return { x: Math.cos(a) * mag, y: Math.sin(a) * mag }; }
+
+// Wrap a coordinate to toroidal world bounds
+function wrap(v, size) {
+  if (v < 0) return v + size;
+  if (v >= size) return v - size;
+  return v;
+}
+
+// Shortest toroidal delta from a to b
+function wrapDelta(a, b, size) {
+  let d = b - a;
+  if (d > size / 2) d -= size;
+  if (d < -size / 2) d += size;
+  return d;
+}
+
+// ---------------------------------------------------------------------------
+// World constants
+// ---------------------------------------------------------------------------
+const WORLD_W = 4200;
+const WORLD_H = 3000;
+const STAR_LAYERS = 3;
+
+// ---------------------------------------------------------------------------
+// Ship design library — every faction gets a distinct silhouette, drawn with
+// vector paths (arrays of [x,y] in local ship-space, nose pointing +X).
+// ---------------------------------------------------------------------------
+const SHIP_DESIGNS = {
+  player: {
+    hull: [[26,0],[10,8],[-14,14],[-22,7],[-16,0],[-22,-7],[-14,-14],[10,-8]],
+    accent: [[14,0],[2,5],[-8,3],[-8,-3],[2,-5]],
+    cockpit: {x:6,y:0,r:4.2},
+    engines: [[-20,8],[-20,-8]],
+    color: '#4df3ff',
+    accentColor: '#dff9ff',
+    engineColor: '#8ff2ff',
+    scale: 1.05,
+  },
+  interceptor: { // fast, small, aggressive raiders (Crimson Talon)
+    hull: [[22,0],[4,6],[-10,10],[-16,4],[-16,-4],[-10,-10],[4,-6]],
+    accent: [[10,0],[-2,4],[-8,0],[-2,-4]],
+    cockpit: {x:4,y:0,r:3},
+    engines: [[-15,6],[-15,-6]],
+    color: '#ff4d5e',
+    accentColor: '#ffd3d3',
+    engineColor: '#ff8f7a',
+    scale: 0.95,
+  },
+  gunship: { // heavier, slower brawlers (Ashen Vanguard)
+    hull: [[20,0],[16,10],[-6,16],[-24,10],[-24,-10],[-6,-16],[16,-10]],
+    accent: [[10,8],[-10,12],[-16,0],[-10,-12],[10,-8],[2,0]],
+    cockpit: {x:2,y:0,r:5},
+    engines: [[-22,12],[-22,0],[-22,-12]],
+    color: '#ffb340',
+    accentColor: '#ffe6bf',
+    engineColor: '#ffd28a',
+    scale: 1.25,
+  },
+  drone: { // small scavenger drones, weakest AI, travel in packs
+    hull: [[14,0],[0,8],[-12,6],[-12,-6],[0,-8]],
+    accent: [[4,0],[-4,3],[-4,-3]],
+    cockpit: {x:2,y:0,r:2.4},
+    engines: [[-11,4],[-11,-4]],
+    color: '#b06bff',
+    accentColor: '#e8d6ff',
+    engineColor: '#d3a6ff',
+    scale: 0.8,
+  },
+};
+
+function drawPoly(ctx, pts, close=true) {
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  if (close) ctx.closePath();
+}
+
+function drawShip(ctx, ship, design, thrusting, shieldActive, hitFlash, invuln) {
+  ctx.save();
+  ctx.translate(ship.x, ship.y);
+  ctx.rotate(ship.angle);
+  ctx.scale(design.scale, design.scale);
+
+  // engine glow (behind hull)
+  if (thrusting) {
+    design.engines.forEach(([ex,ey]) => {
+      const flicker = 0.6 + Math.random()*0.4;
+      const len = 14 * flicker;
+      const grad = ctx.createLinearGradient(ex,ey, ex-len,ey);
+      grad.addColorStop(0, design.engineColor);
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(ex, ey-3);
+      ctx.lineTo(ex-len, ey);
+      ctx.lineTo(ex, ey+3);
+      ctx.closePath();
+      ctx.fill();
+    });
+  }
+
+  // shield bubble
+  if (shieldActive) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(120,200,255,0.8)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0,0,26,0,TAU);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(120,200,255,0.08)';
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // hull
+  drawPoly(ctx, design.hull);
+  ctx.fillStyle = hitFlash > 0 ? '#ffffff' : '#11151f';
+  ctx.fill();
+  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = invuln && Math.floor(performance.now()/80)%2===0 ? 'rgba(255,255,255,0.3)' : design.color;
+  ctx.stroke();
+
+  // accent stripe
+  drawPoly(ctx, design.accent);
+  ctx.fillStyle = design.accentColor;
+  ctx.globalAlpha = hitFlash > 0 ? 1 : 0.85;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  // cockpit
+  ctx.beginPath();
+  ctx.arc(design.cockpit.x, design.cockpit.y, design.cockpit.r, 0, TAU);
+  ctx.fillStyle = '#ffffff';
+  ctx.globalAlpha = 0.9;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// Main Engine — encapsulates all mutable game state outside React.
+// ---------------------------------------------------------------------------
+function createEngine(canvas, callbacks) {
+  const ctx = canvas.getContext('2d');
+  let W = canvas.width, H = canvas.height;
+
+  const keys = {};
+  const mouse = { x: W/2, y: H/2, down: false };
+
+  const state = {
+    running: false,
+    over: false,
+    t: 0,
+    score: 0,
+    wave: 1,
+    combo: 0,
+    comboTimer: 0,
+    shake: 0,
+    player: null,
+    bullets: [],
+    enemyBullets: [],
+    asteroids: [],
+    ships: [], // AI ships
+    particles: [],
+    powerups: [],
+    stars: [],
+    killFeedTimer: 0,
+    chatterTimer: rand(4,9),
+  };
+
+  // ---- starfield -----------------------------------------------------
+  for (let layer=0; layer<STAR_LAYERS; layer++) {
+    const count = 140 - layer*30;
+    for (let i=0;i<count;i++) {
+      state.stars.push({
+        x: rand(0, WORLD_W), y: rand(0, WORLD_H),
+        r: rand(0.4, layer===0?1.0:2.2),
+        layer,
+        tw: rand(0, TAU),
+      });
+    }
+  }
+
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // ---- input -----------------------------------------------------------
+  function onKeyDown(e) {
+    keys[e.code] = true;
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();
+  }
+  function onKeyUp(e) { keys[e.code] = false; }
+  window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('keyup', onKeyUp);
+
+  function onMouseMove(e) {
+    const rect = canvas.getBoundingClientRect();
+    mouse.x = e.clientX - rect.left;
+    mouse.y = e.clientY - rect.top;
+  }
+  function onMouseDown(e) { if (e.button===0) mouse.down = true; }
+  function onMouseUp(e) { if (e.button===0) mouse.down = false; }
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mousedown', onMouseDown);
+  window.addEventListener('mouseup', onMouseUp);
+
+  // ---- entity factories --------------------------------------------------
+  function makePlayer() {
+    return {
+      x: WORLD_W/2, y: WORLD_H/2, vx: 0, vy: 0, angle: -Math.PI/2,
+      hull: 100, maxHull: 100,
+      shield: 100, maxShield: 100, shieldRegenDelay: 0,
+      boost: 100, maxBoost: 100,
+      weaponHeat: 0, maxHeat: 100,
+      fireCooldown: 0,
+      hitFlash: 0,
+      invuln: 2.5,
+      alive: true,
+      thrusting: false,
+      shieldActive: false,
+      design: SHIP_DESIGNS.player,
+      radius: 16,
+      killStreak: 0,
+      missileCooldown: 0,
+      missiles: 3,
+      maxMissiles: 3,
+      missileRegen: 0,
+    };
+  }
+
+  function spawnAsteroid(x, y, size, vx, vy) {
+    const sizes = { big: 46, med: 28, small: 15 };
+    const r = sizes[size];
+    const verts = randInt(9,14);
+    const shape = [];
+    for (let i=0;i<verts;i++) {
+      const a = (i/verts) * TAU;
+      const rr = r * rand(0.75, 1.15);
+      shape.push([Math.cos(a)*rr, Math.sin(a)*rr]);
+    }
+    state.asteroids.push({
+      x, y, vx: vx ?? rand(-40,40), vy: vy ?? rand(-40,40),
+      angle: rand(0,TAU), spin: rand(-1,1),
+      size, radius: r, shape,
+      hp: size==='big'?3:(size==='med'?2:1),
+      hue: rand(20,45),
+    });
+  }
+
+  function spawnAsteroidWave(n) {
+    for (let i=0;i<n;i++) {
+      // spawn away from player
+      let x,y;
+      do {
+        x = rand(0, WORLD_W); y = rand(0, WORLD_H);
+      } while (state.player && dist(x,y,state.player.x,state.player.y) < 500);
+      spawnAsteroid(x,y,'big');
+    }
+  }
+
+  function makeAIShip(kind, x, y, faction) {
+    const design = SHIP_DESIGNS[kind];
+    const baseStats = {
+      interceptor: { hp: 35, speed: 260, turn: 3.6, fireRate: 0.55, dmg: 8, aggro: 620, spread: 0.05 },
+      gunship:     { hp: 90, speed: 150, turn: 1.8, fireRate: 0.9,  dmg: 16, aggro: 560, spread: 0.09 },
+      drone:       { hp: 18, speed: 200, turn: 3.0, fireRate: 0.7,  dmg: 5, aggro: 480, spread: 0.12 },
+    };
+    const st = baseStats[kind];
+    return {
+      x, y, vx: rand(-20,20), vy: rand(-20,20), angle: rand(0,TAU),
+      kind, faction, design,
+      hp: st.hp, maxHp: st.hp, speed: st.speed, turnRate: st.turn,
+      fireRate: st.fireRate, fireTimer: rand(0, st.fireRate), dmg: st.dmg,
+      aggroRange: st.aggro, spread: st.spread,
+      state: 'patrol', patrolTarget: null,
+      hitFlash: 0, alive: true, radius: 14*design.scale,
+      thrusting: false,
+      target: null,
+      dodgeTimer: 0,
+      scoreValue: kind==='gunship'?250:(kind==='interceptor'?150:80),
+    };
+  }
+
+  function spawnWaveShips(wave) {
+    const n = Math.min(2 + Math.floor(wave/1.5), 8);
+    for (let i=0;i<n;i++) {
+      const roll = Math.random();
+      const kind = roll < 0.4 ? 'drone' : (roll < 0.75 ? 'interceptor' : 'gunship');
+      const faction = Math.random() < 0.5 ? 'crimson' : 'ashen';
+      let x,y;
+      do { x = rand(0,WORLD_W); y = rand(0,WORLD_H); } while (state.player && dist(x,y,state.player.x,state.player.y) < 700);
+      state.ships.push(makeAIShip(kind, x, y, faction));
+    }
+  }
+
+  function addParticles(x,y,count,color,speed,life,size) {
+    for (let i=0;i<count;i++) {
+      const a = rand(0,TAU);
+      const s = rand(speed*0.3, speed);
+      state.particles.push({
+        x,y, vx: Math.cos(a)*s, vy: Math.sin(a)*s,
+        life: rand(life*0.5, life), maxLife: life,
+        color, size: rand(size*0.5,size),
+      });
+    }
+  }
+
+  function screenShake(amount) { state.shake = Math.max(state.shake, amount); }
+
+  function explode(x,y,scale=1) {
+    addParticles(x,y, Math.floor(18*scale), '255,180,80', 220*scale, 0.6, 3.5*scale);
+    addParticles(x,y, Math.floor(10*scale), '255,255,255', 140*scale, 0.35, 2*scale);
+    screenShake(8*scale);
+  }
+
+  function spawnPowerup(x,y) {
+    if (Math.random() > 0.35) return;
+    const types = ['hull','shield','boost','missile'];
+    const type = types[randInt(0,types.length-1)];
+    state.powerups.push({ x,y, type, t: 0, vx: rand(-10,10), vy: rand(-10,10) });
+  }
+
+  // ---- combat --------------------------------------------------------
+  function fireBullet(shooter, angle, isPlayer, faction, dmg) {
+    const speed = isPlayer ? 900 : 620;
+    const v = vecFromAngle(angle, speed);
+    const arr = isPlayer ? state.bullets : state.enemyBullets;
+    arr.push({
+      x: shooter.x + Math.cos(angle)*24, y: shooter.y + Math.sin(angle)*24,
+      vx: v.x + shooter.vx*0.3, vy: v.y + shooter.vy*0.3,
+      life: 1.1, dmg: dmg, faction: faction, owner: shooter,
+    });
+  }
+
+  function fireMissile(shooter) {
+    if (shooter.missiles <= 0 || shooter.missileCooldown > 0) return;
+    shooter.missiles--;
+    shooter.missileCooldown = 0.4;
+    state.bullets.push({
+      x: shooter.x, y: shooter.y, vx: Math.cos(shooter.angle)*400, vy: Math.sin(shooter.angle)*400,
+      life: 4, dmg: 60, faction: 'player', owner: shooter, missile: true, angle: shooter.angle, turnSpeed: 3.2,
+    });
+    screenShake(3);
+  }
+
+  function damagePlayer(p, amount) {
+    if (p.invuln > 0) return;
+    if (p.shield > 0) {
+      const absorbed = Math.min(p.shield, amount);
+      p.shield -= absorbed;
+      amount -= absorbed;
+      addParticles(p.x,p.y,6,'120,200,255',120,0.3,2);
+    }
+    if (amount > 0) {
+      p.hull -= amount;
+      p.hitFlash = 0.2;
+      screenShake(6);
+      state.combo = 0;
+    }
+    p.shieldRegenDelay = 3;
+    if (p.hull <= 0 && p.alive) {
+      p.alive = false;
+      explode(p.x,p.y,2.2);
+      callbacks.onGameOver && callbacks.onGameOver();
+    }
+  }
+
+  function killFeedPush(text, color) {
+    callbacks.onKillFeed && callbacks.onKillFeed(text, color);
+  }
+
+  function chatterPush(text) {
+    callbacks.onChatter && callbacks.onChatter(text);
+  }
+
+  const CHATTER_LINES = [
+    "Crimson Talon: breaking left, cover me!",
+    "Ashen Vanguard: hold formation.",
+    "Crimson Talon: target locked, engaging!",
+    "Ashen Vanguard: taking fire, requesting support.",
+    "Crimson Talon: scavenger swarm inbound.",
+    "Ashen Vanguard: rock field ahead, watch your hull.",
+    "Crimson Talon: he's good... finish him.",
+    "Ashen Vanguard: fall back and regroup.",
+  ];
+
+  function addScore(n, comboBoost=true) {
+    if (comboBoost) {
+      state.combo++;
+      state.comboTimer = 3.5;
+      n = Math.floor(n * (1 + state.combo*0.15));
+    }
+    state.score += n;
+    callbacks.onScore && callbacks.onScore(n, state.combo);
+  }
+
+  // ---- AI behavior ------------------------------------------------------
+  function updateAIShip(s, dt) {
+    if (!s.alive) return;
+    s.hitFlash = Math.max(0, s.hitFlash - dt);
+    s.fireTimer -= dt;
+    s.dodgeTimer -= dt;
+
+    // find nearest threat (player or opposing faction ship, or nearby asteroid)
+    let target = null, td = Infinity;
+    if (state.player && state.player.alive) {
+      const d = dist(s.x,s.y,state.player.x,state.player.y);
+      if (d < s.aggroRange) { target = state.player; td = d; }
+    }
+    for (const other of state.ships) {
+      if (other===s || !other.alive || other.faction === s.faction) continue;
+      const d = dist(s.x,s.y,other.x,other.y);
+      if (d < s.aggroRange && d < td) { target = other; td = d; }
+    }
+    s.target = target;
+
+    let desiredAngle = s.angle;
+    let wantThrust = false;
+
+    if (target) {
+      s.state = 'combat';
+      const dx = wrapDelta(s.x, target.x, WORLD_W);
+      const dy = wrapDelta(s.y, target.y, WORLD_H);
+      const toTarget = Math.atan2(dy,dx);
+      const rangeIdeal = s.kind==='gunship' ? 380 : (s.kind==='interceptor'? 260:300);
+
+      // orbit / strafe behavior: aim slightly offset, keep ideal range
+      let aimAngle = toTarget;
+      if (td < rangeIdeal*0.7) {
+        // too close -> peel away while still facing target
+        wantThrust = false;
+        desiredAngle = toTarget + Math.PI*0.5*(s.faction==='crimson'?1:-1);
+        wantThrust = true;
+      } else if (td > rangeIdeal*1.3) {
+        desiredAngle = toTarget;
+        wantThrust = true;
+      } else {
+        // strafe around target
+        desiredAngle = toTarget + Math.PI*0.4*(Math.sin(state.t*0.6 + s.x*0.01));
+        wantThrust = true;
+      }
+
+      // simple asteroid avoidance
+      for (const a of state.asteroids) {
+        const adx = wrapDelta(s.x, a.x, WORLD_W), ady = wrapDelta(s.y, a.y, WORLD_H);
+        const ad = Math.sqrt(adx*adx+ady*ady);
+        if (ad < a.radius + 100) {
+          const avoidAngle = Math.atan2(-ady,-adx);
+          desiredAngle = avoidAngle;
+          wantThrust = true;
+        }
+      }
+
+      // turn toward desired angle
+      const diff = angDiff(s.angle, desiredAngle);
+      s.angle += clamp(diff, -s.turnRate*dt, s.turnRate*dt);
+
+      // fire when roughly facing target and in range
+      const facingErr = Math.abs(angDiff(s.angle, toTarget));
+      if (facingErr < 0.28 && td < s.aggroRange && s.fireTimer <= 0) {
+        const spreadAngle = toTarget + rand(-s.spread, s.spread);
+        fireBullet(s, spreadAngle, false, s.faction, s.dmg);
+        s.fireTimer = s.fireRate * rand(0.85,1.15);
+      }
+    } else {
+      // patrol
+      s.state = 'patrol';
+      if (!s.patrolTarget || dist(s.x,s.y,s.patrolTarget.x,s.patrolTarget.y) < 100) {
+        s.patrolTarget = { x: rand(0,WORLD_W), y: rand(0,WORLD_H) };
+      }
+      const dx = wrapDelta(s.x,s.patrolTarget.x,WORLD_W), dy = wrapDelta(s.y,s.patrolTarget.y,WORLD_H);
+      desiredAngle = Math.atan2(dy,dx);
+      const diff = angDiff(s.angle, desiredAngle);
+      s.angle += clamp(diff, -s.turnRate*0.5*dt, s.turnRate*0.5*dt);
+      wantThrust = true;
+    }
+
+    s.thrusting = wantThrust;
+    if (wantThrust) {
+      const acc = vecFromAngle(s.angle, s.speed);
+      s.vx = lerp(s.vx, acc.x, dt*1.6);
+      s.vy = lerp(s.vy, acc.y, dt*1.6);
+    } else {
+      s.vx *= (1 - dt*0.5);
+      s.vy *= (1 - dt*0.5);
+    }
+
+    s.x = wrap(s.x + s.vx*dt, WORLD_W);
+    s.y = wrap(s.y + s.vy*dt, WORLD_H);
+  }
+
+  // ---- main update ------------------------------------------------------
+  function update(dt) {
+    state.t += dt;
+    dt = Math.min(dt, 0.05);
+
+    const p = state.player;
+    if (p && p.alive) {
+      // rotation: mouse-aim
+      const rect = canvas.getBoundingClientRect();
+      const screenCenterX = W/2, screenCenterY = H/2;
+      const aimDX = mouse.x - screenCenterX, aimDY = mouse.y - screenCenterY;
+      if (Math.abs(aimDX) > 2 || Math.abs(aimDY) > 2) {
+        p.angle = Math.atan2(aimDY, aimDX);
+      }
+      // keyboard turning override (A/D or arrows) adds relative turn
+      const turnInput = (keys['KeyA']||keys['ArrowLeft']? -1:0) + (keys['KeyD']||keys['ArrowRight']?1:0);
+      if (turnInput !== 0) p.angle += turnInput * 3.2 * dt;
+
+      const thrustInput = (keys['KeyW']||keys['ArrowUp']) ? 1 : ((keys['KeyS']||keys['ArrowDown'])? -0.5:0);
+      p.thrusting = thrustInput > 0;
+      const boosting = keys['ShiftLeft'] || keys['ShiftRight'];
+      let accelMag = 480;
+      if (boosting && p.boost > 0 && thrustInput>0) { accelMag = 900; p.boost -= dt*40; }
+      else if (!boosting) { p.boost = Math.min(p.maxBoost, p.boost + dt*12); }
+
+      if (thrustInput !== 0) {
+        const acc = vecFromAngle(p.angle, accelMag*thrustInput);
+        p.vx += acc.x*dt; p.vy += acc.y*dt;
+      }
+      // drag
+      p.vx *= (1 - dt*0.35);
+      p.vy *= (1 - dt*0.35);
+      const spd = Math.hypot(p.vx,p.vy);
+      const maxSpd = boosting? 620:420;
+      if (spd > maxSpd) { p.vx = p.vx/spd*maxSpd; p.vy = p.vy/spd*maxSpd; }
+
+      p.x = wrap(p.x + p.vx*dt, WORLD_W);
+      p.y = wrap(p.y + p.vy*dt, WORLD_H);
+
+      // shield toggle (right mouse / Q) - here Q holds up a defensive shield draining boost
+      p.shieldActive = !!keys['KeyQ'] && p.shield > 1;
+      if (p.shieldActive) p.shield -= dt*18;
+
+      // weapon heat cool
+      p.weaponHeat = Math.max(0, p.weaponHeat - dt* (p.weaponHeat>70?18:34));
+      p.fireCooldown -= dt;
+      if ((mouse.down || keys['Space']) && p.fireCooldown <= 0 && p.weaponHeat < p.maxHeat) {
+        fireBullet(p, p.angle + rand(-0.02,0.02), true, 'player', 12);
+        p.fireCooldown = 0.11;
+        p.weaponHeat += 9;
+        addParticles(p.x + Math.cos(p.angle)*24, p.y + Math.sin(p.angle)*24, 2, '150,220,255', 60,0.15,1.5);
+      }
+      p.missileCooldown = Math.max(0, p.missileCooldown - dt);
+      if (keys['KeyE']) { fireMissile(p); keys['KeyE']=false; }
+
+      // shield regen
+      if (p.shieldRegenDelay > 0) p.shieldRegenDelay -= dt;
+      else p.shield = Math.min(p.maxShield, p.shield + dt*10);
+
+      p.invuln = Math.max(0, p.invuln - dt);
+      p.hitFlash = Math.max(0, p.hitFlash - dt);
+
+      p.hull = Math.min(p.maxHull, p.hull);
+    }
+
+    // combo timer
+    if (state.comboTimer > 0) { state.comboTimer -= dt; if (state.comboTimer<=0) state.combo = 0; }
+
+    // AI ships
+    for (const s of state.ships) updateAIShip(s, dt);
+    state.ships = state.ships.filter(s => s.alive);
+
+    // asteroids drift
+    for (const a of state.asteroids) {
+      a.x = wrap(a.x + a.vx*dt, WORLD_W);
+      a.y = wrap(a.y + a.vy*dt, WORLD_H);
+      a.angle += a.spin*dt;
+    }
+
+    // player bullets
+    for (const b of state.bullets) {
+      if (b.missile) {
+        // homing: find nearest enemy
+        let best=null,bd=Infinity;
+        for (const s of state.ships) { const d=dist(b.x,b.y,s.x,s.y); if(d<bd){bd=d;best=s;} }
+        if (best) {
+          const dx = wrapDelta(b.x,best.x,WORLD_W), dy = wrapDelta(b.y,best.y,WORLD_H);
+          const desired = Math.atan2(dy,dx);
+          const diff = angDiff(b.angle, desired);
+          b.angle += clamp(diff, -b.turnSpeed*dt, b.turnSpeed*dt);
+          const spd = Math.hypot(b.vx,b.vy);
+          const v = vecFromAngle(b.angle, spd);
+          b.vx = v.x; b.vy = v.y;
+        }
+        if (Math.random()<0.6) addParticles(b.x,b.y,1,'255,200,120',20,0.2,1.5);
+      }
+      b.x += b.vx*dt; b.y += b.vy*dt;
+      b.life -= dt;
+    }
+    for (const b of state.enemyBullets) { b.x += b.vx*dt; b.y += b.vy*dt; b.life -= dt; }
+    state.bullets = state.bullets.filter(b => b.life>0 && b.x>-50 && b.x<WORLD_W+50 && b.y>-50 && b.y<WORLD_H+50);
+    state.enemyBullets = state.enemyBullets.filter(b => b.life>0 && b.x>-50 && b.x<WORLD_W+50 && b.y>-50 && b.y<WORLD_H+50);
+
+    // particles
+    for (const pt of state.particles) {
+      pt.x += pt.vx*dt; pt.y += pt.vy*dt;
+      pt.vx *= (1-dt*1.5); pt.vy *= (1-dt*1.5);
+      pt.life -= dt;
+    }
+    state.particles = state.particles.filter(pt => pt.life>0);
+
+    // powerups
+    for (const pu of state.powerups) { pu.t += dt; pu.x+=pu.vx*dt; pu.y+=pu.vy*dt; }
+    if (p && p.alive) {
+      state.powerups = state.powerups.filter(pu => {
+        if (dist(pu.x,pu.y,p.x,p.y) < 26) {
+          if (pu.type==='hull') p.hull = Math.min(p.maxHull, p.hull+30);
+          if (pu.type==='shield') p.shield = Math.min(p.maxShield, p.shield+40);
+          if (pu.type==='boost') p.boost = p.maxBoost;
+          if (pu.type==='missile') p.missiles = Math.min(p.maxMissiles+2, p.missiles+2);
+          addParticles(pu.x,pu.y,10,'150,255,180',100,0.4,2);
+          return false;
+        }
+        return pu.t < 20;
+      });
+    }
+
+    // shake decay
+    state.shake *= (1 - dt*4);
+    if (state.shake < 0.05) state.shake = 0;
+
+    // --- collisions: bullets vs asteroids ---
+    for (const b of state.bullets) {
+      for (const a of state.asteroids) {
+        if (b.life<=0) continue;
+        if (dist2(b.x,b.y,a.x,a.y) < (a.radius+4)*(a.radius+4)) {
+          a.hp -= (b.missile?3:1);
+          b.life = 0;
+          addParticles(b.x,b.y,4,'200,200,200',80,0.25,1.5);
+          if (a.hp<=0) {
+            explode(a.x,a.y, a.size==='big'?1.3:(a.size==='med'?0.9:0.6));
+            addScore(a.size==='big'?20:(a.size==='med'?35:60));
+            killAsteroid(a);
+            spawnPowerup(a.x,a.y);
+          } else {
+            screenShake(1.5);
+          }
+        }
+      }
+    }
+    // bullets vs AI ships
+    for (const b of state.bullets) {
+      if (b.life<=0) continue;
+      for (const s of state.ships) {
+        if (!s.alive) continue;
+        if (dist2(b.x,b.y,s.x,s.y) < (s.radius+4)*(s.radius+4)) {
+          s.hp -= b.dmg;
+          s.hitFlash = 0.15;
+          b.life = 0;
+          addParticles(b.x,b.y,5,'255,220,150',100,0.25,1.5);
+          if (s.hp <= 0 && s.alive) {
+            s.alive = false;
+            explode(s.x,s.y,1.1);
+            addScore(s.scoreValue);
+            killFeedPush(`You destroyed a ${s.kind} [${s.faction}]`, s.faction==='crimson'?'#ff4d5e':'#ffb340');
+            spawnPowerup(s.x,s.y);
+            if (p) p.killStreak++;
+          }
+        }
+      }
+    }
+    // enemy bullets vs player
+    if (p && p.alive) {
+      for (const b of state.enemyBullets) {
+        if (b.life<=0) continue;
+        if (dist2(b.x,b.y,p.x,p.y) < (p.radius+3)*(p.radius+3)) {
+          b.life = 0;
+          damagePlayer(p, b.dmg);
+        }
+      }
+    }
+    // enemy bullets vs asteroids (so field thins itself out sometimes)
+    for (const b of state.enemyBullets) {
+      if (b.life<=0) continue;
+      for (const a of state.asteroids) {
+        if (dist2(b.x,b.y,a.x,a.y) < (a.radius)*(a.radius)) { b.life=0; }
+      }
+    }
+    // AI ship vs AI ship / player collisions with asteroids (ramming damage)
+    function collideWithAsteroids(entity, isPlayer) {
+      for (const a of state.asteroids) {
+        const rr = a.radius + entity.radius;
+        if (dist2(entity.x,entity.y,a.x,a.y) < rr*rr) {
+          const dx = entity.x-a.x, dy = entity.y-a.y;
+          const d = Math.hypot(dx,dy)||1;
+          const nx = dx/d, ny = dy/d;
+          entity.vx += nx*250; entity.vy += ny*250;
+          entity.x += nx*4; entity.y += ny*4;
+          if (isPlayer) damagePlayer(entity, 8);
+          else { a.hp -= 1; entity.hp -= 10; entity.hitFlash=0.15; }
+        }
+      }
+    }
+    if (p && p.alive) collideWithAsteroids(p, true);
+    for (const s of state.ships) if (s.alive) collideWithAsteroids(s, false);
+
+    // ship vs ship collisions (including player)
+    const allShips = [...(p&&p.alive?[p]:[]), ...state.ships.filter(s=>s.alive)];
+    for (let i=0;i<allShips.length;i++) {
+      for (let j=i+1;j<allShips.length;j++) {
+        const A=allShips[i], B=allShips[j];
+        const rr = A.radius+B.radius;
+        if (dist2(A.x,A.y,B.x,B.y) < rr*rr) {
+          const dx=A.x-B.x, dy=A.y-B.y; const d=Math.hypot(dx,dy)||1;
+          const nx=dx/d, ny=dy/d;
+          A.vx += nx*150; A.vy += ny*150;
+          B.vx -= nx*150; B.vy -= ny*150;
+        }
+      }
+    }
+
+    for (const s of state.ships) { s.hp = Math.min(s.hp, s.maxHp); }
+    // remove dead asteroids
+    state.asteroids = state.asteroids.filter(a => a.hp>0);
+
+    // wave clear check
+    if (state.asteroids.length === 0 && state.ships.length === 0) {
+      state.wave++;
+      callbacks.onWave && callbacks.onWave(state.wave);
+      spawnAsteroidWave(Math.min(3+state.wave,10));
+      spawnWaveShips(state.wave);
+    }
+
+    // radio chatter
+    state.chatterTimer -= dt;
+    if (state.chatterTimer <= 0 && state.ships.length>0) {
+      chatterPush(CHATTER_LINES[randInt(0,CHATTER_LINES.length-1)]);
+      state.chatterTimer = rand(7,14);
+    }
+
+    if (p) callbacks.onHudUpdate && callbacks.onHudUpdate({
+      hull: p.hull, maxHull: p.maxHull, shield: p.shield, maxShield: p.maxShield,
+      boost: p.boost, maxBoost: p.maxBoost, heat: p.weaponHeat, maxHeat: p.maxHeat,
+      missiles: p.missiles, maxMissiles: p.maxMissiles, alive: p.alive,
+      score: state.score, wave: state.wave, combo: state.combo,
+    });
+  }
+
+  function killAsteroid(a) {
+    a.hp = 0;
+    if (a.size !== 'small') {
+      const next = a.size === 'big' ? 'med' : 'small';
+      const n = a.size === 'big' ? randInt(2,3) : randInt(2,2);
+      for (let i=0;i<n;i++) {
+        const ang = rand(0,TAU);
+        spawnAsteroid(a.x + Math.cos(ang)*10, a.y+Math.sin(ang)*10, next,
+          a.vx + Math.cos(ang)*rand(40,90), a.vy + Math.sin(ang)*rand(40,90));
+      }
+    }
+  }
+
+  // ---- render -------------------------------------------------------
+  function worldToScreen(x,y,camX,camY) {
+    // choose the closest torus-wrapped representation relative to camera
+    let dx = x-camX, dy = y-camY;
+    if (dx > WORLD_W/2) dx -= WORLD_W; if (dx < -WORLD_W/2) dx += WORLD_W;
+    if (dy > WORLD_H/2) dy -= WORLD_H; if (dy < -WORLD_H/2) dy += WORLD_H;
+    return { x: W/2+dx, y: H/2+dy };
+  }
+
+  function render() {
+    const p = state.player;
+    const camX = p ? p.x : WORLD_W/2, camY = p ? p.y : WORLD_H/2;
+    const shakeX = (Math.random()-0.5)*state.shake, shakeY = (Math.random()-0.5)*state.shake;
+
+    ctx.fillStyle = '#05060b';
+    ctx.fillRect(0,0,W,H);
+
+    ctx.save();
+    ctx.translate(shakeX, shakeY);
+
+    // stars (parallax, wrapped)
+    for (const st of state.stars) {
+      const parX = camX * (0.3 + st.layer*0.25);
+      const parY = camY * (0.3 + st.layer*0.25);
+      let sx = (st.x - parX) % WORLD_W; if (sx<0) sx+=WORLD_W;
+      let sy = (st.y - parY) % WORLD_H; if (sy<0) sy+=WORLD_H;
+      const screenX = sx - WORLD_W/2 + W/2;
+      const screenY = sy - WORLD_H/2 + H/2;
+      const tw = 0.5 + 0.5*Math.sin(state.t*2 + st.tw);
+      ctx.globalAlpha = (0.3+st.layer*0.25) * (0.6+0.4*tw);
+      ctx.fillStyle = st.layer===2 ? '#bfe9ff' : '#ffffff';
+      ctx.beginPath();
+      ctx.arc(screenX, screenY, st.r, 0, TAU);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // asteroids
+    for (const a of state.asteroids) {
+      const sp = worldToScreen(a.x,a.y,camX,camY);
+      if (sp.x < -80 || sp.x > W+80 || sp.y < -80 || sp.y > H+80) continue;
+      ctx.save();
+      ctx.translate(sp.x, sp.y);
+      ctx.rotate(a.angle);
+      drawPoly(ctx, a.shape);
+      ctx.fillStyle = `hsl(${a.hue}, 25%, 22%)`;
+      ctx.fill();
+      ctx.strokeStyle = `hsl(${a.hue}, 35%, 45%)`;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // powerups
+    for (const pu of state.powerups) {
+      const sp = worldToScreen(pu.x,pu.y,camX,camY);
+      const bob = Math.sin(pu.t*3)*4;
+      const colors = { hull: '#ff6b6b', shield:'#4df3ff', boost:'#ffe14d', missile:'#ff9d4d'};
+      ctx.save();
+      ctx.translate(sp.x, sp.y+bob);
+      ctx.rotate(pu.t*1.5);
+      ctx.strokeStyle = colors[pu.type];
+      ctx.fillStyle = colors[pu.type]+'33';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i=0;i<4;i++) {
+        const a2 = i/4*TAU;
+        const r=10;
+        ctx[i===0?'moveTo':'lineTo'](Math.cos(a2)*r, Math.sin(a2)*r);
+      }
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
+
+    // bullets
+    ctx.lineCap = 'round';
+    for (const b of state.bullets) {
+      const sp = worldToScreen(b.x,b.y,camX,camY);
+      const tail = worldToScreen(b.x-b.vx*0.02,b.y-b.vy*0.02,camX,camY);
+      ctx.strokeStyle = b.missile ? '#ffb340' : '#8ff2ff';
+      ctx.lineWidth = b.missile? 3:2;
+      ctx.beginPath(); ctx.moveTo(tail.x,tail.y); ctx.lineTo(sp.x,sp.y); ctx.stroke();
+    }
+    for (const b of state.enemyBullets) {
+      const sp = worldToScreen(b.x,b.y,camX,camY);
+      const tail = worldToScreen(b.x-b.vx*0.02,b.y-b.vy*0.02,camX,camY);
+      ctx.strokeStyle = '#ff6b6b';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(tail.x,tail.y); ctx.lineTo(sp.x,sp.y); ctx.stroke();
+    }
+
+    // particles
+    for (const pt of state.particles) {
+      const sp = worldToScreen(pt.x,pt.y,camX,camY);
+      ctx.globalAlpha = clamp(pt.life/pt.maxLife,0,1);
+      ctx.fillStyle = `rgba(${pt.color},1)`;
+      ctx.beginPath();
+      ctx.arc(sp.x,sp.y,pt.size,0,TAU);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // AI ships
+    for (const s of state.ships) {
+      const sp = worldToScreen(s.x,s.y,camX,camY);
+      if (sp.x < -60 || sp.x > W+60 || sp.y < -60 || sp.y > H+60) continue;
+      const fake = { x: sp.x, y: sp.y, angle: s.angle };
+      drawShip(ctx, fake, s.design, s.thrusting, false, s.hitFlash, false);
+      // hp bar
+      ctx.save();
+      ctx.translate(sp.x, sp.y-28);
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(-16,0,32,4);
+      ctx.fillStyle = s.faction==='crimson' ? '#ff4d5e' : '#ffb340';
+      ctx.fillRect(-16,0,32*clamp(s.hp/s.maxHp,0,1),4);
+      ctx.restore();
+    }
+
+    // player
+    if (p && p.alive) {
+      const sp = { x: W/2, y: H/2 };
+      const fake = { x: sp.x, y: sp.y, angle: p.angle };
+      drawShip(ctx, fake, p.design, p.thrusting, p.shieldActive, p.hitFlash, p.invuln>0);
+    }
+
+    ctx.restore();
+  }
+
+  // ---- minimap --------------------------------------------------------
+  function renderMinimap(mmCanvas) {
+    const mctx = mmCanvas.getContext('2d');
+    const w = mmCanvas.width, h = mmCanvas.height;
+    mctx.clearRect(0,0,w,h);
+    mctx.save();
+    mctx.beginPath(); mctx.arc(w/2,h/2,w/2-2,0,TAU); mctx.clip();
+    mctx.fillStyle = 'rgba(5,10,20,0.7)';
+    mctx.fillRect(0,0,w,h);
+    const sx = w/WORLD_W, sy = h/WORLD_H;
+    for (const a of state.asteroids) {
+      mctx.fillStyle = 'rgba(180,150,120,0.7)';
+      mctx.beginPath(); mctx.arc(a.x*sx, a.y*sy, 1.6, 0, TAU); mctx.fill();
+    }
+    for (const s of state.ships) {
+      mctx.fillStyle = s.faction==='crimson' ? '#ff4d5e' : '#ffb340';
+      mctx.beginPath(); mctx.arc(s.x*sx, s.y*sy, 2.4, 0, TAU); mctx.fill();
+    }
+    if (state.player && state.player.alive) {
+      mctx.fillStyle = '#4df3ff';
+      mctx.beginPath(); mctx.arc(state.player.x*sx, state.player.y*sy, 3, 0, TAU); mctx.fill();
+    }
+    mctx.restore();
+    mctx.strokeStyle = 'rgba(77,243,255,0.5)';
+    mctx.lineWidth = 2;
+    mctx.beginPath(); mctx.arc(w/2,h/2,w/2-2,0,TAU); mctx.stroke();
+  }
+
+  // ---- game loop --------------------------------------------------------
+  let last = performance.now();
+  let raf = null;
+  function loop(now) {
+    const dt = Math.min((now-last)/1000, 0.1);
+    last = now;
+    if (state.running && !state.over) {
+      update(dt);
+    }
+    render();
+    raf = requestAnimationFrame(loop);
+  }
+
+  function start() {
+    state.player = makePlayer();
+    state.bullets = []; state.enemyBullets = []; state.asteroids = [];
+    state.ships = []; state.particles = []; state.powerups = [];
+    state.score = 0; state.wave = 1; state.combo = 0; state.comboTimer=0;
+    state.over = false; state.running = true;
+    spawnAsteroidWave(5);
+    spawnWaveShips(1);
+  }
+
+  function stop() { state.running = false; state.over = true; }
+
+  raf = requestAnimationFrame(loop);
+
+  return {
+    start, stop,
+    getMinimapRenderer: () => renderMinimap,
+    destroy() {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', resize);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mouseup', onMouseUp);
+    },
+    _state: state,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// React shell: HUD, menus, canvas mounting
+// ---------------------------------------------------------------------------
+function App() {
+  const canvasRef = useRef(null);
+  const minimapRef = useRef(null);
+  const engineRef = useRef(null);
+  const flashRef = useRef(null);
+
+  const [phase, setPhase] = useState('menu'); // 'menu' | 'playing' | 'over'
+  const [hud, setHud] = useState({ hull:100,maxHull:100, shield:100,maxShield:100, boost:100,maxBoost:100, heat:0,maxHeat:100, missiles:3,maxMissiles:3, score:0, wave:1, combo:0 });
+  const [scorePop, setScorePop] = useState(null);
+  const [killFeed, setKillFeed] = useState([]);
+  const [chatter, setChatter] = useState('');
+  const chatterTimeout = useRef(null);
+  const [finalScore, setFinalScore] = useState(0);
+
+  useEffect(() => {
+    const engine = createEngine(canvasRef.current, {
+      onHudUpdate: (h) => setHud(h),
+      onScore: (n, combo) => {
+        setScorePop({ n, combo, id: Math.random() });
+      },
+      onKillFeed: (text, color) => {
+        setKillFeed(f => [...f.slice(-4), { text, color, id: Math.random() }]);
+      },
+      onChatter: (text) => {
+        setChatter(text);
+        clearTimeout(chatterTimeout.current);
+        chatterTimeout.current = setTimeout(() => setChatter(''), 4500);
+      },
+      onWave: (w) => {
+        setKillFeed(f => [...f.slice(-4), { text: `WAVE ${w} INBOUND`, color: '#4df3ff', id: Math.random() }]);
+      },
+      onGameOver: () => {
+        setFinalScore(engine._state.score);
+        setPhase('over');
+        if (flashRef.current) {
+          flashRef.current.style.background = 'rgba(255,40,40,0.4)';
+          setTimeout(()=>{ if(flashRef.current) flashRef.current.style.background='rgba(255,40,40,0)'; }, 300);
+        }
+      },
+    });
+    engineRef.current = engine;
+
+    // minimap render loop
+    let mmRaf;
+    const renderMM = () => {
+      if (minimapRef.current) engine.getMinimapRenderer()(minimapRef.current);
+      mmRaf = requestAnimationFrame(renderMM);
+    };
+    mmRaf = requestAnimationFrame(renderMM);
+
+    return () => { engine.destroy(); cancelAnimationFrame(mmRaf); };
+  }, []);
+
+  const handleStart = useCallback(() => {
+    engineRef.current.start();
+    setKillFeed([]);
+    setPhase('playing');
+  }, []);
+
+  useEffect(() => {
+    if (!scorePop) return;
+    const t = setTimeout(()=>setScorePop(null), 900);
+    return ()=>clearTimeout(t);
+  }, [scorePop]);
+
+  return (
+    <div id="gameWrap">
+      <canvas ref={canvasRef}></canvas>
+      <div ref={flashRef} className="flash"></div>
+      <div id="ui">
+        {phase === 'playing' && (
+          <React.Fragment>
+            <div className="hud-panel" id="topLeft">
+              <div className="bar-row">
+                <div className="bar-label">HULL</div>
+                <div className="bar-track"><div className="bar-fill fill-hull" style={{width: (100*hud.hull/hud.maxHull)+'%'}}></div></div>
+              </div>
+              <div className="bar-row">
+                <div className="bar-label">SHLD</div>
+                <div className="bar-track"><div className="bar-fill fill-shield" style={{width: (100*hud.shield/hud.maxShield)+'%'}}></div></div>
+              </div>
+              <div className="bar-row">
+                <div className="bar-label">BOOST</div>
+                <div className="bar-track"><div className="bar-fill fill-boost" style={{width: (100*hud.boost/hud.maxBoost)+'%'}}></div></div>
+              </div>
+              <div className="bar-row">
+                <div className="bar-label">HEAT</div>
+                <div className="bar-track"><div className="bar-fill fill-weapon" style={{width: (100*hud.heat/hud.maxHeat)+'%', background: hud.heat>80?'linear-gradient(90deg,#ff4d5e,#ff8f4d)':'linear-gradient(90deg,#b06bff,#ff6bf0)'}}></div></div>
+              </div>
+              <div style={{fontSize:'11px', marginTop:'6px', opacity:0.85}}>
+                MISSILES: {Array.from({length: hud.maxMissiles}).map((_,i)=>(
+                  <span key={i} style={{color: i<hud.missiles? '#ffb340':'#333', marginRight:'3px'}}>▲</span>
+                ))}
+              </div>
+            </div>
+
+            <div className="hud-panel" id="topRight">
+              <div id="score">{hud.score.toLocaleString()}</div>
+              <div id="wave">WAVE {hud.wave}</div>
+              <div id="combo">{hud.combo>1 ? `COMBO x${hud.combo}` : ''}</div>
+            </div>
+
+            <div id="killFeed">
+              {killFeed.map(k => (
+                <div key={k.id} style={{color:k.color}}>{k.text}</div>
+              ))}
+            </div>
+
+            {chatter && <div id="radioChatter">{chatter}</div>}
+
+            <canvas ref={minimapRef} id="minimap" width="170" height="170"></canvas>
+
+            <div className="hud-panel" id="bottomLeft">
+              <div><b>WASD/Arrows</b> move &nbsp; <b>Mouse</b> aim &nbsp; <b>Click/Space</b> fire</div>
+              <div><b>Shift</b> boost &nbsp; <b>Q</b> shield &nbsp; <b>E</b> missile</div>
+            </div>
+
+            {scorePop && (
+              <div style={{
+                position:'absolute', top: '50%', left:'50%', transform:'translate(-50%,-50%)',
+                fontSize:'20px', color:'#ffe14d', textShadow:'0 0 10px rgba(255,225,77,0.8)',
+                pointerEvents:'none', animation: 'none'
+              }}>+{scorePop.n}</div>
+            )}
+          </React.Fragment>
+        )}
+
+        {phase === 'menu' && (
+          <div id="centerMsg">
+            <h1>VOIDRUNNER</h1>
+            <div className="sub">
+              Pilot a lone starfighter through a hostile debris field.<br/>
+              Blast asteroids, dodge shrapnel, and dogfight two rival AI factions —<br/>
+              the <span style={{color:'#ff4d5e'}}>Crimson Talon</span> raiders and the <span style={{color:'#ffb340'}}>Ashen Vanguard</span> —<br/>
+              who are just as happy to shoot each other as they are to shoot you.
+            </div>
+            <div className="sub" style={{marginTop:'18px'}}>
+              <span className="kbd">W</span><span className="kbd">A</span><span className="kbd">S</span><span className="kbd">D</span> thrust &nbsp;
+              <span className="kbd">MOUSE</span> aim &amp; fire &nbsp;
+              <span className="kbd">SHIFT</span> boost &nbsp;
+              <span className="kbd">Q</span> shield &nbsp;
+              <span className="kbd">E</span> missile
+            </div>
+            <button id="startBtn" onClick={handleStart}>LAUNCH</button>
+          </div>
+        )}
+
+        {phase === 'over' && (
+          <div id="gameOverPanel">
+            <h1>SHIP LOST</h1>
+            <div className="stat">Final Score: <b style={{color:'#ffb340'}}>{finalScore.toLocaleString()}</b></div>
+            <div className="stat">Wave Reached: <b>{hud.wave}</b></div>
+            <button id="startBtn" style={{pointerEvents:'all', marginTop:'22px'}} onClick={handleStart}>RELAUNCH</button>
+          </div>
+        )}
+      </div>
+      <div id="crosshair"></div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+
+</script>
+<script>
+  // Manually transform the game source with the classic JSX runtime so Babel
+  // emits React.createElement(...) calls instead of an ES module import of
+  // "react/jsx-runtime" (which the automatic runtime defaults to and which
+  // fails when React is loaded as a plain UMD global, not a module).
+  (function () {
+    const src = document.getElementById('game-source').textContent;
+    const { code } = Babel.transform(src, {
+      presets: [['react', { runtime: 'classic' }]],
+    });
+    const script = document.createElement('script');
+    script.textContent = code;
+    document.body.appendChild(script);
+  })();
+</script>
+</body>
+</html>

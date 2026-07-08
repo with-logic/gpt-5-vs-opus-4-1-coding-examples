@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Typing Rain</title>
+<style>
+  :root{
+    --neon-cyan:#5ff7ff;
+    --neon-pink:#ff5fd6;
+    --neon-purple:#a25fff;
+    --neon-yellow:#ffe35f;
+    --neon-green:#5fffb0;
+  }
+  *{ box-sizing:border-box; }
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    overflow:hidden;
+    font-family:'Courier New', monospace;
+    background:#05060d;
+  }
+
+  /* ---------------- BACKGROUND ---------------- */
+  #scene{
+    position:fixed; inset:0;
+    overflow:hidden;
+    background: linear-gradient(to bottom, #0b0e2a 0%, #161b42 35%, #2a1b4a 60%, #4a1f3d 85%, #5c2540 100%);
+  }
+  #stars{
+    position:absolute; inset:0; width:100%; height:60%;
+  }
+  .star{
+    position:absolute; width:2px; height:2px; background:#fff; border-radius:50%;
+    opacity:.7; animation:twinkle 3s infinite ease-in-out;
+  }
+  @keyframes twinkle{ 0%,100%{opacity:.2;} 50%{opacity:1;} }
+
+  #moon{
+    position:absolute; top:6%; right:10%;
+    width:70px; height:70px; border-radius:50%;
+    background:radial-gradient(circle at 35% 35%, #fffbe8, #ffe9a8 60%, #e8c97a 100%);
+    box-shadow:0 0 60px 20px rgba(255,235,180,.35);
+  }
+
+  .skyline{
+    position:absolute; bottom:0; left:0; width:100%;
+    display:flex; align-items:flex-end;
+  }
+  .skyline.back{ filter:brightness(.55) saturate(.8); z-index:1; }
+  .skyline.mid{ filter:brightness(.8); z-index:2; }
+  .skyline.front{ filter:brightness(1); z-index:3; }
+
+  .building{
+    position:relative;
+    background:linear-gradient(180deg,#1a1f3d, #11142a);
+    border-top:2px solid rgba(120,140,255,.25);
+    flex-shrink:0;
+    margin-right:2px;
+  }
+  .building.front{ background:linear-gradient(180deg,#171a36,#0c0e1f); }
+  .window{
+    position:absolute; width:6px; height:8px;
+    background:var(--win-color, #ffd76b);
+    opacity:.85;
+    animation:flicker 4s infinite ease-in-out;
+    box-shadow:0 0 4px rgba(255,215,107,.6);
+  }
+  @keyframes flicker{
+    0%,100%{opacity:.85;}
+    45%{opacity:.85;}
+    50%{opacity:.15;}
+    55%{opacity:.85;}
+  }
+
+  .antenna{
+    position:absolute; top:-22px; left:50%; width:2px; height:22px;
+    background:#445; transform:translateX(-50%);
+  }
+  .antenna::after{
+    content:''; position:absolute; top:-3px; left:-2px; width:6px; height:6px;
+    border-radius:50%; background:#ff5050; box-shadow:0 0 8px #ff5050;
+    animation:blink 1.2s infinite;
+  }
+  @keyframes blink{ 0%,49%{opacity:1;} 50%,100%{opacity:.15;} }
+
+  #groundFog{
+    position:absolute; bottom:0; left:0; width:100%; height:14%;
+    background:linear-gradient(to top, rgba(92,37,64,.85), rgba(92,37,64,0));
+    z-index:4;
+    pointer-events:none;
+  }
+
+  /* rain (ambient particle rain, decorative) */
+  .drizzle{
+    position:absolute; width:1px; height:14px;
+    background:linear-gradient(to bottom, rgba(170,210,255,0), rgba(170,210,255,.5));
+    animation-name:fall-drizzle; animation-timing-function:linear; animation-iteration-count:infinite;
+    z-index:5; pointer-events:none;
+  }
+  @keyframes fall-drizzle{
+    0%{ transform:translateY(-20px); }
+    100%{ transform:translateY(110vh); }
+  }
+
+  /* ---------------- GAME LAYER ---------------- */
+  #gameLayer{
+    position:fixed; inset:0; z-index:10;
+    display:flex; flex-direction:column;
+  }
+
+  #hud{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:14px 26px;
+    background:linear-gradient(to bottom, rgba(5,6,15,.75), rgba(5,6,15,0));
+    color:#dff6ff;
+    gap:10px;
+    flex-wrap:wrap;
+  }
+  .hud-group{ display:flex; gap:18px; flex-wrap:wrap; }
+  .stat{
+    display:flex; flex-direction:column; align-items:flex-start;
+    min-width:78px;
+  }
+  .stat .label{ font-size:10px; letter-spacing:2px; opacity:.6; text-transform:uppercase; }
+  .stat .value{ font-size:22px; font-weight:bold; color:var(--neon-cyan); text-shadow:0 0 10px rgba(95,247,255,.6); }
+  .stat.combo .value{ color:var(--neon-yellow); text-shadow:0 0 10px rgba(255,227,95,.6); }
+  .stat.lives .value{ color:var(--neon-pink); text-shadow:0 0 10px rgba(255,95,214,.6); letter-spacing:4px; }
+  .stat.acc .value{ color:var(--neon-green); text-shadow:0 0 10px rgba(95,255,176,.6); }
+
+  #title-mini{
+    font-size:18px; letter-spacing:6px; color:#fff; text-shadow:0 0 14px var(--neon-cyan), 0 0 30px var(--neon-purple);
+    opacity:.9;
+  }
+
+  #playfield{
+    position:relative; flex:1; overflow:hidden;
+  }
+
+  .word{
+    position:absolute;
+    top:-40px;
+    padding:6px 12px;
+    border-radius:6px;
+    font-size:18px;
+    font-weight:bold;
+    white-space:nowrap;
+    color:#eafcff;
+    background:rgba(15,20,45,.55);
+    border:1px solid rgba(95,247,255,.5);
+    box-shadow:0 0 12px rgba(95,247,255,.35), inset 0 0 8px rgba(95,247,255,.1);
+    backdrop-filter:blur(1px);
+    transition:box-shadow .15s ease, border-color .15s ease;
+    pointer-events:none;
+    z-index:6;
+  }
+  .word .matched{
+    color:var(--neon-yellow);
+    text-shadow:0 0 8px var(--neon-yellow);
+  }
+  .word.active{
+    border-color:var(--neon-yellow);
+    box-shadow:0 0 18px rgba(255,227,95,.65), inset 0 0 10px rgba(255,227,95,.2);
+  }
+  .word.danger{
+    border-color:var(--neon-pink);
+    box-shadow:0 0 18px rgba(255,95,214,.7);
+    animation:pulse-danger .5s infinite;
+  }
+  @keyframes pulse-danger{
+    0%,100%{ transform:scale(1); }
+    50%{ transform:scale(1.06); }
+  }
+  .word.pop{
+    animation:popOut .35s forwards;
+  }
+  @keyframes popOut{
+    0%{ transform:scale(1); opacity:1; }
+    100%{ transform:scale(1.6); opacity:0; }
+  }
+  .word.missed{
+    animation:missShake .4s forwards;
+  }
+  @keyframes missShake{
+    0%{ transform:translateX(0); opacity:1;}
+    30%{ transform:translateX(-6px);}
+    60%{ transform:translateX(6px);}
+    100%{ transform:translateX(0); opacity:0; }
+  }
+
+  #groundLine{
+    position:absolute; bottom:0; left:0; width:100%; height:3px;
+    background:linear-gradient(to right, transparent, var(--neon-pink), transparent);
+    box-shadow:0 0 12px var(--neon-pink);
+    z-index:7;
+  }
+
+  .splash{
+    position:absolute; bottom:-4px; width:30px; height:14px;
+    border:2px solid rgba(255,95,214,.8);
+    border-top:none;
+    border-radius:0 0 50% 50%;
+    opacity:0;
+    z-index:7;
+    animation:splashAnim .5s ease-out forwards;
+  }
+  @keyframes splashAnim{
+    0%{ opacity:.9; transform:scale(.3); }
+    100%{ opacity:0; transform:scale(1.6); }
+  }
+
+  .floatScore{
+    position:absolute;
+    font-weight:bold; font-size:16px;
+    color:var(--neon-green);
+    text-shadow:0 0 8px var(--neon-green);
+    pointer-events:none;
+    z-index:8;
+    animation:floatUp .8s ease-out forwards;
+  }
+  @keyframes floatUp{
+    0%{ transform:translateY(0); opacity:1; }
+    100%{ transform:translateY(-50px); opacity:0; }
+  }
+
+  #inputBar{
+    display:flex; justify-content:center; padding:16px 20px 22px;
+    background:linear-gradient(to top, rgba(5,6,15,.85), rgba(5,6,15,0));
+  }
+  #typeInput{
+    width:min(520px, 90%);
+    font-family:'Courier New', monospace;
+    font-size:20px;
+    padding:12px 18px;
+    border-radius:10px;
+    border:2px solid var(--neon-cyan);
+    background:rgba(8,10,25,.75);
+    color:#fff;
+    outline:none;
+    box-shadow:0 0 18px rgba(95,247,255,.35);
+    text-align:center;
+    letter-spacing:1px;
+  }
+  #typeInput::placeholder{ color:rgba(255,255,255,.35); }
+  #typeInput.shake{ animation:inputShake .3s; border-color:var(--neon-pink); box-shadow:0 0 18px rgba(255,95,214,.55); }
+  @keyframes inputShake{
+    0%,100%{ transform:translateX(0); }
+    25%{ transform:translateX(-8px); }
+    75%{ transform:translateX(8px); }
+  }
+
+  /* ---------------- OVERLAYS ---------------- */
+  .overlay{
+    position:fixed; inset:0; z-index:50;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(3,4,12,.78);
+    backdrop-filter:blur(4px);
+  }
+  .hidden{ display:none !important; }
+
+  .panel{
+    width:min(440px, 90%);
+    background:linear-gradient(160deg, rgba(20,15,45,.95), rgba(10,8,28,.95));
+    border:1px solid rgba(95,247,255,.4);
+    border-radius:18px;
+    padding:36px 32px;
+    text-align:center;
+    box-shadow:0 0 60px rgba(95,247,255,.2), 0 0 120px rgba(162,95,255,.15);
+  }
+
+  .game-title{
+    font-size:42px;
+    margin:0 0 6px;
+    letter-spacing:6px;
+    background:linear-gradient(90deg, var(--neon-cyan), var(--neon-purple), var(--neon-pink));
+    -webkit-background-clip:text;
+    background-clip:text;
+    color:transparent;
+    text-shadow:0 0 40px rgba(162,95,255,.4);
+  }
+  .subtitle{
+    color:rgba(255,255,255,.55);
+    font-size:13px;
+    letter-spacing:3px;
+    margin-bottom:28px;
+    text-transform:uppercase;
+  }
+
+  .rain-icon{
+    font-size:54px; margin-bottom:6px;
+    filter:drop-shadow(0 0 14px var(--neon-cyan));
+  }
+
+  .difficulty-row{
+    display:flex; gap:10px; justify-content:center; margin:18px 0 26px;
+  }
+  .diff-btn{
+    flex:1;
+    padding:10px 6px;
+    border-radius:8px;
+    border:1px solid rgba(255,255,255,.2);
+    background:rgba(255,255,255,.05);
+    color:#fff; cursor:pointer;
+    font-family:inherit; font-size:13px; letter-spacing:1px;
+    transition:.15s;
+  }
+  .diff-btn:hover{ background:rgba(95,247,255,.15); border-color:var(--neon-cyan); }
+  .diff-btn.selected{
+    background:rgba(95,247,255,.25);
+    border-color:var(--neon-cyan);
+    box-shadow:0 0 12px rgba(95,247,255,.4);
+  }
+
+  .btn{
+    display:inline-block;
+    padding:14px 36px;
+    border-radius:30px;
+    border:none;
+    font-family:inherit;
+    font-size:16px;
+    letter-spacing:2px;
+    font-weight:bold;
+    cursor:pointer;
+    color:#08101a;
+    background:linear-gradient(90deg, var(--neon-cyan), var(--neon-green));
+    box-shadow:0 0 24px rgba(95,247,255,.5);
+    transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .btn:hover{ transform:translateY(-2px); box-shadow:0 0 34px rgba(95,247,255,.75); }
+  .btn:active{ transform:translateY(0); }
+  .btn.secondary{
+    background:transparent;
+    color:#dff6ff;
+    border:1px solid rgba(255,255,255,.3);
+    box-shadow:none;
+    margin-top:12px;
+  }
+  .btn.secondary:hover{ border-color:var(--neon-cyan); box-shadow:0 0 14px rgba(95,247,255,.3); }
+
+  .hint{
+    margin-top:18px; font-size:11px; color:rgba(255,255,255,.4); letter-spacing:1px;
+  }
+
+  .results-stats{
+    display:grid; grid-template-columns:1fr 1fr; gap:14px;
+    margin:22px 0 10px;
+    text-align:left;
+  }
+  .results-stats .box{
+    background:rgba(255,255,255,.05);
+    border:1px solid rgba(255,255,255,.1);
+    border-radius:10px;
+    padding:12px 14px;
+  }
+  .results-stats .box .label{ font-size:10px; letter-spacing:2px; opacity:.55; text-transform:uppercase; }
+  .results-stats .box .value{ font-size:24px; font-weight:bold; color:var(--neon-cyan); }
+
+  .new-best{
+    color:var(--neon-yellow); font-size:13px; letter-spacing:2px;
+    margin-top:6px; text-shadow:0 0 10px rgba(255,227,95,.6);
+    animation:twinkle 1.2s infinite;
+  }
+
+  #countdownOverlay .panel{ background:transparent; border:none; box-shadow:none; padding:0; }
+  #countdownNum{
+    font-size:120px; font-weight:bold;
+    color:var(--neon-cyan);
+    text-shadow:0 0 40px var(--neon-cyan), 0 0 80px var(--neon-purple);
+    animation:countPulse .9s ease-out;
+  }
+  @keyframes countPulse{
+    0%{ transform:scale(.4); opacity:0; }
+    30%{ transform:scale(1.15); opacity:1; }
+    100%{ transform:scale(1); opacity:1; }
+  }
+
+  @media (max-width:520px){
+    .game-title{ font-size:30px; }
+    .stat .value{ font-size:17px; }
+    #title-mini{ display:none; }
+    .word{ font-size:15px; padding:5px 9px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="scene">
+  <div id="stars"></div>
+  <div id="moon"></div>
+  <div class="skyline back" id="skylineBack"></div>
+  <div class="skyline mid" id="skylineMid"></div>
+  <div class="skyline front" id="skylineFront"></div>
+  <div id="groundFog"></div>
+</div>
+
+<div id="gameLayer">
+  <div id="hud">
+    <div id="title-mini">TYPING RAIN</div>
+    <div class="hud-group">
+      <div class="stat">
+        <span class="label">Score</span>
+        <span class="value" id="scoreVal">0</span>
+      </div>
+      <div class="stat combo">
+        <span class="label">Combo</span>
+        <span class="value" id="comboVal">x0</span>
+      </div>
+      <div class="stat acc">
+        <span class="label">Accuracy</span>
+        <span class="value" id="accVal">100%</span>
+      </div>
+      <div class="stat">
+        <span class="label">Level</span>
+        <span class="value" id="levelVal">1</span>
+      </div>
+      <div class="stat lives">
+        <span class="label">Lives</span>
+        <span class="value" id="livesVal">❤❤❤</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="playfield">
+    <div id="groundLine"></div>
+  </div>
+
+  <div id="inputBar">
+    <input id="typeInput" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Start typing the falling words…" disabled>
+  </div>
+</div>
+
+<!-- START OVERLAY -->
+<div class="overlay" id="startOverlay">
+  <div class="panel">
+    <div class="rain-icon">🌧️</div>
+    <h1 class="game-title">TYPING RAIN</h1>
+    <div class="subtitle">Type the words before they hit the street</div>
+
+    <div class="difficulty-row" id="difficultyRow">
+      <button class="diff-btn" data-diff="easy">Easy</button>
+      <button class="diff-btn selected" data-diff="normal">Normal</button>
+      <button class="diff-btn" data-diff="hard">Hard</button>
+    </div>
+
+    <button class="btn" id="startBtn">▶ START GAME</button>
+    <div class="hint">Press ENTER to submit a word · ESC to clear input</div>
+  </div>
+</div>
+
+<!-- COUNTDOWN OVERLAY -->
+<div class="overlay hidden" id="countdownOverlay">
+  <div class="panel">
+    <div id="countdownNum">3</div>
+  </div>
+</div>
+
+<!-- GAME OVER OVERLAY -->
+<div class="overlay hidden" id="gameOverOverlay">
+  <div class="panel">
+    <div class="rain-icon">⛈️</div>
+    <h1 class="game-title" style="font-size:32px;">GAME OVER</h1>
+    <div class="subtitle">The city got soaked</div>
+
+    <div class="results-stats">
+      <div class="box">
+        <div class="label">Final Score</div>
+        <div class="value" id="finalScore">0</div>
+      </div>
+      <div class="box">
+        <div class="label">Best Combo</div>
+        <div class="value" id="finalCombo">0</div>
+      </div>
+      <div class="box">
+        <div class="label">Accuracy</div>
+        <div class="value" id="finalAcc">0%</div>
+      </div>
+      <div class="box">
+        <div class="label">Words Typed</div>
+        <div class="value" id="finalWords">0</div>
+      </div>
+    </div>
+    <div class="new-best hidden" id="newBestTag">★ NEW HIGH SCORE ★</div>
+
+    <button class="btn" id="restartBtn">↻ PLAY AGAIN</button>
+    <div class="hint" id="highScoreHint">High score: 0</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ====================== BACKGROUND GENERATION ====================== */
+
+  function rand(min,max){ return Math.random()*(max-min)+min; }
+  function randInt(min,max){ return Math.floor(rand(min,max+1)); }
+
+  // Stars
+  const starsEl = document.getElementById('stars');
+  const starFrag = document.createDocumentFragment();
+  for(let i=0;i<80;i++){
+    const s = document.createElement('div');
+    s.className = 'star';
+    s.style.left = rand(0,100)+'%';
+    s.style.top = rand(0,90)+'%';
+    s.style.animationDelay = rand(0,3)+'s';
+    s.style.width = s.style.height = rand(1,2.4)+'px';
+    starFrag.appendChild(s);
+  }
+  starsEl.appendChild(starFrag);
+
+  function buildSkyline(container, count, minH, maxH, winColor){
+    const frag = document.createDocumentFragment();
+    const vw = 100;
+    const buildingWidth = vw/count;
+    for(let i=0;i<count;i++){
+      const b = document.createElement('div');
+      b.className = 'building' + (container.id==='skylineFront' ? ' front' : '');
+      const h = rand(minH,maxH);
+      b.style.width = buildingWidth+'vw';
+      b.style.height = h+'vh';
+      // windows
+      const cols = randInt(2,5);
+      const rows = randInt(4,9);
+      for(let c=0;c<cols;c++){
+        for(let r=0;r<rows;r++){
+          if(Math.random() < 0.35) continue; // some windows dark
+          const w = document.createElement('div');
+          w.className = 'window';
+          w.style.left = (8 + c*(84/cols)) + '%';
+          w.style.top = (6 + r*(88/rows)) + '%';
+          w.style.setProperty('--win-color', winColor);
+          w.style.animationDelay = rand(0,4)+'s';
+          b.appendChild(w);
+        }
+      }
+      if(Math.random() < 0.15){
+        const ant = document.createElement('div');
+        ant.className = 'antenna';
+        b.appendChild(ant);
+      }
+      frag.appendChild(b);
+    }
+    container.appendChild(frag);
+  }
+
+  buildSkyline(document.getElementById('skylineBack'), 10, 18, 34, '#7d8cff');
+  buildSkyline(document.getElementById('skylineMid'), 12, 26, 48, '#ffb86b');
+  buildSkyline(document.getElementById('skylineFront'), 9, 34, 64, '#ffd76b');
+
+  // Ambient drizzle
+  const scene = document.getElementById('scene');
+  const drizzleFrag = document.createDocumentFragment();
+  for(let i=0;i<46;i++){
+    const d = document.createElement('div');
+    d.className = 'drizzle';
+    d.style.left = rand(0,100)+'%';
+    const dur = rand(0.6,1.6);
+    d.style.animationDuration = dur+'s';
+    d.style.animationDelay = rand(0,2)+'s';
+    drizzleFrag.appendChild(d);
+  }
+  scene.appendChild(drizzleFrag);
+
+  /* ====================== GAME ====================== */
+
+  const WORD_BANK = {
+    easy: ["cat","dog","sun","rain","city","blue","fast","slow","jump","code","type","word","neon","glow","star","moon","rock","wave","fire","cool","key","mind","data","wind","leaf","gold","ship","road","tree","bird"],
+    normal: ["keyboard","raindrop","skyline","monitor","function","variable","umbrella","midnight","thunder","horizon","gravity","velocity","quantum","syntax","cascade","echo","puzzle","journey","whisper","crystal","lantern","voyage","cipher","mirror","shadow","canvas","engine","signal","portal","rhythm"],
+    hard: ["asynchronous","architecture","javascript","photosynthesis","extraordinary","constellation","metropolitan","algorithm","independence","civilization","phenomenon","subscription","unprecedented","collaboration","infrastructure","programmable","neighborhood","disproportionate","entrepreneur","reconfiguration","unbelievable","cryptography","sophisticated","authentication","determination"]
+  };
+
+  const playfield = document.getElementById('playfield');
+  const typeInput = document.getElementById('typeInput');
+  const scoreVal = document.getElementById('scoreVal');
+  const comboVal = document.getElementById('comboVal');
+  const accVal = document.getElementById('accVal');
+  const levelVal = document.getElementById('levelVal');
+  const livesVal = document.getElementById('livesVal');
+
+  const startOverlay = document.getElementById('startOverlay');
+  const countdownOverlay = document.getElementById('countdownOverlay');
+  const countdownNum = document.getElementById('countdownNum');
+  const gameOverOverlay = document.getElementById('gameOverOverlay');
+  const startBtn = document.getElementById('startBtn');
+  const restartBtn = document.getElementById('restartBtn');
+  const difficultyRow = document.getElementById('difficultyRow');
+
+  const HIGH_SCORE_KEY = 'typingRain.highScore';
+
+  let difficulty = 'normal';
+  let words = [];          // active falling word objects
+  let score = 0;
+  let combo = 0;
+  let bestCombo = 0;
+  let lives = 3;
+  let level = 1;
+  let charsTyped = 0;
+  let charsCorrect = 0;
+  let wordsTyped = 0;
+  let spawnTimer = null;
+  let tickTimer = null;
+  let running = false;
+  let elapsedMs = 0;
+  let baseSpeed, spawnInterval, minSpawnInterval;
+  let levelUpScoreStep = 300;
+  let nextLevelScore = levelUpScoreStep;
+
+  const DIFF_SETTINGS = {
+    easy:   { speed: 0.028, spawn: 2200, minSpawn: 1100, lives: 4 },
+    normal: { speed: 0.040, spawn: 1700, minSpawn: 800,  lives: 3 },
+    hard:   { speed: 0.058, spawn: 1200, minSpawn: 550,  lives: 3 }
+  };
+
+  difficultyRow.addEventListener('click', (e)=>{
+    const btn = e.target.closest('.diff-btn');
+    if(!btn) return;
+    difficulty = btn.dataset.diff;
+    [...difficultyRow.children].forEach(c=>c.classList.remove('selected'));
+    btn.classList.add('selected');
+  });
+
+  startBtn.addEventListener('click', ()=>{
+    startOverlay.classList.add('hidden');
+    beginCountdown();
+  });
+
+  restartBtn.addEventListener('click', ()=>{
+    gameOverOverlay.classList.add('hidden');
+    resetState();
+    beginCountdown();
+  });
+
+  function beginCountdown(){
+    countdownOverlay.classList.remove('hidden');
+    let n = 3;
+    countdownNum.textContent = n;
+    countdownNum.style.animation = 'none';
+    void countdownNum.offsetWidth;
+    countdownNum.style.animation = '';
+    const iv = setInterval(()=>{
+      n--;
+      if(n <= 0){
+        clearInterval(iv);
+        countdownOverlay.classList.add('hidden');
+        startGame();
+        return;
+      }
+      countdownNum.textContent = n;
+      countdownNum.style.animation = 'none';
+      void countdownNum.offsetWidth;
+      countdownNum.style.animation = '';
+    }, 800);
+  }
+
+  function resetState(){
+    playfield.querySelectorAll('.word').forEach(w=>w.remove());
+    words = [];
+    score = 0;
+    combo = 0;
+    bestCombo = 0;
+    lives = DIFF_SETTINGS[difficulty].lives;
+    level = 1;
+    charsTyped = 0;
+    charsCorrect = 0;
+    wordsTyped = 0;
+    nextLevelScore = levelUpScoreStep;
+    typeInput.value = '';
+    updateHUD();
+  }
+
+  function startGame(){
+    resetState();
+    const s = DIFF_SETTINGS[difficulty];
+    baseSpeed = s.speed;
+    spawnInterval = s.spawn;
+    minSpawnInterval = s.minSpawn;
+    running = true;
+    typeInput.disabled = false;
+    typeInput.focus();
+    scheduleSpawn();
+    tickTimer = requestAnimationFrame(tick);
+  }
+
+  function scheduleSpawn(){
+    if(!running) return;
+    spawnWord();
+    const jitter = rand(0.8,1.2);
+    const interval = Math.max(minSpawnInterval, spawnInterval * jitter);
+    spawnTimer = setTimeout(scheduleSpawn, interval);
+  }
+
+  function pickWord(){
+    let pool;
+    if(level <= 2) pool = WORD_BANK.easy;
+    else if(level <= 4) pool = WORD_BANK[difficulty === 'hard' ? 'normal' : difficulty];
+    else pool = WORD_BANK[difficulty];
+
+    // mix in some harder words as level rises for spice
+    if(level >= 5 && Math.random() < 0.3) pool = WORD_BANK.hard;
+    else if(level >= 3 && Math.random() < 0.25) pool = WORD_BANK.normal;
+
+    return pool[randInt(0, pool.length-1)];
+  }
+
+  function spawnWord(){
+    if(!running) return;
+    const text = pickWord();
+    const el = document.createElement('div');
+    el.className = 'word';
+    el.innerHTML = renderWordHTML(text, '');
+    playfield.appendChild(el);
+
+    const fieldWidth = playfield.clientWidth;
+    // measure first
+    el.style.left = '0px';
+    const wEl = el.offsetWidth;
+    const maxLeft = Math.max(10, fieldWidth - wEl - 10);
+    el.style.left = rand(10, maxLeft) + 'px';
+
+    const speed = baseSpeed * (1 + (level-1)*0.12) * rand(0.9,1.15); // px per ms equivalent
+    const wordObj = {
+      text,
+      typed: '',
+      el,
+      top: -wEl - 4,
+      speed: speed
+    };
+    el.style.top = wordObj.top + 'px';
+    words.push(wordObj);
+  }
+
+  function renderWordHTML(full, typedPrefix){
+    if(!typedPrefix){
+      return escapeHTML(full);
+    }
+    const matched = full.slice(0, typedPrefix.length);
+    const rest = full.slice(typedPrefix.length);
+    return '<span class="matched">'+escapeHTML(matched)+'</span>'+escapeHTML(rest);
+  }
+
+  function escapeHTML(s){
+    return s.replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+  }
+
+  let lastFrame = null;
+  function tick(ts){
+    if(!running) return;
+    if(lastFrame === null) lastFrame = ts;
+    const dt = ts - lastFrame;
+    lastFrame = ts;
+
+    const fieldHeight = playfield.clientHeight;
+
+    for(let i = words.length-1; i>=0; i--){
+      const w = words[i];
+      w.top += w.speed * dt;
+      w.el.style.top = w.top + 'px';
+
+      const dangerZone = fieldHeight - 130;
+      if(w.top > dangerZone){
+        w.el.classList.add('danger');
+      }
+
+      if(w.top + 30 >= fieldHeight){
+        // hit ground
+        hitGround(w, i);
+      }
+    }
+
+    tickTimer = requestAnimationFrame(tick);
+  }
+
+  function hitGround(wordObj, idx){
+    words.splice(idx,1);
+    wordObj.el.classList.add('missed');
+    spawnSplash(wordObj.el);
+    setTimeout(()=>wordObj.el.remove(), 420);
+
+    combo = 0;
+    lives -= 1;
+    updateHUD();
+
+    if(lives <= 0){
+      endGame();
+    }
+  }
+
+  function spawnSplash(wordEl){
+    const splash = document.createElement('div');
+    splash.className = 'splash';
+    splash.style.left = (wordEl.offsetLeft + wordEl.offsetWidth/2 - 15) + 'px';
+    playfield.appendChild(splash);
+    setTimeout(()=>splash.remove(), 520);
+  }
+
+  function spawnFloatScore(x, y, text){
+    const fs = document.createElement('div');
+    fs.className = 'floatScore';
+    fs.textContent = text;
+    fs.style.left = x+'px';
+    fs.style.top = y+'px';
+    playfield.appendChild(fs);
+    setTimeout(()=>fs.remove(), 820);
+  }
+
+  function findActiveWordIndex(value){
+    if(!value) return -1;
+    // pick the lowest (most urgent) word that starts with value
+    let bestIdx = -1;
+    let bestTop = -Infinity;
+    for(let i=0;i<words.length;i++){
+      if(words[i].text.startsWith(value)){
+        if(words[i].top > bestTop){
+          bestTop = words[i].top;
+          bestIdx = i;
+        }
+      }
+    }
+    return bestIdx;
+  }
+
+  typeInput.addEventListener('input', ()=>{
+    if(!running) return;
+    const value = typeInput.value;
+
+    // clear previous active highlighting
+    words.forEach(w=>w.el.classList.remove('active'));
+
+    if(value.length === 0) return;
+
+    const idx = findActiveWordIndex(value);
+    if(idx >= 0){
+      const w = words[idx];
+      w.el.classList.add('active');
+      w.el.innerHTML = renderWordHTML(w.text, value);
+      if(value === w.text){
+        completeWord(idx);
+      }
+    }
+  });
+
+  typeInput.addEventListener('keydown', (e)=>{
+    if(e.key === 'Escape'){
+      typeInput.value = '';
+      words.forEach(w=>{ w.el.classList.remove('active'); w.el.innerHTML = renderWordHTML(w.text,''); });
+    }
+    if(e.key === 'Enter'){
+      const value = typeInput.value.trim();
+      if(value.length === 0) return;
+      const idx = findActiveWordIndex(value);
+      if(idx >= 0 && words[idx].text === value){
+        completeWord(idx);
+      } else {
+        // wrong submission -> penalty feedback
+        registerMiss(value.length);
+        typeInput.classList.add('shake');
+        setTimeout(()=>typeInput.classList.remove('shake'), 300);
+        typeInput.value = '';
+      }
+    }
+  });
+
+  function registerMiss(len){
+    charsTyped += Math.max(1,len);
+    combo = 0;
+    updateHUD();
+  }
+
+  function completeWord(idx){
+    const w = words[idx];
+    words.splice(idx,1);
+
+    charsTyped += w.text.length;
+    charsCorrect += w.text.length;
+    wordsTyped += 1;
+    combo += 1;
+    bestCombo = Math.max(bestCombo, combo);
+
+    const comboMultiplier = 1 + Math.floor(combo/5)*0.5;
+    const lenBonus = w.text.length * 8;
+    const gained = Math.round(lenBonus * comboMultiplier);
+    score += gained;
+
+    const rect = w.el.getBoundingClientRect();
+    const fieldRect = playfield.getBoundingClientRect();
+    spawnFloatScore(rect.left - fieldRect.left, rect.top - fieldRect.top, '+'+gained + (combo>1 ? ' x'+comboMultiplier.toFixed(1):''));
+
+    w.el.classList.add('pop');
+    setTimeout(()=>w.el.remove(), 350);
+
+    typeInput.value = '';
+
+    if(score >= nextLevelScore){
+      levelUp();
+    }
+
+    updateHUD();
+  }
+
+  function levelUp(){
+    level += 1;
+    nextLevelScore += levelUpScoreStep + (level*40);
+    spawnInterval = Math.max(minSpawnInterval, spawnInterval * 0.9);
+    flashLevelUp();
+  }
+
+  function flashLevelUp(){
+    const tag = document.createElement('div');
+    tag.className = 'floatScore';
+    tag.style.color = 'var(--neon-purple)';
+    tag.style.textShadow = '0 0 12px var(--neon-purple)';
+    tag.style.fontSize = '26px';
+    tag.style.left = (playfield.clientWidth/2 - 60) + 'px';
+    tag.style.top = (playfield.clientHeight/2 - 40) + 'px';
+    tag.textContent = 'LEVEL ' + level + '!';
+    playfield.appendChild(tag);
+    setTimeout(()=>tag.remove(), 820);
+  }
+
+  function updateHUD(){
+    scoreVal.textContent = score;
+    comboVal.textContent = 'x'+combo;
+    levelVal.textContent = level;
+    const acc = charsTyped === 0 ? 100 : Math.round((charsCorrect/charsTyped)*100);
+    accVal.textContent = acc + '%';
+    let hearts = '';
+    for(let i=0;i<lives;i++) hearts += '❤';
+    const maxLives = DIFF_SETTINGS[difficulty].lives;
+    for(let i=lives;i<maxLives;i++) hearts += '🖤';
+    livesVal.textContent = hearts || '💀';
+  }
+
+  function endGame(){
+    running = false;
+    typeInput.disabled = true;
+    typeInput.value = '';
+    clearTimeout(spawnTimer);
+    cancelAnimationFrame(tickTimer);
+    lastFrame = null;
+
+    words.forEach(w=>w.el.remove());
+    words = [];
+
+    const acc = charsTyped === 0 ? 100 : Math.round((charsCorrect/charsTyped)*100);
+
+    document.getElementById('finalScore').textContent = score;
+    document.getElementById('finalCombo').textContent = bestCombo;
+    document.getElementById('finalAcc').textContent = acc + '%';
+    document.getElementById('finalWords').textContent = wordsTyped;
+
+    let high = parseInt(localStorage.getItem(HIGH_SCORE_KEY) || '0', 10);
+    const newBestTag = document.getElementById('newBestTag');
+    if(score > high){
+      high = score;
+      localStorage.setItem(HIGH_SCORE_KEY, String(high));
+      newBestTag.classList.remove('hidden');
+    } else {
+      newBestTag.classList.add('hidden');
+    }
+    document.getElementById('highScoreHint').textContent = 'High score: ' + high;
+
+    gameOverOverlay.classList.remove('hidden');
+  }
+
+  // keep input focused while playing
+  document.addEventListener('click', ()=>{
+    if(running) typeInput.focus();
+  });
+
+  updateHUD();
+
+})();
+</script>
+</body>
+</html>

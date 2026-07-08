@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Falling Fruit Catcher 🍓</title>
+<style>
+  :root {
+    --sky-top: #7ec8f7;
+    --sky-bottom: #c9f0ff;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: 'Comic Sans MS', 'Baloo 2', 'Trebuchet MS', 'Segoe UI', sans-serif;
+    background: linear-gradient(180deg, var(--sky-top) 0%, var(--sky-bottom) 70%, #aee68c 100%);
+    touch-action: none;
+  }
+
+  #game-container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* Clouds */
+  .cloud {
+    position: absolute;
+    background: #fff;
+    border-radius: 50px;
+    opacity: 0.9;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+  }
+  .cloud::before, .cloud::after {
+    content: '';
+    position: absolute;
+    background: #fff;
+    border-radius: 50%;
+  }
+
+  /* Sun */
+  #sun {
+    position: absolute;
+    top: 30px;
+    right: 60px;
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #fff9c4 0%, #ffd54f 60%, #ffb300 100%);
+    box-shadow: 0 0 40px 10px rgba(255, 213, 79, 0.6);
+    animation: sunPulse 4s ease-in-out infinite;
+    z-index: 1;
+  }
+  @keyframes sunPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.08); }
+  }
+
+  /* Ground */
+  #ground {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 70px;
+    background: linear-gradient(180deg, #8bc34a 0%, #689f38 100%);
+    border-top: 6px solid #558b2f;
+    z-index: 2;
+  }
+
+  /* HUD */
+  #hud {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 16px 22px;
+    z-index: 20;
+    pointer-events: none;
+  }
+
+  .hud-pill {
+    background: rgba(255, 255, 255, 0.85);
+    border: 4px solid #ffffff;
+    border-radius: 24px;
+    padding: 10px 22px;
+    font-size: 26px;
+    font-weight: 800;
+    box-shadow: 0 6px 0 rgba(0,0,0,0.1), 0 8px 14px rgba(0,0,0,0.15);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #4a3f35;
+  }
+
+  #score-pill { color: #2e7d32; }
+  #score-value { color: #ff6f00; font-size: 30px; min-width: 28px; text-align: center; }
+
+  #lives-pill .heart {
+    font-size: 26px;
+    transition: transform 0.3s ease;
+    display: inline-block;
+  }
+  .heart.lost {
+    animation: heartPop 0.5s ease forwards;
+  }
+  @keyframes heartPop {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.5); opacity: 0.6; }
+    100% { transform: scale(0); opacity: 0; }
+  }
+
+  #combo-badge {
+    position: absolute;
+    top: 130px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 22px;
+    font-weight: 800;
+    color: #ff3d00;
+    text-shadow: 2px 2px 0 #fff, -1px -1px 0 #fff;
+    opacity: 0;
+    z-index: 20;
+    pointer-events: none;
+  }
+  #combo-badge.show {
+    animation: comboPop 0.7s ease forwards;
+  }
+  @keyframes comboPop {
+    0% { opacity: 0; transform: translateX(-50%) scale(0.5) translateY(10px); }
+    30% { opacity: 1; transform: translateX(-50%) scale(1.2) translateY(0); }
+    70% { opacity: 1; transform: translateX(-50%) scale(1) translateY(0); }
+    100% { opacity: 0; transform: translateX(-50%) scale(1) translateY(-20px); }
+  }
+
+  /* Falling items */
+  .falling-item {
+    position: absolute;
+    will-change: transform, top;
+    user-select: none;
+    filter: drop-shadow(0 6px 6px rgba(0,0,0,0.2));
+    cursor: pointer;
+  }
+
+  .falling-item .emoji {
+    display: block;
+    line-height: 1;
+  }
+
+  .falling-item.bad-item {
+    border-radius: 50%;
+    box-shadow: 0 0 0 4px rgba(255, 23, 68, 0.55), 0 6px 6px rgba(0,0,0,0.2);
+    animation: badPulse 0.6s ease-in-out infinite;
+  }
+  @keyframes badPulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(255, 23, 68, 0.55); }
+    50% { box-shadow: 0 0 0 8px rgba(255, 23, 68, 0.25); }
+  }
+
+  /* Basket */
+  #basket {
+    position: absolute;
+    bottom: 60px;
+    width: 130px;
+    height: 90px;
+    z-index: 15;
+    will-change: transform, left;
+    transition: filter 0.15s ease;
+  }
+
+  #basket svg { width: 100%; height: 100%; overflow: visible; }
+
+  #basket.catch-anim {
+    animation: basketBounce 0.25s ease;
+  }
+  @keyframes basketBounce {
+    0% { transform: scaleY(1) scaleX(1); }
+    40% { transform: scaleY(0.82) scaleX(1.12); }
+    100% { transform: scaleY(1) scaleX(1); }
+  }
+
+  /* Particles */
+  .particle {
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 25;
+  }
+
+  .splat-text {
+    position: absolute;
+    font-size: 28px;
+    font-weight: 900;
+    pointer-events: none;
+    z-index: 26;
+    animation: floatUp 0.9s ease-out forwards;
+  }
+  @keyframes floatUp {
+    0% { opacity: 1; transform: translateY(0) scale(0.6); }
+    30% { transform: translateY(-10px) scale(1.2); }
+    100% { opacity: 0; transform: translateY(-60px) scale(1); }
+  }
+
+  /* Overlays */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(20, 30, 50, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+  }
+  .hidden { display: none !important; }
+
+  .panel {
+    background: linear-gradient(160deg, #fff8e1 0%, #ffe0b2 100%);
+    border: 6px solid #fff;
+    border-radius: 28px;
+    padding: 36px 44px;
+    text-align: center;
+    max-width: 92vw;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+    animation: panelIn 0.4s cubic-bezier(.34,1.56,.64,1);
+  }
+  @keyframes panelIn {
+    0% { transform: scale(0.6); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  .panel h1 {
+    font-size: 38px;
+    margin: 0 0 6px;
+    color: #e65100;
+    text-shadow: 2px 2px 0 #fff;
+  }
+  .panel h2 {
+    font-size: 30px;
+    margin: 0 0 10px;
+    color: #d84315;
+    text-shadow: 2px 2px 0 #fff;
+  }
+  .panel p {
+    font-size: 18px;
+    color: #5d4037;
+    margin: 6px 0;
+  }
+  .big-emoji-row {
+    font-size: 50px;
+    margin: 14px 0;
+  }
+
+  .play-btn {
+    margin-top: 18px;
+    font-size: 26px;
+    font-weight: 800;
+    color: #fff;
+    background: linear-gradient(160deg, #66bb6a, #2e7d32);
+    border: none;
+    border-radius: 50px;
+    padding: 16px 46px;
+    cursor: pointer;
+    box-shadow: 0 6px 0 #1b5e20, 0 10px 18px rgba(0,0,0,0.25);
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+  }
+  .play-btn:active {
+    transform: translateY(6px);
+    box-shadow: 0 0 0 #1b5e20, 0 4px 8px rgba(0,0,0,0.25);
+  }
+
+  #final-score {
+    font-size: 46px;
+    font-weight: 900;
+    color: #ff6f00;
+    margin: 10px 0;
+    text-shadow: 2px 2px 0 #fff;
+  }
+
+  #best-score-line {
+    font-size: 16px;
+    color: #6d4c41;
+  }
+
+  #controls-hint {
+    position: absolute;
+    top: 86px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255,255,255,0.85);
+    border-radius: 20px;
+    padding: 8px 18px;
+    font-size: 14px;
+    color: #4a3f35;
+    font-weight: 700;
+    z-index: 10;
+    pointer-events: none;
+    transition: opacity 0.6s ease;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 600px) {
+    .panel h1 { font-size: 28px; }
+    .panel h2 { font-size: 24px; }
+    .play-btn { font-size: 20px; padding: 14px 36px; }
+    .hud-pill { font-size: 18px; padding: 8px 14px; }
+    #score-value { font-size: 22px; }
+    #basket { width: 100px; height: 70px; }
+  }
+</style>
+</head>
+<body>
+<div id="game-container">
+  <div id="sun"></div>
+  <div id="ground"></div>
+
+  <div id="hud">
+    <div class="hud-pill" id="score-pill">🏆 Score: <span id="score-value">0</span></div>
+    <div class="hud-pill" id="lives-pill">
+      <span class="heart" id="heart-1">❤️</span><span class="heart" id="heart-2">❤️</span><span class="heart" id="heart-3">❤️</span>
+    </div>
+  </div>
+
+  <div id="combo-badge">Combo!</div>
+  <div id="controls-hint">🖱️ Move mouse or use ◀ ▶ arrow keys to catch fruit!</div>
+
+  <div id="basket">
+    <svg viewBox="0 0 130 90">
+      <defs>
+        <linearGradient id="basketGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#d7a86e"/>
+          <stop offset="100%" stop-color="#a9713f"/>
+        </linearGradient>
+      </defs>
+      <path d="M15 35 L25 80 Q65 92 105 80 L115 35 Z" fill="url(#basketGrad)" stroke="#7a4a23" stroke-width="3"/>
+      <path d="M15 35 Q65 50 115 35" fill="none" stroke="#7a4a23" stroke-width="4"/>
+      <path d="M20 45 Q65 58 110 45" fill="none" stroke="#7a4a23" stroke-width="2.5" opacity="0.6"/>
+      <path d="M22 58 Q65 70 108 58" fill="none" stroke="#7a4a23" stroke-width="2.5" opacity="0.6"/>
+      <path d="M30 20 Q65 -5 100 20" fill="none" stroke="#8d5a2b" stroke-width="6" stroke-linecap="round"/>
+    </svg>
+  </div>
+
+  <!-- Start Screen -->
+  <div class="overlay" id="start-screen">
+    <div class="panel">
+      <h1>🍓 Falling Fruit Catcher 🍉</h1>
+      <div class="big-emoji-row">🍎🍌🍇🍒🍍</div>
+      <p>Catch the falling fruit with your basket!</p>
+      <p>Use <b>← →</b> arrow keys or move your <b>mouse</b> / <b>finger</b>.</p>
+      <p>Watch out for 💣 bombs and 🦨 skunks — dodge those!</p>
+      <p>Miss <b>3 fruits</b> (or catch a bad one) and the game ends. Good luck!</p>
+      <button class="play-btn" id="start-btn">▶ Start Game</button>
+    </div>
+  </div>
+
+  <!-- Game Over Screen -->
+  <div class="overlay hidden" id="gameover-screen">
+    <div class="panel">
+      <h2>🧺 Game Over!</h2>
+      <div class="big-emoji-row" id="gameover-emoji">😅</div>
+      <div id="final-score">0</div>
+      <p id="best-score-line">Best Score: 0</p>
+      <button class="play-btn" id="restart-btn">🔄 Play Again</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  "use strict";
+
+  const container = document.getElementById('game-container');
+  const basket = document.getElementById('basket');
+  const scoreValue = document.getElementById('score-value');
+  const startScreen = document.getElementById('start-screen');
+  const gameoverScreen = document.getElementById('gameover-screen');
+  const startBtn = document.getElementById('start-btn');
+  const restartBtn = document.getElementById('restart-btn');
+  const finalScoreEl = document.getElementById('final-score');
+  const bestScoreLine = document.getElementById('best-score-line');
+  const comboBadge = document.getElementById('combo-badge');
+  const controlsHint = document.getElementById('controls-hint');
+  const gameoverEmoji = document.getElementById('gameover-emoji');
+  const hearts = [document.getElementById('heart-1'), document.getElementById('heart-2'), document.getElementById('heart-3')];
+
+  const GOOD_FRUITS = ['🍎', '🍌', '🍇', '🍒', '🍉', '🍓', '🍍', '🍑', '🍊', '🥝'];
+  const BAD_ITEMS = ['💣', '🦨']; // bombs/skunks: catching these costs a life, so kids should dodge them
+  const BAD_CHANCE = 0.12;
+
+  let score = 0;
+  let misses = 0;
+  let lives = 3;
+  let bestScore = 0;
+  try {
+    bestScore = parseInt(localStorage.getItem('fruitCatcherBest') || '0', 10) || 0;
+  } catch (e) { bestScore = 0; }
+
+  let basketX = window.innerWidth / 2;
+  let basketWidth = 130;
+  let targetX = basketX;
+  let usingKeyboard = false;
+  let keysPressed = { left: false, right: false };
+
+  let items = [];
+  let itemIdCounter = 0;
+  let spawnTimer = null;
+  let gameLoopRunning = false;
+  let lastFrameTime = 0;
+  let gameActive = false;
+  let difficultyElapsed = 0;
+  let comboCount = 0;
+  let lastCatchTime = 0;
+
+  function resizeBasketForScreen() {
+    const w = window.innerWidth;
+    basketWidth = w < 600 ? 100 : 130;
+  }
+  resizeBasketForScreen();
+
+  function clampBasketX(x) {
+    const half = basketWidth / 2;
+    return Math.max(half, Math.min(window.innerWidth - half, x));
+  }
+
+  // ---------- Input handling ----------
+  window.addEventListener('mousemove', (e) => {
+    if (!gameActive) return;
+    usingKeyboard = false;
+    targetX = clampBasketX(e.clientX);
+  });
+
+  container.addEventListener('touchmove', (e) => {
+    if (!gameActive) return;
+    e.preventDefault();
+    usingKeyboard = false;
+    const touch = e.touches[0];
+    targetX = clampBasketX(touch.clientX);
+  }, { passive: false });
+
+  container.addEventListener('touchstart', (e) => {
+    if (!gameActive) return;
+    usingKeyboard = false;
+    const touch = e.touches[0];
+    targetX = clampBasketX(touch.clientX);
+  }, { passive: false });
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+      keysPressed.left = true;
+      usingKeyboard = true;
+    }
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+      keysPressed.right = true;
+      usingKeyboard = true;
+    }
+  });
+  window.addEventListener('keyup', (e) => {
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keysPressed.left = false;
+    if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keysPressed.right = false;
+  });
+
+  window.addEventListener('resize', () => {
+    resizeBasketForScreen();
+    basketX = clampBasketX(basketX);
+    targetX = clampBasketX(targetX);
+  });
+
+  // ---------- Clouds ----------
+  function createClouds() {
+    const cloudCount = 5;
+    for (let i = 0; i < cloudCount; i++) {
+      const cloud = document.createElement('div');
+      cloud.className = 'cloud';
+      const w = 80 + Math.random() * 80;
+      const h = w * 0.4;
+      cloud.style.width = w + 'px';
+      cloud.style.height = h + 'px';
+      cloud.style.top = (20 + Math.random() * 200) + 'px';
+      cloud.style.left = (Math.random() * 100) + 'vw';
+      const dur = 30 + Math.random() * 40;
+      cloud.style.animation = `cloudDrift ${dur}s linear infinite`;
+      cloud.style.animationDelay = (-Math.random() * dur) + 's';
+      container.appendChild(cloud);
+    }
+  }
+
+  const styleSheet = document.createElement('style');
+  styleSheet.textContent = `
+    @keyframes cloudDrift {
+      from { transform: translateX(0); }
+      to { transform: translateX(-120vw); }
+    }
+  `;
+  document.head.appendChild(styleSheet);
+  createClouds();
+
+  // ---------- Game setup ----------
+  function resetGame() {
+    score = 0;
+    misses = 0;
+    lives = 3;
+    comboCount = 0;
+    difficultyElapsed = 0;
+    scoreValue.textContent = '0';
+    hearts.forEach(h => { h.textContent = '❤️'; h.classList.remove('lost'); });
+    items.forEach(it => it.el.remove());
+    items = [];
+    basketX = window.innerWidth / 2;
+    targetX = basketX;
+  }
+
+  function startGame() {
+    resetGame();
+    startScreen.classList.add('hidden');
+    gameoverScreen.classList.add('hidden');
+    gameActive = true;
+    lastFrameTime = performance.now();
+    scheduleSpawn();
+    if (!gameLoopRunning) {
+      gameLoopRunning = true;
+      requestAnimationFrame(gameLoop);
+    }
+    setTimeout(() => { controlsHint.style.opacity = '0'; }, 4000);
+  }
+
+  function endGame() {
+    gameActive = false;
+    clearTimeout(spawnTimer);
+    items.forEach(it => it.el.remove());
+    items = [];
+
+    if (score > bestScore) {
+      bestScore = score;
+      try { localStorage.setItem('fruitCatcherBest', String(bestScore)); } catch (e) {}
+    }
+    finalScoreEl.textContent = score;
+    bestScoreLine.textContent = 'Best Score: ' + bestScore;
+    gameoverEmoji.textContent = score >= 20 ? '🤩' : (score >= 10 ? '😄' : '😅');
+    gameoverScreen.classList.remove('hidden');
+  }
+
+  // ---------- Spawning ----------
+  function getSpawnInterval() {
+    const base = 1100;
+    const min = 420;
+    const reduction = difficultyElapsed * 9; // gets faster over time
+    return Math.max(min, base - reduction);
+  }
+
+  function getFallSpeed() {
+    const base = 130; // px/sec
+    const bonus = difficultyElapsed * 1.6;
+    return Math.min(420, base + bonus);
+  }
+
+  function scheduleSpawn() {
+    if (!gameActive) return;
+    spawnItem();
+    spawnTimer = setTimeout(scheduleSpawn, getSpawnInterval());
+  }
+
+  function spawnItem() {
+    const isBad = Math.random() < BAD_CHANCE;
+    const emoji = isBad
+      ? BAD_ITEMS[Math.floor(Math.random() * BAD_ITEMS.length)]
+      : GOOD_FRUITS[Math.floor(Math.random() * GOOD_FRUITS.length)];
+
+    const size = window.innerWidth < 600 ? (54 + Math.random() * 18) : (64 + Math.random() * 24);
+    const el = document.createElement('div');
+    el.className = 'falling-item' + (isBad ? ' bad-item' : '');
+    el.style.width = size + 'px';
+    el.style.height = size + 'px';
+    el.style.fontSize = size + 'px';
+    el.innerHTML = `<span class="emoji">${emoji}</span>`;
+
+    const margin = size;
+    const x = margin / 2 + Math.random() * (window.innerWidth - margin);
+    el.style.left = (x - size / 2) + 'px';
+    el.style.top = '-' + size + 'px';
+
+    const rotateSpeed = (Math.random() - 0.5) * 90;
+
+    container.appendChild(el);
+
+    const item = {
+      id: itemIdCounter++,
+      el,
+      x,
+      y: -size,
+      size,
+      speed: getFallSpeed() * (0.85 + Math.random() * 0.3),
+      isBad,
+      rotation: 0,
+      rotateSpeed,
+      caught: false
+    };
+    items.push(item);
+  }
+
+  // ---------- Particles ----------
+  function spawnParticles(x, y, color) {
+    for (let i = 0; i < 10; i++) {
+      const p = document.createElement('div');
+      p.className = 'particle';
+      const size = 6 + Math.random() * 8;
+      p.style.width = size + 'px';
+      p.style.height = size + 'px';
+      p.style.background = color;
+      p.style.left = x + 'px';
+      p.style.top = y + 'px';
+      container.appendChild(p);
+
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 40 + Math.random() * 60;
+      const dx = Math.cos(angle) * dist;
+      const dy = Math.sin(angle) * dist;
+
+      p.animate([
+        { transform: 'translate(0,0) scale(1)', opacity: 1 },
+        { transform: `translate(${dx}px, ${dy}px) scale(0)`, opacity: 0 }
+      ], { duration: 500 + Math.random() * 300, easing: 'ease-out' }).onfinish = () => p.remove();
+    }
+  }
+
+  function spawnSplatText(x, y, text, color) {
+    const el = document.createElement('div');
+    el.className = 'splat-text';
+    el.textContent = text;
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.color = color;
+    container.appendChild(el);
+    setTimeout(() => el.remove(), 950);
+  }
+
+  function showCombo(n) {
+    comboBadge.textContent = `🔥 Combo x${n}!`;
+    comboBadge.classList.remove('show');
+    void comboBadge.offsetWidth;
+    comboBadge.classList.add('show');
+  }
+
+  // ---------- Collision & lifecycle ----------
+  function handleCatch(item) {
+    item.caught = true;
+    item.el.remove();
+
+    if (item.isBad) {
+      loseLife();
+      spawnSplatText(item.x - 20, item.y, '-1 😬', '#d32f2f');
+      comboCount = 0;
+    } else {
+      const now = performance.now();
+      if (now - lastCatchTime < 1500) {
+        comboCount++;
+      } else {
+        comboCount = 1;
+      }
+      lastCatchTime = now;
+
+      let points = 1;
+      if (comboCount >= 5) points = 3;
+      else if (comboCount >= 3) points = 2;
+
+      score += points;
+      scoreValue.textContent = score;
+      spawnSplatText(item.x - 10, item.y, '+' + points, '#2e7d32');
+      spawnParticles(item.x, item.y, '#ffd54f');
+
+      if (comboCount === 3 || comboCount === 5 || comboCount % 8 === 0) {
+        showCombo(comboCount);
+      }
+
+      basket.classList.remove('catch-anim');
+      void basket.offsetWidth;
+      basket.classList.add('catch-anim');
+    }
+  }
+
+  function loseLife() {
+    lives--;
+    const heartEl = hearts[lives];
+    if (heartEl) heartEl.classList.add('lost');
+    if (lives <= 0) {
+      setTimeout(endGame, 350);
+    }
+  }
+
+  function handleMiss(item) {
+    if (item.isBad) return; // dodging a bad item is fine, no penalty
+    misses++;
+    loseLife();
+  }
+
+  // ---------- Main loop ----------
+  function gameLoop(now) {
+    if (!gameActive) {
+      gameLoopRunning = false;
+      return;
+    }
+    const dt = Math.min(0.05, (now - lastFrameTime) / 1000);
+    lastFrameTime = now;
+    difficultyElapsed += dt;
+
+    // Smooth basket movement
+    const keyboardSpeed = 620; // px/sec
+    if (usingKeyboard) {
+      if (keysPressed.left) targetX -= keyboardSpeed * dt;
+      if (keysPressed.right) targetX += keyboardSpeed * dt;
+      targetX = clampBasketX(targetX);
+      basketX = targetX;
+    } else {
+      basketX += (targetX - basketX) * Math.min(1, dt * 12);
+    }
+    basket.style.left = (basketX - basketWidth / 2) + 'px';
+
+    const basketTop = window.innerHeight - 60 - 78;
+    const basketCatchY = basketTop + 18;
+    const basketHalfWidth = basketWidth / 2 - 10;
+
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i];
+      item.y += item.speed * dt;
+      item.rotation += item.rotateSpeed * dt;
+      item.el.style.top = item.y + 'px';
+      item.el.style.transform = `rotate(${item.rotation}deg)`;
+
+      const itemCenterY = item.y + item.size / 2;
+      const itemCenterX = item.x;
+
+      if (
+        !item.caught &&
+        itemCenterY >= basketCatchY - 14 &&
+        itemCenterY <= basketCatchY + 34 &&
+        Math.abs(itemCenterX - basketX) <= basketHalfWidth
+      ) {
+        handleCatch(item);
+        items.splice(i, 1);
+        continue;
+      }
+
+      if (item.y > window.innerHeight) {
+        if (!item.caught) handleMiss(item);
+        item.el.remove();
+        items.splice(i, 1);
+      }
+    }
+
+    requestAnimationFrame(gameLoop);
+  }
+
+  startBtn.addEventListener('click', startGame);
+  restartBtn.addEventListener('click', startGame);
+
+  basket.style.left = (basketX - basketWidth / 2) + 'px';
+})();
+</script>
+</body>
+</html>

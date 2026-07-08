@@ -143,6 +143,14 @@ export const models: ModelConfig[] = [
     provider: "anthropic",
   },
   {
+    id: "sonnet-5",
+    name: "Sonnet 5",
+    cli: "claude",
+    model: "claude-sonnet-5",
+    color: "bg-indigo-600",
+    provider: "anthropic",
+  },
+  {
     id: "haiku-4.5",
     name: "Haiku 4.5",
     cli: "claude",
@@ -211,7 +219,7 @@ export const models: ModelConfig[] = [
 ];
 
 /** Default models shown in the side-by-side comparison view */
-export const DEFAULT_COMPARISON_MODELS = ["opus-4.8", "kimi-k2.7-coding", "glm-5.2"] as const;
+export const DEFAULT_COMPARISON_MODELS = ["opus-4.8", "sonnet-5", "glm-5.2"] as const;
 
 /** Helper to get a model by ID */
 export function getModel(id: string): ModelConfig | undefined {
