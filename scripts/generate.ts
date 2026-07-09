@@ -199,6 +199,41 @@ function buildAnthropicProxyEnv(model: ModelConfig): Record<string, string> | un
   return result;
 }
 
+/** OpenRouter's Anthropic-compatible endpoint. The Claude Code CLI appends
+ *  `/v1/messages`, so the base URL stops at `/api`. */
+const OPENROUTER_BASE_URL = "https://openrouter.ai/api";
+
+/** Build env overrides for models served via OpenRouter's Anthropic-compatible
+ *  endpoint. Unlike buildAnthropicProxyEnv (which reads base URL + auth from
+ *  .env), this pins the OpenRouter base URL and reads the key from
+ *  OPENROUTER_API_KEY (process.env preferred, .env as a fallback) so the same
+ *  .env can stay pointed at Fireworks for the anthropic-proxy models.
+ */
+function buildOpenRouterEnv(model: ModelConfig): Record<string, string> {
+  const fileEnv = readEnvFile();
+  const apiKey =
+    process.env.OPENROUTER_API_KEY || fileEnv?.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      `OPENROUTER_API_KEY is not set (checked process.env and .env). ` +
+        `Required to run OpenRouter model "${model.id}".`
+    );
+  }
+
+  // Pin every Claude Code model slot to this model id so internal sub-model
+  // calls (sonnet/haiku/opus defaults) also route through OpenRouter.
+  const modelId = model.model;
+  return {
+    ANTHROPIC_BASE_URL: OPENROUTER_BASE_URL,
+    ANTHROPIC_API_KEY: apiKey,
+    ANTHROPIC_MODEL: modelId,
+    ANTHROPIC_SMALL_FAST_MODEL: modelId,
+    ANTHROPIC_DEFAULT_SONNET_MODEL: modelId,
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: modelId,
+    ANTHROPIC_DEFAULT_OPUS_MODEL: modelId,
+  };
+}
+
 function buildCliCommand(
   model: ModelConfig,
   prompt: string
@@ -249,10 +284,13 @@ function buildCliCommand(
         ],
       };
 
-    case "anthropic-proxy": {
-      // Models served by an Anthropic-compatible proxy (Fireworks, OpenRouter,
-      // self-hosted gateway, etc). Uses the Claude Code CLI with ANTHROPIC_*
-      // env vars pointed at the proxy's base URL so multiple proxied models
+    case "anthropic-proxy":
+    case "openrouter": {
+      // Models served through an Anthropic-compatible endpoint, driven by the
+      // Claude Code CLI with ANTHROPIC_* env vars pointed at the provider's
+      // base URL. "anthropic-proxy" reads base URL + auth from .env (Fireworks);
+      // "openrouter" pins OpenRouter's base URL and reads OPENROUTER_API_KEY.
+      // Both share the same --bare CLI invocation so multiple proxied models
       // can coexist without manually editing .env between runs.
       const proxyArgs = [
         "-p",
@@ -270,7 +308,10 @@ function buildCliCommand(
       return {
         cmd: "claude",
         args: proxyArgs,
-        env: buildAnthropicProxyEnv(model),
+        env:
+          model.cli === "openrouter"
+            ? buildOpenRouterEnv(model)
+            : buildAnthropicProxyEnv(model),
       };
     }
 

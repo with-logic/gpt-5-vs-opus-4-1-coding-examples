@@ -1,4 +1,4 @@
-export type Provider = "openai" | "anthropic" | "google" | "moonshot" | "z-ai" | "qwen";
+export type Provider = "openai" | "anthropic" | "google" | "moonshot" | "z-ai" | "qwen" | "xai";
 
 export interface ProviderConfig {
   id: Provider;
@@ -12,6 +12,7 @@ export const providers: ProviderConfig[] = [
   { id: "moonshot", name: "Moonshot AI" },
   { id: "z-ai", name: "Z.ai" },
   { id: "qwen", name: "Qwen" },
+  { id: "xai", name: "xAI" },
 ];
 
 export interface ModelConfig {
@@ -21,8 +22,8 @@ export interface ModelConfig {
   /** Display name shown in the UI (e.g., "GPT-5.1") */
   name: string;
 
-  /** CLI tool to invoke (e.g., "claude", "codex", "gemini", "anthropic-proxy") */
-  cli: "claude" | "codex" | "gemini" | "anthropic-proxy";
+  /** CLI tool to invoke (e.g., "claude", "codex", "gemini", "anthropic-proxy", "openrouter") */
+  cli: "claude" | "codex" | "gemini" | "anthropic-proxy" | "openrouter";
 
   /** Model identifier passed to the CLI tool (e.g., "opus", "gpt-5.1", "gemini-3") */
   model: string;
@@ -215,6 +216,14 @@ export const models: ModelConfig[] = [
     color: "bg-green-600",
     provider: "z-ai",
     supportsVision: false,
+  },
+  {
+    id: "grok-4.5",
+    name: "Grok 4.5",
+    cli: "openrouter",
+    model: "x-ai/grok-4.5",
+    color: "bg-zinc-700",
+    provider: "xai",
   },
 ];
 

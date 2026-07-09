@@ -1,0 +1,1203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ocean Wave Simulation</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&family=JetBrains+Mono:wght@300;400&display=swap');
+
+    :root {
+      --glass-bg: rgba(12, 24, 40, 0.55);
+      --glass-border: rgba(180, 210, 240, 0.18);
+      --accent: #7ec8e3;
+      --accent-soft: rgba(126, 200, 227, 0.35);
+      --text: #e8f1f8;
+      --text-muted: rgba(200, 220, 235, 0.65);
+      --track: rgba(255, 255, 255, 0.08);
+      --shadow: 0 20px 60px rgba(0, 10, 30, 0.45);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #020810;
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #canvas-container {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Ambient vignette overlay */
+    .vignette {
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      background: radial-gradient(
+        ellipse 80% 70% at 50% 45%,
+        transparent 40%,
+        rgba(2, 8, 16, 0.55) 100%
+      );
+    }
+
+    /* Top title bar */
+    .header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 10;
+      padding: 28px 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      pointer-events: none;
+    }
+
+    .brand {
+      pointer-events: auto;
+    }
+
+    .brand h1 {
+      font-weight: 300;
+      font-size: 1.65rem;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      color: var(--text);
+      text-shadow: 0 2px 20px rgba(0, 0, 0, 0.5);
+    }
+
+    .brand p {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-top: 6px;
+      font-weight: 300;
+    }
+
+    .stats {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      text-align: right;
+      font-weight: 300;
+      line-height: 1.7;
+      text-shadow: 0 1px 8px rgba(0, 0, 0, 0.4);
+    }
+
+    /* Control panel */
+    .panel {
+      position: fixed;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      width: min(720px, calc(100vw - 32px));
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 20px;
+      backdrop-filter: blur(28px) saturate(1.4);
+      -webkit-backdrop-filter: blur(28px) saturate(1.4);
+      box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      padding: 22px 28px 24px;
+      transition: opacity 0.4s ease, transform 0.4s ease;
+    }
+
+    .panel.hidden {
+      opacity: 0;
+      transform: translateX(-50%) translateY(20px);
+      pointer-events: none;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+
+    .panel-title {
+      font-size: 0.95rem;
+      font-weight: 400;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+
+    .panel-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.62rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      padding: 7px 14px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      font-weight: 300;
+    }
+
+    .btn:hover {
+      color: var(--text);
+      background: rgba(126, 200, 227, 0.12);
+      border-color: var(--accent-soft);
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 20px 28px;
+    }
+
+    .control {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .control-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .control-name {
+      font-size: 0.85rem;
+      font-weight: 400;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+
+    .control-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--accent);
+      letter-spacing: 0.04em;
+      font-weight: 400;
+      min-width: 48px;
+      text-align: right;
+    }
+
+    .control-desc {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.58rem;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-top: -4px;
+    }
+
+    /* Custom range slider */
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--track);
+      outline: none;
+      cursor: pointer;
+      position: relative;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #a8d8ea, #5ba3c0);
+      border: 2px solid rgba(255, 255, 255, 0.5);
+      box-shadow: 0 0 12px rgba(126, 200, 227, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3);
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.15);
+      box-shadow: 0 0 18px rgba(126, 200, 227, 0.7), 0 2px 8px rgba(0, 0, 0, 0.35);
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #a8d8ea, #5ba3c0);
+      border: 2px solid rgba(255, 255, 255, 0.5);
+      box-shadow: 0 0 12px rgba(126, 200, 227, 0.5);
+      cursor: pointer;
+    }
+
+    input[type="range"]::-moz-range-track {
+      height: 4px;
+      border-radius: 2px;
+      background: var(--track);
+    }
+
+    /* Presets row */
+    .presets {
+      display: flex;
+      gap: 8px;
+      margin-top: 18px;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      flex-wrap: wrap;
+    }
+
+    .preset {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.6rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      background: transparent;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 20px;
+      padding: 6px 14px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      font-weight: 300;
+    }
+
+    .preset:hover,
+    .preset.active {
+      color: var(--text);
+      border-color: var(--accent-soft);
+      background: rgba(126, 200, 227, 0.1);
+    }
+
+    /* Toggle panel button */
+    .toggle-panel {
+      position: fixed;
+      bottom: 32px;
+      right: 32px;
+      z-index: 11;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      color: var(--text);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: var(--shadow);
+      transition: all 0.3s ease;
+      font-size: 1.1rem;
+    }
+
+    .toggle-panel:hover {
+      background: rgba(126, 200, 227, 0.15);
+      border-color: var(--accent-soft);
+    }
+
+    /* Loading screen */
+    #loader {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: #020810;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.8s ease, visibility 0.8s ease;
+    }
+
+    #loader.fade-out {
+      opacity: 0;
+      visibility: hidden;
+    }
+
+    .loader-wave {
+      width: 80px;
+      height: 40px;
+      position: relative;
+      margin-bottom: 28px;
+    }
+
+    .loader-wave span {
+      position: absolute;
+      bottom: 0;
+      width: 6px;
+      height: 100%;
+      background: linear-gradient(to top, #2a6d8a, #7ec8e3);
+      border-radius: 3px;
+      animation: wave-bar 1.2s ease-in-out infinite;
+    }
+
+    .loader-wave span:nth-child(1) { left: 0; animation-delay: 0s; }
+    .loader-wave span:nth-child(2) { left: 12px; animation-delay: 0.1s; }
+    .loader-wave span:nth-child(3) { left: 24px; animation-delay: 0.2s; }
+    .loader-wave span:nth-child(4) { left: 36px; animation-delay: 0.3s; }
+    .loader-wave span:nth-child(5) { left: 48px; animation-delay: 0.4s; }
+    .loader-wave span:nth-child(6) { left: 60px; animation-delay: 0.5s; }
+    .loader-wave span:nth-child(7) { left: 72px; animation-delay: 0.6s; }
+
+    @keyframes wave-bar {
+      0%, 100% { transform: scaleY(0.3); opacity: 0.5; }
+      50% { transform: scaleY(1); opacity: 1; }
+    }
+
+    .loader-text {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      font-weight: 300;
+    }
+
+    /* Time of day selector */
+    .tod-group {
+      display: flex;
+      gap: 6px;
+      margin-top: 2px;
+    }
+
+    .tod-btn {
+      flex: 1;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.58rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 8px 4px;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      font-weight: 300;
+      text-align: center;
+    }
+
+    .tod-btn:hover {
+      color: var(--text);
+      border-color: var(--accent-soft);
+    }
+
+    .tod-btn.active {
+      color: var(--text);
+      background: rgba(126, 200, 227, 0.15);
+      border-color: var(--accent-soft);
+      box-shadow: 0 0 12px rgba(126, 200, 227, 0.15);
+    }
+
+    /* Responsive */
+    @media (max-width: 680px) {
+      .header {
+        padding: 18px 20px;
+      }
+
+      .brand h1 {
+        font-size: 1.15rem;
+        letter-spacing: 0.18em;
+      }
+
+      .stats {
+        display: none;
+      }
+
+      .panel {
+        bottom: 16px;
+        padding: 16px 18px 18px;
+        border-radius: 16px;
+      }
+
+      .controls {
+        grid-template-columns: 1fr;
+        gap: 14px;
+      }
+
+      .toggle-panel {
+        bottom: 16px;
+        right: 16px;
+      }
+    }
+
+    /* Subtle grain for filmic look */
+    .grain {
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+      z-index: 2;
+      opacity: 0.03;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      background-size: 180px;
+    }
+  </style>
+</head>
+<body>
+  <div id="loader">
+    <div class="loader-wave">
+      <span></span><span></span><span></span><span></span>
+      <span></span><span></span><span></span>
+    </div>
+    <div class="loader-text">Gathering the tides</div>
+  </div>
+
+  <div id="canvas-container"></div>
+  <div class="vignette"></div>
+  <div class="grain"></div>
+
+  <header class="header">
+    <div class="brand">
+      <h1>Ocean</h1>
+      <p>Wave Simulation</p>
+    </div>
+    <div class="stats">
+      <div id="stat-fps">60 FPS</div>
+      <div id="stat-time">00:00</div>
+    </div>
+  </header>
+
+  <div class="panel" id="panel">
+    <div class="panel-header">
+      <span class="panel-title">Atmosphere</span>
+      <div class="panel-actions">
+        <button class="btn" id="btn-reset" type="button">Reset</button>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="control">
+        <div class="control-label">
+          <span class="control-name">Wind Speed</span>
+          <span class="control-value" id="val-wind">12 kn</span>
+        </div>
+        <input type="range" id="wind" min="0" max="40" step="0.5" value="12" />
+        <span class="control-desc">Surface chop & foam</span>
+      </div>
+
+      <div class="control">
+        <div class="control-label">
+          <span class="control-name">Wave Height</span>
+          <span class="control-value" id="val-height">1.8 m</span>
+        </div>
+        <input type="range" id="height" min="0.1" max="6" step="0.1" value="1.8" />
+        <span class="control-desc">Swell amplitude</span>
+      </div>
+
+      <div class="control">
+        <div class="control-label">
+          <span class="control-name">Lighting</span>
+          <span class="control-value" id="val-light">Day</span>
+        </div>
+        <div class="tod-group">
+          <button class="tod-btn" data-tod="dawn" type="button">Dawn</button>
+          <button class="tod-btn active" data-tod="day" type="button">Day</button>
+          <button class="tod-btn" data-tod="dusk" type="button">Dusk</button>
+          <button class="tod-btn" data-tod="night" type="button">Night</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="presets">
+      <button class="preset active" data-preset="calm" type="button">Calm Waters</button>
+      <button class="preset" data-preset="breeze" type="button">Sea Breeze</button>
+      <button class="preset" data-preset="storm" type="button">Gathering Storm</button>
+      <button class="preset" data-preset="tempest" type="button">Tempest</button>
+      <button class="preset" data-preset="mirror" type="button">Mirror Sea</button>
+    </div>
+  </div>
+
+  <button class="toggle-panel" id="toggle" type="button" title="Toggle controls" aria-label="Toggle controls">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>
+    </svg>
+  </button>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { Sky } from 'three/addons/objects/Sky.js';
+
+    // ─── State ───────────────────────────────────────────────
+    const state = {
+      windSpeed: 12,       // knots
+      waveHeight: 1.8,     // meters (scale)
+      timeOfDay: 'day',
+      panelVisible: true,
+      time: 0,
+    };
+
+    const presets = {
+      calm:    { wind: 6,  height: 0.8 },
+      breeze:  { wind: 14, height: 1.8 },
+      storm:   { wind: 26, height: 3.5 },
+      tempest: { wind: 38, height: 5.5 },
+      mirror:  { wind: 0.5, height: 0.15 },
+    };
+
+    // Lighting profiles
+    const lightProfiles = {
+      dawn: {
+        turbidity: 8,
+        rayleigh: 2.5,
+        mieCoefficient: 0.008,
+        mieDirectionalG: 0.8,
+        elevation: 6,
+        azimuth: -70,
+        sunIntensity: 0.85,
+        ambientIntensity: 0.35,
+        waterSun: new THREE.Color(1.0, 0.72, 0.5),
+        waterColor: new THREE.Color(0.02, 0.12, 0.22),
+        fogColor: new THREE.Color(0.55, 0.45, 0.38),
+        exposure: 0.55,
+      },
+      day: {
+        turbidity: 3.5,
+        rayleigh: 1.8,
+        mieCoefficient: 0.004,
+        mieDirectionalG: 0.75,
+        elevation: 42,
+        azimuth: 180,
+        sunIntensity: 1.2,
+        ambientIntensity: 0.45,
+        waterSun: new THREE.Color(1.0, 0.95, 0.85),
+        waterColor: new THREE.Color(0.0, 0.15, 0.3),
+        fogColor: new THREE.Color(0.55, 0.7, 0.85),
+        exposure: 0.48,
+      },
+      dusk: {
+        turbidity: 10,
+        rayleigh: 3,
+        mieCoefficient: 0.01,
+        mieDirectionalG: 0.85,
+        elevation: 5,
+        azimuth: 70,
+        sunIntensity: 0.75,
+        ambientIntensity: 0.3,
+        waterSun: new THREE.Color(1.0, 0.55, 0.3),
+        waterColor: new THREE.Color(0.04, 0.08, 0.18),
+        fogColor: new THREE.Color(0.5, 0.32, 0.28),
+        exposure: 0.52,
+      },
+      night: {
+        turbidity: 2,
+        rayleigh: 0.4,
+        mieCoefficient: 0.002,
+        mieDirectionalG: 0.7,
+        elevation: -8,
+        azimuth: 180,
+        sunIntensity: 0.08,
+        ambientIntensity: 0.12,
+        waterSun: new THREE.Color(0.4, 0.5, 0.7),
+        waterColor: new THREE.Color(0.0, 0.02, 0.06),
+        fogColor: new THREE.Color(0.02, 0.03, 0.06),
+        exposure: 0.35,
+      },
+    };
+
+    // ─── Renderer ────────────────────────────────────────────
+    const container = document.getElementById('canvas-container');
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      powerPreference: 'high-performance',
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.48;
+    container.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x8cb4d9, 0.0018);
+
+    const camera = new THREE.PerspectiveCamera(
+      55,
+      window.innerWidth / window.innerHeight,
+      0.5,
+      8000
+    );
+    camera.position.set(0, 18, 55);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.minDistance = 12;
+    controls.maxDistance = 220;
+    controls.maxPolarAngle = Math.PI * 0.48;
+    controls.minPolarAngle = 0.08;
+    controls.target.set(0, 0, 0);
+    controls.autoRotate = false;
+    controls.autoRotateSpeed = 0.15;
+
+    // ─── Sky ─────────────────────────────────────────────────
+    const sky = new Sky();
+    sky.scale.setScalar(10000);
+    scene.add(sky);
+
+    const sun = new THREE.Vector3();
+    const skyUniforms = sky.material.uniforms;
+
+    // Directional light (sun)
+    const sunLight = new THREE.DirectionalLight(0xfff4e0, 1.2);
+    sunLight.position.set(50, 80, 30);
+    scene.add(sunLight);
+
+    // Ambient fill
+    const ambient = new THREE.HemisphereLight(0x87b5d9, 0x0a2540, 0.45);
+    scene.add(ambient);
+
+    // Soft fill apex light
+    const fillLight = new THREE.DirectionalLight(0x4a7aaa, 0.25);
+    fillLight.position.set(-30, 20, -40);
+    scene.add(fillLight);
+
+    function applyLighting(tod, instant = false) {
+      const p = lightProfiles[tod];
+      state.timeOfDay = tod;
+
+      skyUniforms['turbidity'].value = p.turbidity;
+      skyUniforms['rayleigh'].value = p.rayleigh;
+      skyUniforms['mieCoefficient'].value = p.mieCoefficient;
+      skyUniforms['mieDirectionalG'].value = p.mieDirectionalG;
+
+      const phi = THREE.MathUtils.degToRad(90 - p.elevation);
+      const theta = THREE.MathUtils.degToRad(p.azimuth);
+      sun.setFromSphericalCoords(1, phi, theta);
+      skyUniforms['sunPosition'].value.copy(sun);
+
+      sunLight.position.copy(sun).multiplyScalar(200);
+      sunLight.intensity = p.sunIntensity;
+      ambient.intensity = p.ambientIntensity;
+
+      scene.fog.color.copy(p.fogColor);
+      renderer.toneMappingExposure = p.exposure;
+
+      // Water material updates
+      if (waterMaterial) {
+        waterMaterial.uniforms.sunDirection.value.copy(sun).normalize();
+        waterMaterial.uniforms.sunColor.value.copy(p.waterSun);
+        waterMaterial.uniforms.waterColor.value.copy(p.waterColor);
+      }
+
+      // CRUD bars
+      document.querySelectorAll('.tod-btn').forEach((b) => {
+        b.classList.toggle('active', b.dataset.tod === tod);
+      });
+      document.getElementById('val-light').textContent =
+        tod.charAt(0).toUpperCase() + tod.slice(1);
+    }
+
+    // ─── Water Shaders (Gerstner Waves) ──────────────────────
+    const waterVertexShader = /* glsl */ `
+      #define NUM_WAVES 6
+
+      uniform float uTime;
+      uniform float uWaveHeight;
+      uniform float uWindSpeed;
+
+      varying vec3 vWorldPos;
+      varying vec3 vNormal;
+      varying vec3 vViewDir;
+      varying float vPeak;
+      varying float vFoam;
+
+      // Each wave: dir.xy, steepness, wavelength
+      // Pre-defined wave set; amplitude scaled by uniforms
+      struct Wave {
+        vec2 direction;
+        float steepness;
+        float wavelength;
+        float speed;
+      };
+
+      vec3 gerstnerWave(Wave w, vec3 pos, float ampScale, inout vec3 tangent, inout vec3 binormal) {
+        float k = 6.28318530718 / w.wavelength;
+        float c = sqrt(9.8 / k) * w.speed;
+        vec2 d = normalize(w.direction);
+        float f = k * (dot(d, pos.xz) - c * uTime);
+        float a = w.steepness / k * ampScale;
+
+        float sinF = sin(f);
+        float cosF = cos(f);
+
+        // Tangent (dP/dx)
+        tangent += vec3(
+          -d.x * d.x * w.steepness * sinF * ampScale,
+          d.x * w.steepness * cosF * ampScale,
+          -d.x * d.y * w.steepness * sinF * ampScale
+        );
+
+        // Binormal (dP/dz)
+        binormal += vec3(
+          -d.x * d.y * w.steepness * sinF * ampScale,
+          d.y * w.steepness * cosF * ampScale,
+          -d.y * d.y * w.steepness * sinF * ampScale
+        );
+
+        return vec3(d.x * a * cosF, a * sinF, d.y * a * cosF);
+      }
+
+      void main() {
+        // Base position
+        vec3 pos = position;
+
+        // Amplitude drives from wave height, wind adds chop
+        float ampScale = uWaveHeight * 0.55;
+        float windChop = 0.4 + uWindSpeed * 0.018;
+
+        // Wave definitions — mix of long swell + shorter wind waves
+        Wave waves[NUM_WAVES];
+        // Long swells
+        waves[0] = Wave(vec2(1.0, 0.25),  0.22 * windChop, 32.0, 1.0);
+        waves[1] = Wave(vec2(0.7, 0.7),   0.18 * windChop, 24.0, 1.05);
+        waves[2] = Wave(vec2(0.3, 1.0),   0.15 * windChop, 18.0, 0.95);
+        // Medium wind waves
+        waves[3] = Wave(vec2(0.9, -0.4),  0.12 * windChop, 10.0, 1.1);
+        waves[4] = Wave(vec2(-0.5, 0.85), 0.10 * windChop, 7.5,  1.15);
+        // Short chop
+        waves[5] = Wave(vec2(0.6, 0.5),   0.08 * windChop * (0.5 + uWindSpeed * 0.03), 4.0, 1.25);
+
+        vec3 tangent = vec3(1.0, 0.0, 0.0);
+        vec3 binormal = vec3(0.0, 0.0, 1.0);
+        vec3 displacement = vec3(0.0);
+        float peakAccum = 0.0;
+
+        for (int i = 0; i < NUM_WAVES; i++) {
+          vec3 d = gerstnerWave(waves[i], pos, ampScale, tangent, binormal);
+          displacement += d;
+          // Track vertical elevation for foam
+          peakAccum += d.y;
+        }
+
+        pos += displacement;
+
+        vec3 normal = normalize(cross(binormal, tangent));
+
+        // Foam: peaks under high wind
+        float foam = smoothstep(ampScale * 0.55, ampScale * 1.1, peakAccum);
+        foam *= smoothstep(8.0, 22.0, uWindSpeed);
+
+        vec4 worldPos4 = modelMatrix * vec4(pos, 1.0);
+        vWorldPos = worldPos4.xyz;
+        vNormal = normalize(mat3(modelMatrix) * normal);
+        vViewDir = normalize(cameraPosition - vWorldPos);
+        vPeak = peakAccum;
+        vFoam = foam;
+
+        gl_Position = projectionMatrix * viewMatrix * worldPos4;
+      }
+    `;
+
+    const waterFragmentShader = /* glsl */ `
+      uniform vec3 sunDirection;
+      uniform vec3 sunColor;
+      uniform vec3 waterColor;
+      uniform float uTime;
+      uniform float uWindSpeed;
+      uniform float uWaveHeight;
+
+      varying vec3 vWorldPos;
+      varying vec3 vNormal;
+      varying vec3 vViewDir;
+      varying float vPeak;
+      varying float vFoam;
+
+      // Simplex-ish noise hash
+      float hash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+      }
+
+      float noise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        float a = hash(i);
+        float b = hash(i + vec2(1.0, 0.0));
+        float c = hash(i + vec2(0.0, 1.0));
+        float d = hash(i + vec2(1.0, 1.0));
+        return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+      }
+
+      float fbm(vec2 p) {
+        float v = 0.0;
+        float a = 0.5;
+        for (int i = 0; i < 4; i++) {
+          v += a * noise(p);
+          p *= 2.1;
+          a *= 0.5;
+        }
+        return v;
+      }
+
+      void main() {
+        vec3 N = normalize(vNormal);
+        vec3 V = normalize(vViewDir);
+        vec3 L = normalize(sunDirection);
+
+        // Fresnel
+        float fresnel = pow(1.0 - max(dot(N, V), 0.0), 4.0);
+        fresnel = mix(0.02, 1.0, fresnel);
+
+        // Specular (Blinn-Phong with high power for water shine)
+        vec3 H = normalize(L + V);
+        float spec1 = pow(max(dot(N, H), 0.0), 256.0) * 1.4;
+        float spec2 = pow(max(dot(N, H), 0.0), 48.0) * 0.35;
+        float NdotL = max(dot(N, L), 0.0);
+
+        // Deep / shallow colour gradient by height & view
+        vec3 deepColor = waterColor * 0.55;
+        vec3 shallowColor = waterColor + vec3(0.04, 0.12, 0.1);
+        float depthMix = smoothstep(-uWaveHeight * 0.4, uWaveHeight * 0.6, vPeak);
+        vec3 baseColor = mix(deepColor, shallowColor, depthMix * 0.6 + 0.2);
+
+        // Sky-reflection tint (simple gradient approximation)
+        float skyGrad = max(N.y, 0.0);
+        vec3 skyReflectColor = mix(
+          sunColor * 0.35,
+          mix(vec3(0.15, 0.28, 0.48), vec3(0.55, 0.72, 0.9), skyGrad),
+          0.7
+        );
+        // Night falls darker
+        skyReflectColor *= (0.35 + NdotL * 0.85);
+
+        // SSS-ish subsurface on wave faces facing camera but away from sun-edge
+        float sss = pow(max(dot(V, -N + L * 0.3), 0.0), 2.0) * 0.25;
+        vec3 sssColor = vec3(0.0, 0.25, 0.22) * sss * (0.5 + uWaveHeight * 0.15);
+
+        // Diffuse
+        vec3 diffuse = baseColor * (0.15 + NdotL * 0.55);
+
+        // Combine
+        vec3 color = diffuse;
+        color += skyReflectColor * fresnel * 0.85;
+        color += sunColor * (spec1 + spec2) * fresnel;
+        color += sssColor;
+
+        // Foam & whitecaps
+        float windFactor = smoothstep(6.0, 28.0, uWindSpeed);
+        vec2 foamUV = vWorldPos.xz * 0.18 + uTime * 0.04;
+        float foamNoise = fbm(foamUV);
+        float foamMask = vFoam * (0.55 + foamNoise * 0.55);
+        foamMask *= windFactor;
+        // Extra foam just under peaks
+        foamMask += smoothstep(uWaveHeight * 0.7, uWaveHeight * 1.15, vPeak)
+                    * windFactor * 0.4 * foamNoise;
+
+        vec3 foamColor = mix(vec3(0.85, 0.9, 0.95), sunColor * 0.9, 0.15);
+        color = mix(color, foamColor, clamp(foamMask, 0.0, 0.85));
+
+        // Gentle horizontal haze distance falloff (matches fog)
+        float dist = length(vWorldPos - cameraPosition);
+        float fogFactor = 1.0 - exp(-0.0018 * dist);
+        // applied by scene fog as well, light touch here for water-specific tint
+
+        // Soft horizon desaturation near edges of large steep angles
+        color = mix(color, color * vec3(0.9, 0.95, 1.0), fresnel * 0.2);
+
+        // Clamp night glow
+        color = max(color, vec3(0.0));
+
+        gl_FragColor = vec4(color, 1.0);
+      }
+    `;
+
+    // Water mesh — high resolution plane
+    const waterGeo = new THREE.PlaneGeometry(600, 600, 256, 256);
+    waterGeo.rotateX(-Math.PI / 2);
+
+    const waterMaterial = new THREE.ShaderMaterial({
+      vertexShader: waterVertexShader,
+      fragmentShader: waterFragmentShader,
+      uniforms: {
+        uTime: { value: 0 },
+        uWaveHeight: { value: state.waveHeight },
+        uWindSpeed: { value: state.windSpeed },
+        sunDirection: { value: new THREE.Vector3(0.4, 0.8, 0.3).normalize() },
+        sunColor: { value: new THREE.Color(1.0, 0.95, 0.85) },
+        waterColor: { value: new THREE.Color(0.0, 0.15, 0.3) },
+      },
+    });
+
+    const water = new THREE.Mesh(waterGeo, waterMaterial);
+    water.position.y = 0;
+    scene.add(water);
+
+    // Dual larger low-res water ring for infinite feeling
+    const farGeo = new THREE.PlaneGeometry(2400, 2400, 64, 64);
+    farGeo.rotateX(-Math.PI / 2);
+    const farMat = waterMaterial.clone();
+    // Share same uniforms by reference where it matters
+    farMat.uniforms = {
+      uTime: waterMaterial.uniforms.uTime,
+      uWaveHeight: waterMaterial.uniforms.uWaveHeight,
+      uWindSpeed: waterMaterial.uniforms.uWindSpeed,
+      sunDirection: waterMaterial.uniforms.sunDirection,
+      sunColor: waterMaterial.uniforms.sunColor,
+      waterColor: waterMaterial.uniforms.waterColor,
+    };
+    const farWater = new THREE.Mesh(farGeo, farMat);
+    farWater.position.y = -0.15;
+    scene.add(farWater);
+
+    // ─── Horizon / distant atmosphere plane ──────────────────
+    // Subtle particle sparkles on water for sun glints
+    const glintCount = 400;
+    const glintGeo = new THREE.BufferGeometry();
+    const glintPos = new Float32Array(glintCount * 3);
+    const glintPhase = new Float32Array(glintCount);
+    for (let i = 0; i < glintCount; i++) {
+      const r = Math.random() * 180 + 5;
+      const a = Math.random() * Math.PI * 2;
+      glintPos[i * 3] = Math.cos(a) * r;
+      glintPos[i * 3 + 1] = 0.5;
+      glintPos[i * 3 + 2] = Math.sin(a) * r;
+      glintPhase[i] = Math.random() * Math.PI * 2;
+    }
+    glintGeo.setAttribute('position', new THREE.BufferAttribute(glintPos, 3));
+    glintGeo.setAttribute('aPhase', new THREE.BufferAttribute(glintPhase, 1));
+
+    const glintMat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      uniforms: {
+        uTime: { value: 0 },
+        uOpacity: { value: 0.45 },
+        uColor: { value: new THREE.Color(1.0, 0.95, 0.8) },
+      },
+      vertexShader: /* glsl */ `
+        attribute float aPhase;
+        uniform float uTime;
+        varying float vAlpha;
+        void main() {
+          vec3 p = position;
+          // gentle bob
+          p.y = 0.3 + sin(uTime * 1.4 + aPhase) * 0.4;
+          vAlpha = 0.3 + 0.7 * pow(0.5 + 0.5 * sin(uTime * 3.0 + aPhase * 2.0), 4.0);
+          vec4 mv = modelViewMatrix * vec4(p, 1.0);
+          gl_PointSize = (18.0 + 40.0 * vAlpha) * (1.0 / -mv.z);
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform vec3 uColor;
+        uniform float uOpacity;
+        varying float vAlpha;
+        void main() {
+          vec2 uv = gl_PointCoord - 0.5;
+          float d = length(uv);
+          if (d > 0.5) discard;
+          float soft = smoothstep(0.5, 0.0, d);
+          gl_FragColor = vec4(uColor, soft * vAlpha * uOpacity);
+        }
+      `,
+    });
+
+    const glints = new THREE.Points(glintGeo, glintMat);
+    scene.add(glints);
+
+    // ─── Apply initial lighting ──────────────────────────────
+    applyLighting('day', true);
+
+    // ─── UI Wiring ───────────────────────────────────────────
+    const windSlider = document.getElementById('wind');
+    const heightSlider = document.getElementById('height');
+    const valWind = document.getElementById('val-wind');
+    const valHeight = document.getElementById('val-height');
+
+    function syncSliders() {
+      windSlider.value = state.windSpeed;
+      heightSlider.value = state.waveHeight;
+      valWind.textContent = state.windSpeed.toFixed(1) + ' kn';
+      valHeight.textContent = state.waveHeight.toFixed(1) + ' m';
+      waterMaterial.uniforms.uWindSpeed.value = state.windSpeed;
+      waterMaterial.uniforms.uWaveHeight.value = state.waveHeight;
+    }
+
+    windSlider.addEventListener('input', (e) => {
+      state.windSpeed = parseFloat(e.target.value);
+      valWind.textContent = state.windSpeed.toFixed(1) + ' kn';
+      waterMaterial.uniforms.uWindSpeed.value = state.windSpeed;
+      // Deactivate presets when manually tweaking
+      document.querySelectorAll('.preset').forEach((p) => p.classList.remove('active'));
+    });
+
+    heightSlider.addEventListener('input', (e) => {
+      state.waveHeight = parseFloat(e.target.value);
+      valHeight.textContent = state.waveHeight.toFixed(1) + ' m';
+      waterMaterial.uniforms.uWaveHeight.value = state.waveHeight;
+      document.querySelectorAll('.preset').forEach((p) => p.classList.remove('active'));
+    });
+
+    document.querySelectorAll('.tod-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        applyLighting(btn.dataset.tod);
+        // Glints visibility based on lighting
+        const vis = btn.dataset.tod === 'night' ? 0.08 : btn.dataset.tod === 'day' ? 0.55 : 0.35;
+        glintMat.uniforms.uOpacity.value = vis;
+        if (btn.dataset.tod === 'dawn' || btn.dataset.tod === 'dusk') {
+          glintMat.uniforms.uColor.value.set(1.0, 0.7, 0.45);
+        } else if (btn.dataset.tod === 'night') {
+          glintMat.uniforms.uColor.value.set(0.5, 0.65, 0.9);
+        } else {
+          glintMat.uniforms.uColor.value.set(1.0, 0.95, 0.8);
+        }
+      });
+    });
+
+    document.querySelectorAll('.preset').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const p = presets[btn.dataset.preset];
+        if (!p) return;
+        state.windSpeed = p.wind;
+        state.waveHeight = p.height;
+        syncSliders();
+        document.querySelectorAll('.preset').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+    });
+
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      state.windSpeed = 12;
+      state.waveHeight = 1.8;
+      syncSliders();
+      applyLighting('day');
+      glintMat.uniforms.uOpacity.value = 0.55;
+      glintMat.uniforms.uColor.value.set(1.0, 0.95, 0.8);
+      document.querySelectorAll('.preset').forEach((b) => {
+        b.classList.toggle('active', b.dataset.preset === 'breeze');
+      });
+      camera.position.set(0, 18, 55);
+      controls.target.set(0, 0, 0);
+    });
+
+    const panel = document.getElementById('panel');
+    document.getElementById('toggle').addEventListener('click', () => {
+      state.panelVisible = !state.panelVisible;
+      panel.classList.toggle('hidden', !state.panelVisible);
+    });
+
+    // Keyboard
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'h' || e.key === 'H') {
+        state.panelVisible = !state.panelVisible;
+        panel.classList.toggle('hidden', !state.panelVisible);
+      }
+    });
+
+    // ─── Resize ──────────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // ─── FPS / clock ─────────────────────────────────────────
+    const fpsEl = document.getElementById('stat-fps');
+    const timeEl = document.getElementById('stat-time');
+    let frames = 0;
+    let lastFps = performance.now();
+    const startTime = performance.now();
+
+    // ─── Animation ───────────────────────────────────────────
+    const clock = new THREE.Clock();
+
+    // Smooth camera drift for peaceful feel when idle
+    let lastInteraction = performance.now();
+    renderer.domElement.addEventListener('pointerdown', () => {
+      lastInteraction = performance.now();
+      controls.autoRotate = false;
+    });
+    renderer.domElement.addEventListener('wheel', () => {
+      lastInteraction = performance.now();
+      controls.autoRotate = false;
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = clock.getDelta();
+      state.time += dt;
+
+      waterMaterial.uniforms.uTime.value = state.time;
+      glintMat.uniforms.uTime.value = state.time;
+
+      // Soft auto-rotate after idle
+      if (performance.now() - lastInteraction > 8000) {
+        controls.autoRotate = true;
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+
+      // FPS
+      frames++;
+      const now = performance.now();
+      if (now - lastFps >= 1000) {
+        fpsEl.textContent = frames + ' FPS';
+        frames = 0;
+        lastFps = now;
+      }
+
+      // Elapsed
+      const elapsed = Math.floor((now - startTime) / 1000);
+      const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
+      const ss = String(elapsed % 60).padStart(2, '0');
+      timeEl.textContent = mm + ':' + ss;
+    }
+
+    // Kick off after short load so GPU warms up
+    applyLighting('day', true);
+    syncSliders();
+
+    // Hide loader
+    requestAnimationFrame(() => {
+      // Render a few frames to compile shaders
+      for (let i = 0; i < 3; i++) {
+        waterMaterial.uniforms.uTime.value = i * 0.016;
+        renderer.render(scene, camera);
+      }
+      setTimeout(() => {
+        document.getElementById('loader').classList.add('fade-out');
+        animate();
+      }, 400);
+    });
+  </script>
+</body>
+</html>
