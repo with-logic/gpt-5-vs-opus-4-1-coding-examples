@@ -228,7 +228,7 @@ export const models: ModelConfig[] = [
 ];
 
 /** Default models shown in the side-by-side comparison view */
-export const DEFAULT_COMPARISON_MODELS = ["opus-4.8", "sonnet-5", "glm-5.2"] as const;
+export const DEFAULT_COMPARISON_MODELS = ["opus-4.8", "sonnet-5", "grok-4.5"] as const;
 
 /** Helper to get a model by ID */
 export function getModel(id: string): ModelConfig | undefined {
