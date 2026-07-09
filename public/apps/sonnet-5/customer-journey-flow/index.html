@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Customer Journey Flow</title>
+<style>
+  :root{
+    --bg: #0f1117;
+    --canvas-bg: #f5f6fa;
+    --panel-bg: #ffffff;
+    --ink: #1c1f26;
+    --muted: #6b7280;
+    --line: #e2e4ea;
+    --accent: #5b6cff;
+    --accent-2: #00c2a8;
+    --shadow: 0 1px 2px rgba(20,20,40,.04), 0 8px 24px rgba(20,20,40,.06);
+    --grid-dot: #d7d9e3;
+    --radius: 14px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    overflow: hidden;
+    color: var(--ink);
+  }
+
+  #app {
+    width: 100vw; height: 100vh;
+    display: flex; flex-direction: column;
+  }
+
+  /* ---------- Top bar ---------- */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 18px;
+    background: linear-gradient(180deg, #14161f, #0f1117);
+    border-bottom: 1px solid #21232e;
+    z-index: 50;
+    flex-shrink: 0;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    color: #f3f4f8;
+  }
+  .brand .logo {
+    width: 30px; height: 30px; border-radius: 9px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    box-shadow: 0 2px 10px rgba(91,108,255,.45);
+  }
+  .brand h1 {
+    font-size: 15px; font-weight: 600; margin: 0;
+    letter-spacing: .2px;
+  }
+  .brand .sub {
+    font-size: 11px; color: #8b8fa3; margin-top: 1px;
+  }
+
+  .toolbar {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #1b1d27;
+    border: 1px solid #2a2d3a;
+    color: #e7e8f0;
+    padding: 8px 12px;
+    border-radius: 9px;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background .15s, border-color .15s, transform .05s;
+    user-select: none;
+  }
+  .btn:hover { background: #23262f; border-color: #393d4d; }
+  .btn:active { transform: translateY(1px); }
+  .btn.primary {
+    background: linear-gradient(135deg, var(--accent), #4757e0);
+    border-color: transparent;
+    color: white;
+  }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn.danger:hover { background: #3a2230; border-color: #59313f; color: #ffb4c4; }
+  .btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+  .divider-v {
+    width: 1px; height: 22px; background: #2a2d3a; margin: 0 4px;
+  }
+
+  /* ---------- Canvas area ---------- */
+  #canvas-wrap {
+    position: relative;
+    flex: 1;
+    overflow: hidden;
+    background:
+      radial-gradient(circle, var(--grid-dot) 1.2px, transparent 1.2px) 0 0 / 26px 26px,
+      var(--canvas-bg);
+  }
+
+  #canvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 4000px; height: 2400px;
+    transform-origin: 0 0;
+  }
+
+  svg#connector-layer {
+    position: absolute;
+    top: 0; left: 0;
+    width: 4000px; height: 2400px;
+    pointer-events: none;
+    overflow: visible;
+  }
+
+  .conn-path {
+    fill: none;
+    stroke: #9aa0b4;
+    stroke-width: 2.5;
+    pointer-events: stroke;
+    cursor: pointer;
+    transition: stroke .15s, stroke-width .15s;
+  }
+  .conn-path:hover { stroke: #ff6b81; stroke-width: 3.2; }
+  .conn-path.selected { stroke: var(--accent); stroke-width: 3.2; }
+  .conn-hit {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 18;
+    pointer-events: stroke;
+    cursor: pointer;
+  }
+  .conn-label {
+    pointer-events: none;
+    font-size: 11px;
+    font-weight: 600;
+    fill: #6b7280;
+  }
+  .conn-label-bg {
+    fill: var(--canvas-bg);
+    pointer-events: none;
+  }
+
+  .temp-link {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 2.5;
+    stroke-dasharray: 6 5;
+    pointer-events: none;
+  }
+
+  /* ---------- Stage node ---------- */
+  .stage {
+    position: absolute;
+    width: 220px;
+    min-height: 118px;
+    background: var(--panel-bg);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    border: 2px solid transparent;
+    padding: 0;
+    cursor: grab;
+    user-select: none;
+    transition: box-shadow .15s, border-color .15s, transform .06s;
+    z-index: 5;
+  }
+  .stage:active { cursor: grabbing; }
+  .stage.dragging {
+    box-shadow: 0 14px 34px rgba(20,20,40,.22);
+    z-index: 30;
+    transform: scale(1.015);
+  }
+  .stage.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px rgba(91,108,255,.14), var(--shadow);
+  }
+  .stage.link-source {
+    border-color: var(--accent-2);
+    box-shadow: 0 0 0 4px rgba(0,194,168,.18), var(--shadow);
+  }
+
+  .stage-accent {
+    height: 6px;
+    border-radius: var(--radius) var(--radius) 0 0;
+  }
+
+  .stage-body { padding: 12px 14px 14px; }
+
+  .stage-top {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+
+  .stage-icon-badge {
+    width: 26px; height: 26px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  .stage-tag {
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 3px 7px;
+    border-radius: 6px;
+    background: #f0f1f6;
+  }
+
+  .stage-title {
+    font-size: 14.5px;
+    font-weight: 700;
+    margin: 2px 0 4px;
+    line-height: 1.25;
+    outline: none;
+    border-radius: 5px;
+    padding: 1px 3px;
+    margin-left: -3px;
+  }
+  .stage-title:focus {
+    background: #f0f2ff;
+    box-shadow: 0 0 0 2px rgba(91,108,255,.3);
+  }
+
+  .stage-desc {
+    font-size: 11.5px;
+    color: var(--muted);
+    line-height: 1.4;
+    outline: none;
+    border-radius: 5px;
+    padding: 1px 3px;
+    margin-left: -3px;
+    min-height: 16px;
+  }
+  .stage-desc:focus {
+    background: #f7f8fb;
+    box-shadow: 0 0 0 2px rgba(91,108,255,.18);
+  }
+  .stage-desc:empty::before {
+    content: attr(data-placeholder);
+    color: #c2c4cf;
+  }
+
+  .stage-controls {
+    position: absolute;
+    top: -12px; right: -12px;
+    display: flex; gap: 4px;
+    opacity: 0;
+    transform: translateY(-3px);
+    transition: opacity .12s, transform .12s;
+  }
+  .stage:hover .stage-controls, .stage.selected .stage-controls { opacity: 1; transform: translateY(0); }
+
+  .mini-btn {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: white;
+    border: 1px solid var(--line);
+    box-shadow: 0 2px 6px rgba(20,20,40,.12);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    color: #4b4f5c;
+    transition: background .12s, color .12s, transform .1s;
+  }
+  .mini-btn:hover { transform: scale(1.08); }
+  .mini-btn.delete:hover { background: #ff5c72; color: white; border-color: #ff5c72; }
+  .mini-btn.duplicate:hover { background: var(--accent); color: white; border-color: var(--accent); }
+  .mini-btn svg { width: 13px; height: 13px; }
+
+  .port {
+    position: absolute;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: white;
+    border: 2.5px solid var(--accent-2);
+    right: -9px; top: 50%;
+    transform: translateY(-50%);
+    cursor: crosshair;
+    z-index: 10;
+    transition: transform .12s, box-shadow .12s;
+  }
+  .port:hover { transform: translateY(-50%) scale(1.25); box-shadow: 0 0 0 6px rgba(0,194,168,.18); }
+  .port.left { left: -9px; right: auto; }
+  .port::after {
+    content: '';
+    position: absolute; inset: 3px;
+    border-radius: 50%;
+    background: var(--accent-2);
+  }
+
+  .port-in {
+    position: absolute;
+    width: 10px; height: 10px;
+    left: -6px; top: 50%;
+    transform: translateY(-50%);
+    border-radius: 50%;
+    background: #c9cbd6;
+    z-index: 9;
+    pointer-events: none;
+  }
+
+  /* ---------- Empty state ---------- */
+  .empty-hint {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%,-50%);
+    text-align: center;
+    color: #9aa0b4;
+    font-size: 13px;
+    pointer-events: none;
+  }
+
+  /* ---------- Floating left palette ---------- */
+  #palette {
+    position: absolute;
+    top: 16px; left: 16px;
+    background: rgba(255,255,255,.92);
+    backdrop-filter: blur(10px);
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    padding: 10px;
+    z-index: 40;
+    display: flex; flex-direction: column; gap: 6px;
+    width: 168px;
+    border: 1px solid #ecedf3;
+  }
+  #palette .pal-title {
+    font-size: 10px; font-weight: 700; letter-spacing: .6px;
+    text-transform: uppercase; color: #9aa0b4;
+    padding: 2px 6px 4px;
+  }
+  .pal-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 8px;
+    border-radius: 9px;
+    cursor: grab;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #2a2d3a;
+    transition: background .12s;
+  }
+  .pal-item:hover { background: #f1f2f8; }
+  .pal-item .dot {
+    width: 18px; height: 18px;
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px;
+    flex-shrink: 0;
+  }
+
+  /* ---------- Zoom controls ---------- */
+  #zoom-controls {
+    position: absolute;
+    bottom: 16px; right: 16px;
+    background: rgba(255,255,255,.92);
+    backdrop-filter: blur(10px);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    display: flex; align-items: center;
+    padding: 4px;
+    z-index: 40;
+    gap: 2px;
+    border: 1px solid #ecedf3;
+  }
+  #zoom-controls button {
+    width: 30px; height: 30px;
+    border: none; background: transparent;
+    border-radius: 8px;
+    cursor: pointer;
+    color: #3d4051;
+    font-size: 15px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #zoom-controls button:hover { background: #f0f1f6; }
+  #zoom-level {
+    font-size: 11.5px; font-weight: 600; color: #6b7280;
+    width: 44px; text-align: center;
+  }
+
+  /* ---------- Help toast ---------- */
+  #hint-toast {
+    position: absolute;
+    bottom: 16px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(20,22,30,.88);
+    color: #e7e8f0;
+    font-size: 12px;
+    padding: 9px 16px;
+    border-radius: 20px;
+    z-index: 40;
+    box-shadow: 0 8px 24px rgba(0,0,0,.25);
+    pointer-events: none;
+    transition: opacity .3s;
+  }
+
+  /* ---------- Stat strip ---------- */
+  #stat-strip {
+    position: absolute;
+    top: 16px; right: 16px;
+    display: flex; gap: 8px;
+    z-index: 40;
+  }
+  .stat-pill {
+    background: rgba(255,255,255,.92);
+    backdrop-filter: blur(10px);
+    border-radius: 11px;
+    box-shadow: var(--shadow);
+    padding: 8px 14px;
+    font-size: 11px;
+    border: 1px solid #ecedf3;
+    color: var(--muted);
+    display: flex; flex-direction: column; align-items: center; gap: 1px;
+  }
+  .stat-pill b { font-size: 15px; color: var(--ink); }
+
+  ::selection { background: rgba(91,108,255,.25); }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #d2d4de; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">
+      <div class="logo">🧭</div>
+      <div>
+        <h1>Customer Journey Flow</h1>
+        <div class="sub">Awareness → Purchase, visualized</div>
+      </div>
+    </div>
+    <div class="toolbar">
+      <button class="btn" id="btn-add">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Stage
+      </button>
+      <button class="btn" id="btn-autolayout">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="3" y="4" width="6" height="6" rx="1"/><rect x="15" y="4" width="6" height="6" rx="1"/><rect x="9" y="14" width="6" height="6" rx="1"/></svg>
+        Auto-Arrange
+      </button>
+      <div class="divider-v"></div>
+      <button class="btn" id="btn-reset" title="Reset to sample journey">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+        Reset Sample
+      </button>
+      <button class="btn danger" id="btn-clear">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>
+        Clear All
+      </button>
+    </div>
+  </header>
+
+  <div id="canvas-wrap">
+    <div id="palette">
+      <div class="pal-title">Drag to add</div>
+      <div class="pal-item" draggable="true" data-stage-type="awareness">
+        <div class="dot" style="background:#eef1ff;color:#5b6cff;">👁</div> Awareness
+      </div>
+      <div class="pal-item" draggable="true" data-stage-type="consideration">
+        <div class="dot" style="background:#fff4e0;color:#e08e00;">🔍</div> Consideration
+      </div>
+      <div class="pal-item" draggable="true" data-stage-type="decision">
+        <div class="dot" style="background:#e7f9f2;color:#00b88a;">⚖️</div> Decision
+      </div>
+      <div class="pal-item" draggable="true" data-stage-type="purchase">
+        <div class="dot" style="background:#ffe9ef;color:#ef4d77;">🛒</div> Purchase
+      </div>
+      <div class="pal-item" draggable="true" data-stage-type="loyalty">
+        <div class="dot" style="background:#f0e9ff;color:#8454e8;">💜</div> Loyalty
+      </div>
+      <div class="pal-item" draggable="true" data-stage-type="custom">
+        <div class="dot" style="background:#f0f1f6;color:#6b7280;">✦</div> Blank Stage
+      </div>
+    </div>
+
+    <div id="stat-strip">
+      <div class="stat-pill"><b id="stat-stages">0</b>Stages</div>
+      <div class="stat-pill"><b id="stat-conns">0</b>Connections</div>
+    </div>
+
+    <div id="canvas">
+      <svg id="connector-layer"></svg>
+      <!-- stage nodes injected here -->
+    </div>
+
+    <div class="empty-hint" id="empty-hint">
+      Click <b>“Add Stage”</b> or drag a stage type from the left panel onto the canvas.
+    </div>
+
+    <div id="zoom-controls">
+      <button id="zoom-out">−</button>
+      <div id="zoom-level">100%</div>
+      <button id="zoom-in">+</button>
+      <button id="zoom-fit" title="Fit to screen">⤢</button>
+    </div>
+
+    <div id="hint-toast">Drag from the teal dot on a stage's edge to connect it to another stage. Double-click text to edit.</div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  const STAGE_TYPES = {
+    awareness:     { icon: "👁",  label: "Awareness",     accent: "#5b6cff", badgeBg: "#eef1ff" },
+    consideration: { icon: "🔍",  label: "Consideration", accent: "#e08e00", badgeBg: "#fff4e0" },
+    decision:      { icon: "⚖️", label: "Decision",      accent: "#00b88a", badgeBg: "#e7f9f2" },
+    purchase:      { icon: "🛒", label: "Purchase",      accent: "#ef4d77", badgeBg: "#ffe9ef" },
+    loyalty:       { icon: "💜", label: "Loyalty",       accent: "#8454e8", badgeBg: "#f0e9ff" },
+    custom:        { icon: "✦",  label: "Stage",         accent: "#6b7280", badgeBg: "#f0f1f6" }
+  };
+
+  let state = {
+    stages: [],   // {id, type, title, desc, x, y}
+    conns: [],    // {id, from, to, label}
+    nextId: 1
+  };
+
+  let scale = 1;
+  let panX = 0, panY = 0;
+
+  const canvas = document.getElementById('canvas');
+  const canvasWrap = document.getElementById('canvas-wrap');
+  const svg = document.getElementById('connector-layer');
+  const emptyHint = document.getElementById('empty-hint');
+
+  function uid(prefix){ return prefix + (state.nextId++); }
+
+  function sampleJourney(){
+    state = { stages: [], conns: [], nextId: 1 };
+    const defs = [
+      { type: "awareness",     title: "Sees Social Ad",        desc: "Discovers brand via an Instagram ad campaign.", x: 80,  y: 220 },
+      { type: "awareness",     title: "Reads Blog Post",       desc: "Finds a how-to article through organic search.", x: 80,  y: 400 },
+      { type: "consideration", title: "Visits Website",        desc: "Browses product pages and pricing.",             x: 420, y: 310 },
+      { type: "consideration", title: "Reads Reviews",         desc: "Checks ratings on third-party review sites.",    x: 420, y: 490 },
+      { type: "decision",      title: "Compares Plans",        desc: "Evaluates tiers against competitor offers.",     x: 760, y: 310 },
+      { type: "decision",      title: "Talks to Sales",        desc: "Requests a demo and gets pricing questions answered.", x: 760, y: 490 },
+      { type: "purchase",      title: "Completes Checkout",    desc: "Enters payment details and confirms order.",     x: 1100, y: 400 },
+      { type: "loyalty",       title: "Onboarding Email",      desc: "Receives a welcome series and setup tips.",      x: 1440, y: 310 },
+      { type: "loyalty",       title: "Refers a Friend",       desc: "Shares referral code after a positive experience.", x: 1440, y: 490 }
+    ];
+    const idMap = [];
+    defs.forEach(d => {
+      const id = uid('s');
+      idMap.push(id);
+      state.stages.push({ id, type: d.type, title: d.title, desc: d.desc, x: d.x, y: d.y });
+    });
+    const links = [
+      [0,2],[1,2],[1,3],[2,4],[2,5],[3,5],[4,6],[5,6],[6,7],[6,8]
+    ];
+    links.forEach(([a,b]) => {
+      state.conns.push({ id: uid('c'), from: idMap[a], to: idMap[b], label: "" });
+    });
+    render();
+    fitToScreen();
+  }
+
+  function clearAll(){
+    if(state.stages.length === 0) return;
+    if(!confirm("Clear the entire canvas? This removes all stages and connections.")) return;
+    state = { stages: [], conns: [], nextId: 1 };
+    render();
+  }
+
+  // ---------- Rendering ----------
+  function render(){
+    canvas.querySelectorAll('.stage').forEach(n => n.remove());
+    state.stages.forEach(renderStage);
+    renderConnections();
+    document.getElementById('stat-stages').textContent = state.stages.length;
+    document.getElementById('stat-conns').textContent = state.conns.length;
+    emptyHint.style.display = state.stages.length ? 'none' : 'block';
+  }
+
+  function renderStage(stage){
+    const def = STAGE_TYPES[stage.type] || STAGE_TYPES.custom;
+    const el = document.createElement('div');
+    el.className = 'stage';
+    el.style.left = stage.x + 'px';
+    el.style.top = stage.y + 'px';
+    el.dataset.id = stage.id;
+
+    el.innerHTML = `
+      <div class="stage-accent" style="background:${def.accent}"></div>
+      <div class="port-in"></div>
+      <div class="stage-controls">
+        <div class="mini-btn duplicate" title="Duplicate">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>
+        </div>
+        <div class="mini-btn delete" title="Delete">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+        </div>
+      </div>
+      <div class="stage-body">
+        <div class="stage-top">
+          <div class="stage-icon-badge" style="background:${def.badgeBg}">${def.icon}</div>
+          <div class="stage-tag">${def.label}</div>
+        </div>
+        <div class="stage-title" contenteditable="true" spellcheck="false">${escapeHtml(stage.title)}</div>
+        <div class="stage-desc" contenteditable="true" spellcheck="false" data-placeholder="Add a short description…">${escapeHtml(stage.desc)}</div>
+      </div>
+      <div class="port" title="Drag to connect"></div>
+    `;
+
+    canvas.appendChild(el);
+
+    // dragging the stage (mousedown on body, not on contenteditable/buttons/port)
+    el.addEventListener('mousedown', (e) => {
+      if (e.target.closest('.port') || e.target.closest('.mini-btn') || e.target.isContentEditable) return;
+      startDragStage(e, el, stage);
+    });
+
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.mini-btn')) return;
+      selectStage(stage.id);
+      e.stopPropagation();
+    });
+
+    // title / desc editing
+    const titleEl = el.querySelector('.stage-title');
+    const descEl = el.querySelector('.stage-desc');
+    titleEl.addEventListener('blur', () => {
+      stage.title = titleEl.textContent.trim() || 'Untitled Stage';
+      titleEl.textContent = stage.title;
+    });
+    titleEl.addEventListener('keydown', (e) => { if(e.key === 'Enter'){ e.preventDefault(); titleEl.blur(); } });
+    descEl.addEventListener('blur', () => {
+      stage.desc = descEl.textContent.trim();
+    });
+    descEl.addEventListener('keydown', (e) => { if(e.key === 'Enter'){ e.preventDefault(); descEl.blur(); } });
+    [titleEl, descEl].forEach(n => n.addEventListener('mousedown', e => e.stopPropagation()));
+
+    el.querySelector('.mini-btn.delete').addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteStage(stage.id);
+    });
+    el.querySelector('.mini-btn.duplicate').addEventListener('click', (e) => {
+      e.stopPropagation();
+      duplicateStage(stage.id);
+    });
+
+    // connection drag from port
+    const port = el.querySelector('.port');
+    port.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      startConnectionDrag(e, stage);
+    });
+  }
+
+  function escapeHtml(str){
+    const d = document.createElement('div');
+    d.textContent = str || '';
+    return d.innerHTML;
+  }
+
+  function stageCenter(stage, side){
+    const w = 220;
+    const node = canvas.querySelector(`.stage[data-id="${stage.id}"]`);
+    const h = node ? node.offsetHeight : 118;
+    if(side === 'right') return { x: stage.x + w, y: stage.y + h/2 };
+    if(side === 'left') return { x: stage.x, y: stage.y + h/2 };
+    return { x: stage.x + w/2, y: stage.y + h/2 };
+  }
+
+  function getStage(id){ return state.stages.find(s => s.id === id); }
+
+  function renderConnections(){
+    svg.innerHTML = '';
+    state.conns.forEach(conn => {
+      const from = getStage(conn.from);
+      const to = getStage(conn.to);
+      if(!from || !to) return;
+
+      const p1 = stageCenter(from, 'right');
+      const p2 = stageCenter(to, to.x >= from.x ? 'left' : 'right');
+
+      const dx = Math.max(60, Math.abs(p2.x - p1.x) * 0.5);
+      const path = `M ${p1.x} ${p1.y} C ${p1.x + dx} ${p1.y}, ${p2.x - (to.x>=from.x?dx:-dx)} ${p2.y}, ${p2.x} ${p2.y}`;
+
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+
+      const hit = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      hit.setAttribute('d', path);
+      hit.setAttribute('class', 'conn-hit');
+      hit.dataset.id = conn.id;
+
+      const visible = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      visible.setAttribute('d', path);
+      visible.setAttribute('class', 'conn-path' + (conn.id === selectedConn ? ' selected' : ''));
+      visible.setAttribute('marker-end', 'url(#arrowhead)');
+      visible.dataset.id = conn.id;
+
+      g.appendChild(hit);
+      g.appendChild(visible);
+
+      const midX = (p1.x + p2.x) / 2;
+      const midY = (p1.y + p2.y) / 2;
+
+      if(conn.label){
+        const bg = document.createElementNS('http://www.w3.org/2000/svg','rect');
+        const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        label.setAttribute('x', midX);
+        label.setAttribute('y', midY - 8);
+        label.setAttribute('text-anchor', 'middle');
+        label.setAttribute('class', 'conn-label');
+        label.textContent = conn.label;
+        g.appendChild(label);
+      }
+
+      [hit, visible].forEach(p => {
+        p.addEventListener('click', (e) => {
+          e.stopPropagation();
+          selectConnection(conn.id);
+        });
+        p.addEventListener('dblclick', (e) => {
+          e.stopPropagation();
+          const newLabel = prompt('Label this step (e.g. "2 days later", "drop-off"):', conn.label || '');
+          if(newLabel !== null){
+            conn.label = newLabel.trim();
+            renderConnections();
+          }
+        });
+      });
+
+      svg.appendChild(g);
+    });
+
+    // arrowhead defs
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    defs.innerHTML = `
+      <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="userSpaceOnUse">
+        <path d="M0,0 L8,3 L0,6 Z" fill="#9aa0b4"></path>
+      </marker>`;
+    svg.appendChild(defs);
+  }
+
+  // ---------- Selection ----------
+  let selectedStage = null;
+  let selectedConn = null;
+
+  function selectStage(id){
+    selectedStage = id;
+    selectedConn = null;
+    document.querySelectorAll('.stage').forEach(n => n.classList.toggle('selected', n.dataset.id === id));
+    renderConnections();
+  }
+  function selectConnection(id){
+    selectedConn = id;
+    selectedStage = null;
+    document.querySelectorAll('.stage').forEach(n => n.classList.remove('selected'));
+    renderConnections();
+  }
+  function deselectAll(){
+    selectedStage = null;
+    selectedConn = null;
+    document.querySelectorAll('.stage').forEach(n => n.classList.remove('selected'));
+    renderConnections();
+  }
+
+  canvasWrap.addEventListener('mousedown', (e) => {
+    if(e.target === canvasWrap || e.target === canvas || e.target.id === 'connector-layer'){
+      deselectAll();
+    }
+  });
+
+  // ---------- CRUD ----------
+  function addStage(type, atX, atY){
+    const def = STAGE_TYPES[type] || STAGE_TYPES.custom;
+    const id = uid('s');
+    const stage = {
+      id, type,
+      title: def.label === 'Stage' ? 'New Stage' : def.label,
+      desc: '',
+      x: atX != null ? atX : 100 + (state.stages.length % 6) * 40,
+      y: atY != null ? atY : 120 + (state.stages.length % 6) * 30
+    };
+    state.stages.push(stage);
+    render();
+    selectStage(id);
+    setTimeout(() => {
+      const node = canvas.querySelector(`.stage[data-id="${id}"] .stage-title`);
+      if(node){
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const sel = window.getSelection();
+        sel.removeAllRanges(); sel.addRange(range);
+        node.focus();
+      }
+    }, 30);
+  }
+
+  function deleteStage(id){
+    state.stages = state.stages.filter(s => s.id !== id);
+    state.conns = state.conns.filter(c => c.from !== id && c.to !== id);
+    if(selectedStage === id) selectedStage = null;
+    render();
+  }
+
+  function duplicateStage(id){
+    const s = getStage(id);
+    if(!s) return;
+    const copy = { ...s, id: uid('s'), x: s.x + 30, y: s.y + 30 };
+    state.stages.push(copy);
+    render();
+    selectStage(copy.id);
+  }
+
+  document.getElementById('btn-add').addEventListener('click', () => addStage('custom'));
+  document.getElementById('btn-clear').addEventListener('click', clearAll);
+  document.getElementById('btn-reset').addEventListener('click', sampleJourney);
+
+  document.addEventListener('keydown', (e) => {
+    if((e.key === 'Delete' || e.key === 'Backspace') && document.activeElement.tagName !== 'DIV'){
+      return;
+    }
+    if((e.key === 'Delete' || e.key === 'Backspace')){
+      const active = document.activeElement;
+      if(active && active.isContentEditable) return;
+      if(selectedStage){ deleteStage(selectedStage); }
+      else if(selectedConn){ state.conns = state.conns.filter(c => c.id !== selectedConn); selectedConn = null; renderConnections(); document.getElementById('stat-conns').textContent = state.conns.length; }
+    }
+  });
+
+  // ---------- Dragging stages ----------
+  let dragCtx = null;
+
+  function startDragStage(e, el, stage){
+    e.preventDefault();
+    selectStage(stage.id);
+    el.classList.add('dragging');
+    const startMouseX = e.clientX, startMouseY = e.clientY;
+    const startX = stage.x, startY = stage.y;
+
+    dragCtx = { el, stage };
+
+    function onMove(ev){
+      const dx = (ev.clientX - startMouseX) / scale;
+      const dy = (ev.clientY - startMouseY) / scale;
+      stage.x = Math.max(0, startX + dx);
+      stage.y = Math.max(0, startY + dy);
+      el.style.left = stage.x + 'px';
+      el.style.top = stage.y + 'px';
+      renderConnections();
+    }
+    function onUp(){
+      el.classList.remove('dragging');
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      dragCtx = null;
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  // ---------- Drag-and-drop connections (port -> stage) ----------
+  let connDragCtx = null;
+  const tempLinkLayer = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  tempLinkLayer.setAttribute('class', 'temp-link');
+
+  function startConnectionDrag(e, fromStage){
+    e.preventDefault();
+    const fromEl = canvas.querySelector(`.stage[data-id="${fromStage.id}"]`);
+    fromEl.classList.add('link-source');
+    svg.appendChild(tempLinkLayer);
+
+    const wrapRect = canvasWrap.getBoundingClientRect();
+
+    function toCanvasPoint(clientX, clientY){
+      return {
+        x: (clientX - wrapRect.left - panX) / scale,
+        y: (clientY - wrapRect.top - panY) / scale
+      };
+    }
+
+    function onMove(ev){
+      const p1 = stageCenter(fromStage, 'right');
+      const p2 = toCanvasPoint(ev.clientX, ev.clientY);
+      const dx = Math.max(60, Math.abs(p2.x - p1.x) * 0.5);
+      const d = `M ${p1.x} ${p1.y} C ${p1.x+dx} ${p1.y}, ${p2.x-dx} ${p2.y}, ${p2.x} ${p2.y}`;
+      tempLinkLayer.setAttribute('d', d);
+
+      document.querySelectorAll('.stage').forEach(n => {
+        if(n.dataset.id === fromStage.id) return;
+        const r = n.getBoundingClientRect();
+        const inside = ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+        n.style.borderColor = inside ? 'var(--accent-2)' : '';
+      });
+    }
+
+    function onUp(ev){
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      fromEl.classList.remove('link-source');
+      if(tempLinkLayer.parentNode) tempLinkLayer.parentNode.removeChild(tempLinkLayer);
+
+      let targetEl = null;
+      document.querySelectorAll('.stage').forEach(n => {
+        n.style.borderColor = '';
+        const r = n.getBoundingClientRect();
+        if(ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom){
+          targetEl = n;
+        }
+      });
+
+      if(targetEl && targetEl.dataset.id !== fromStage.id){
+        const toId = targetEl.dataset.id;
+        const exists = state.conns.some(c => c.from === fromStage.id && c.to === toId);
+        if(!exists){
+          state.conns.push({ id: uid('c'), from: fromStage.id, to: toId, label: '' });
+          renderConnections();
+          document.getElementById('stat-conns').textContent = state.conns.length;
+        }
+      }
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  // ---------- Palette drag-to-add ----------
+  document.querySelectorAll('.pal-item').forEach(item => {
+    item.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/stage-type', item.dataset.stageType);
+      e.dataTransfer.effectAllowed = 'copy';
+    });
+  });
+
+  canvasWrap.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+  canvasWrap.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const type = e.dataTransfer.getData('text/stage-type');
+    if(!type) return;
+    const wrapRect = canvasWrap.getBoundingClientRect();
+    const x = (e.clientX - wrapRect.left - panX) / scale - 110;
+    const y = (e.clientY - wrapRect.top - panY) / scale - 59;
+    addStage(type, Math.max(0,x), Math.max(0,y));
+  });
+
+  // ---------- Zoom & pan ----------
+  function applyTransform(){
+    canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+    document.getElementById('zoom-level').textContent = Math.round(scale * 100) + '%';
+  }
+
+  document.getElementById('zoom-in').addEventListener('click', () => { scale = Math.min(2, scale + 0.1); applyTransform(); });
+  document.getElementById('zoom-out').addEventListener('click', () => { scale = Math.max(0.3, scale - 0.1); applyTransform(); });
+  document.getElementById('zoom-fit').addEventListener('click', fitToScreen);
+
+  function fitToScreen(){
+    if(state.stages.length === 0){ scale = 1; panX = 0; panY = 0; applyTransform(); return; }
+    const xs = state.stages.map(s => s.x);
+    const ys = state.stages.map(s => s.y);
+    const minX = Math.min(...xs) - 40, maxX = Math.max(...xs) + 260;
+    const minY = Math.min(...ys) - 40, maxY = Math.max(...ys) + 220;
+    const w = maxX - minX, h = maxY - minY;
+    const wrapRect = canvasWrap.getBoundingClientRect();
+    const leftReserve = 196; // keep content clear of the floating palette
+    const availW = wrapRect.width - leftReserve;
+    const s = Math.min(availW / w, wrapRect.height / h, 1.1);
+    scale = Math.max(0.3, Math.min(1.2, s));
+    panX = leftReserve + (-minX * scale) + (availW - w * scale) / 2;
+    panY = -minY * scale + (wrapRect.height - h * scale) / 2;
+    applyTransform();
+  }
+
+  canvasWrap.addEventListener('wheel', (e) => {
+    if(!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.05 : 0.05;
+    scale = Math.max(0.3, Math.min(2, scale + delta));
+    applyTransform();
+  }, { passive: false });
+
+  // pan with middle-click or space+drag on empty canvas
+  let isPanning = false, panStart = null;
+  canvasWrap.addEventListener('mousedown', (e) => {
+    if(e.button === 1 || (e.target === canvasWrap || e.target === canvas || e.target.id === 'connector-layer')){
+      if(e.button === 1 || e.button === 0){
+        isPanning = true;
+        panStart = { x: e.clientX, y: e.clientY, panX, panY };
+        canvasWrap.style.cursor = 'grabbing';
+      }
+    }
+  });
+  document.addEventListener('mousemove', (e) => {
+    if(!isPanning || !panStart) return;
+    panX = panStart.panX + (e.clientX - panStart.x);
+    panY = panStart.panY + (e.clientY - panStart.y);
+    applyTransform();
+  });
+  document.addEventListener('mouseup', () => { isPanning = false; panStart = null; canvasWrap.style.cursor = ''; });
+
+  // ---------- Hint toast auto-hide ----------
+  setTimeout(() => {
+    const toast = document.getElementById('hint-toast');
+    toast.style.opacity = '0';
+    setTimeout(() => toast.remove(), 400);
+  }, 6500);
+
+  // ---------- Auto arrange (simple column layout by graph depth) ----------
+  document.getElementById('btn-autolayout').addEventListener('click', () => {
+    if(state.stages.length === 0) return;
+    const incoming = {};
+    state.stages.forEach(s => incoming[s.id] = 0);
+    state.conns.forEach(c => { if(incoming[c.to] !== undefined) incoming[c.to]++; });
+
+    const depth = {};
+    const queue = state.stages.filter(s => incoming[s.id] === 0).map(s => s.id);
+    queue.forEach(id => depth[id] = 0);
+    const visited = new Set(queue);
+    let head = 0;
+    while(head < queue.length){
+      const cur = queue[head++];
+      state.conns.filter(c => c.from === cur).forEach(c => {
+        const nd = (depth[cur] || 0) + 1;
+        if(depth[c.to] === undefined || nd > depth[c.to]) depth[c.to] = nd;
+        if(!visited.has(c.to)){ visited.add(c.to); queue.push(c.to); }
+      });
+    }
+    state.stages.forEach(s => { if(depth[s.id] === undefined) depth[s.id] = 0; });
+
+    const columns = {};
+    state.stages.forEach(s => {
+      const d = depth[s.id];
+      (columns[d] = columns[d] || []).push(s);
+    });
+
+    Object.keys(columns).sort((a,b)=>a-b).forEach(colKey => {
+      const col = columns[colKey];
+      const colIndex = parseInt(colKey, 10);
+      col.forEach((s, i) => {
+        s.x = 80 + colIndex * 340;
+        s.y = 100 + i * 170;
+      });
+    });
+
+    render();
+    fitToScreen();
+  });
+
+  // init
+  applyTransform();
+  sampleJourney();
+})();
+</script>
+</body>
+</html>
