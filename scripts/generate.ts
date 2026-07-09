@@ -75,6 +75,8 @@ interface GenerateOptions {
   concurrency: number; // Number of parallel generations
 }
 
+type EnvOverrides = Record<string, string | undefined>;
+
 // ============================================================================
 // Configuration
 // ============================================================================
@@ -175,7 +177,7 @@ function readEnvFile(): Record<string, string> | undefined {
  *  and auth from .env and pins every Claude Code model slot to this model's
  *  id so a single run uses one backend end-to-end.
  */
-function buildAnthropicProxyEnv(model: ModelConfig): Record<string, string> | undefined {
+function buildAnthropicProxyEnv(model: ModelConfig): EnvOverrides | undefined {
   const base = readEnvFile();
   if (!base) return undefined;
 
@@ -209,7 +211,7 @@ const OPENROUTER_BASE_URL = "https://openrouter.ai/api";
  *  OPENROUTER_API_KEY (process.env preferred, .env as a fallback) so the same
  *  .env can stay pointed at Fireworks for the anthropic-proxy models.
  */
-function buildOpenRouterEnv(model: ModelConfig): Record<string, string> {
+function buildOpenRouterEnv(model: ModelConfig): EnvOverrides {
   const fileEnv = readEnvFile();
   const apiKey =
     process.env.OPENROUTER_API_KEY || fileEnv?.OPENROUTER_API_KEY;
@@ -226,6 +228,7 @@ function buildOpenRouterEnv(model: ModelConfig): Record<string, string> {
   return {
     ANTHROPIC_BASE_URL: OPENROUTER_BASE_URL,
     ANTHROPIC_API_KEY: apiKey,
+    ANTHROPIC_AUTH_TOKEN: undefined,
     ANTHROPIC_MODEL: modelId,
     ANTHROPIC_SMALL_FAST_MODEL: modelId,
     ANTHROPIC_DEFAULT_SONNET_MODEL: modelId,
@@ -237,7 +240,7 @@ function buildOpenRouterEnv(model: ModelConfig): Record<string, string> {
 function buildCliCommand(
   model: ModelConfig,
   prompt: string
-): { cmd: string; args: string[]; env?: Record<string, string> } {
+): { cmd: string; args: string[]; env?: EnvOverrides } {
   switch (model.cli) {
     case "claude":
       return {
@@ -431,6 +434,11 @@ async function runCliOnce(
     // Ensure Claude max tokens is always set for claude CLI
     CLAUDE_CODE_MAX_OUTPUT_TOKENS: String(MAX_OUTPUT_TOKENS.claude),
   };
+  for (const [key, value] of Object.entries(spawnEnv)) {
+    if (value === undefined) {
+      delete spawnEnv[key as keyof typeof spawnEnv];
+    }
+  }
 
   await new Promise<void>((resolve, reject) => {
     console.log(`${logPrefix} Running in sandbox: ${tempDir}`);
