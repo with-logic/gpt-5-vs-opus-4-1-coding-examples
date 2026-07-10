@@ -14,35 +14,62 @@ const OUTPUT_FILE = path.join(process.cwd(), "lib", "stats.data.json");
 
 // ── Metric extractors ────────────────────────────────────────────
 
+/**
+ * Count *logical* lines rather than physical (newline-delimited) ones.
+ *
+ * Many models emit minified or near-single-line HTML — an entire stylesheet
+ * or script can live on one physical line. Splitting on "\n" then measures the
+ * model's newline habits, not how much code it wrote (e.g. a 20KB terse app
+ * counting as ~45 "CSS lines"). Instead we segment the source into CSS
+ * (<style> contents), JS (<script> contents), and HTML (everything else), and
+ * for each count semantic units: CSS/JS statement & block boundaries (`;`, `{`,
+ * `}`), HTML by opening tags. We take max(physical, logical) per section so
+ * already-formatted code keeps its real line count and minified code gets a
+ * fair logical count instead of collapsing toward 1.
+ */
 function countLines(src: string): AppModelStats["lines"] {
-  const allLines = src.split("\n");
-  const total = allLines.length;
-  let html = 0,
-    css = 0,
-    js = 0,
-    blank = 0;
+  const blank = src.split("\n").filter((l) => l.trim() === "").length;
 
-  let inStyle = false;
-  let inScript = false;
+  // Physical line count for a chunk (fallback for formatted code).
+  const physical = (s: string) =>
+    s.split("\n").filter((l) => l.trim() !== "").length;
 
-  for (const line of allLines) {
-    const trimmed = line.trim();
-    if (trimmed === "") {
-      blank++;
-      continue;
-    }
-    if (/<style[\s>]/i.test(trimmed)) inStyle = true;
-    if (/<script[\s>]/i.test(trimmed)) inScript = true;
+  // Logical statements/rules in CSS or JS: count `;`, `{`, `}` boundaries.
+  // Strip string/comment contents first so punctuation inside them isn't
+  // counted; this is an approximation, not a parser, but is stable across
+  // minified and pretty-printed code.
+  const logicalCode = (s: string) => {
+    const stripped = s
+      .replace(/\/\*[\s\S]*?\*\//g, "") // block comments
+      .replace(/\/\/[^\n]*/g, "") // line comments (JS)
+      .replace(/(["'`])(?:\\.|(?!\1).)*\1/g, ""); // string literals
+    return (stripped.match(/[;{}]/g) || []).length;
+  };
 
-    if (inStyle) css++;
-    else if (inScript) js++;
-    else html++;
+  // Logical HTML "lines": one per opening tag.
+  const logicalHtml = (s: string) => (s.match(/<[a-zA-Z][^>]*>/g) || []).length;
 
-    if (/<\/style>/i.test(trimmed)) inStyle = false;
-    if (/<\/script>/i.test(trimmed)) inScript = false;
-  }
+  const cssBlocks = [...src.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)].map(
+    (m) => m[1]
+  );
+  const jsBlocks = [
+    ...src.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi),
+  ].map((m) => m[1]);
+  const htmlOnly = src
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
 
-  return { total, html, css, js, blank };
+  const css = cssBlocks.reduce(
+    (sum, b) => sum + Math.max(physical(b), logicalCode(b)),
+    0
+  );
+  const js = jsBlocks.reduce(
+    (sum, b) => sum + Math.max(physical(b), logicalCode(b)),
+    0
+  );
+  const html = Math.max(physical(htmlOnly), logicalHtml(htmlOnly));
+
+  return { total: html + css + js, html, css, js, blank };
 }
 
 function countComments(src: string): AppModelStats["comments"] {

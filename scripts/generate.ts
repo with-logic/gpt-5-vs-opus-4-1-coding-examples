@@ -442,7 +442,11 @@ async function runCliOnce(
 
   await new Promise<void>((resolve, reject) => {
     console.log(`${logPrefix} Running in sandbox: ${tempDir}`);
-    console.log(`${logPrefix} Command: ${cmd} ${args[0]} ...`);
+    // Log the exact --model flag actually passed to the CLI so a run can be
+    // audited against the intended model (guards against silent CLI fallbacks).
+    const modelFlagIdx = args.indexOf("--model");
+    const invokedModel = modelFlagIdx !== -1 ? args[modelFlagIdx + 1] : "(no --model flag)";
+    console.log(`${logPrefix} Command: ${cmd} ${args[0]} --model ${invokedModel} ...`);
 
     const proc = spawn(cmd, args, {
       stdio: "inherit",

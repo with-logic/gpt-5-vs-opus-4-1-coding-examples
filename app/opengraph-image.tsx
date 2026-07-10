@@ -32,6 +32,9 @@ const COLOR_MAP: Record<string, string> = {
   "bg-sky-600": "#0284c7",
   "bg-indigo-600": "#4f46e5",
   "bg-zinc-700": "#3f3f46",
+  "bg-teal-600": "#0d9488",
+  "bg-cyan-600": "#0891b2",
+  "bg-emerald-600": "#059669",
 };
 
 const BG = "#040c28";

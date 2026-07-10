@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#91a9ae">
+  <title>Ocean Wave Simulation</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400&family=Manrope:wght@300;400;500&display=swap');
+
+    :root {
+      --ink: #f5f2e9;
+      --muted: rgba(245,242,233,.62);
+      --line: rgba(255,255,255,.2);
+      --panel: rgba(8,27,35,.34);
+      --zenith: #496672;
+      --horizon: #cbb7a2;
+      --glow: #ffd6a0;
+      --glow-x: 72%;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      color: var(--ink);
+      background:
+        radial-gradient(circle at var(--glow-x) 48%, color-mix(in srgb, var(--glow) 70%, transparent) 0 1.2%, transparent 7%),
+        linear-gradient(to bottom, var(--zenith) 0%, color-mix(in srgb, var(--zenith) 55%, var(--horizon)) 35%, var(--horizon) 51%, #183b49 52%, #061d27 100%);
+      font-family: Manrope, sans-serif;
+      transition: background 1.2s ease;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      background: radial-gradient(ellipse at 50% 45%, transparent 35%, rgba(0,9,14,.32) 115%);
+    }
+
+    body::after {
+      content: "";
+      position: fixed;
+      inset: -50%;
+      z-index: 3;
+      opacity: .032;
+      pointer-events: none;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.9'/%3E%3C/svg%3E");
+      animation: grain .22s steps(2) infinite;
+    }
+
+    @keyframes grain {
+      0% { transform: translate(0,0); }
+      25% { transform: translate(3%,-2%); }
+      50% { transform: translate(-2%,3%); }
+      75% { transform: translate(2%,2%); }
+      100% { transform: translate(-3%,-2%); }
+    }
+
+    #ocean { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 1; }
+
+    .interface {
+      position: fixed;
+      inset: 0;
+      z-index: 4;
+      pointer-events: none;
+      padding: max(28px, env(safe-area-inset-top)) max(30px, env(safe-area-inset-right)) max(26px, env(safe-area-inset-bottom)) max(30px, env(safe-area-inset-left));
+      display: grid;
+      grid-template-columns: 1fr auto;
+      grid-template-rows: auto 1fr auto;
+    }
+
+    .brand { animation: rise .9s cubic-bezier(.2,.8,.2,1) both; }
+    .eyebrow {
+      margin: 0 0 9px;
+      font: 400 9px/1 DM Mono, monospace;
+      letter-spacing: .32em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(24px, 3vw, 42px);
+      line-height: .95;
+      font-weight: 300;
+      letter-spacing: -.045em;
+    }
+    h1 span { display: block; font-style: italic; font-family: Georgia, serif; font-weight: 400; color: #ffe7c6; }
+
+    .status {
+      justify-self: end;
+      text-align: right;
+      animation: rise .9s .1s cubic-bezier(.2,.8,.2,1) both;
+    }
+    .status-line { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-bottom: 9px; }
+    .status-dot { width: 5px; height: 5px; border-radius: 50%; background: #bce3d0; box-shadow: 0 0 12px #bce3d0; animation: breathe 3s ease-in-out infinite; }
+    .status-name { font: 400 9px/1 DM Mono, monospace; text-transform: uppercase; letter-spacing: .22em; color: var(--muted); }
+    .status-value { font: 300 19px/1 Manrope, sans-serif; letter-spacing: -.03em; }
+    .status-value small { margin-left: 6px; font: 300 9px DM Mono, monospace; color: var(--muted); letter-spacing: .12em; }
+
+    .pause {
+      pointer-events: auto;
+      margin-top: 17px;
+      width: 34px;
+      height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      color: var(--ink);
+      background: rgba(5,24,32,.12);
+      backdrop-filter: blur(10px);
+      cursor: pointer;
+      transition: background .25s, transform .25s, border-color .25s;
+    }
+    .pause:hover { transform: scale(1.06); background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.4); }
+    .pause:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid #ffe0af; outline-offset: 3px; }
+    .pause svg { width: 12px; height: 12px; fill: currentColor; vertical-align: middle; }
+
+    .controls {
+      grid-column: 1 / -1;
+      justify-self: center;
+      align-self: end;
+      width: min(760px, calc(100vw - 42px));
+      pointer-events: auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 28px;
+      align-items: end;
+      padding: 18px 18px 18px 22px;
+      border: 1px solid rgba(255,255,255,.17);
+      border-radius: 16px;
+      background: linear-gradient(120deg, rgba(4,22,29,.52), rgba(11,37,45,.25));
+      box-shadow: 0 24px 60px rgba(0,13,20,.25), inset 0 1px rgba(255,255,255,.08);
+      backdrop-filter: blur(18px) saturate(1.25);
+      -webkit-backdrop-filter: blur(18px) saturate(1.25);
+      animation: dock .95s .2s cubic-bezier(.2,.8,.2,1) both;
+    }
+
+    .control { min-width: 0; }
+    .control-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 13px; }
+    label, .light-label { font: 400 9px/1 DM Mono, monospace; letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
+    output { font: 400 11px/1 DM Mono, monospace; color: var(--ink); }
+    input[type="range"] { width: 100%; height: 18px; margin: 0; appearance: none; background: transparent; cursor: pointer; }
+    input[type="range"]::-webkit-slider-runnable-track { height: 1px; background: linear-gradient(90deg, #f4d7a9 var(--fill), rgba(255,255,255,.18) var(--fill)); }
+    input[type="range"]::-moz-range-track { height: 1px; background: rgba(255,255,255,.2); }
+    input[type="range"]::-moz-range-progress { height: 1px; background: #f4d7a9; }
+    input[type="range"]::-webkit-slider-thumb { appearance: none; width: 12px; height: 12px; margin-top: -5.5px; border: 2px solid #f8e7cc; border-radius: 50%; background: #49616a; box-shadow: 0 0 0 4px rgba(244,215,169,.09); transition: transform .2s; }
+    input[type="range"]::-moz-range-thumb { width: 9px; height: 9px; border: 2px solid #f8e7cc; border-radius: 50%; background: #49616a; }
+    input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.2); }
+
+    .lighting { min-width: 205px; }
+    .light-label { display: block; margin-bottom: 12px; }
+    .segments { display: flex; padding: 3px; border: 1px solid rgba(255,255,255,.14); border-radius: 10px; background: rgba(2,17,23,.18); }
+    .segments button {
+      position: relative;
+      min-width: 62px;
+      padding: 8px 11px;
+      border: 0;
+      border-radius: 7px;
+      color: var(--muted);
+      background: transparent;
+      font: 400 9px/1 DM Mono, monospace;
+      letter-spacing: .08em;
+      cursor: pointer;
+      transition: color .25s, background .25s, box-shadow .25s;
+    }
+    .segments button:hover { color: var(--ink); }
+    .segments button.active { color: #152b32; background: #f2e3ca; box-shadow: 0 4px 14px rgba(0,0,0,.14); }
+
+    .coordinates {
+      position: fixed;
+      left: max(30px, env(safe-area-inset-left));
+      bottom: max(28px, env(safe-area-inset-bottom));
+      z-index: 4;
+      color: rgba(255,255,255,.38);
+      font: 300 8px/1 DM Mono, monospace;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      transform: rotate(-90deg) translateY(-100%);
+      transform-origin: left bottom;
+      pointer-events: none;
+    }
+
+    @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+    @keyframes dock { from { opacity: 0; transform: translateY(26px) scale(.985); } to { opacity: 1; transform: none; } }
+    @keyframes breathe { 50% { opacity: .45; transform: scale(.75); } }
+
+    @media (max-width: 670px) {
+      .interface { padding: 22px 20px 18px; }
+      h1 { font-size: 27px; }
+      .eyebrow { margin-bottom: 7px; }
+      .controls { width: calc(100vw - 24px); grid-template-columns: 1fr 1fr; gap: 16px 22px; padding: 16px; border-radius: 14px; }
+      .lighting { grid-column: 1 / -1; min-width: 0; display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: center; }
+      .light-label { margin: 0; }
+      .segments button { flex: 1; }
+      .coordinates { display: none; }
+      .status-value { font-size: 15px; }
+    }
+
+    @media (max-height: 560px) {
+      .interface { padding-top: 18px; }
+      .controls { padding-block: 12px; }
+      .lighting { display: none; }
+      .controls { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      body::after { animation: none; }
+      .brand, .status, .controls { animation-duration: .01ms; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="ocean" aria-label="Animated ocean waves under changing light"></canvas>
+
+  <main class="interface">
+    <header class="brand">
+      <p class="eyebrow">Pelagic study / 001</p>
+      <h1>Ocean <span>in motion</span></h1>
+    </header>
+
+    <aside class="status" aria-label="Current sea conditions">
+      <div class="status-line"><span class="status-dot"></span><span class="status-name">Live conditions</span></div>
+      <div class="status-value"><span id="seaState">Gentle swell</span><small id="seaData">12 KT · 1.4 M</small></div>
+      <button class="pause" id="pause" aria-label="Pause simulation" title="Pause simulation">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path id="pauseIcon" d="M3 2h3v12H3zm7 0h3v12h-3z"/></svg>
+      </button>
+    </aside>
+
+    <section class="controls" aria-label="Ocean controls">
+      <div class="control">
+        <div class="control-head"><label for="wind">Wind speed</label><output id="windOut" for="wind">12 kt</output></div>
+        <input id="wind" type="range" min="2" max="32" value="12" step="1" aria-label="Wind speed in knots">
+      </div>
+      <div class="control">
+        <div class="control-head"><label for="height">Wave height</label><output id="heightOut" for="height">1.4 m</output></div>
+        <input id="height" type="range" min="0.3" max="4.5" value="1.4" step="0.1" aria-label="Wave height in meters">
+      </div>
+      <div class="lighting">
+        <span class="light-label">Light</span>
+        <div class="segments" role="group" aria-label="Lighting mood">
+          <button type="button" data-light="dawn" class="active" aria-pressed="true">Dawn</button>
+          <button type="button" data-light="day" aria-pressed="false">Day</button>
+          <button type="button" data-light="moon" aria-pressed="false">Moon</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="coordinates">35.6762° N&nbsp;&nbsp;/&nbsp;&nbsp;139.6503° E</div>
+
+  <script>
+  (() => {
+    'use strict';
+    const canvas = document.getElementById('ocean');
+    const gl = canvas.getContext('webgl', { alpha: true, antialias: true, premultipliedAlpha: false });
+    if (!gl) {
+      document.querySelector('.status-name').textContent = 'WebGL unavailable';
+      return;
+    }
+
+    const vertex = `
+      precision highp float;
+      attribute vec2 aPosition;
+      uniform mat4 uViewProjection;
+      uniform float uTime;
+      uniform float uWind;
+      uniform float uHeight;
+      varying vec3 vWorld;
+      varying vec3 vNormal;
+      varying float vCrest;
+
+      vec3 ocean(vec2 p) {
+        float t = uTime;
+        float w = mix(.72, 1.42, uWind);
+        float h = uHeight;
+        float y = 0.0;
+        vec2 d = vec2(0.0);
+        #define W(DX,DZ,F,S,A) { vec2 q=normalize(vec2(DX,DZ)); float ph=dot(q,p)*(F)+t*(S)*w; y+=sin(ph)*(A)*h; d+=cos(ph)*(A)*h*(F)*q; }
+        W(.93,.36,.105, .72, .72)
+        W(.58,.82,.164, 1.02, .34)
+        W(-.23,.97,.285, 1.46, .15)
+        W(.99,-.12,.51, 2.08, .065)
+        W(-.72,.69,.82, 2.82, .026)
+        return vec3(y,d.x,d.y);
+      }
+
+      void main() {
+        vec2 p = aPosition;
+        vec3 o = ocean(p);
+        vWorld = vec3(p.x, o.x, p.y);
+        vNormal = normalize(vec3(-o.y, 1.0, -o.z));
+        vCrest = o.x / max(uHeight, .1);
+        gl_Position = uViewProjection * vec4(vWorld, 1.0);
+      }
+    `;
+
+    const fragment = `
+      precision highp float;
+      uniform vec3 uCamera;
+      uniform vec3 uSunDir;
+      uniform vec3 uSunColor;
+      uniform vec3 uSky;
+      uniform vec3 uHorizon;
+      uniform vec3 uWater;
+      uniform float uLight;
+      uniform float uWind;
+      varying vec3 vWorld;
+      varying vec3 vNormal;
+      varying float vCrest;
+
+      void main() {
+        vec3 N = normalize(vNormal);
+        vec3 V = normalize(uCamera - vWorld);
+        vec3 R = reflect(-V, N);
+        float facing = max(dot(N,V), 0.0);
+        float fresnel = .025 + .975 * pow(1.0-facing, 5.0);
+        float skyMix = smoothstep(-.12, .72, R.y);
+        vec3 reflected = mix(uHorizon, uSky, skyMix);
+        float deep = smoothstep(-.25, .65, N.y);
+        vec3 body = uWater * mix(.55, 1.22, deep) + vec3(0.0,.035,.045);
+        vec3 color = mix(body, reflected, fresnel * .76 + .12);
+
+        float sun = pow(max(dot(reflect(-uSunDir,N), V), 0.0), mix(95.0, 260.0, N.y));
+        float sparkle = pow(max(dot(reflect(-uSunDir,N), V), 0.0), 24.0) * .14;
+        color += uSunColor * (sun * 3.2 + sparkle) * uLight;
+
+        float slope = 1.0 - N.y;
+        float foam = smoothstep(.19, .48, slope + max(vCrest-.7,0.0)*.22) * smoothstep(.34,.85,uWind);
+        color = mix(color, vec3(.70,.84,.83), foam * .22);
+
+        float distanceFog = smoothstep(80.0, 220.0, length(uCamera.xz-vWorld.xz));
+        color = mix(color, uHorizon * .78, distanceFog * .62);
+        color *= .88 + .12 * smoothstep(-.4,.5,vCrest);
+        gl_FragColor = vec4(color, 1.0);
+      }
+    `;
+
+    function shader(type, source) {
+      const s = gl.createShader(type);
+      gl.shaderSource(s, source); gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s));
+      return s;
+    }
+    const program = gl.createProgram();
+    gl.attachShader(program, shader(gl.VERTEX_SHADER, vertex));
+    gl.attachShader(program, shader(gl.FRAGMENT_SHADER, fragment));
+    gl.linkProgram(program); gl.useProgram(program);
+
+    const N = 180, positions = new Float32Array((N+1)*(N+1)*2), indices = new Uint16Array(N*N*6);
+    let k=0;
+    for(let z=0;z<=N;z++) for(let x=0;x<=N;x++) {
+      positions[k++] = (x/N-.5)*320;
+      positions[k++] = 58-(z/N)*270;
+    }
+    k=0;
+    for(let z=0;z<N;z++) for(let x=0;x<N;x++) {
+      const i=z*(N+1)+x;
+      indices[k++]=i; indices[k++]=i+N+1; indices[k++]=i+1;
+      indices[k++]=i+1; indices[k++]=i+N+1; indices[k++]=i+N+2;
+    }
+    const vb=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vb); gl.bufferData(gl.ARRAY_BUFFER,positions,gl.STATIC_DRAW);
+    const loc=gl.getAttribLocation(program,'aPosition'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+    const ib=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,indices,gl.STATIC_DRAW);
+
+    const U = {};
+    ['uViewProjection','uTime','uWind','uHeight','uCamera','uSunDir','uSunColor','uSky','uHorizon','uWater','uLight'].forEach(n=>U[n]=gl.getUniformLocation(program,n));
+
+    const themes = {
+      dawn: { zenith:'#496672', horizon:'#cbb7a2', glow:'#ffd6a0', sun:[1,.69,.38], sky:[.26,.39,.44], hor:[.70,.57,.44], water:[.018,.17,.21], dir:[.67,.18,-.72], light:1.0 },
+      day:  { zenith:'#5f9fbd', horizon:'#d7d5c4', glow:'#fff6d8', sun:[1,.93,.72], sky:[.28,.60,.75], hor:[.71,.78,.76], water:[.01,.23,.31], dir:[.38,.71,-.59], light:.82 },
+      moon: { zenith:'#071322', horizon:'#283b4e', glow:'#b8d8ed', sun:[.50,.68,.86], sky:[.035,.075,.14], hor:[.14,.22,.30], water:[.005,.07,.12], dir:[-.48,.52,-.70], light:.62 }
+    };
+    let current = JSON.parse(JSON.stringify(themes.dawn));
+    let target = themes.dawn;
+    const lerp=(a,b,t)=>a+(b-a)*t;
+    const blend=(a,b,t)=>{ for(let i=0;i<a.length;i++) a[i]=lerp(a[i],b[i],t); };
+
+    function perspective(out, fovy, aspect, near, far) {
+      const f=1/Math.tan(fovy/2), nf=1/(near-far);
+      out.set([f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)*nf,-1, 0,0,2*far*near*nf,0]); return out;
+    }
+    function lookAt(out, e, c, up) {
+      let zx=e[0]-c[0],zy=e[1]-c[1],zz=e[2]-c[2],l=1/Math.hypot(zx,zy,zz); zx*=l;zy*=l;zz*=l;
+      let xx=up[1]*zz-up[2]*zy,xy=up[2]*zx-up[0]*zz,xz=up[0]*zy-up[1]*zx;l=1/Math.hypot(xx,xy,xz);xx*=l;xy*=l;xz*=l;
+      const yx=zy*xz-zz*xy, yy=zz*xx-zx*xz, yz=zx*xy-zy*xx;
+      out.set([xx,yx,zx,0, xy,yy,zy,0, xz,yz,zz,0, -(xx*e[0]+xy*e[1]+xz*e[2]),-(yx*e[0]+yy*e[1]+yz*e[2]),-(zx*e[0]+zy*e[1]+zz*e[2]),1]); return out;
+    }
+    function multiply(out,a,b) {
+      for(let c=0;c<4;c++) for(let r=0;r<4;r++) out[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3]; return out;
+    }
+
+    let dpr=1, width=0, heightPx=0;
+    function resize() {
+      dpr=Math.min(devicePixelRatio||1,1.7); width=Math.round(innerWidth*dpr); heightPx=Math.round(innerHeight*dpr);
+      if(canvas.width!==width||canvas.height!==heightPx){ canvas.width=width;canvas.height=heightPx;gl.viewport(0,0,width,heightPx); }
+    }
+
+    const wind=document.getElementById('wind'), waveHeight=document.getElementById('height');
+    const windOut=document.getElementById('windOut'),heightOut=document.getElementById('heightOut');
+    const seaState=document.getElementById('seaState'),seaData=document.getElementById('seaData');
+    function setFill(el){el.style.setProperty('--fill',((el.value-el.min)/(el.max-el.min)*100)+'%');}
+    function updateControls(){
+      windOut.value=wind.value+' kt';heightOut.value=(+waveHeight.value).toFixed(1)+' m';setFill(wind);setFill(waveHeight);
+      const h=+waveHeight.value,w=+wind.value;
+      seaState.textContent=h<.8?'Calm sea':h<1.8?'Gentle swell':h<3?'Rolling sea':'Heavy swell';
+      seaData.textContent=w+' KT · '+h.toFixed(1)+' M';
+    }
+    wind.addEventListener('input',updateControls);waveHeight.addEventListener('input',updateControls);updateControls();
+
+    document.querySelectorAll('[data-light]').forEach(btn=>btn.addEventListener('click',()=>{
+      document.querySelectorAll('[data-light]').forEach(b=>{b.classList.toggle('active',b===btn);b.setAttribute('aria-pressed',b===btn)});
+      target=themes[btn.dataset.light];
+      document.documentElement.style.setProperty('--zenith',target.zenith);
+      document.documentElement.style.setProperty('--horizon',target.horizon);
+      document.documentElement.style.setProperty('--glow',target.glow);
+      document.documentElement.style.setProperty('--glow-x',btn.dataset.light==='moon'?'27%':'72%');
+    }));
+
+    let paused=false, elapsed=0, last=performance.now(), pointerX=0;
+    const pause=document.getElementById('pause'), icon=document.getElementById('pauseIcon');
+    pause.addEventListener('click',()=>{
+      paused=!paused; pause.setAttribute('aria-label',paused?'Resume simulation':'Pause simulation');pause.title=paused?'Resume simulation':'Pause simulation';
+      icon.setAttribute('d',paused?'M4 2l9 6-9 6z':'M3 2h3v12H3zm7 0h3v12h-3z');
+    });
+    addEventListener('pointermove',e=>pointerX=(e.clientX/innerWidth-.5));
+
+    const proj=new Float32Array(16),view=new Float32Array(16),vp=new Float32Array(16);
+    gl.enable(gl.DEPTH_TEST); gl.clearColor(0,0,0,0);
+    function frame(now){
+      resize(); const dt=Math.min((now-last)/1000,.05);last=now;if(!paused)elapsed+=dt;
+      ['sun','sky','hor','water','dir'].forEach(key=>blend(current[key],target[key],dt*1.8));current.light=lerp(current.light,target.light,dt*1.8);
+      gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+      const aspect=width/heightPx, mobile=innerWidth<670;
+      const camera=[pointerX*(mobile?1.5:3.2),mobile?10.8:11.7,31];
+      perspective(proj, mobile?1.02:.86, aspect, .1, 340); lookAt(view,camera,[pointerX*1.1,1.0,-52],[0,1,0]); multiply(vp,proj,view);
+      gl.uniformMatrix4fv(U.uViewProjection,false,vp);gl.uniform1f(U.uTime,elapsed);gl.uniform1f(U.uWind,(+wind.value-2)/30);gl.uniform1f(U.uHeight,+waveHeight.value*.78);
+      gl.uniform3fv(U.uCamera,camera);gl.uniform3fv(U.uSunDir,current.dir);gl.uniform3fv(U.uSunColor,current.sun);gl.uniform3fv(U.uSky,current.sky);gl.uniform3fv(U.uHorizon,current.hor);gl.uniform3fv(U.uWater,current.water);gl.uniform1f(U.uLight,current.light);
+      gl.drawElements(gl.TRIANGLES,indices.length,gl.UNSIGNED_SHORT,0);requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  })();
+  </script>
+</body>
+</html>
