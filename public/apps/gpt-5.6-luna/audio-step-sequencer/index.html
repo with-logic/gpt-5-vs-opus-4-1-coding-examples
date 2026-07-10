@@ -1,0 +1,809 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#080b0d" />
+  <title>Audio Step Sequencer</title>
+  <style>
+    :root {
+      --bg: #080b0d;
+      --bg-soft: #0c1113;
+      --panel: #0f1517;
+      --panel-2: #121a1d;
+      --line: #243035;
+      --line-bright: #38464b;
+      --ink: #e8eeeb;
+      --muted: #7e918f;
+      --muted-2: #536360;
+      --acid: #b9ff3f;
+      --acid-dim: #6c9228;
+      --orange: #ff8a3d;
+      --cyan: #5be5dd;
+      --danger: #ff695f;
+      --shadow: rgba(0, 0, 0, 0.38);
+      --step-size: min(4.1vw, 62px);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      min-width: 980px;
+      overflow-x: auto;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      letter-spacing: 0.01em;
+    }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible { outline: 2px solid var(--acid); outline-offset: 3px; }
+
+    .app-shell {
+      min-height: 100vh;
+      position: relative;
+      isolation: isolate;
+      background:
+        linear-gradient(rgba(18, 29, 31, 0.18) 1px, transparent 1px) 0 0 / 100% 42px,
+        linear-gradient(90deg, rgba(18, 29, 31, 0.16) 1px, transparent 1px) 0 0 / 42px 100%,
+        radial-gradient(circle at 52% 43%, rgba(93, 129, 77, 0.11), transparent 29rem),
+        var(--bg);
+    }
+    .app-shell::before {
+      content: "";
+      position: fixed;
+      z-index: -1;
+      inset: 0;
+      pointer-events: none;
+      opacity: .18;
+      background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(255,255,255,.016) 4px);
+      mix-blend-mode: screen;
+    }
+
+    .topbar {
+      height: 78px;
+      display: flex;
+      align-items: center;
+      gap: 27px;
+      padding: 0 34px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(8, 11, 13, .82);
+      backdrop-filter: blur(14px);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      min-width: 225px;
+    }
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      position: relative;
+      border: 1px solid var(--acid);
+      transform: rotate(45deg);
+      box-shadow: 0 0 18px rgba(185, 255, 63, .12);
+    }
+    .brand-mark::after {
+      content: "";
+      width: 10px;
+      height: 10px;
+      position: absolute;
+      inset: 10px;
+      background: var(--acid);
+      box-shadow: 0 0 12px var(--acid);
+    }
+    .brand-name {
+      font-size: 15px;
+      line-height: 1;
+      letter-spacing: .16em;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .brand-sub {
+      color: var(--muted);
+      font-family: monospace;
+      font-size: 9px;
+      letter-spacing: .18em;
+      margin-top: 7px;
+      text-transform: uppercase;
+    }
+    .session-tag {
+      border-left: 1px solid var(--line);
+      padding-left: 26px;
+      color: var(--muted);
+      font-family: monospace;
+      font-size: 10px;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .topbar-spacer { flex: 1; }
+    .system-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-family: monospace;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .09em;
+    }
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--acid);
+      box-shadow: 0 0 12px var(--acid);
+      animation: breathe 2s ease-in-out infinite;
+    }
+    .version {
+      color: var(--muted-2);
+      font: 10px monospace;
+    }
+
+    .main {
+      display: grid;
+      grid-template-columns: 86px minmax(680px, 1fr) 294px;
+      min-height: calc(100vh - 78px);
+    }
+    .rail {
+      padding: 24px 0 20px;
+      border-right: 1px solid var(--line);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: rgba(9, 13, 15, .68);
+    }
+    .rail-button {
+      width: 54px;
+      height: 54px;
+      margin-bottom: 10px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--muted-2);
+      transition: .2s ease;
+      position: relative;
+    }
+    .rail-button:hover, .rail-button.active {
+      color: var(--acid);
+      border-color: var(--line-bright);
+      background: rgba(185, 255, 63, .04);
+    }
+    .rail-button.active::before {
+      content: "";
+      position: absolute;
+      left: -17px;
+      top: 18px;
+      width: 3px;
+      height: 18px;
+      background: var(--acid);
+      box-shadow: 0 0 10px var(--acid);
+    }
+    .rail-icon { display: block; font-size: 19px; line-height: 1; margin-bottom: 6px; }
+    .rail-label { font: 8px monospace; letter-spacing: .12em; text-transform: uppercase; }
+    .rail-bottom { margin-top: auto; }
+
+    .workspace {
+      min-width: 0;
+      padding: 31px 31px 24px;
+    }
+    .workspace-heading {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      margin-bottom: 23px;
+    }
+    .eyebrow {
+      color: var(--acid);
+      font: 10px monospace;
+      letter-spacing: .19em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 10px 0 0;
+      font-size: clamp(28px, 3vw, 39px);
+      line-height: 1;
+      letter-spacing: -.045em;
+      font-weight: 500;
+    }
+    .workspace-note {
+      color: var(--muted);
+      font: 11px monospace;
+      line-height: 1.7;
+      text-align: right;
+    }
+    .transport {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 14px 15px;
+      margin-bottom: 16px;
+      border: 1px solid var(--line);
+      background: linear-gradient(90deg, rgba(19, 29, 29, .95), rgba(13, 19, 21, .7));
+    }
+    .transport-main { display: flex; gap: 8px; }
+    .transport-btn {
+      height: 38px;
+      min-width: 72px;
+      padding: 0 14px;
+      border: 1px solid var(--line-bright);
+      background: var(--panel-2);
+      color: var(--ink);
+      font: 10px monospace;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      transition: .2s ease;
+    }
+    .transport-btn:hover { border-color: var(--acid-dim); color: var(--acid); }
+    .transport-btn.playing { color: var(--bg); border-color: var(--acid); background: var(--acid); }
+    .transport-btn.stop { min-width: 42px; padding: 0; color: var(--muted); }
+    .transport-meta { display: flex; align-items: center; gap: 12px; margin-left: 12px; }
+    .transport-divider { height: 26px; width: 1px; background: var(--line); }
+    .bpm-readout { min-width: 78px; }
+    .bpm-value { display: block; color: var(--acid); font: 18px monospace; letter-spacing: -.05em; }
+    .bpm-label { display: block; color: var(--muted); font: 8px monospace; letter-spacing: .14em; margin-top: 2px; text-transform: uppercase; }
+    .swing-mini { flex: 1; max-width: 220px; }
+    .slider-line { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font: 9px monospace; letter-spacing: .13em; text-transform: uppercase; }
+    .slider-value { color: var(--ink); }
+    input[type="range"] {
+      display: block;
+      width: 100%;
+      height: 15px;
+      margin: 6px 0 0;
+      appearance: none;
+      background: transparent;
+    }
+    input[type="range"]::-webkit-slider-runnable-track { height: 2px; background: linear-gradient(90deg, var(--acid) var(--fill, 50%), var(--line-bright) var(--fill, 50%)); }
+    input[type="range"]::-moz-range-track { height: 2px; background: var(--line-bright); }
+    input[type="range"]::-webkit-slider-thumb { appearance: none; width: 10px; height: 10px; margin-top: -4px; border: 0; border-radius: 50%; background: var(--acid); box-shadow: 0 0 10px rgba(185,255,63,.6); }
+    input[type="range"]::-moz-range-thumb { width: 10px; height: 10px; border: 0; border-radius: 50%; background: var(--acid); }
+    .transport-end { display: flex; gap: 8px; margin-left: auto; }
+    .icon-button { width: 36px; height: 36px; border: 1px solid var(--line); color: var(--muted); background: transparent; transition: .2s ease; }
+    .icon-button:hover { color: var(--acid); border-color: var(--acid-dim); }
+
+    .sequencer-panel {
+      border: 1px solid var(--line);
+      background: rgba(12, 17, 19, .86);
+      box-shadow: 0 24px 45px var(--shadow);
+      overflow: hidden;
+    }
+    .panel-caption {
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 17px;
+      border-bottom: 1px solid var(--line);
+    }
+    .panel-caption-left { display: flex; align-items: center; gap: 12px; }
+    .panel-code { color: var(--muted-2); font: 10px monospace; }
+    .panel-title { color: var(--ink); font: 10px monospace; letter-spacing: .16em; text-transform: uppercase; }
+    .panel-caption-right { display: flex; gap: 16px; color: var(--muted); font: 9px monospace; text-transform: uppercase; }
+    .panel-caption-right span:first-child { color: var(--acid); }
+    .grid-wrap { padding: 22px 17px 21px; overflow-x: auto; }
+    .grid-ruler, .track-row { display: grid; grid-template-columns: 129px repeat(16, minmax(27px, 1fr)); gap: 6px; min-width: 690px; }
+    .grid-ruler { margin-bottom: 10px; }
+    .measure-label { align-self: center; color: var(--muted-2); font: 9px monospace; letter-spacing: .13em; text-transform: uppercase; }
+    .ruler-step { position: relative; height: 13px; color: var(--muted); font: 9px monospace; text-align: center; }
+    .ruler-step::after { content: ""; position: absolute; left: 50%; bottom: -6px; width: 1px; height: 4px; background: var(--line-bright); }
+    .ruler-step.bar { color: var(--acid); }
+    .track-row { position: relative; align-items: center; min-height: 61px; }
+    .track-row + .track-row { border-top: 1px solid rgba(43, 57, 59, .52); }
+    .track-info { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .track-color { width: 3px; height: 28px; background: var(--track-color); box-shadow: 0 0 12px color-mix(in srgb, var(--track-color) 50%, transparent); }
+    .track-name { overflow: hidden; color: var(--ink); font: 11px monospace; letter-spacing: .08em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+    .track-mute { width: 22px; height: 22px; margin-left: auto; border: 1px solid var(--line); color: var(--muted-2); background: transparent; font: 9px monospace; }
+    .track-mute.active { color: var(--bg); border-color: var(--track-color); background: var(--track-color); }
+    .step {
+      position: relative;
+      height: 43px;
+      border: 1px solid #263538;
+      background: #151d1f;
+      transition: transform .1s ease, border-color .14s ease, background .14s ease, box-shadow .14s ease;
+    }
+    .step:nth-child(5n) { border-color: #34454a; }
+    .step:hover { transform: translateY(-2px); border-color: var(--track-color); }
+    .step::after { content: ""; position: absolute; left: 5px; right: 5px; bottom: 5px; height: 2px; background: var(--track-color); opacity: 0; transition: .16s ease; }
+    .step.active { border-color: var(--track-color); background: color-mix(in srgb, var(--track-color) 15%, #151d1f); box-shadow: inset 0 0 18px color-mix(in srgb, var(--track-color) 10%, transparent); }
+    .step.active::after { opacity: 1; box-shadow: 0 0 9px var(--track-color); }
+    .step.playhead { outline: 2px solid var(--acid); outline-offset: -2px; z-index: 1; box-shadow: 0 0 19px rgba(185,255,63,.28); }
+    .step.playhead.active::after { background: var(--acid); box-shadow: 0 0 10px var(--acid); }
+    .grid-footer { display: flex; justify-content: space-between; align-items: center; padding: 14px 17px; border-top: 1px solid var(--line); color: var(--muted); font: 9px monospace; letter-spacing: .1em; text-transform: uppercase; }
+    .grid-footer strong { color: var(--acid); font-weight: normal; }
+    .pulse { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 7px; background: var(--acid); box-shadow: 0 0 8px var(--acid); }
+
+    .lower-row { display: grid; grid-template-columns: 1.2fr .8fr; gap: 16px; margin-top: 16px; }
+    .sub-panel { border: 1px solid var(--line); background: rgba(12,17,19,.76); }
+    .sub-heading { display: flex; justify-content: space-between; padding: 14px 15px 11px; color: var(--muted); font: 9px monospace; letter-spacing: .15em; text-transform: uppercase; }
+    .sub-heading b { color: var(--ink); font-weight: normal; }
+    .meters { display: flex; gap: 12px; padding: 3px 15px 15px; }
+    .meter { flex: 1; }
+    .meter-label { display: flex; justify-content: space-between; color: var(--muted-2); font: 8px monospace; text-transform: uppercase; }
+    .meter-track { height: 6px; margin-top: 8px; overflow: hidden; background: #1a2426; }
+    .meter-fill { width: 68%; height: 100%; background: linear-gradient(90deg, var(--acid), var(--cyan)); box-shadow: 0 0 10px rgba(185,255,63,.35); transition: width .3s ease; }
+    .meter-fill.orange { width: 43%; background: linear-gradient(90deg, var(--orange), #ffd77a); }
+    .meter-fill.cyan { width: 56%; background: linear-gradient(90deg, var(--cyan), #a1fff4); }
+    .hint-panel { padding: 0 15px 15px; color: var(--muted); font: 10px monospace; line-height: 1.7; }
+    kbd { padding: 2px 5px; border: 1px solid var(--line-bright); color: var(--ink); background: var(--panel-2); font: 9px monospace; }
+
+    .inspector {
+      border-left: 1px solid var(--line);
+      padding: 31px 22px 24px;
+      background: rgba(9, 13, 15, .76);
+    }
+    .inspector-heading { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 22px; }
+    .inspector h2 { margin: 8px 0 0; font-size: 18px; letter-spacing: -.02em; font-weight: 500; }
+    .module-number { color: var(--muted-2); font: 9px monospace; }
+    .module { border-top: 1px solid var(--line); padding: 19px 0 21px; }
+    .module:last-child { border-bottom: 1px solid var(--line); }
+    .module-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; color: var(--muted); font: 9px monospace; letter-spacing: .15em; text-transform: uppercase; }
+    .module-title b { color: var(--acid); font-weight: normal; }
+    .big-control { display: flex; align-items: center; gap: 14px; }
+    .knob {
+      width: 65px;
+      height: 65px;
+      position: relative;
+      flex: none;
+      border-radius: 50%;
+      background: conic-gradient(from 220deg, var(--acid) 0 63%, #273337 63% 79%, transparent 79% 100%);
+      box-shadow: 0 0 24px rgba(185,255,63,.08);
+    }
+    .knob::after { content: ""; position: absolute; inset: 6px; border-radius: 50%; background: #11181a; border: 1px solid var(--line-bright); }
+    .knob::before { content: ""; position: absolute; width: 2px; height: 18px; top: 8px; left: 31px; z-index: 1; background: var(--acid); transform: rotate(28deg); transform-origin: bottom; box-shadow: 0 0 6px var(--acid); }
+    .control-copy { flex: 1; }
+    .control-value { color: var(--ink); font: 21px monospace; letter-spacing: -.05em; }
+    .control-description { margin-top: 4px; color: var(--muted); font: 9px monospace; line-height: 1.5; }
+    .micro-range { margin-top: 14px; }
+    .pattern-list { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; }
+    .pattern-slot { min-height: 51px; padding: 8px 6px; border: 1px solid var(--line); color: var(--muted); background: var(--panel); text-align: left; transition: .2s ease; }
+    .pattern-slot:hover { border-color: var(--acid-dim); }
+    .pattern-slot.current { border-color: var(--acid); color: var(--acid); background: rgba(185,255,63,.06); }
+    .pattern-slot .slot-id { display: block; font: 9px monospace; }
+    .pattern-slot .slot-state { display: block; margin-top: 5px; color: inherit; font: 8px monospace; opacity: .72; text-transform: uppercase; }
+    .pattern-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 9px; }
+    .outline-button { height: 31px; border: 1px solid var(--line-bright); color: var(--muted); background: transparent; font: 9px monospace; letter-spacing: .1em; text-transform: uppercase; transition: .2s ease; }
+    .outline-button:hover { border-color: var(--acid); color: var(--acid); }
+    .export-button { width: 100%; height: 42px; border: 1px solid var(--orange); color: var(--orange); background: rgba(255,138,61,.05); font: 10px monospace; letter-spacing: .13em; text-transform: uppercase; transition: .2s ease; }
+    .export-button:hover { color: var(--bg); background: var(--orange); box-shadow: 0 0 22px rgba(255,138,61,.2); }
+    .export-button:disabled { opacity: .5; cursor: wait; }
+    .export-note { margin-top: 9px; color: var(--muted-2); font: 9px monospace; line-height: 1.5; }
+    .session-log { height: 93px; overflow: hidden; padding: 11px 12px; border: 1px solid var(--line); background: #0b1012; color: var(--muted); font: 9px/1.8 monospace; }
+    .log-line { white-space: nowrap; }
+    .log-line::before { content: "> "; color: var(--acid-dim); }
+    .log-line.latest { color: var(--ink); }
+    .log-line.latest::before { color: var(--acid); }
+
+    .toast { position: fixed; right: 26px; bottom: 22px; z-index: 5; padding: 11px 14px; border: 1px solid var(--acid-dim); color: var(--acid); background: #101718; box-shadow: 0 10px 30px rgba(0,0,0,.4); font: 10px monospace; opacity: 0; transform: translateY(10px); pointer-events: none; transition: .24s ease; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    @keyframes breathe { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+    @keyframes rise { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
+    .topbar, .workspace, .inspector { animation: rise .55s ease both; }
+    .inspector { animation-delay: .08s; }
+    @media (max-width: 1120px) {
+      .main { grid-template-columns: 76px minmax(650px, 1fr) 260px; }
+      .workspace { padding-left: 22px; padding-right: 22px; }
+      .inspector { padding-left: 17px; padding-right: 17px; }
+      .grid-ruler, .track-row { grid-template-columns: 108px repeat(16, minmax(26px, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div>
+          <div class="brand-name">Audio Step</div>
+          <div class="brand-sub">Sequencer / live grid</div>
+        </div>
+      </div>
+      <div class="session-tag">Session 04 / afterglow</div>
+      <div class="topbar-spacer"></div>
+      <div class="system-status"><span class="status-dot"></span>Audio engine ready</div>
+      <div class="version">v1.0.16</div>
+    </header>
+
+    <main class="main">
+      <nav class="rail" aria-label="Main navigation">
+        <button class="rail-button active" aria-label="Sequencer" title="Sequencer"><span class="rail-icon">▦</span><span class="rail-label">Grid</span></button>
+        <button class="rail-button" aria-label="Mixer" title="Mixer"><span class="rail-icon">≋</span><span class="rail-label">Mix</span></button>
+        <button class="rail-button" aria-label="Sounds" title="Sounds"><span class="rail-icon">◈</span><span class="rail-label">Kit</span></button>
+        <div class="rail-bottom">
+          <button class="rail-button" aria-label="Settings" title="Settings"><span class="rail-icon">⌘</span><span class="rail-label">Setup</span></button>
+        </div>
+      </nav>
+
+      <section class="workspace" aria-label="Sequencer workspace">
+        <div class="workspace-heading">
+          <div>
+            <div class="eyebrow">Pattern editor / 04</div>
+            <h1>Afterglow <span style="color:var(--muted-2)">//</span> 16 steps</h1>
+          </div>
+          <div class="workspace-note">real-time pattern synthesis<br><span style="color:var(--acid)">●</span> click a cell to program a hit</div>
+        </div>
+
+        <div class="transport" aria-label="Transport controls">
+          <div class="transport-main">
+            <button class="transport-btn" id="playBtn"><span id="playGlyph">▶</span>&nbsp; Play</button>
+            <button class="transport-btn stop" id="stopBtn" aria-label="Stop">■</button>
+          </div>
+          <div class="transport-meta">
+            <div class="transport-divider"></div>
+            <div class="bpm-readout"><span class="bpm-value" id="bpmValue">118</span><span class="bpm-label">BPM / tempo</span></div>
+            <div class="swing-mini">
+              <div class="slider-line"><span>Swing</span><span class="slider-value" id="swingValue">54%</span></div>
+              <input id="swingRange" type="range" min="0" max="75" value="54" aria-label="Swing amount" />
+            </div>
+          </div>
+          <div class="transport-end">
+            <button class="icon-button" id="clearBtn" title="Clear pattern" aria-label="Clear pattern">⌫</button>
+            <button class="icon-button" id="randomBtn" title="Randomize pattern" aria-label="Randomize pattern">⤨</button>
+          </div>
+        </div>
+
+        <div class="sequencer-panel">
+          <div class="panel-caption">
+            <div class="panel-caption-left"><span class="panel-code">A—04</span><span class="panel-title">drum matrix</span></div>
+            <div class="panel-caption-right"><span>playing: <b id="stepReadout">—</b></span><span>4 / 4 time</span><span>16 steps</span></div>
+          </div>
+          <div class="grid-wrap">
+            <div class="grid-ruler" id="gridRuler"><span class="measure-label">sound / lane</span></div>
+            <div id="trackGrid"></div>
+          </div>
+          <div class="grid-footer"><span><i class="pulse"></i>live engine <strong id="engineText">idle / waiting for play</strong></span><span>shift + click: accent hit</span></div>
+        </div>
+
+        <div class="lower-row">
+          <div class="sub-panel">
+            <div class="sub-heading"><b>Signal monitor</b><span>bus / master</span></div>
+            <div class="meters">
+              <div class="meter"><div class="meter-label"><span>low</span><span id="lowMeterValue">68%</span></div><div class="meter-track"><div class="meter-fill" id="lowMeter"></div></div></div>
+              <div class="meter"><div class="meter-label"><span>mid</span><span>43%</span></div><div class="meter-track"><div class="meter-fill orange"></div></div></div>
+              <div class="meter"><div class="meter-label"><span>high</span><span>56%</span></div><div class="meter-track"><div class="meter-fill cyan"></div></div></div>
+            </div>
+          </div>
+          <div class="sub-panel">
+            <div class="sub-heading"><b>Quick controls</b><span>keyboard</span></div>
+            <div class="hint-panel"><kbd>space</kbd> play / stop &nbsp; <kbd>R</kbd> randomize &nbsp; <kbd>shift</kbd> accent</div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="inspector" aria-label="Pattern inspector">
+        <div class="inspector-heading"><div><div class="eyebrow">Control surface</div><h2>Pattern inspector</h2></div><span class="module-number">02 / 04</span></div>
+        <div class="module">
+          <div class="module-title"><span>Tempo control</span><b id="tempoModuleValue">118 bpm</b></div>
+          <div class="big-control"><div class="knob" aria-hidden="true"></div><div class="control-copy"><div class="control-value" id="tempoBigValue">118</div><div class="control-description">pulse rate / quarter notes<br>range 80—180 bpm</div></div></div>
+          <div class="micro-range"><input id="tempoRange" type="range" min="80" max="180" value="118" aria-label="Tempo" /></div>
+        </div>
+        <div class="module">
+          <div class="module-title"><span>Pattern slots</span><b id="slotStatus">A / loaded</b></div>
+          <div class="pattern-list" id="patternList"></div>
+          <div class="pattern-actions"><button class="outline-button" id="saveBtn">Save slot</button><button class="outline-button" id="loadBtn">Load slot</button></div>
+        </div>
+        <div class="module">
+          <div class="module-title"><span>Master output</span><b id="volumeValue">82%</b></div>
+          <input id="volumeRange" type="range" min="0" max="100" value="82" aria-label="Master volume" />
+        </div>
+        <div class="module">
+          <div class="module-title"><span>Render / export</span><b>WAV / 16-bit</b></div>
+          <button class="export-button" id="exportBtn">↓ &nbsp; Export audio</button>
+          <div class="export-note" id="exportNote">Render a 4-bar loop from the current grid.</div>
+        </div>
+        <div class="module">
+          <div class="module-title"><span>Session log</span><span>live</span></div>
+          <div class="session-log" id="sessionLog"><div class="log-line latest">engine initialized</div><div class="log-line">pattern A loaded</div><div class="log-line">kit: neon room / 04</div></div>
+        </div>
+      </aside>
+    </main>
+    <div class="toast" id="toast" role="status"></div>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+      const tracks = [
+        { id: "kick", name: "KICK", color: "#b9ff3f", type: "kick", hits: [0, 4, 8, 10, 12] },
+        { id: "snare", name: "SNARE", color: "#ff8a3d", type: "snare", hits: [4, 12] },
+        { id: "hat", name: "HI-HAT", color: "#5be5dd", type: "hat", hits: [0, 2, 4, 6, 8, 10, 12, 14] },
+        { id: "clap", name: "CLAP", color: "#d5a4ff", type: "clap", hits: [4, 12] }
+      ];
+      let pattern = tracks.map(t => Array.from({length: 16}, (_, i) => t.hits.includes(i)));
+      let accents = tracks.map(() => Array(16).fill(false));
+      let slots = { A: null, B: null, C: null, D: null };
+      let currentSlot = "A";
+      let tempo = 118;
+      let swing = 54;
+      let volume = .82;
+      let isPlaying = false;
+      let currentStep = -1;
+      let timer = null;
+      let audioCtx = null;
+      let masterGain = null;
+      let noiseBuffer = null;
+      let toastTimer = null;
+      let logEntries = ["engine initialized", "pattern A loaded", "kit: neon room / 04"];
+
+      const $ = id => document.getElementById(id);
+      const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+      function renderRuler() {
+        const ruler = $("gridRuler");
+        ruler.innerHTML = '<span class="measure-label">sound / lane</span>';
+        for (let i = 0; i < 16; i++) {
+          const el = document.createElement("span");
+          el.className = "ruler-step" + (i % 4 === 0 ? " bar" : "");
+          el.textContent = String(i + 1).padStart(2, "0");
+          ruler.appendChild(el);
+        }
+      }
+
+      function renderGrid() {
+        const grid = $("trackGrid");
+        grid.innerHTML = "";
+        tracks.forEach((track, row) => {
+          const rowEl = document.createElement("div");
+          rowEl.className = "track-row";
+          rowEl.dataset.row = row;
+          const info = document.createElement("div");
+          info.className = "track-info";
+          info.innerHTML = `<span class="track-color" style="--track-color:${track.color}"></span><span class="track-name">${track.name}</span><button class="track-mute" data-mute="${row}" aria-label="Mute ${track.name}">M</button>`;
+          rowEl.appendChild(info);
+          for (let step = 0; step < 16; step++) {
+            const cell = document.createElement("button");
+            cell.className = "step" + (pattern[row][step] ? " active" : "");
+            cell.style.setProperty("--track-color", track.color);
+            cell.dataset.row = row;
+            cell.dataset.step = step;
+            cell.setAttribute("aria-label", `${track.name}, step ${step + 1}`);
+            cell.setAttribute("aria-pressed", pattern[row][step]);
+            if (accents[row][step]) cell.dataset.accent = "true";
+            rowEl.appendChild(cell);
+          }
+          grid.appendChild(rowEl);
+        });
+        if (currentStep >= 0) updatePlayhead(currentStep);
+      }
+
+      function renderSlots() {
+        const list = $("patternList");
+        list.innerHTML = "";
+        Object.keys(slots).forEach(slot => {
+          const btn = document.createElement("button");
+          btn.className = "pattern-slot" + (slot === currentSlot ? " current" : "");
+          btn.dataset.slot = slot;
+          btn.innerHTML = `<span class="slot-id">SLOT ${slot}</span><span class="slot-state">${slots[slot] ? "saved" : slot === currentSlot ? "loaded" : "empty"}</span>`;
+          btn.addEventListener("click", () => { currentSlot = slot; loadSlot(); });
+          list.appendChild(btn);
+        });
+      }
+
+      function updatePlayhead(step) {
+        document.querySelectorAll(".step.playhead").forEach(el => el.classList.remove("playhead"));
+        if (step >= 0) document.querySelectorAll(`.step[data-step="${step}"]`).forEach(el => el.classList.add("playhead"));
+        $("stepReadout").textContent = step >= 0 ? String(step + 1).padStart(2, "0") : "—";
+      }
+
+      function updateRangeFill(input) {
+        const min = Number(input.min), max = Number(input.max), value = Number(input.value);
+        input.style.setProperty("--fill", `${((value - min) / (max - min)) * 100}%`);
+      }
+
+      function setTempo(value) {
+        tempo = Number(value);
+        $("tempoRange").value = tempo;
+        $("bpmValue").textContent = tempo;
+        $("tempoBigValue").textContent = tempo;
+        $("tempoModuleValue").textContent = `${tempo} bpm`;
+        updateRangeFill($("tempoRange"));
+        if (isPlaying) scheduleNext();
+      }
+      function setSwing(value) {
+        swing = Number(value);
+        $("swingRange").value = swing;
+        $("swingValue").textContent = `${swing}%`;
+        updateRangeFill($("swingRange"));
+      }
+      function setVolume(value) {
+        volume = Number(value) / 100;
+        $("volumeValue").textContent = `${Math.round(volume * 100)}%`;
+        updateRangeFill($("volumeRange"));
+        if (masterGain) masterGain.gain.value = volume;
+      }
+
+      function showToast(message) {
+        const toast = $("toast");
+        toast.textContent = message;
+        toast.classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toast.classList.remove("show"), 2200);
+      }
+      function addLog(message) {
+        logEntries = [message, ...logEntries].slice(0, 4);
+        $("sessionLog").innerHTML = logEntries.map((line, i) => `<div class="log-line ${i === 0 ? "latest" : ""}">${line}</div>`).join("");
+      }
+
+      function ensureAudio() {
+        if (audioCtx) { if (audioCtx.state === "suspended") audioCtx.resume(); return; }
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) { showToast("WebAudio is not supported here"); return; }
+        audioCtx = new AudioContext();
+        masterGain = audioCtx.createGain();
+        masterGain.gain.value = volume;
+        masterGain.connect(audioCtx.destination);
+        noiseBuffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 1, audioCtx.sampleRate);
+        const data = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+        addLog("audio context unlocked");
+      }
+
+      function tone(time, frequency, duration, gainValue, wave = "sine", endFrequency = frequency) {
+        if (!audioCtx || !masterGain) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = wave;
+        osc.frequency.setValueAtTime(frequency, time);
+        osc.frequency.exponentialRampToValueAtTime(Math.max(24, endFrequency), time + duration);
+        gain.gain.setValueAtTime(.0001, time);
+        gain.gain.exponentialRampToValueAtTime(gainValue, time + .004);
+        gain.gain.exponentialRampToValueAtTime(.0001, time + duration);
+        osc.connect(gain).connect(masterGain);
+        osc.start(time); osc.stop(time + duration + .02);
+      }
+      function noise(time, duration, gainValue, filterType = "highpass", cutoff = 800) {
+        if (!audioCtx || !masterGain) return;
+        const source = audioCtx.createBufferSource();
+        const filter = audioCtx.createBiquadFilter();
+        const gain = audioCtx.createGain();
+        source.buffer = noiseBuffer;
+        filter.type = filterType; filter.frequency.value = cutoff;
+        gain.gain.setValueAtTime(.0001, time);
+        gain.gain.exponentialRampToValueAtTime(gainValue, time + .002);
+        gain.gain.exponentialRampToValueAtTime(.0001, time + duration);
+        source.connect(filter).connect(gain).connect(masterGain);
+        source.start(time); source.stop(time + duration + .02);
+      }
+      function trigger(type, time, accent = false) {
+        const boost = accent ? 1.25 : 1;
+        if (type === "kick") {
+          tone(time, 145, .42, .72 * boost, "sine", 42);
+          tone(time, 80, .08, .18 * boost, "triangle", 45);
+        } else if (type === "snare") {
+          noise(time, .16, .3 * boost, "highpass", 1500);
+          tone(time, 190, .08, .16 * boost, "triangle", 120);
+        } else if (type === "hat") {
+          noise(time, .055, .12 * boost, "highpass", 6000);
+        } else if (type === "clap") {
+          noise(time, .19, .21 * boost, "bandpass", 1800);
+          noise(time + .025, .12, .13 * boost, "bandpass", 2200);
+        }
+      }
+
+      function beatDuration() { return 60 / tempo / 4; }
+      function scheduleNext() {
+        if (!isPlaying) return;
+        clearTimeout(timer);
+        const step = (currentStep + 1) % 16;
+        const delay = beatDuration() * 1000 * (step % 2 === 1 ? 1 + swing / 100 * .24 : 1 - swing / 100 * .12);
+        timer = setTimeout(() => advance(step), Math.max(18, delay));
+      }
+      function advance(step) {
+        if (!isPlaying) return;
+        currentStep = step;
+        updatePlayhead(step);
+        const now = audioCtx ? audioCtx.currentTime : 0;
+        pattern.forEach((row, i) => {
+          if (row[step] && !muted[i]) trigger(tracks[i].type, now, accents[i][step]);
+        });
+        const meter = $("lowMeter");
+        const level = pattern[0][step] ? 78 + Math.random() * 18 : 30 + Math.random() * 25;
+        meter.style.width = `${level}%`; $("lowMeterValue").textContent = `${Math.round(level)}%`;
+        $("engineText").textContent = `step ${String(step + 1).padStart(2, "0")} / running`;
+        scheduleNext();
+      }
+      function start() {
+        ensureAudio();
+        if (!audioCtx) return;
+        if (isPlaying) return;
+        isPlaying = true;
+        currentStep = -1;
+        $("playBtn").classList.add("playing"); $("playGlyph").textContent = "Ⅱ";
+        $("engineText").textContent = "syncing / running";
+        addLog("transport started");
+        advance(0);
+      }
+      function stop() {
+        isPlaying = false; clearTimeout(timer); currentStep = -1; updatePlayhead(-1);
+        $("playBtn").classList.remove("playing"); $("playGlyph").textContent = "▶";
+        $("engineText").textContent = "idle / waiting for play";
+        if ($( "lowMeter")) { $("lowMeter").style.width = "22%"; $("lowMeterValue").textContent = "22%"; }
+      }
+
+      const muted = tracks.map(() => false);
+      function toggleCell(row, step, accent = false) {
+        if (accent && pattern[row][step]) accents[row][step] = !accents[row][step];
+        else pattern[row][step] = !pattern[row][step];
+        renderGrid();
+        ensureAudio();
+        if (audioCtx && pattern[row][step]) trigger(tracks[row].type, audioCtx.currentTime, accents[row][step]);
+      }
+      function randomize() {
+        pattern = tracks.map((track, row) => Array.from({length:16}, (_, i) => {
+          if (row === 0) return [0, 4, 8, 12].includes(i) || Math.random() < .18;
+          if (row === 1) return [4, 12].includes(i) || Math.random() < .08;
+          if (row === 2) return i % 2 === 0 || Math.random() < .25;
+          return Math.random() < .15;
+        }));
+        accents = tracks.map(() => Array(16).fill(false));
+        renderGrid(); addLog("pattern randomized"); showToast("Pattern randomized");
+      }
+      function clearPattern() {
+        pattern = tracks.map(() => Array(16).fill(false)); accents = tracks.map(() => Array(16).fill(false));
+        renderGrid(); addLog("pattern cleared"); showToast("Grid cleared");
+      }
+      function snapshot() { return { pattern: pattern.map(row => row.slice()), accents: accents.map(row => row.slice()) }; }
+      function saveSlot() {
+        slots[currentSlot] = snapshot();
+        try { localStorage.setItem("audio-step-slots", JSON.stringify(slots)); } catch (e) {}
+        renderSlots(); $("slotStatus").textContent = `${currentSlot} / saved`; addLog(`pattern ${currentSlot} saved`); showToast(`Saved to slot ${currentSlot}`);
+      }
+      function loadSlot() {
+        const item = slots[currentSlot];
+        if (!item) { $("slotStatus").textContent = `${currentSlot} / empty`; showToast(`Slot ${currentSlot} is empty`); return; }
+        pattern = item.pattern.map(row => row.slice()); accents = item.accents.map(row => row.slice());
+        renderGrid(); renderSlots(); $("slotStatus").textContent = `${currentSlot} / loaded`; addLog(`pattern ${currentSlot} loaded`); showToast(`Loaded slot ${currentSlot}`);
+      }
+
+      function wavBlob(buffer) {
+        const channels = buffer.numberOfChannels, length = buffer.length, sampleRate = buffer.sampleRate;
+        const bytes = 44 + length * channels * 2, array = new ArrayBuffer(bytes), view = new DataView(array);
+        const write = (offset, value) => { for (let i=0; i<value.length; i++) view.setUint8(offset+i, value.charCodeAt(i)); };
+        write(0, "RIFF"); view.setUint32(4, bytes - 8, true); write(8, "WAVE"); write(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, channels, true); view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * channels * 2, true); view.setUint16(32, channels * 2, true); view.setUint16(34, 16, true); write(36, "data"); view.setUint32(40, bytes - 44, true);
+        let offset = 44;
+        for (let i=0; i<length; i++) for (let c=0; c<channels; c++) { const sample = Math.max(-1, Math.min(1, buffer.getChannelData(c)[i])); view.setInt16(offset, sample < 0 ? sample * 32768 : sample * 32767, true); offset += 2; }
+        return new Blob([array], { type: "audio/wav" });
+      }
+      async function exportWav() {
+        const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+        if (!Offline) { showToast("Offline rendering unavailable"); return; }
+        const btn = $("exportBtn"); btn.disabled = true; btn.textContent = "◌  Rendering loop..."; $("exportNote").textContent = "Synthesizing 4 bars / please wait...";
+        const sampleRate = 44100, duration = (60 / tempo) * 16 * 4 + .5;
+        const offline = new Offline(2, Math.ceil(sampleRate * duration), sampleRate);
+        const out = offline.createGain(); out.gain.value = volume; out.connect(offline.destination);
+        const oldCtx = audioCtx, oldMaster = masterGain, oldNoise = noiseBuffer;
+        audioCtx = offline; masterGain = out; noiseBuffer = offline.createBuffer(1, sampleRate, sampleRate); const data = noiseBuffer.getChannelData(0); for (let i=0;i<data.length;i++) data[i] = Math.random()*2-1;
+        for (let bar=0; bar<4; bar++) for (let step=0; step<16; step++) { const time = (bar * 16 + step) * (60 / tempo / 4); pattern.forEach((row, i) => { if (row[step] && !muted[i]) trigger(tracks[i].type, time, accents[i][step]); }); }
+        const rendered = await offline.startRendering();
+        audioCtx = oldCtx; masterGain = oldMaster; noiseBuffer = oldNoise;
+        const a = document.createElement("a"); a.href = URL.createObjectURL(wavBlob(rendered)); a.download = "afterglow-pattern.wav"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        btn.disabled = false; btn.textContent = "↓   Export audio"; $("exportNote").textContent = "4-bar WAV rendered from current grid."; addLog("WAV export complete"); showToast("WAV export complete");
+      }
+
+      renderRuler(); renderGrid();
+      try { const stored = JSON.parse(localStorage.getItem("audio-step-slots") || "null"); if (stored) slots = Object.assign(slots, stored); } catch (e) {}
+      renderSlots(); setTempo(118); setSwing(54); setVolume(82);
+      $("playBtn").addEventListener("click", () => isPlaying ? stop() : start());
+      $("stopBtn").addEventListener("click", stop);
+      $("randomBtn").addEventListener("click", randomize);
+      $("clearBtn").addEventListener("click", clearPattern);
+      $("saveBtn").addEventListener("click", saveSlot);
+      $("loadBtn").addEventListener("click", loadSlot);
+      $("exportBtn").addEventListener("click", exportWav);
+      $("tempoRange").addEventListener("input", e => setTempo(e.target.value));
+      $("swingRange").addEventListener("input", e => setSwing(e.target.value));
+      $("volumeRange").addEventListener("input", e => setVolume(e.target.value));
+      $("trackGrid").addEventListener("click", e => {
+        const mute = e.target.closest("[data-mute]");
+        if (mute) { const row = Number(mute.dataset.mute); muted[row] = !muted[row]; mute.classList.toggle("active", muted[row]); addLog(`${tracks[row].name.toLowerCase()} ${muted[row] ? "muted" : "unmuted"}`); return; }
+        const cell = e.target.closest(".step"); if (cell) toggleCell(Number(cell.dataset.row), Number(cell.dataset.step), e.shiftKey);
+      });
+      document.addEventListener("keydown", e => {
+        if (e.target.matches("input, textarea")) return;
+        if (e.code === "Space") { e.preventDefault(); isPlaying ? stop() : start(); }
+        if (e.key.toLowerCase() === "r") randomize();
+      });
+    })();
+  </script>
+</body>
+</html>

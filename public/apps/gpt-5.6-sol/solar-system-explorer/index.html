@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#05070a" />
+  <title>Solar System Explorer</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap');
+
+    :root {
+      --ink: #05070a;
+      --panel: rgba(10, 14, 19, .79);
+      --panel-strong: rgba(9, 13, 18, .94);
+      --line: rgba(210, 225, 236, .15);
+      --line-bright: rgba(210, 225, 236, .30);
+      --text: #f1f4f3;
+      --muted: #8c979d;
+      --gold: #f6bd62;
+      --cyan: #7ddde1;
+      --ease: cubic-bezier(.2,.75,.25,1);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: var(--ink); color: var(--text); }
+    body { font-family: Manrope, sans-serif; -webkit-font-smoothing: antialiased; }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, input:focus-visible { outline: 2px solid var(--cyan); outline-offset: 3px; }
+
+    #app { position: relative; width: 100%; height: 100%; isolation: isolate; background: #05070a; }
+    #space { position: absolute; inset: 0; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+    #space.dragging { cursor: grabbing; }
+
+    .vignette {
+      position: absolute; inset: 0; pointer-events: none;
+      background:
+        radial-gradient(circle at 48% 46%, transparent 24%, rgba(3,5,8,.14) 62%, rgba(2,3,5,.72) 108%),
+        linear-gradient(180deg, rgba(3,5,8,.54), transparent 18%, transparent 78%, rgba(3,5,8,.48));
+      z-index: 1;
+    }
+    .grain {
+      position: absolute; inset: 0; pointer-events: none; opacity: .05; z-index: 2;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.6'/%3E%3C/svg%3E");
+    }
+
+    .topbar {
+      position: absolute; top: 0; left: 0; right: 0; height: 86px; z-index: 5;
+      display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+      padding: 0 36px; border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(4,7,10,.78), rgba(4,7,10,.22));
+      backdrop-filter: blur(7px);
+    }
+    .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+    .brand-mark { width: 28px; height: 28px; position: relative; flex: 0 0 auto; }
+    .brand-mark::before { content: ""; position: absolute; width: 8px; height: 8px; border-radius: 50%; left: 10px; top: 10px; background: var(--gold); box-shadow: 0 0 16px rgba(246,189,98,.8); }
+    .brand-mark::after { content: ""; position: absolute; inset: 2px; border: 1px solid rgba(246,189,98,.58); border-radius: 50%; transform: rotate(-22deg) scaleY(.45); }
+    .brand h1 { font-size: 15px; letter-spacing: .04em; margin: 0; font-weight: 600; white-space: nowrap; }
+    .brand small { color: var(--muted); display: block; font: 9px/1.4 "Space Mono", monospace; letter-spacing: .18em; text-transform: uppercase; margin-top: 3px; }
+    .system-status { justify-self: center; display: flex; gap: 14px; align-items: center; color: #b8c1c4; font: 10px "Space Mono", monospace; letter-spacing: .15em; text-transform: uppercase; }
+    .status-dot { width: 5px; height: 5px; border-radius: 50%; background: #77d9b1; box-shadow: 0 0 9px #77d9b1; animation: blink 3s ease-in-out infinite; }
+    .top-actions { justify-self: end; display: flex; gap: 8px; }
+
+    .icon-button {
+      border: 1px solid var(--line); background: rgba(10,14,18,.5); width: 38px; height: 38px; border-radius: 50%;
+      display: grid; place-items: center; cursor: pointer; transition: .25s var(--ease); backdrop-filter: blur(8px);
+    }
+    .icon-button:hover { border-color: var(--line-bright); background: rgba(26,32,38,.72); transform: translateY(-1px); }
+    .icon-button svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; }
+
+    .orientation {
+      position: absolute; left: 34px; top: 116px; z-index: 4; width: 108px;
+      color: var(--muted); font: 9px "Space Mono", monospace; letter-spacing: .12em; text-transform: uppercase;
+    }
+    .orientation-line { height: 1px; background: var(--line-bright); margin: 8px 0 6px; position: relative; }
+    .orientation-line::after { content: ""; position: absolute; right: 0; top: -2px; width: 5px; height: 5px; border-radius: 50%; background: var(--cyan); }
+
+    .hint {
+      position: absolute; z-index: 4; left: 50%; top: 107px; transform: translateX(-50%);
+      display: flex; align-items: center; gap: 9px; color: rgba(215,223,225,.62);
+      font: 9px "Space Mono", monospace; text-transform: uppercase; letter-spacing: .12em;
+      transition: opacity .5s ease;
+    }
+    .hint svg { width: 15px; height: 15px; stroke: currentColor; fill: none; }
+    .hint.hidden { opacity: 0; }
+
+    .inspector {
+      position: absolute; right: 30px; top: 112px; bottom: 122px; width: 316px; z-index: 5;
+      border: 1px solid var(--line); background: linear-gradient(145deg, rgba(15,20,25,.88), rgba(7,10,14,.74));
+      backdrop-filter: blur(18px) saturate(1.2); display: flex; flex-direction: column;
+      transition: transform .45s var(--ease), opacity .35s ease; box-shadow: 0 24px 80px rgba(0,0,0,.24);
+    }
+    .inspector.closed { transform: translateX(calc(100% + 45px)); opacity: 0; pointer-events: none; }
+    .inspector::before, .inspector::after { content: ""; position: absolute; width: 9px; height: 9px; pointer-events: none; }
+    .inspector::before { left: -1px; top: -1px; border-left: 1px solid rgba(255,255,255,.48); border-top: 1px solid rgba(255,255,255,.48); }
+    .inspector::after { right: -1px; bottom: -1px; border-right: 1px solid rgba(255,255,255,.48); border-bottom: 1px solid rgba(255,255,255,.48); }
+    .panel-head { padding: 22px 22px 18px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
+    .eyebrow { color: var(--cyan); font: 9px "Space Mono", monospace; letter-spacing: .16em; text-transform: uppercase; }
+    .close-panel { border: 0; background: none; color: var(--muted); cursor: pointer; width: 28px; height: 28px; font-size: 19px; font-weight: 300; transition: color .2s; }
+    .close-panel:hover { color: white; }
+    .planet-hero { padding: 28px 22px 18px; position: relative; }
+    .planet-number { position: absolute; top: 23px; right: 21px; color: rgba(255,255,255,.055); font: 700 55px/1 "Space Mono", monospace; }
+    .planet-title { font-size: clamp(35px, 3.2vw, 47px); line-height: 1; letter-spacing: -.055em; margin: 8px 0 10px; font-weight: 500; }
+    .planet-class { margin: 0; color: var(--muted); font-size: 12px; }
+    .planet-desc { color: #c1c7c8; font-size: 12px; line-height: 1.65; margin: 19px 0 0; max-width: 255px; }
+    .stats { display: grid; grid-template-columns: 1fr 1fr; margin: auto 22px 0; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+    .stat { padding: 14px 13px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); min-height: 66px; }
+    .stat label { display: block; color: var(--muted); font: 8px "Space Mono", monospace; letter-spacing: .12em; text-transform: uppercase; margin-bottom: 8px; }
+    .stat strong { font: 500 13px "Space Mono", monospace; letter-spacing: -.03em; }
+    .panel-foot { padding: 15px 22px 20px; color: var(--muted); font: 8px/1.5 "Space Mono", monospace; letter-spacing: .06em; text-transform: uppercase; display: flex; justify-content: space-between; }
+    .panel-foot span:last-child { color: var(--gold); }
+
+    .controls {
+      position: absolute; z-index: 5; left: 30px; bottom: 120px; width: 250px;
+      background: rgba(8,12,16,.66); border: 1px solid var(--line); backdrop-filter: blur(14px); padding: 17px 18px;
+    }
+    .control-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .control-title { color: var(--muted); font: 9px "Space Mono", monospace; text-transform: uppercase; letter-spacing: .14em; }
+    .speed-readout { font: 10px "Space Mono", monospace; color: var(--gold); }
+    .play-control { display: flex; align-items: center; gap: 13px; }
+    .play-button { width: 32px; height: 32px; flex: 0 0 auto; border: 1px solid rgba(246,189,98,.45); background: rgba(246,189,98,.1); border-radius: 50%; color: var(--gold); cursor: pointer; display: grid; place-items: center; transition: .25s var(--ease); }
+    .play-button:hover { background: var(--gold); color: #171008; transform: scale(1.04); }
+    .play-button svg { width: 12px; height: 12px; fill: currentColor; }
+    .range-wrap { flex: 1; position: relative; }
+    input[type="range"] { width: 100%; appearance: none; background: transparent; cursor: pointer; display: block; }
+    input[type="range"]::-webkit-slider-runnable-track { height: 2px; background: linear-gradient(90deg, var(--gold) var(--progress, 50%), rgba(255,255,255,.17) var(--progress, 50%)); }
+    input[type="range"]::-webkit-slider-thumb { appearance: none; width: 11px; height: 11px; border-radius: 50%; margin-top: -4.5px; background: var(--gold); border: 2px solid #352715; box-shadow: 0 0 0 3px rgba(246,189,98,.12); }
+    .range-labels { display: flex; justify-content: space-between; margin-top: 8px; color: #586268; font: 7px "Space Mono", monospace; text-transform: uppercase; }
+
+    .planet-dock {
+      position: absolute; z-index: 6; bottom: 0; left: 0; right: 0; height: 94px; border-top: 1px solid var(--line);
+      background: rgba(4,7,10,.76); backdrop-filter: blur(16px); display: flex; align-items: stretch;
+      padding: 0 28px;
+    }
+    .dock-label { width: 120px; flex: 0 0 auto; display: flex; flex-direction: column; justify-content: center; border-right: 1px solid var(--line); }
+    .dock-label strong { font: 9px "Space Mono", monospace; letter-spacing: .15em; text-transform: uppercase; }
+    .dock-label span { font: 8px "Space Mono", monospace; color: var(--muted); margin-top: 7px; }
+    .planet-list { flex: 1; display: grid; grid-template-columns: repeat(8, minmax(74px, 1fr)); overflow-x: auto; scrollbar-width: none; }
+    .planet-list::-webkit-scrollbar { display: none; }
+    .planet-tab { position: relative; min-width: 74px; border: 0; border-right: 1px solid rgba(210,225,236,.08); background: transparent; cursor: pointer; text-align: left; padding: 17px 10px 12px; transition: background .25s ease; overflow: hidden; }
+    .planet-tab:hover { background: rgba(255,255,255,.035); }
+    .planet-tab.active { background: rgba(255,255,255,.055); }
+    .planet-tab.active::before { content: ""; position: absolute; left: 0; top: 0; right: 0; height: 2px; background: var(--planet); box-shadow: 0 0 10px var(--planet); }
+    .planet-tab .orb { width: var(--size); height: var(--size); min-width: 9px; min-height: 9px; max-width: 21px; max-height: 21px; border-radius: 50%; background: var(--planet); box-shadow: inset -4px -2px 5px rgba(0,0,0,.35), 0 0 9px color-mix(in srgb, var(--planet) 45%, transparent); margin-bottom: 9px; }
+    .planet-tab .tab-index { position: absolute; right: 9px; top: 17px; font: 7px "Space Mono", monospace; color: #566067; }
+    .planet-tab strong { display: block; font-size: 10px; font-weight: 500; letter-spacing: .01em; }
+    .planet-tab small { font: 7px "Space Mono", monospace; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+
+    .zoom-controls { position: absolute; left: 30px; top: 198px; z-index: 5; display: flex; flex-direction: column; }
+    .zoom-controls .icon-button { border-radius: 0; margin-top: -1px; }
+    .open-inspector { display: none; position: absolute; z-index: 5; top: 108px; right: 20px; border: 1px solid var(--line); background: var(--panel-strong); padding: 10px 13px; font: 9px "Space Mono", monospace; letter-spacing: .1em; text-transform: uppercase; cursor: pointer; }
+    .open-inspector.visible { display: block; }
+    .sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+
+    @keyframes blink { 0%,100% { opacity: .5; } 50% { opacity: 1; } }
+
+    @media (max-width: 900px) {
+      .topbar { padding: 0 19px; height: 72px; grid-template-columns: 1fr auto; }
+      .system-status { display: none; }
+      .inspector { top: 92px; right: 18px; bottom: 108px; width: min(310px, calc(100vw - 36px)); }
+      .orientation { top: 92px; left: 19px; }
+      .hint { top: 87px; }
+      .zoom-controls { left: 18px; top: 164px; }
+      .controls { left: 18px; bottom: 107px; }
+      .planet-dock { height: 84px; padding: 0; }
+      .dock-label { display: none; }
+      .planet-list { grid-template-columns: repeat(8, 80px); }
+      .planet-tab { padding-top: 13px; }
+    }
+    @media (max-width: 620px) {
+      .brand small { display: none; }
+      .brand h1 { font-size: 13px; }
+      .top-actions .icon-button:first-child { display: none; }
+      .orientation { display: none; }
+      .hint { left: 20px; transform: none; font-size: 8px; }
+      .zoom-controls { top: 118px; }
+      .controls { width: 220px; left: 14px; bottom: 96px; padding: 13px; }
+      .inspector { inset: auto 12px 96px 12px; width: auto; max-height: 54vh; }
+      .planet-hero { padding: 20px 19px 13px; }
+      .planet-title { font-size: 34px; }
+      .planet-desc { margin-top: 12px; }
+      .stats { margin: auto 19px 0; }
+      .panel-head { padding: 15px 19px 13px; }
+      .panel-foot { display: none; }
+      .planet-dock { height: 78px; }
+      .planet-list { grid-template-columns: repeat(8, 72px); }
+      .planet-tab { padding: 10px 8px 8px; }
+      .planet-tab .orb { margin-bottom: 6px; }
+    }
+  </style>
+</head>
+<body>
+  <main id="app" aria-label="Interactive Solar System Explorer">
+    <canvas id="space" aria-label="Interactive view of the solar system. Drag to rotate, scroll to zoom, and select a planet for details."></canvas>
+    <div class="vignette"></div><div class="grain"></div>
+
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div><h1>Solar System Explorer</h1><small>Heliocentric model · orbital atlas</small></div>
+      </div>
+      <div class="system-status"><span class="status-dot"></span><span>Live orbital simulation</span></div>
+      <div class="top-actions">
+        <button class="icon-button" id="resetBtn" aria-label="Reset view" title="Reset view">
+          <svg viewBox="0 0 24 24"><path d="M4 4v6h6M5.5 15a7.5 7.5 0 1 0 .7-7.9L4 10"/></svg>
+        </button>
+        <button class="icon-button" id="fullscreenBtn" aria-label="Enter fullscreen" title="Fullscreen">
+          <svg viewBox="0 0 24 24"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="orientation" aria-hidden="true">View plane<div class="orientation-line"></div><span id="angleReadout">31.4° / 19.0°</span></div>
+    <div class="hint" id="hint"><svg viewBox="0 0 24 24"><path d="M8 11V7a1.5 1.5 0 0 1 3 0v3-5a1.5 1.5 0 0 1 3 0v5-3a1.5 1.5 0 0 1 3 0v4-1a1.5 1.5 0 0 1 3 0v4c0 4-2.5 7-6.5 7H12c-2.4 0-4-1.3-5.5-3l-2-2a1.5 1.5 0 0 1 2-2l1.5 1"/></svg>Drag to rotate · scroll to zoom</div>
+
+    <div class="zoom-controls" aria-label="Zoom controls">
+      <button class="icon-button" id="zoomIn" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+      <button class="icon-button" id="zoomOut" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+    </div>
+
+    <aside class="inspector" id="inspector" aria-live="polite">
+      <div class="panel-head"><span class="eyebrow">Celestial profile</span><button class="close-panel" id="closePanel" aria-label="Close details">×</button></div>
+      <section class="planet-hero">
+        <span class="planet-number" id="planetNumber">03</span>
+        <div class="eyebrow" id="planetType">Terrestrial planet</div>
+        <h2 class="planet-title" id="planetName">Earth</h2>
+        <p class="planet-class" id="planetSubtitle">The blue planet · 1 natural satellite</p>
+        <p class="planet-desc" id="planetDesc">Our ocean world is the only known planet to harbor life, with a dynamic atmosphere and active geology.</p>
+      </section>
+      <div class="stats">
+        <div class="stat"><label>Distance from sun</label><strong id="statDistance">149.6M km</strong></div>
+        <div class="stat"><label>Orbital period</label><strong id="statOrbit">365.25 days</strong></div>
+        <div class="stat"><label>Diameter</label><strong id="statDiameter">12,742 km</strong></div>
+        <div class="stat"><label>Mean temp.</label><strong id="statTemp">15°C</strong></div>
+      </div>
+      <footer class="panel-foot"><span id="planetMoons">Moons · 01</span><span id="planetPosition">Orbit 32%</span></footer>
+    </aside>
+    <button class="open-inspector" id="openPanel">Show profile</button>
+
+    <section class="controls" aria-label="Simulation controls">
+      <div class="control-top"><span class="control-title">Orbit speed</span><output class="speed-readout" id="speedValue">1.00×</output></div>
+      <div class="play-control">
+        <button class="play-button" id="playBtn" aria-label="Pause simulation">
+          <svg id="playIcon" viewBox="0 0 24 24"><path d="M7 4h4v16H7zM14 4h4v16h-4z"/></svg>
+        </button>
+        <div class="range-wrap">
+          <input id="speed" type="range" min="0" max="2" value="1" step="0.05" aria-label="Orbit speed" />
+          <div class="range-labels"><span>Drift</span><span>Realtime</span><span>Fast</span></div>
+        </div>
+      </div>
+    </section>
+
+    <nav class="planet-dock" aria-label="Select a planet">
+      <div class="dock-label"><strong>Planet index</strong><span>08 objects</span></div>
+      <div class="planet-list" id="planetList"></div>
+    </nav>
+  </main>
+
+  <script>
+    (() => {
+      'use strict';
+      const planets = [
+        { name:'Mercury', type:'Terrestrial planet', sub:'Swiftest world · 0 natural satellites', desc:'The smallest planet races around the Sun, its cratered surface swinging between extreme heat and cold.', distance:'57.9M km', orbit:'88 days', diameter:'4,879 km', temp:'167°C', moons:0, radius:3.8, size:4.5, color:'#a9a297', accent:'#c2b9a8', speed:4.15, angle:5.3, texture:'rock' },
+        { name:'Venus', type:'Terrestrial planet', sub:'Cloud-veiled world · 0 natural satellites', desc:'A dense carbon-dioxide atmosphere traps heat above a volcanic landscape hidden beneath bright sulfuric clouds.', distance:'108.2M km', orbit:'224.7 days', diameter:'12,104 km', temp:'464°C', moons:0, radius:5.0, size:7.5, color:'#d8a45d', accent:'#edcc8a', speed:1.62, angle:4.15, texture:'cloud' },
+        { name:'Earth', type:'Terrestrial planet', sub:'The blue planet · 1 natural satellite', desc:'Our ocean world is the only known planet to harbor life, with a dynamic atmosphere and active geology.', distance:'149.6M km', orbit:'365.25 days', diameter:'12,742 km', temp:'15°C', moons:1, radius:6.25, size:8, color:'#4e93bf', accent:'#77bfcc', speed:1, angle:3.2, texture:'earth' },
+        { name:'Mars', type:'Terrestrial planet', sub:'The red planet · 2 natural satellites', desc:'A cold desert world marked by iron oxide, immense volcanoes and channels carved by an ancient, wetter past.', distance:'227.9M km', orbit:'687 days', diameter:'6,779 km', temp:'−65°C', moons:2, radius:7.55, size:5.8, color:'#b95835', accent:'#df8060', speed:.53, angle:2.4, texture:'rock' },
+        { name:'Jupiter', type:'Gas giant', sub:'The giant planet · 95 known satellites', desc:'The largest planet commands a vast system of moons. Its Great Red Spot is a storm wider than Earth.', distance:'778.5M km', orbit:'11.86 years', diameter:'139,820 km', temp:'−110°C', moons:95, radius:9.5, size:17, color:'#c79568', accent:'#e0bd91', speed:.084, angle:1.55, texture:'bands' },
+        { name:'Saturn', type:'Gas giant', sub:'The ringed planet · 146 known satellites', desc:'Saturn is wrapped in thousands of icy ringlets, forming the solar system’s most intricate planetary crown.', distance:'1.43B km', orbit:'29.45 years', diameter:'116,460 km', temp:'−140°C', moons:146, radius:11.65, size:14.7, color:'#d5ba79', accent:'#ead99f', speed:.034, angle:.72, texture:'bands', rings:true },
+        { name:'Uranus', type:'Ice giant', sub:'The sideways planet · 28 known satellites', desc:'This pale ice giant rotates nearly on its side, likely the lasting signature of a colossal ancient impact.', distance:'2.87B km', orbit:'84 years', diameter:'50,724 km', temp:'−195°C', moons:28, radius:13.65, size:10.5, color:'#83cbd0', accent:'#b6e3df', speed:.012, angle:5.7, texture:'smooth', rings:true },
+        { name:'Neptune', type:'Ice giant', sub:'The windy planet · 16 known satellites', desc:'Dark, cold and supersonically windy, Neptune is the last major world before the distant Kuiper Belt.', distance:'4.50B km', orbit:'164.8 years', diameter:'49,244 km', temp:'−200°C', moons:16, radius:15.5, size:10.2, color:'#315fb5', accent:'#6f94e0', speed:.006, angle:4.8, texture:'smooth' }
+      ];
+
+      const canvas = document.getElementById('space');
+      const ctx = canvas.getContext('2d');
+      const DPR = Math.min(window.devicePixelRatio || 1, 2);
+      let width=0, height=0, time=0, last=performance.now(), paused=false;
+      let yaw=-0.22, pitch=0.37, zoom=1, targetYaw=yaw, targetPitch=pitch, targetZoom=zoom;
+      let dragging=false, moved=false, startX=0, startY=0, baseYaw=0, basePitch=0, selected=2, hover=-1;
+      let speed=1, pinchDistance=0, stars=[], shootingStars=[];
+
+      const el = id => document.getElementById(id);
+      const inspector=el('inspector'), hint=el('hint'), speedInput=el('speed');
+
+      function resize(){
+        width=innerWidth; height=innerHeight;
+        canvas.width=Math.floor(width*DPR); canvas.height=Math.floor(height*DPR);
+        canvas.style.width=width+'px'; canvas.style.height=height+'px';
+        ctx.setTransform(DPR,0,0,DPR,0,0);
+        const count=Math.min(520, Math.floor(width*height/2600));
+        stars=Array.from({length:count},(_,i)=>({ x:Math.random(), y:Math.random(), a:.14+Math.random()*.68, r:Math.random()<.06?1.15:.35+Math.random()*.48, d:.2+Math.random()*.8, tw:Math.random()*6.28 }));
+      }
+
+      function project(x,z,y=0){
+        const cy=Math.cos(yaw), sy=Math.sin(yaw), cp=Math.cos(pitch), sp=Math.sin(pitch);
+        let rx=x*cy-z*sy, rz=x*sy+z*cy;
+        let ry=y*cp-rz*sp; rz=y*sp+rz*cp;
+        const scale=Math.min(width, height)*.034*zoom;
+        const centerX=width*(width>900?.46:.5), centerY=height*(height>650?.49:.47);
+        const perspective=1/(1+rz*.018);
+        return {x:centerX+rx*scale*perspective, y:centerY+ry*scale*perspective, z:rz, s:scale*perspective};
+      }
+
+      function drawStars(t){
+        ctx.save();
+        for(const s of stars){
+          const px=(s.x*width + yaw*50*s.d + width)%width, py=(s.y*height + pitch*24*s.d + height)%height;
+          const twinkle=.72+.28*Math.sin(t*.0007+s.tw);
+          ctx.globalAlpha=s.a*twinkle; ctx.fillStyle='#dbe8ee'; ctx.beginPath(); ctx.arc(px,py,s.r,0,Math.PI*2); ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      function orbitPoints(radius){
+        const pts=[]; for(let i=0;i<=120;i++){ const a=i/120*Math.PI*2; pts.push(project(Math.cos(a)*radius,Math.sin(a)*radius)); } return pts;
+      }
+
+      function drawOrbit(p,index){
+        const pts=orbitPoints(p.radius); ctx.beginPath();
+        pts.forEach((q,i)=>i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y));
+        ctx.strokeStyle=index===selected?'rgba(205,225,228,.26)':'rgba(177,197,202,.105)'; ctx.lineWidth=index===selected?1:.65; ctx.stroke();
+        if(index===selected){
+          const markerIndex=((Math.floor(time*.015)%120)+120)%120;
+          const q=pts[markerIndex]; ctx.fillStyle='rgba(125,221,225,.85)'; ctx.beginPath(); ctx.arc(q.x,q.y,1.4,0,7); ctx.fill();
+        }
+      }
+
+      function drawSun(){
+        const p=project(0,0), r=Math.max(13,p.s*.48);
+        const halo=ctx.createRadialGradient(p.x,p.y,r*.15,p.x,p.y,r*4.8);
+        halo.addColorStop(0,'rgba(255,235,173,.95)'); halo.addColorStop(.12,'rgba(251,190,83,.55)'); halo.addColorStop(.4,'rgba(242,132,38,.12)'); halo.addColorStop(1,'rgba(240,110,22,0)');
+        ctx.fillStyle=halo; ctx.beginPath(); ctx.arc(p.x,p.y,r*4.8,0,7); ctx.fill();
+        const body=ctx.createRadialGradient(p.x-r*.25,p.y-r*.3,0,p.x,p.y,r);
+        body.addColorStop(0,'#fff6cf'); body.addColorStop(.18,'#ffd27b'); body.addColorStop(.72,'#f39c36'); body.addColorStop(1,'#b84e19');
+        ctx.fillStyle=body; ctx.beginPath(); ctx.arc(p.x,p.y,r,0,7); ctx.fill();
+        ctx.globalAlpha=.34; ctx.strokeStyle='#ffd477';
+        for(let i=0;i<5;i++){ctx.beginPath();ctx.arc(p.x,p.y,r*(1.08+i*.08+Math.sin(time*.002+i)*.018),0,7);ctx.stroke();}
+        ctx.globalAlpha=1;
+      }
+
+      function bodyPosition(p){ const a=p.angle+time*.000045*p.speed; return {a, ...project(Math.cos(a)*p.radius,Math.sin(a)*p.radius)}; }
+
+      function drawPlanet(p,i,pos){
+        const r=Math.max(3,p.size*Math.sqrt(Math.max(.6,pos.s/25))*.68);
+        if(i===selected || i===hover){
+          ctx.strokeStyle=i===selected?'rgba(125,221,225,.62)':'rgba(255,255,255,.35)'; ctx.lineWidth=1;
+          ctx.beginPath(); ctx.arc(pos.x,pos.y,r+8+(i===selected?Math.sin(time*.004)*2:0),0,7); ctx.stroke();
+          if(i===selected){
+            ctx.strokeStyle='rgba(125,221,225,.22)'; ctx.beginPath(); ctx.arc(pos.x,pos.y,r+14,0,7); ctx.stroke();
+          }
+        }
+        if(p.rings){
+          ctx.save(); ctx.translate(pos.x,pos.y); ctx.rotate(-yaw*.45+.08); ctx.scale(1,.28+Math.abs(Math.sin(pitch))*.3);
+          ctx.strokeStyle=p.name==='Saturn'?'rgba(222,202,151,.55)':'rgba(159,208,209,.25)'; ctx.lineWidth=Math.max(2,r*.28);
+          ctx.beginPath(); ctx.arc(0,0,r*1.72,0,7); ctx.stroke();
+          ctx.strokeStyle='rgba(255,255,255,.16)'; ctx.lineWidth=.7; ctx.beginPath(); ctx.arc(0,0,r*2.05,0,7); ctx.stroke(); ctx.restore();
+        }
+        const grad=ctx.createRadialGradient(pos.x-r*.35,pos.y-r*.4,r*.05,pos.x,pos.y,r);
+        grad.addColorStop(0,p.accent); grad.addColorStop(.48,p.color); grad.addColorStop(1,'#111820');
+        ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(pos.x,pos.y,r,0,7); ctx.fill();
+        ctx.save(); ctx.beginPath(); ctx.arc(pos.x,pos.y,r,0,7); ctx.clip();
+        if(p.texture==='bands'){
+          for(let y=-.7;y<.8;y+=.28){ctx.fillStyle=y%2<0?'rgba(255,240,199,.14)':'rgba(63,35,26,.16)';ctx.fillRect(pos.x-r,pos.y+y*r,r*2,r*.12);}
+          if(p.name==='Jupiter'){ctx.fillStyle='rgba(131,53,33,.5)';ctx.beginPath();ctx.ellipse(pos.x+r*.3,pos.y+r*.18,r*.25,r*.11,-.1,0,7);ctx.fill();}
+        } else if(p.texture==='earth'){
+          ctx.fillStyle='rgba(89,139,91,.75)';
+          ctx.beginPath();ctx.ellipse(pos.x-r*.18,pos.y-r*.15,r*.25,r*.16,.3,0,7);ctx.ellipse(pos.x+r*.28,pos.y+r*.22,r*.18,r*.3,-.5,0,7);ctx.fill();
+          ctx.strokeStyle='rgba(235,250,250,.33)';ctx.lineWidth=Math.max(.5,r*.05);ctx.beginPath();ctx.arc(pos.x,pos.y,r*.75,.2,2.3);ctx.stroke();
+        } else if(p.texture==='cloud'){
+          ctx.strokeStyle='rgba(255,237,190,.28)';ctx.lineWidth=r*.12;for(let j=0;j<3;j++){ctx.beginPath();ctx.arc(pos.x,pos.y+j*r*.28-r*.25,r*.8,3.25,6.1);ctx.stroke();}
+        } else if(p.texture==='rock'){
+          ctx.fillStyle='rgba(30,18,14,.22)'; for(let j=0;j<4;j++){const a=j*2.1+1;ctx.beginPath();ctx.arc(pos.x+Math.cos(a)*r*.45,pos.y+Math.sin(a)*r*.42,Math.max(.5,r*.1),0,7);ctx.fill();}
+        }
+        ctx.restore();
+        if(i===selected && r>5){
+          const labelY=pos.y-r-19; ctx.font='7px Space Mono'; ctx.textAlign='center'; ctx.fillStyle='rgba(226,235,235,.82)'; ctx.fillText(p.name.toUpperCase(),pos.x,labelY);
+          ctx.fillStyle='rgba(125,221,225,.5)';ctx.fillRect(pos.x-1,labelY+6,2,5);
+        }
+        p.screen={x:pos.x,y:pos.y,r:Math.max(12,r+7),z:pos.z};
+      }
+
+      function render(now){
+        const dt=Math.min(40,now-last); last=now;
+        yaw+=(targetYaw-yaw)*.11; pitch+=(targetPitch-pitch)*.11; zoom+=(targetZoom-zoom)*.1;
+        if(!paused) time+=dt*speed;
+        ctx.clearRect(0,0,width,height); drawStars(now);
+        planets.forEach((p,i)=>drawOrbit(p,i)); drawSun();
+        const ordered=planets.map((p,i)=>({p,i,pos:bodyPosition(p)})).sort((a,b)=>b.pos.z-a.pos.z);
+        ordered.forEach(o=>drawPlanet(o.p,o.i,o.pos));
+        el('angleReadout').textContent=((yaw*180/Math.PI)%360).toFixed(1)+'° / '+(pitch*180/Math.PI).toFixed(1)+'°';
+        if(selected>=0) el('planetPosition').textContent='Orbit '+Math.round(((planets[selected].angle+time*.000045*planets[selected].speed)%(Math.PI*2))/(Math.PI*2)*100+100)%100+'%';
+        requestAnimationFrame(render);
+      }
+
+      function updatePanel(i, open=true){
+        selected=i; const p=planets[i];
+        el('planetNumber').textContent=String(i+1).padStart(2,'0'); el('planetType').textContent=p.type; el('planetName').textContent=p.name;
+        el('planetSubtitle').textContent=p.sub; el('planetDesc').textContent=p.desc; el('statDistance').textContent=p.distance;
+        el('statOrbit').textContent=p.orbit; el('statDiameter').textContent=p.diameter; el('statTemp').textContent=p.temp;
+        el('planetMoons').textContent='Moons · '+String(p.moons).padStart(2,'0');
+        document.querySelectorAll('.planet-tab').forEach((tab,j)=>tab.classList.toggle('active',j===i));
+        if(open){inspector.classList.remove('closed');el('openPanel').classList.remove('visible');}
+      }
+
+      function makeTabs(){
+        const list=el('planetList');
+        planets.forEach((p,i)=>{
+          const b=document.createElement('button'); b.className='planet-tab'+(i===selected?' active':''); b.style.setProperty('--planet',p.color); b.style.setProperty('--size',(8+p.size*.58)+'px');
+          b.innerHTML=`<span class="tab-index">0${i+1}</span><span class="orb"></span><strong>${p.name}</strong><small>${p.type.replace(' planet','')}</small>`;
+          b.setAttribute('aria-label','View '+p.name); b.onclick=()=>updatePanel(i); list.appendChild(b);
+        });
+      }
+
+      function setZoom(v){ targetZoom=Math.max(.48,Math.min(2.25,v)); }
+      function pointerDown(e){
+        dragging=true;moved=false;startX=e.clientX;startY=e.clientY;baseYaw=targetYaw;basePitch=targetPitch;canvas.classList.add('dragging');canvas.setPointerCapture?.(e.pointerId);hint.classList.add('hidden');
+      }
+      function pointerMove(e){
+        const dx=e.clientX-startX,dy=e.clientY-startY;if(dragging&&Math.hypot(dx,dy)>3)moved=true;
+        if(dragging){targetYaw=baseYaw-dx*.006;targetPitch=Math.max(-1.05,Math.min(1.18,basePitch+dy*.005));}
+        else {hover=-1;for(let i=planets.length-1;i>=0;i--){const s=planets[i].screen;if(s&&Math.hypot(e.clientX-s.x,e.clientY-s.y)<s.r){hover=i;break;}}canvas.style.cursor=hover>=0?'pointer':'grab';}
+      }
+      function pointerUp(e){
+        if(!dragging)return;dragging=false;canvas.classList.remove('dragging');
+        if(!moved){let hit=-1,best=1e9;for(let i=0;i<planets.length;i++){const s=planets[i].screen;if(s){const d=Math.hypot(e.clientX-s.x,e.clientY-s.y);if(d<s.r&&d<best){hit=i;best=d;}}}if(hit>=0)updatePanel(hit);}
+      }
+      canvas.addEventListener('pointerdown',pointerDown);canvas.addEventListener('pointermove',pointerMove);canvas.addEventListener('pointerup',pointerUp);canvas.addEventListener('pointercancel',pointerUp);
+      canvas.addEventListener('wheel',e=>{e.preventDefault();setZoom(targetZoom*Math.exp(-e.deltaY*.001));hint.classList.add('hidden');},{passive:false});
+      canvas.addEventListener('touchstart',e=>{if(e.touches.length===2)pinchDistance=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);},{passive:true});
+      canvas.addEventListener('touchmove',e=>{if(e.touches.length===2){const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);if(pinchDistance)setZoom(targetZoom*d/pinchDistance);pinchDistance=d;}},{passive:true});
+
+      speedInput.oninput=()=>{speed=+speedInput.value;el('speedValue').textContent=speed.toFixed(2)+'×';speedInput.style.setProperty('--progress',(speed/2*100)+'%');if(speed===0&&!paused){paused=true;updatePlay();}else if(speed>0&&paused){paused=false;updatePlay();}};
+      function updatePlay(){el('playIcon').innerHTML=paused?'<path d="M8 5v14l11-7z"/>':'<path d="M7 4h4v16H7zM14 4h4v16h-4z"/>';el('playBtn').setAttribute('aria-label',paused?'Play simulation':'Pause simulation');}
+      el('playBtn').onclick=()=>{paused=!paused;updatePlay();};
+      el('zoomIn').onclick=()=>setZoom(targetZoom*1.2);el('zoomOut').onclick=()=>setZoom(targetZoom/1.2);
+      el('resetBtn').onclick=()=>{targetYaw=-.22;targetPitch=.37;targetZoom=1;};
+      el('closePanel').onclick=()=>{inspector.classList.add('closed');el('openPanel').classList.add('visible');};
+      el('openPanel').onclick=()=>{inspector.classList.remove('closed');el('openPanel').classList.remove('visible');};
+      el('fullscreenBtn').onclick=()=>{if(!document.fullscreenElement)document.documentElement.requestFullscreen?.();else document.exitFullscreen?.();};
+      addEventListener('resize',resize); addEventListener('keydown',e=>{if(e.key===' '){e.preventDefault();paused=!paused;updatePlay();}if(e.key==='Escape'&&!document.fullscreenElement){inspector.classList.add('closed');el('openPanel').classList.add('visible');}if(e.key==='+'||e.key==='=')setZoom(targetZoom*1.2);if(e.key==='-')setZoom(targetZoom/1.2);});
+
+      makeTabs();resize();speedInput.style.setProperty('--progress','50%');updatePanel(2,false);requestAnimationFrame(render);
+      setTimeout(()=>hint.classList.add('hidden'),7000);
+    })();
+  </script>
+</body>
+</html>

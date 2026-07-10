@@ -88,6 +88,30 @@ export const models: ModelConfig[] = [
     provider: "openai",
   },
   {
+    id: "gpt-5.6-sol",
+    name: "GPT-5.6 Sol",
+    cli: "codex",
+    model: "gpt-5.6-sol",
+    color: "bg-teal-600",
+    provider: "openai",
+  },
+  {
+    id: "gpt-5.6-terra",
+    name: "GPT-5.6 Terra",
+    cli: "codex",
+    model: "gpt-5.6-terra",
+    color: "bg-cyan-600",
+    provider: "openai",
+  },
+  {
+    id: "gpt-5.6-luna",
+    name: "GPT-5.6 Luna",
+    cli: "codex",
+    model: "gpt-5.6-luna",
+    color: "bg-emerald-600",
+    provider: "openai",
+  },
+  {
     id: "opus-4.1",
     name: "Opus 4.1",
     cli: "claude",
@@ -228,7 +252,7 @@ export const models: ModelConfig[] = [
 ];
 
 /** Default models shown in the side-by-side comparison view */
-export const DEFAULT_COMPARISON_MODELS = ["opus-4.8", "sonnet-5", "grok-4.5"] as const;
+export const DEFAULT_COMPARISON_MODELS = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] as const;
 
 /** Helper to get a model by ID */
 export function getModel(id: string): ModelConfig | undefined {

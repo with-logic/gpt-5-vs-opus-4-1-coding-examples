@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#17181d" />
+  <title>Online Whiteboard</title>
+  <style>
+    :root {
+      --ink: #15161b;
+      --ink-soft: #686a72;
+      --paper: #f6f3ed;
+      --paper-deep: #ebe7df;
+      --line: rgba(31, 30, 34, .11);
+      --rail: #191a20;
+      --rail-2: #212229;
+      --accent: #ee624d;
+      --accent-deep: #ce4938;
+      --white: #fffdfa;
+      --shadow: 0 18px 50px rgba(23, 24, 29, .13), 0 2px 8px rgba(23, 24, 29, .08);
+      --sans: "Avenir Next", Avenir, "Segoe UI", Helvetica, Arial, sans-serif;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      color: var(--ink);
+      background: var(--rail);
+      font-family: var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input { font: inherit; }
+    button { border: 0; }
+    button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+    .app-shell { height: 100vh; display: grid; grid-template-rows: 68px 1fr; }
+
+    .topbar {
+      background: var(--ink);
+      color: #f8f5ef;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 22px 0 20px;
+      position: relative;
+      z-index: 5;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+    }
+    .brand-lockup { display: flex; align-items: center; gap: 13px; min-width: 220px; }
+    .brand-mark {
+      width: 32px; height: 32px; border-radius: 10px; position: relative;
+      background: var(--accent); display: grid; place-items: center;
+      box-shadow: 0 5px 16px rgba(238,98,77,.24);
+    }
+    .brand-mark::before, .brand-mark::after { content: ""; position: absolute; background: #fff7ef; border-radius: 2px; }
+    .brand-mark::before { width: 15px; height: 3px; transform: rotate(-42deg); }
+    .brand-mark::after { width: 8px; height: 3px; transform: translate(5px, 5px) rotate(-42deg); opacity: .68; }
+    .brand-name { font-size: 13px; font-weight: 700; letter-spacing: -.01em; }
+    .board-meta { display: flex; align-items: center; gap: 9px; margin-top: 3px; color: #a9a9b0; font-size: 11px; }
+    .board-meta .dot { width: 5px; height: 5px; background: var(--accent); border-radius: 50%; }
+    .board-title {
+      background: transparent; color: #a9a9b0; border: 0; padding: 0; font-size: 11px; cursor: text;
+      max-width: 140px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden;
+    }
+    .board-title:hover { color: #e8e5df; }
+    .top-actions { display: flex; align-items: center; gap: 9px; }
+    .save-state { display: flex; align-items: center; gap: 7px; margin-right: 11px; color: #93939a; font-size: 10px; letter-spacing: .03em; }
+    .save-state .saved-dot { width: 6px; height: 6px; border: 1px solid #777981; border-radius: 50%; }
+    .top-button {
+      color: #bdbdc3; background: transparent; width: 33px; height: 33px; display: grid; place-items: center;
+      border-radius: 9px; cursor: pointer; transition: background .2s, color .2s;
+    }
+    .top-button:hover { background: var(--rail-2); color: white; }
+    .top-button svg { width: 16px; height: 16px; }
+    .export-button {
+      display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px; border-radius: 9px;
+      background: var(--accent); color: #fffaf5; font-size: 11px; font-weight: 700; cursor: pointer;
+      box-shadow: 0 4px 14px rgba(238,98,77,.17); transition: transform .2s, background .2s;
+    }
+    .export-button:hover { background: #f17661; transform: translateY(-1px); }
+    .export-button:active { transform: translateY(0); }
+    .export-button svg { width: 14px; height: 14px; }
+
+    .workspace { min-height: 0; display: grid; grid-template-columns: 72px minmax(0, 1fr) 234px; background: var(--paper-deep); }
+
+    .tool-rail {
+      background: var(--rail); color: #8e8f98; display: flex; flex-direction: column; align-items: center;
+      padding: 17px 10px 15px; border-right: 1px solid rgba(255,255,255,.06); position: relative; z-index: 3;
+    }
+    .rail-section { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .rail-divider { width: 29px; height: 1px; background: rgba(255,255,255,.10); margin: 13px 0; }
+    .tool-button {
+      width: 44px; height: 42px; border-radius: 10px; display: grid; place-items: center; color: #96979e;
+      background: transparent; cursor: pointer; position: relative; transition: color .18s, background .18s, transform .18s;
+    }
+    .tool-button:hover { color: #f2eee8; background: rgba(255,255,255,.07); }
+    .tool-button.active { color: #fff8f2; background: var(--accent); box-shadow: 0 6px 16px rgba(238,98,77,.20); }
+    .tool-button:active { transform: scale(.95); }
+    .tool-button svg { width: 18px; height: 18px; stroke-width: 1.75; }
+    .tool-button .shortcut { position: absolute; right: 5px; bottom: 3px; font: 8px var(--mono); color: inherit; opacity: .55; }
+    .rail-bottom { margin-top: auto; }
+    .rail-help {
+      width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: #787a84;
+      background: rgba(255,255,255,.06); cursor: pointer; font-size: 12px; font-weight: 700; transition: .2s;
+    }
+    .rail-help:hover { color: white; background: rgba(255,255,255,.12); }
+
+    .board-stage { position: relative; min-width: 0; overflow: hidden; background: #eae7e0; }
+    .stage-caption {
+      position: absolute; top: 18px; left: 23px; z-index: 2; display: flex; align-items: center; gap: 8px;
+      font-size: 10px; letter-spacing: .1em; text-transform: uppercase; font-weight: 700; color: #96938d; pointer-events: none;
+    }
+    .stage-caption span { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+    .board-wrap { position: absolute; inset: 0; padding: 47px 22px 30px; }
+    .board-surface {
+      width: 100%; height: 100%; position: relative; overflow: hidden; border-radius: 4px;
+      background-color: var(--paper);
+      background-image: radial-gradient(rgba(105, 99, 88, .18) .7px, transparent .7px);
+      background-size: 23px 23px;
+      box-shadow: var(--shadow);
+      cursor: crosshair;
+    }
+    .board-surface::before { content: ""; pointer-events: none; position: absolute; inset: 0; border: 1px solid rgba(39,36,31,.08); border-radius: 4px; z-index: 1; }
+    #drawingCanvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; touch-action: none; }
+    .empty-state {
+      position: absolute; z-index: 3; pointer-events: none; left: 50%; top: 50%; transform: translate(-50%, -55%);
+      text-align: center; color: #969087; transition: opacity .35s, transform .35s;
+    }
+    .empty-state.hidden { opacity: 0; transform: translate(-50%, -45%) scale(.97); }
+    .empty-glyph { width: 58px; height: 58px; border-radius: 17px; background: rgba(255,253,250,.72); border: 1px solid rgba(39,36,31,.1); margin: 0 auto 17px; display: grid; place-items: center; color: #c4bdb3; box-shadow: 0 7px 20px rgba(37,32,27,.05); }
+    .empty-glyph svg { width: 24px; height: 24px; stroke-width: 1.4; }
+    .empty-state h1 { margin: 0; font: 500 22px/1.2 Georgia, "Times New Roman", serif; letter-spacing: -.025em; color: #4a4741; }
+    .empty-state p { margin: 8px 0 0; font-size: 11px; color: #97928a; }
+    .empty-state kbd { font: 10px var(--mono); padding: 3px 5px; border: 1px solid #d5d0c8; border-radius: 4px; background: rgba(255,255,255,.5); color: #7e7971; }
+
+    .bottom-dock {
+      position: absolute; z-index: 4; left: 50%; bottom: 16px; transform: translateX(-50%);
+      display: flex; align-items: center; gap: 2px; padding: 5px; border-radius: 11px; background: rgba(24,25,30,.94);
+      color: #a2a3aa; box-shadow: 0 10px 30px rgba(25,25,29,.2); backdrop-filter: blur(12px);
+    }
+    .dock-button { width: 29px; height: 29px; display: grid; place-items: center; border-radius: 7px; color: inherit; background: transparent; cursor: pointer; transition: .18s; }
+    .dock-button:hover:not(:disabled) { color: white; background: rgba(255,255,255,.12); }
+    .dock-button:disabled { opacity: .3; cursor: default; }
+    .dock-button svg { width: 14px; height: 14px; }
+    .dock-divider { width: 1px; height: 17px; background: rgba(255,255,255,.13); margin: 0 3px; }
+    .zoom-readout { min-width: 43px; text-align: center; color: #d4d0ca; font: 10px var(--mono); }
+
+    .inspector { background: #f4f1eb; border-left: 1px solid rgba(31,30,34,.1); padding: 21px 18px; color: var(--ink); overflow: auto; }
+    .inspector-header { display: flex; align-items: center; justify-content: space-between; padding-bottom: 17px; border-bottom: 1px solid var(--line); }
+    .eyebrow { color: #98948c; font-size: 9px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    .live-indicator { display: flex; align-items: center; gap: 6px; color: #8c8982; font-size: 9px; }
+    .live-indicator i { width: 6px; height: 6px; border-radius: 50%; background: #76a98d; box-shadow: 0 0 0 3px rgba(118,169,141,.12); }
+    .inspector-section { padding: 21px 0 20px; border-bottom: 1px solid var(--line); }
+    .section-label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 13px; color: #77746e; font-size: 10px; font-weight: 700; letter-spacing: .04em; }
+    .section-label span:last-child { font: 10px var(--mono); color: #ada9a1; }
+    .tool-summary { display: flex; align-items: center; gap: 10px; }
+    .summary-icon { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: rgba(238,98,77,.11); color: var(--accent-deep); }
+    .summary-icon svg { width: 17px; height: 17px; }
+    .summary-name { font-size: 12px; font-weight: 700; color: #333238; }
+    .summary-help { font-size: 10px; color: #99958d; margin-top: 2px; }
+    .color-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+    .swatch { width: 25px; height: 25px; padding: 0; border-radius: 50%; border: 2px solid transparent; cursor: pointer; position: relative; transition: transform .18s; }
+    .swatch:hover { transform: scale(1.1); }
+    .swatch.active { border-color: #f4f1eb; box-shadow: 0 0 0 1.5px var(--ink); }
+    .swatch[data-color="#f6f3ed"] { border-color: #d6d1c7; }
+    .color-input-wrap { width: 25px; height: 25px; position: relative; border-radius: 50%; overflow: hidden; border: 1px solid #d3cec5; background: conic-gradient(#ef6250 0 25%, #f1c54f 25% 50%, #78aa82 50% 75%, #749bd3 75% 100%); cursor: pointer; }
+    .color-input-wrap::after { content: "+"; position: absolute; inset: 3px; display: grid; place-items: center; background: #f4f1eb; color: #69665f; border-radius: 50%; font-size: 14px; line-height: 1; }
+    #customColor { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .size-row { display: flex; gap: 6px; }
+    .size-button { flex: 1; height: 31px; background: #ebe7df; border-radius: 7px; cursor: pointer; color: #77736b; display: flex; align-items: center; justify-content: center; transition: .18s; }
+    .size-button:hover { background: #e3ded5; }
+    .size-button.active { color: var(--ink); background: #fffdfa; box-shadow: 0 1px 4px rgba(31,30,34,.12); }
+    .size-button i { display: block; background: currentColor; border-radius: 50%; }
+    .size-button[data-size="3"] i { width: 4px; height: 4px; }
+    .size-button[data-size="7"] i { width: 8px; height: 8px; }
+    .size-button[data-size="14"] i { width: 13px; height: 13px; }
+    .size-button[data-size="24"] i { width: 18px; height: 18px; }
+    .shortcut-list { display: grid; gap: 10px; }
+    .shortcut-item { display: flex; align-items: center; justify-content: space-between; color: #858179; font-size: 10px; }
+    .shortcut-item kbd { min-width: 22px; padding: 3px 5px; text-align: center; font: 9px var(--mono); color: #78746d; background: #ebe7df; border: 1px solid #ded9d0; border-bottom-color: #cfcbc2; border-radius: 4px; }
+    .inspector-footer { padding-top: 17px; color: #aaa69f; font-size: 9px; line-height: 1.55; }
+    .inspector-footer strong { color: #77736c; font-weight: 700; }
+
+    .toast { position: fixed; left: 50%; bottom: 30px; z-index: 12; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; color: #fffaf5; background: var(--ink); padding: 9px 13px; border-radius: 8px; box-shadow: 0 8px 25px rgba(0,0,0,.2); font-size: 11px; transition: opacity .2s, transform .2s; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    .cursor-label { display: none; }
+
+    @media (max-width: 760px) {
+      .workspace { grid-template-columns: 58px minmax(0, 1fr); }
+      .inspector { display: none; }
+      .tool-rail { padding-left: 6px; padding-right: 6px; }
+      .tool-button { width: 40px; }
+      .board-wrap { padding-left: 12px; padding-right: 12px; }
+      .brand-lockup { min-width: auto; }
+      .board-meta, .save-state, .top-button { display: none; }
+      .topbar { padding: 0 12px; }
+    }
+    @media (max-width: 420px) {
+      .brand-name { font-size: 12px; }
+      .export-button { padding: 0 10px; }
+      .export-button span { display: none; }
+      .stage-caption { left: 14px; }
+      .empty-state h1 { font-size: 19px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-lockup">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div>
+          <div class="brand-name">Online Whiteboard</div>
+          <div class="board-meta"><i class="dot"></i><button class="board-title" id="boardTitle" aria-label="Rename board">Untitled board</button><span>·</span><span>Local only</span></div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <div class="save-state" id="saveState"><i class="saved-dot"></i><span>Ready to draw</span></div>
+        <button class="top-button" id="clearButton" title="Clear board" aria-label="Clear board">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7l1-3h4l1 3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="export-button" id="exportButton"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 20h14" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Save image</span></button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <nav class="tool-rail" aria-label="Drawing tools">
+        <div class="rail-section">
+          <button class="tool-button active" data-tool="pencil" title="Pencil (P)" aria-label="Pencil" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m4 16.5-.8 4.3 4.3-.8L19.2 8.3a2.8 2.8 0 0 0-4-4L3.5 16.5Z" stroke-linecap="round" stroke-linejoin="round"/><path d="m13.7 5.3 5 5" stroke-linecap="round"/></svg><span class="shortcut">P</span></button>
+          <button class="tool-button" data-tool="marker" title="Marker (M)" aria-label="Marker" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m5 19 2.2-5.2L15.8 5.2a2.8 2.8 0 0 1 4 4l-8.6 8.6L6 20l-1-1Z" stroke-linejoin="round"/><path d="m14 7 3 3" stroke-linecap="round"/></svg><span class="shortcut">M</span></button>
+          <button class="tool-button" data-tool="line" title="Line (L)" aria-label="Line" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 19 19 5" stroke-linecap="round"/><circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="5" r="1.5" fill="currentColor" stroke="none"/></svg><span class="shortcut">L</span></button>
+          <button class="tool-button" data-tool="rectangle" title="Rectangle (R)" aria-label="Rectangle" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="4" y="5" width="16" height="14" rx="1.5"/></svg><span class="shortcut">R</span></button>
+          <button class="tool-button" data-tool="ellipse" title="Circle (O)" aria-label="Circle" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><ellipse cx="12" cy="12" rx="8" ry="6.5"/></svg><span class="shortcut">O</span></button>
+          <button class="tool-button" data-tool="eraser" title="Eraser (E)" aria-label="Eraser" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m4.5 15.5 8.9-9a2.2 2.2 0 0 1 3.1 0l3 3a2.2 2.2 0 0 1 0 3.1l-6.2 6.2H7.2l-2.7-2.7a.4.4 0 0 1 0-.6Z" stroke-linejoin="round"/><path d="M13.3 18.8h6.2" stroke-linecap="round"/></svg><span class="shortcut">E</span></button>
+        </div>
+        <div class="rail-divider"></div>
+        <div class="rail-section">
+          <button class="tool-button" id="undoButton" title="Undo (⌘/Ctrl + Z)" aria-label="Undo" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 8 4 12l5 4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 12h9a6 6 0 0 1 6 6" stroke-linecap="round"/></svg></button>
+          <button class="tool-button" id="redoButton" title="Redo (Shift + ⌘/Ctrl + Z)" aria-label="Redo" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m15 8 5 4-5 4" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 12h-9a6 6 0 0 0-6 6" stroke-linecap="round"/></svg></button>
+        </div>
+        <div class="rail-bottom"><button class="rail-help" id="helpButton" aria-label="Keyboard shortcuts" title="Keyboard shortcuts">?</button></div>
+      </nav>
+
+      <section class="board-stage" aria-label="Whiteboard canvas">
+        <div class="stage-caption"><span></span><b>Canvas / 01</b></div>
+        <div class="board-wrap">
+          <div class="board-surface" id="boardSurface">
+            <canvas id="drawingCanvas" aria-label="Drawing canvas"></canvas>
+            <div class="empty-state" id="emptyState">
+              <div class="empty-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m6 17 1.2-4.2L16.9 3a2.1 2.1 0 0 1 3 3l-9.8 9.7L6 17Z" stroke-linejoin="round"/><path d="m15 5 3 3M5 20h14" stroke-linecap="round"/></svg></div>
+              <h1>Start with an idea</h1>
+              <p>Pick a tool and make your first mark · press <kbd>P</kbd> for pencil</p>
+            </div>
+          </div>
+        </div>
+        <div class="bottom-dock" aria-label="Canvas controls">
+          <button class="dock-button" id="dockUndo" aria-label="Undo" title="Undo" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 8 4 12l5 4" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 12h9a6 6 0 0 1 6 6" stroke-linecap="round"/></svg></button>
+          <button class="dock-button" id="dockRedo" aria-label="Redo" title="Redo" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m15 8 5 4-5 4" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 12h-9a6 6 0 0 0-6 6" stroke-linecap="round"/></svg></button>
+          <span class="dock-divider"></span><span class="zoom-readout">100%</span><span class="dock-divider"></span>
+          <button class="dock-button" id="fitButton" aria-label="Fit canvas" title="Fit canvas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M8 4H5a1 1 0 0 0-1 1v3M16 4h3a1 1 0 0 1 1 1v3M8 20H5a1 1 0 0 1-1-1v-3M16 20h3a1 1 0 0 0 1-1v-3" stroke-linecap="round"/></svg></button>
+        </div>
+      </section>
+
+      <aside class="inspector" aria-label="Tool settings">
+        <div class="inspector-header"><span class="eyebrow">Inspector</span><span class="live-indicator"><i></i> local session</span></div>
+        <div class="inspector-section">
+          <div class="section-label"><span>Active tool</span><span id="toolKey">P</span></div>
+          <div class="tool-summary"><div class="summary-icon" id="summaryIcon"></div><div><div class="summary-name" id="toolName">Pencil</div><div class="summary-help" id="toolHelp">Freehand sketching</div></div></div>
+        </div>
+        <div class="inspector-section">
+          <div class="section-label"><span>Ink color</span><span id="colorHex">#15161B</span></div>
+          <div class="color-row">
+            <button class="swatch active" data-color="#15161b" style="background:#15161b" aria-label="Ink black"></button>
+            <button class="swatch" data-color="#ee624d" style="background:#ee624d" aria-label="Coral"></button>
+            <button class="swatch" data-color="#3f6f9f" style="background:#3f6f9f" aria-label="Blue"></button>
+            <button class="swatch" data-color="#6c8066" style="background:#6c8066" aria-label="Sage"></button>
+            <button class="swatch" data-color="#d5a63c" style="background:#d5a63c" aria-label="Ochre"></button>
+            <div class="color-input-wrap" title="Custom color"><input id="customColor" type="color" value="#15161b" aria-label="Choose custom ink color" /></div>
+          </div>
+        </div>
+        <div class="inspector-section">
+          <div class="section-label"><span>Stroke width</span><span id="sizeLabel">3 px</span></div>
+          <div class="size-row">
+            <button class="size-button active" data-size="3" aria-label="3 pixels"><i></i></button>
+            <button class="size-button" data-size="7" aria-label="7 pixels"><i></i></button>
+            <button class="size-button" data-size="14" aria-label="14 pixels"><i></i></button>
+            <button class="size-button" data-size="24" aria-label="24 pixels"><i></i></button>
+          </div>
+        </div>
+        <div class="inspector-section">
+          <div class="section-label"><span>Shortcuts</span><span>⌘ / CTRL</span></div>
+          <div class="shortcut-list">
+            <div class="shortcut-item"><span>Undo last stroke</span><kbd>Z</kbd></div>
+            <div class="shortcut-item"><span>Save as image</span><kbd>S</kbd></div>
+            <div class="shortcut-item"><span>Clear canvas</span><kbd>⌫</kbd></div>
+          </div>
+        </div>
+        <div class="inspector-footer"><strong>Everything stays in this browser.</strong><br />No account, no upload, no noise.</div>
+      </aside>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    (() => {
+      const canvas = document.getElementById('drawingCanvas');
+      const surface = document.getElementById('boardSurface');
+      const ctx = canvas.getContext('2d');
+      const emptyState = document.getElementById('emptyState');
+      const saveState = document.getElementById('saveState').querySelector('span');
+      const toolButtons = [...document.querySelectorAll('.tool-button[data-tool]')];
+      const swatches = [...document.querySelectorAll('.swatch')];
+      const sizeButtons = [...document.querySelectorAll('.size-button')];
+      const summaryIcon = document.getElementById('summaryIcon');
+      const toolName = document.getElementById('toolName');
+      const toolHelp = document.getElementById('toolHelp');
+      const toolKey = document.getElementById('toolKey');
+      const colorHex = document.getElementById('colorHex');
+      const sizeLabel = document.getElementById('sizeLabel');
+      const toast = document.getElementById('toast');
+
+      const toolInfo = {
+        pencil: { name: 'Pencil', help: 'Freehand sketching', key: 'P', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m4 16.5-.8 4.3 4.3-.8L19.2 8.3a2.8 2.8 0 0 0-4-4L3.5 16.5Z" stroke-linecap="round" stroke-linejoin="round"/><path d="m13.7 5.3 5 5" stroke-linecap="round"/></svg>' },
+        marker: { name: 'Marker', help: 'Soft, expressive strokes', key: 'M', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m5 19 2.2-5.2L15.8 5.2a2.8 2.8 0 0 1 4 4l-8.6 8.6L6 20l-1-1Z" stroke-linejoin="round"/><path d="m14 7 3 3" stroke-linecap="round"/></svg>' },
+        line: { name: 'Line', help: 'Straight, precise lines', key: 'L', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 19 19 5" stroke-linecap="round"/><circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="5" r="1.5" fill="currentColor" stroke="none"/></svg>' },
+        rectangle: { name: 'Rectangle', help: 'Frame an idea', key: 'R', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="4" y="5" width="16" height="14" rx="1.5"/></svg>' },
+        ellipse: { name: 'Circle', help: 'Draw an ellipse', key: 'O', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><ellipse cx="12" cy="12" rx="8" ry="6.5"/></svg>' },
+        eraser: { name: 'Eraser', help: 'Remove parts of a drawing', key: 'E', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m4.5 15.5 8.9-9a2.2 2.2 0 0 1 3.1 0l3 3a2.2 2.2 0 0 1 0 3.1l-6.2 6.2H7.2l-2.7-2.7a.4.4 0 0 1 0-.6Z" stroke-linejoin="round"/><path d="M13.3 18.8h6.2" stroke-linecap="round"/></svg>' }
+      };
+      let tool = 'pencil';
+      let ink = '#15161b';
+      let size = 3;
+      let drawing = false;
+      let start = null;
+      let snapshot = null;
+      let hasMarks = false;
+      let history = [];
+      let historyIndex = -1;
+      let toastTimer;
+      let canvasDpr = 1;
+
+      function boardSize() { return { w: surface.clientWidth, h: surface.clientHeight }; }
+
+      function setCanvasSize(preserve = false) {
+        const old = preserve && canvas.width && canvas.height ? document.createElement('canvas') : null;
+        const oldDpr = canvasDpr;
+        if (old) { old.width = canvas.width; old.height = canvas.height; old.getContext('2d').drawImage(canvas, 0, 0); }
+        const { w, h } = boardSize();
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.max(1, Math.floor(w * dpr));
+        canvas.height = Math.max(1, Math.floor(h * dpr));
+        canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        canvasDpr = dpr;
+        if (old) ctx.drawImage(old, 0, 0, old.width / oldDpr, old.height / oldDpr, 0, 0, w, h);
+        if (!history.length) saveHistory();
+      }
+
+      function saveHistory() {
+        const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        history = history.slice(0, historyIndex + 1);
+        history.push(image);
+        if (history.length > 35) history.shift();
+        historyIndex = history.length - 1;
+        updateHistoryButtons();
+      }
+
+      function restoreHistory(index) {
+        if (!history[index]) return;
+        ctx.clearRect(0, 0, surface.clientWidth, surface.clientHeight);
+        ctx.putImageData(history[index], 0, 0);
+        historyIndex = index; hasMarks = index > 0;
+        emptyState.classList.toggle('hidden', hasMarks);
+        saveState.textContent = hasMarks ? 'Changes saved locally' : 'Ready to draw';
+        updateHistoryButtons();
+      }
+
+      function updateHistoryButtons() {
+        const undo = historyIndex > 0, redo = historyIndex < history.length - 1;
+        ['undoButton', 'dockUndo'].forEach(id => document.getElementById(id).disabled = !undo);
+        ['redoButton', 'dockRedo'].forEach(id => document.getElementById(id).disabled = !redo);
+      }
+
+      function showToast(message) {
+        toast.textContent = message; toast.classList.add('show'); clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toast.classList.remove('show'), 1800);
+      }
+
+      function selectTool(next) {
+        tool = next;
+        toolButtons.forEach(button => { const active = button.dataset.tool === tool; button.classList.toggle('active', active); button.setAttribute('aria-pressed', active); });
+        const info = toolInfo[tool]; summaryIcon.innerHTML = info.icon; toolName.textContent = info.name; toolHelp.textContent = info.help; toolKey.textContent = info.key;
+        canvas.style.cursor = tool === 'eraser' ? 'cell' : 'crosshair';
+      }
+
+      function setInk(next) {
+        ink = next.toLowerCase(); colorHex.textContent = ink.toUpperCase();
+        swatches.forEach(s => s.classList.toggle('active', s.dataset.color === ink));
+        document.getElementById('customColor').value = ink;
+      }
+
+      function setSize(next) {
+        size = Number(next); sizeLabel.textContent = size + ' px';
+        sizeButtons.forEach(button => button.classList.toggle('active', Number(button.dataset.size) === size));
+      }
+
+      function point(event) {
+        const rect = canvas.getBoundingClientRect(); return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+      }
+      function styleStroke() {
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = size;
+        ctx.strokeStyle = ink; ctx.globalAlpha = tool === 'marker' ? .34 : 1; ctx.globalCompositeOperation = tool === 'eraser' ? 'destination-out' : 'source-over';
+      }
+      function drawShape(from, to) {
+        ctx.beginPath();
+        if (tool === 'line') { ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); }
+        if (tool === 'rectangle') { ctx.rect(from.x, from.y, to.x - from.x, to.y - from.y); }
+        if (tool === 'ellipse') { const rx = Math.abs(to.x - from.x) / 2, ry = Math.abs(to.y - from.y) / 2; ctx.ellipse((from.x + to.x) / 2, (from.y + to.y) / 2, rx, ry, 0, 0, Math.PI * 2); }
+        ctx.stroke();
+      }
+      function startDrawing(event) {
+        if (event.pointerType === 'mouse' && event.button !== 0) return;
+        drawing = true; start = point(event); snapshot = null; canvas.setPointerCapture?.(event.pointerId);
+        styleStroke();
+        if (['line', 'rectangle', 'ellipse'].includes(tool)) snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        else { ctx.beginPath(); ctx.moveTo(start.x, start.y); ctx.lineTo(start.x + .01, start.y + .01); ctx.stroke(); }
+        emptyState.classList.add('hidden'); hasMarks = true;
+      }
+      function moveDrawing(event) {
+        if (!drawing) return; const current = point(event);
+        if (['line', 'rectangle', 'ellipse'].includes(tool)) { ctx.putImageData(snapshot, 0, 0); styleStroke(); drawShape(start, current); }
+        else { ctx.lineTo(current.x, current.y); ctx.stroke(); }
+        saveState.textContent = 'Editing…';
+      }
+      function endDrawing(event) {
+        if (!drawing) return; drawing = false; canvas.releasePointerCapture?.(event.pointerId); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+        saveHistory(); saveState.textContent = 'Changes saved locally'; snapshot = null;
+      }
+
+      function undo() { if (historyIndex > 0) restoreHistory(historyIndex - 1); }
+      function redo() { if (historyIndex < history.length - 1) restoreHistory(historyIndex + 1); }
+      function clearBoard() {
+        if (!hasMarks) { showToast('The canvas is already clear'); return; }
+        ctx.clearRect(0, 0, surface.clientWidth, surface.clientHeight); hasMarks = false; emptyState.classList.remove('hidden'); saveHistory(); saveState.textContent = 'Ready to draw'; showToast('Canvas cleared');
+      }
+      function exportImage() {
+        const out = document.createElement('canvas'); out.width = canvas.width; out.height = canvas.height;
+        const output = out.getContext('2d'); output.fillStyle = '#f6f3ed'; output.fillRect(0, 0, out.width, out.height); output.drawImage(canvas, 0, 0);
+        const link = document.createElement('a'); link.download = 'online-whiteboard.png'; link.href = out.toDataURL('image/png'); link.click();
+        saveState.textContent = 'Image saved'; showToast('PNG saved to your device');
+      }
+
+      toolButtons.forEach(button => button.addEventListener('click', () => selectTool(button.dataset.tool)));
+      swatches.forEach(swatch => swatch.addEventListener('click', () => setInk(swatch.dataset.color)));
+      sizeButtons.forEach(button => button.addEventListener('click', () => setSize(button.dataset.size)));
+      document.getElementById('customColor').addEventListener('input', event => setInk(event.target.value));
+      canvas.addEventListener('pointerdown', startDrawing); canvas.addEventListener('pointermove', moveDrawing); canvas.addEventListener('pointerup', endDrawing); canvas.addEventListener('pointercancel', endDrawing); canvas.addEventListener('pointerleave', event => { if (drawing && event.pointerType === 'mouse') moveDrawing(event); });
+      document.getElementById('undoButton').addEventListener('click', undo); document.getElementById('dockUndo').addEventListener('click', undo);
+      document.getElementById('redoButton').addEventListener('click', redo); document.getElementById('dockRedo').addEventListener('click', redo);
+      document.getElementById('clearButton').addEventListener('click', clearBoard); document.getElementById('exportButton').addEventListener('click', exportImage);
+      document.getElementById('fitButton').addEventListener('click', () => showToast('Canvas is fit to window'));
+      document.getElementById('helpButton').addEventListener('click', () => showToast('P pencil · M marker · L line · E eraser'));
+      document.getElementById('boardTitle').addEventListener('click', event => { const value = prompt('Name this board', event.target.textContent); if (value?.trim()) event.target.textContent = value.trim(); });
+      window.addEventListener('keydown', event => {
+        if (event.target.matches('input, textarea, button[contenteditable="true"]')) return;
+        const key = event.key.toLowerCase();
+        if ((event.metaKey || event.ctrlKey) && key === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo(); return; }
+        if ((event.metaKey || event.ctrlKey) && key === 's') { event.preventDefault(); exportImage(); return; }
+        if (key === 'backspace' || key === 'delete') { event.preventDefault(); clearBoard(); return; }
+        const keys = { p: 'pencil', m: 'marker', l: 'line', r: 'rectangle', o: 'ellipse', e: 'eraser' }; if (keys[key]) selectTool(keys[key]);
+      });
+      setCanvasSize();
+      const observer = new ResizeObserver(() => { if (!drawing) setCanvasSize(true); }); observer.observe(surface);
+    })();
+  </script>
+</body>
+</html>

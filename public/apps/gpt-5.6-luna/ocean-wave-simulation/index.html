@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#06161d" />
+  <title>Ocean Wave Simulation</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap');
+
+    :root {
+      --ink: #f2f5ed;
+      --muted: rgba(221, 235, 229, .62);
+      --faint: rgba(205, 226, 220, .34);
+      --line: rgba(212, 239, 232, .16);
+      --glass: rgba(7, 25, 32, .62);
+      --glass-strong: rgba(7, 24, 30, .81);
+      --sea: #6bbfb5;
+      --warm: #f4ba83;
+      --sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+      --serif: 'Instrument Serif', Iowan Old Style, Georgia, serif;
+      --mono: 'DM Mono', ui-monospace, SFMono-Regular, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: #06151c; }
+    body {
+      overflow: hidden;
+      color: var(--ink);
+      font-family: var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .app {
+      position: relative;
+      min-height: 100svh;
+      isolation: isolate;
+      overflow: hidden;
+      background: #06151c;
+    }
+
+    #ocean {
+      position: absolute;
+      z-index: -2;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    .film {
+      position: absolute;
+      z-index: -1;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(180deg, rgba(2, 13, 18, .44) 0%, rgba(3, 18, 24, .04) 36%, rgba(3, 11, 16, .18) 100%),
+        radial-gradient(circle at 24% 33%, rgba(255, 220, 183, .06), transparent 27%),
+        linear-gradient(90deg, rgba(4, 16, 22, .58) 0%, transparent 60%);
+    }
+
+    .grain {
+      position: absolute;
+      z-index: 10;
+      inset: -50%;
+      pointer-events: none;
+      opacity: .08;
+      mix-blend-mode: overlay;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.65'/%3E%3C/svg%3E");
+      transform: rotate(8deg);
+    }
+
+    header {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 29px 40px;
+      animation: rise .8s .05s both cubic-bezier(.22, .7, .25, 1);
+    }
+
+    .mark {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      font: 500 11px/1 var(--mono);
+      letter-spacing: .16em;
+      color: rgba(240, 248, 240, .86);
+    }
+
+    .mark-icon { width: 24px; height: 24px; }
+    .mark-icon path { fill: none; stroke: var(--sea); stroke-width: 1.7; stroke-linecap: round; }
+    .top-meta { display: flex; align-items: center; gap: 24px; color: var(--muted); font: 400 10px/1 var(--mono); letter-spacing: .09em; text-transform: uppercase; }
+    .top-meta .status { display: flex; align-items: center; gap: 8px; color: rgba(232, 245, 234, .74); }
+    .status::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #85d8b3; box-shadow: 0 0 12px #85d8b3; }
+
+    main { position: relative; z-index: 2; min-height: calc(100svh - 84px); }
+
+    .hero {
+      position: absolute;
+      top: 15.5vh;
+      left: clamp(30px, 9.2vw, 150px);
+      width: min(600px, 47vw);
+      animation: rise .9s .16s both cubic-bezier(.22, .7, .25, 1);
+    }
+
+    .eyebrow { display: flex; align-items: center; gap: 11px; margin-bottom: 21px; color: var(--warm); font: 500 10px/1 var(--mono); letter-spacing: .17em; text-transform: uppercase; }
+    .eyebrow::before { content: ''; width: 27px; height: 1px; background: var(--warm); box-shadow: 0 0 13px rgba(244, 186, 131, .8); }
+    h1 { margin: 0; max-width: 510px; color: var(--ink); font: 400 clamp(52px, 6.2vw, 100px)/.87 var(--serif); letter-spacing: -.035em; text-wrap: balance; }
+    h1 em { color: #a8d6ca; font-style: italic; }
+    .hero-copy { max-width: 342px; margin: 29px 0 0 4px; color: rgba(224, 238, 232, .63); font-size: 13px; line-height: 1.7; letter-spacing: .01em; }
+
+    .readout { display: flex; align-items: center; gap: 25px; margin-top: 38px; }
+    .reading { display: grid; gap: 5px; }
+    .reading-value { color: #eef6ed; font: 400 22px/1 var(--serif); }
+    .reading-label { color: var(--faint); font: 400 9px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+    .readout-divider { width: 1px; height: 31px; background: var(--line); }
+
+    .panel {
+      position: absolute;
+      z-index: 3;
+      top: 10.8vh;
+      right: clamp(22px, 4vw, 64px);
+      width: min(330px, calc(100vw - 44px));
+      padding: 23px 23px 20px;
+      border: 1px solid rgba(209, 233, 226, .2);
+      border-radius: 3px;
+      background: linear-gradient(145deg, rgba(14, 39, 45, .74), rgba(5, 22, 29, .58));
+      box-shadow: 0 28px 90px rgba(0, 9, 14, .26), inset 0 1px 0 rgba(255,255,255,.07);
+      backdrop-filter: blur(16px) saturate(115%);
+      animation: panel-in 1s .25s both cubic-bezier(.22, .7, .25, 1);
+    }
+
+    .panel-head { display: flex; align-items: flex-start; justify-content: space-between; padding-bottom: 19px; border-bottom: 1px solid var(--line); }
+    .panel-title { display: grid; gap: 6px; }
+    .panel-title strong { color: #f0f5ec; font-size: 13px; font-weight: 500; letter-spacing: .01em; }
+    .panel-title span { color: var(--faint); font: 400 9px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+    .panel-index { color: var(--sea); font: 400 10px/1 var(--mono); }
+
+    .control { padding: 20px 0 1px; }
+    .control-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .control-label { color: rgba(229, 242, 235, .76); font-size: 12px; }
+    .control-value { min-width: 53px; color: #f1d1ad; text-align: right; font: 400 11px/1 var(--mono); }
+    .control-helper { display: flex; justify-content: space-between; margin-top: 9px; color: rgba(206, 225, 219, .31); font: 400 8px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+
+    input[type=range] { --fill: 52%; width: 100%; height: 18px; margin: 0; cursor: pointer; appearance: none; background: transparent; }
+    input[type=range]::-webkit-slider-runnable-track { height: 2px; border-radius: 2px; background: linear-gradient(90deg, var(--sea) 0 var(--fill), rgba(196, 222, 216, .2) var(--fill) 100%); }
+    input[type=range]::-moz-range-track { height: 2px; border-radius: 2px; background: linear-gradient(90deg, var(--sea) 0 var(--fill), rgba(196, 222, 216, .2) var(--fill) 100%); }
+    input[type=range]::-webkit-slider-thumb { width: 13px; height: 13px; margin-top: -5.5px; border: 2px solid rgba(229, 248, 237, .95); border-radius: 50%; appearance: none; background: #5baca4; box-shadow: 0 0 0 4px rgba(92, 180, 166, .13), 0 0 13px rgba(122, 218, 197, .35); }
+    input[type=range]::-moz-range-thumb { width: 10px; height: 10px; border: 2px solid rgba(229, 248, 237, .95); border-radius: 50%; background: #5baca4; box-shadow: 0 0 0 4px rgba(92, 180, 166, .13), 0 0 13px rgba(122, 218, 197, .35); }
+    input[type=range]:focus-visible { outline: 1px solid var(--sea); outline-offset: 6px; }
+
+    .presets { display: flex; gap: 7px; padding-top: 19px; border-top: 1px solid var(--line); }
+    .preset { flex: 1; padding: 9px 5px; border: 1px solid rgba(214, 237, 228, .14); border-radius: 2px; color: rgba(223, 239, 231, .58); background: rgba(220, 245, 236, .025); font: 400 9px var(--mono); letter-spacing: .09em; text-transform: uppercase; cursor: pointer; transition: background .25s, color .25s, border-color .25s, transform .25s; }
+    .preset:hover, .preset:focus-visible { border-color: rgba(183, 231, 211, .5); color: #eff8ef; background: rgba(161, 222, 203, .1); outline: none; }
+    .preset:active { transform: translateY(1px); }
+    .preset.active { border-color: rgba(180, 225, 208, .52); color: #eff8ef; background: rgba(142, 205, 187, .13); }
+
+    .footer {
+      position: absolute;
+      right: 40px;
+      bottom: 29px;
+      left: 40px;
+      z-index: 2;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      animation: rise .8s .45s both cubic-bezier(.22, .7, .25, 1);
+    }
+    .footer-note { display: flex; align-items: center; gap: 10px; color: rgba(209, 230, 222, .4); font: 400 9px/1 var(--mono); letter-spacing: .09em; text-transform: uppercase; }
+    .footer-note::before { content: ''; width: 28px; height: 1px; background: rgba(209, 230, 222, .3); }
+    .coordinates { color: rgba(210, 231, 222, .42); text-align: right; font: 400 9px/1.5 var(--mono); letter-spacing: .08em; }
+
+    @keyframes rise { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes panel-in { from { opacity: 0; transform: translateX(22px); } to { opacity: 1; transform: translateX(0); } }
+
+    @media (max-width: 760px) {
+      body { overflow: auto; }
+      .app { min-height: 100svh; overflow: hidden; }
+      header { padding: 22px 20px; }
+      .top-meta { gap: 10px; }
+      .top-meta > span:first-child { display: none; }
+      main { min-height: 930px; }
+      .hero { top: 10vh; left: 23px; width: calc(100% - 46px); }
+      h1 { max-width: 440px; font-size: clamp(57px, 17vw, 88px); }
+      .hero-copy { margin-top: 23px; }
+      .readout { margin-top: 28px; }
+      .panel { top: 50%; right: 20px; left: 20px; width: auto; transform: translateY(-1px); }
+      .footer { right: 20px; bottom: 18px; left: 20px; }
+      .footer-note { max-width: 190px; line-height: 1.4; }
+      .coordinates { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <canvas id="ocean" aria-label="Animated ocean wave simulation"></canvas>
+    <div class="film"></div>
+    <div class="grain"></div>
+
+    <header>
+      <div class="mark" aria-label="Pelagic Studies">
+        <svg class="mark-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5c3.7-3.2 6.2-3.2 9.2 0s5.5 3.2 8.3 0"/><path d="M3 13c3.7-3.2 6.2-3.2 9.2 0s5.5 3.2 8.3 0"/><path d="M3 17.5c3.7-3.2 6.2-3.2 9.2 0s5.5 3.2 8.3 0"/></svg>
+        <span>PELAGIC / STUDIES</span>
+      </div>
+      <div class="top-meta">
+        <span>Atmospheric model 04</span>
+        <span class="status">Live simulation</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="page-title">
+        <div class="eyebrow">Ocean Wave Simulation</div>
+        <h1 id="page-title">A quieter kind<br>of <em>motion.</em></h1>
+        <p class="hero-copy">An atmospheric study of wind, water, and light — rendered in real time from a layered wave field.</p>
+        <div class="readout" aria-label="Current simulation readings">
+          <div class="reading"><span class="reading-value" id="wave-readout">1.8 m</span><span class="reading-label">Wave height</span></div>
+          <div class="readout-divider"></div>
+          <div class="reading"><span class="reading-value" id="period-readout">7.4 s</span><span class="reading-label">Peak period</span></div>
+          <div class="readout-divider"></div>
+          <div class="reading"><span class="reading-value" id="direction-readout">WNW</span><span class="reading-label">Direction</span></div>
+        </div>
+      </section>
+
+      <aside class="panel" aria-label="Simulation controls">
+        <div class="panel-head">
+          <div class="panel-title"><strong>Simulation controls</strong><span>Adjust the atmosphere</span></div>
+          <div class="panel-index">01 / 03</div>
+        </div>
+
+        <div class="control">
+          <div class="control-row"><label class="control-label" for="wind">Wind speed</label><span class="control-value" id="wind-value">18 kn</span></div>
+          <input id="wind" type="range" min="4" max="34" value="18" aria-label="Wind speed" />
+          <div class="control-helper"><span>Calm</span><span>Gale</span></div>
+        </div>
+        <div class="control">
+          <div class="control-row"><label class="control-label" for="height">Wave height</label><span class="control-value" id="height-value">1.8 m</span></div>
+          <input id="height" type="range" min="4" max="40" value="18" aria-label="Wave height" />
+          <div class="control-helper"><span>Low swell</span><span>Heavy swell</span></div>
+        </div>
+        <div class="control">
+          <div class="control-row"><label class="control-label" for="light">Daylight</label><span class="control-value" id="light-value">62%</span></div>
+          <input id="light" type="range" min="0" max="100" value="62" aria-label="Daylight" />
+          <div class="control-helper"><span>Blue hour</span><span>Full sun</span></div>
+        </div>
+
+        <div class="presets" aria-label="Lighting presets">
+          <button class="preset" data-preset="dawn">Dawn</button>
+          <button class="preset active" data-preset="noon">Noon</button>
+          <button class="preset" data-preset="dusk">Dusk</button>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-note">Move through the atmosphere <span aria-hidden="true">↗</span></div>
+      <div class="coordinates">34° 01' 13" N &nbsp; / &nbsp; 118° 29' 56" W<br><span>Pacific study · 2024—present</span></div>
+    </footer>
+  </div>
+
+  <script>
+    (() => {
+      const canvas = document.getElementById('ocean');
+      const ctx = canvas.getContext('2d');
+      const wind = document.getElementById('wind');
+      const height = document.getElementById('height');
+      const light = document.getElementById('light');
+      const windValue = document.getElementById('wind-value');
+      const heightValue = document.getElementById('height-value');
+      const lightValue = document.getElementById('light-value');
+      const waveReadout = document.getElementById('wave-readout');
+      const periodReadout = document.getElementById('period-readout');
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      let width = 0, heightPx = 0;
+      let time = 0;
+      let last = performance.now();
+
+      const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+      const smooth = (t) => t * t * (3 - 2 * t);
+      const noise = (x) => {
+        const i = Math.floor(x);
+        const f = x - i;
+        const a = Math.sin(i * 12.9898) * 43758.5453;
+        const b = Math.sin((i + 1) * 12.9898) * 43758.5453;
+        return ((a - Math.floor(a)) * (1 - smooth(f)) + (b - Math.floor(b)) * smooth(f)) * 2 - 1;
+      };
+      const wave = (x, depth, t, amp, windFactor) => {
+        const long = Math.sin(x * (0.0041 + depth * .00042) + t * (.45 + windFactor * .033) + depth * .9);
+        const medium = Math.sin(x * (0.0105 + depth * .0009) - t * (.68 + windFactor * .052) + 2.1);
+        const short = Math.sin(x * (0.022 + depth * .0011) + t * (1.15 + windFactor * .06) + 4.7);
+        const broken = noise(x * (.008 + depth * .001) + t * (.08 + windFactor * .008));
+        return (long * .52 + medium * .26 + short * .1 + broken * .12) * amp;
+      };
+
+      function resize() {
+        width = window.innerWidth;
+        heightPx = window.innerHeight;
+        canvas.width = Math.round(width * dpr);
+        canvas.height = Math.round(heightPx * dpr);
+        canvas.style.width = width + 'px';
+        canvas.style.height = heightPx + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+
+      function getColors(day) {
+        const dusk = clamp(1 - day / 62, 0, 1);
+        const r = (a, b) => Math.round(a + (b - a) * dusk);
+        return {
+          skyTop: `rgb(${r(13, 12)}, ${r(38, 29)}, ${r(49, 44)})`,
+          skyMid: `rgb(${r(79, 123)}, ${r(137, 116)}, ${r(139, 108)})`,
+          horizon: `rgb(${r(213, 175)}, ${r(176, 120)}, ${r(139, 105)})`,
+          seaTop: `rgb(${r(22, 32)}, ${r(76, 52)}, ${r(72, 65)})`,
+          seaBottom: `rgb(${r(3, 14)}, ${r(29, 21)}, ${r(33, 31)})`,
+          glow: dusk > .55 ? 'rgba(249, 165, 111, .36)' : `rgba(255, 214, 159, ${.2 + day / 500})`,
+          foam: `rgba(${r(167, 220)}, ${r(218, 221)}, ${r(209, 213)}, .72)`,
+          waveLight: `rgba(${r(96, 167)}, ${r(169, 188)}, ${r(169, 178)}, .72)`
+        };
+      }
+
+      function drawSky(colors, day) {
+        const horizon = heightPx * .535;
+        const sky = ctx.createLinearGradient(0, 0, 0, horizon + 50);
+        sky.addColorStop(0, colors.skyTop);
+        sky.addColorStop(.56, colors.skyMid);
+        sky.addColorStop(1, colors.horizon);
+        ctx.fillStyle = sky;
+        ctx.fillRect(0, 0, width, horizon + 70);
+
+        const sunX = width * (.655 - day * .00055);
+        const sunY = heightPx * (.325 - day * .0004);
+        const halo = ctx.createRadialGradient(sunX, sunY, 3, sunX, sunY, Math.min(width, heightPx) * .28);
+        halo.addColorStop(0, day > 20 ? 'rgba(255, 226, 170, .82)' : 'rgba(255, 185, 136, .72)');
+        halo.addColorStop(.045, day > 20 ? 'rgba(255, 218, 166, .32)' : 'rgba(246, 148, 111, .36)');
+        halo.addColorStop(1, 'rgba(255, 191, 126, 0)');
+        ctx.fillStyle = halo;
+        ctx.fillRect(sunX - width * .3, sunY - width * .3, width * .6, width * .6);
+        ctx.beginPath();
+        ctx.arc(sunX, sunY, Math.max(5, Math.min(width, heightPx) * .009), 0, Math.PI * 2);
+        ctx.fillStyle = day > 16 ? 'rgba(255, 237, 194, .86)' : 'rgba(255, 188, 147, .78)';
+        ctx.fill();
+
+        // Thin cloud bands add distance without competing with the interface.
+        ctx.save();
+        ctx.globalAlpha = .07 + day * .00045;
+        for (let i = 0; i < 5; i++) {
+          const y = heightPx * (.18 + i * .064) + Math.sin(time * .018 + i) * 2;
+          ctx.fillStyle = i % 2 ? '#e9d4c1' : '#fff2d7';
+          ctx.beginPath();
+          ctx.ellipse(width * (.1 + i * .21), y, width * (.28 + i * .025), 3 + i * .8, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      function drawOcean(colors, windNum, heightNum, day) {
+        const horizon = heightPx * .535;
+        const ocean = ctx.createLinearGradient(0, horizon, 0, heightPx);
+        ocean.addColorStop(0, colors.seaTop);
+        ocean.addColorStop(.4, `rgb(${Math.max(4, 14 - day * .03)}, ${Math.max(23, 54 - day * .11)}, ${Math.max(28, 59 - day * .12)})`);
+        ocean.addColorStop(1, colors.seaBottom);
+        ctx.fillStyle = ocean;
+        ctx.fillRect(0, horizon, width, heightPx - horizon);
+
+        const amp = 18 + heightNum * .93;
+        // Far, fine ripples.
+        for (let layer = 0; layer < 15; layer++) {
+          const depth = layer / 14;
+          const y = horizon + 4 + Math.pow(depth, 1.55) * (heightPx - horizon + 12);
+          const layerAmp = (2.4 + depth * 7) * (1 + heightNum * .018);
+          ctx.beginPath();
+          for (let x = -12; x <= width + 12; x += 7) {
+            const yy = y + wave(x, depth, time, layerAmp, windNum) * (.55 + depth * .5);
+            if (x === -12) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
+          }
+          ctx.strokeStyle = `rgba(${day > 46 ? 113 : 95}, ${day > 46 ? 192 : 169}, ${day > 46 ? 184 : 175}, ${.045 + depth * .07})`;
+          ctx.lineWidth = .65 + depth * .55;
+          ctx.stroke();
+        }
+
+        // Main rolling wave bodies, from back to front.
+        for (let layer = 0; layer < 11; layer++) {
+          const depth = layer / 10;
+          const base = horizon + 20 + Math.pow(depth, 1.3) * (heightPx - horizon - 8);
+          const layerAmp = amp * (.26 + depth * .86);
+          const drift = time * (.28 + windNum * .015) * (1 + depth * .72);
+          ctx.beginPath();
+          ctx.moveTo(-10, heightPx + 8);
+          for (let x = -10; x <= width + 10; x += 7) {
+            const y = base + wave(x + drift * 28, depth + .04, drift, layerAmp, windNum) - depth * 5;
+            if (x === -10) ctx.lineTo(x, y); else ctx.lineTo(x, y);
+          }
+          ctx.lineTo(width + 10, heightPx + 8);
+          ctx.closePath();
+          const shade = Math.round(31 - depth * 20 + day * .06);
+          ctx.fillStyle = `rgba(${Math.max(3, shade - 8)}, ${Math.max(15, shade + 34)}, ${Math.max(20, shade + 40)}, ${.22 + depth * .03})`;
+          ctx.fill();
+          ctx.beginPath();
+          for (let x = -10; x <= width + 10; x += 7) {
+            const y = base + wave(x + drift * 28, depth + .04, drift, layerAmp, windNum) - depth * 5;
+            if (x === -10) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          }
+          ctx.strokeStyle = `rgba(${Math.round(112 + day * .6)}, ${Math.round(174 + day * .45)}, ${Math.round(169 + day * .42)}, ${.12 + depth * .1})`;
+          ctx.lineWidth = .8 + depth * 1.1;
+          ctx.stroke();
+        }
+
+        // Sun track / broken reflections.
+        const sunX = width * (.655 - day * .00055);
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        for (let i = 0; i < 32; i++) {
+          const yy = horizon + 8 + i * (heightPx - horizon) / 34;
+          const spread = 9 + (i / 32) * width * .23;
+          const wobble = Math.sin(i * 7.2 + time * .5) * 5;
+          const opacity = (.065 + (1 - i / 34) * .1) * (day / 62 + .3);
+          ctx.beginPath();
+          ctx.moveTo(sunX - spread * .3 + wobble, yy);
+          ctx.quadraticCurveTo(sunX + wobble, yy - 1.5, sunX + spread * .7 + wobble, yy + 1);
+          ctx.strokeStyle = `rgba(255, ${day > 35 ? 220 : 185}, ${day > 35 ? 159 : 132}, ${opacity})`;
+          ctx.lineWidth = 1 + (i % 3) * .55;
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        // Select foam crests in the foreground.
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        for (let i = 0; i < 22; i++) {
+          const depth = .57 + (i % 9) / 16;
+          const base = horizon + 24 + Math.pow(depth, 1.28) * (heightPx - horizon - 12);
+          const x = (i * width / 17 + (i % 3) * 73) % (width + 80) - 40;
+          const w = 17 + ((i * 31) % 52);
+          const y = base + wave(x + time * 12, depth, time * .36, amp * (.27 + depth * .54), windNum) - depth * 5;
+          ctx.beginPath();
+          ctx.moveTo(x - w, y + 1);
+          ctx.quadraticCurveTo(x - w * .42, y - 4 - (i % 3), x, y - 1);
+          ctx.quadraticCurveTo(x + w * .48, y + 1, x + w, y - 2);
+          ctx.strokeStyle = `rgba(205, 231, 218, ${.07 + (i % 4) * .025})`;
+          ctx.lineWidth = 1 + depth * 1.5;
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function draw() {
+        const now = performance.now();
+        const dt = Math.min(36, now - last);
+        last = now;
+        time += dt * .001;
+        const windNum = Number(wind.value);
+        const heightNum = Number(height.value);
+        const day = Number(light.value);
+        const colors = getColors(day);
+        ctx.clearRect(0, 0, width, heightPx);
+        drawSky(colors, day);
+        drawOcean(colors, windNum, heightNum, day);
+        requestAnimationFrame(draw);
+      }
+
+      function refreshRange(input) { input.style.setProperty('--fill', `${((input.value - input.min) / (input.max - input.min)) * 100}%`); }
+      function updateReadouts() {
+        const windNum = Number(wind.value);
+        const h = Number(height.value) / 10;
+        windValue.textContent = `${windNum} kn`;
+        heightValue.textContent = `${h.toFixed(1)} m`;
+        lightValue.textContent = `${light.value}%`;
+        waveReadout.textContent = `${h.toFixed(1)} m`;
+        periodReadout.textContent = `${(5.1 + windNum * .128).toFixed(1)} s`;
+        [wind, height, light].forEach(refreshRange);
+      }
+
+      [wind, height, light].forEach((input) => input.addEventListener('input', () => { updateReadouts(); document.querySelectorAll('.preset').forEach((b) => b.classList.remove('active')); }));
+      document.querySelectorAll('.preset').forEach((button) => button.addEventListener('click', () => {
+        const preset = button.dataset.preset;
+        const values = { dawn: [14, 14, 26], noon: [18, 18, 72], dusk: [22, 24, 8] }[preset];
+        [wind.value, height.value, light.value] = values;
+        updateReadouts();
+        document.querySelectorAll('.preset').forEach((b) => b.classList.toggle('active', b === button));
+      }));
+
+      window.addEventListener('resize', resize);
+      resize();
+      updateReadouts();
+      requestAnimationFrame(draw);
+    })();
+  </script>
+</body>
+</html>
