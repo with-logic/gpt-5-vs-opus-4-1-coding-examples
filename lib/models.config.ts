@@ -254,6 +254,11 @@ export const models: ModelConfig[] = [
     id: "inkling",
     name: "Inkling",
     cli: "anthropic-proxy",
+    // Fireworks DEDICATED deployment — Inkling isn't on Serverless/OpenRouter yet.
+    // The 52 committed apps are static and don't need this at runtime, but any
+    // (re)generation does. The deployment is spun down between runs and comes
+    // back under a NEW id each time, so this string is stale as soon as it's off.
+    // Before running generate.ts for inkling, update it to the current deployment id.
     model: "accounts/logic-inc/deployments/vpscp78b",
     color: "bg-slate-500",
     provider: "thinking-machines",
