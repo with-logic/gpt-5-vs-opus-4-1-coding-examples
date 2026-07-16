@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ocean Wave Simulation</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,600;1,300&family=Outfit:wght@200;300;400&display=swap');
+    
+    body { margin: 0; overflow: hidden; background: #0a0f1e; font-family: 'Outfit', sans-serif; }
+    
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
+
+    .glass {
+      background: rgba(255, 255, 255, 0.04);
+      backdrop-filter: blur(24px) saturate(140%);
+      -webkit-backdrop-filter: blur(24px) saturate(140%);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+
+    .glass-card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.01) 100%);
+      border: 1px solid rgba(255,255,255,0.1);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      height: 4px;
+      border-radius: 2px;
+      background: linear-gradient(90deg, rgba(255,255,255,0.1) 0%, rgba(100,200,255,0.6) 100%);
+      outline: none;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, #e0f7fa, #4fc3f7);
+      box-shadow: 0 0 10px rgba(79,195,247,0.6), 0 0 0 2px rgba(255,255,255,0.15);
+      transition: transform 0.15s;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+    input[type="range"]::-moz-range-thumb {
+      width: 14px; height: 14px; border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, #e0f7fa, #4fc3f7);
+      border: none; box-shadow: 0 0 10px rgba(79,195,247,0.6);
+    }
+
+    .text-gradient {
+      background: linear-gradient(135deg, #e0f7fa 0%, #a8dde8 50%, #7fb8c8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .label-text { letter-spacing: 0.08em; }
+  </style>
+</head>
+<body class="h-screen w-screen text-white select-none">
+
+  <canvas id="oceanCanvas" class="absolute inset-0 z-0"></canvas>
+
+  <!-- Subtle vignette -->
+  <div class="pointer-events-none absolute inset-0 z-10" style="background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.6) 100%);"></div>
+
+  <!-- Header -->
+  <header class="absolute top-0 left-0 right-0 z-20 px-8 py-6 flex justify-between items-start pointer-events-none">
+    <div>
+      <h1 class="text-3xl md:text-4xl font-light tracking-[0.15em] text-gradient" style="font-family: 'Cormorant Garamond', serif;">
+        Ocean Wave
+      </h1>
+      <p class="text-xs md:text-sm text-white/40 tracking-[0.3em] uppercase mt-1 font-light">Simulation</p>
+    </div>
+    <div class="text-right pointer-events-auto">
+      <p class="text-[10px] text-white/20 tracking-[0.25em] uppercase">Interactive</p>
+      <div class="w-12 h-[1px] bg-gradient-to-r from-transparent via-white/30 to-transparent mt-2"></div>
+    </div>
+  </header>
+
+  <!-- Main Controls Panel -->
+  <aside class="absolute bottom-8 left-8 z-30 w-[340px] max-w-[90vw] glass rounded-3xl p-6 pointer-events-auto transition-transform duration-500 hover:-translate-y-1">
+    <div class="flex items-center gap-3 mb-5">
+      <div class="w-2 h-2 rounded-full bg-cyan-300 shadow-[0_0_8px_rgba(79,195,247,0.8)] animate-pulse"></div>
+      <h2 class="text-sm font-light tracking-[0.12em] text-white/90 uppercase">Controls</h2>
+    </div>
+
+    <div class="space-y-6">
+      <!-- Wind Speed -->
+      <div>
+        <div class="flex justify-between mb-2">
+          <label for="windInput" class="text-[11px] text-white/50 tracking-widest uppercase label-text">Wind Speed</label>
+          <span id="windValue" class="text-xs text-cyan-200 font-mono">4.0</span>
+        </div>
+        <input id="windInput" type="range" min="0.5" max="10" step="0.1" value="4.0" class="w-full">
+      </div>
+
+      <!-- Wave Height -->
+      <div>
+        <div class="flex justify-between mb-2">
+          <label for="heightInput" class="text-[11px] text-white/50 tracking-widest uppercase label-text">Wave Height</label>
+          <span id="heightValue" class="text-xs text-cyan-200 font-mono">1.2</span>
+        </div>
+        <input id="heightInput" type="range" min="0.1" max="5" step="0.1" value="1.2" class="w-full">
+      </div>
+
+      <!-- Lighting -->
+      <div>
+        <div class="flex justify-between mb-2">
+          <label for="lightInput" class="text-[11px] text-white/50 tracking-widest uppercase label-text">Light Intensity</label>
+          <span id="lightValue" class="text-xs text-cyan-200 font-mono">1.0</span>
+        </div>
+        <input id="lightInput" type="range" min="0.1" max="2.5" step="0.05" value="1.0" class="w-full">
+      </div>
+    </div>
+
+    <div class="mt-6 pt-5 border-t border-white/5 flex items-center gap-3">
+      <div class="w-1.5 h-8 rounded-full bg-gradient-to-b from-cyan-200/40 to-transparent"></div>
+      <div class="flex flex-col">
+        <span class="text-[10px] text-white/30 tracking-widest uppercase">Instruction</span>
+        <span class="text-[11px] text-white/40">Drag to explore. Scroll to zoom.</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Right Info Panel -->
+  <aside class="absolute top-24 right-8 z-30 w-[220px] glass rounded-2xl p-5 pointer-events-none opacity-90">
+    <h3 class="text-xs tracking-[0.2em] text-white/30 uppercase mb-3">Physics</h3>
+    <div class="space-y-3">
+      <div class="flex justify-between items-baseline">
+        <span class="text-[10px] text-white/30">Wavelength</span>
+        <span class="text-xs text-cyan-100/60 font-light">Dynamic</span>
+      </div>
+      <div class="w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
+      <div class="flex justify-between items-baseline">
+        <span class="text-[10px] text-white/30">Direction</span>
+        <span class="text-xs text-cyan-100/60 font-light">Multi-axis</span>
+      </div>
+      <div class="w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
+      <div class="flex justify-between items-baseline">
+        <span class="text-[10px] text-white/30">Reflection</span>
+        <span class="text-xs text-cyan-100/60 font-light">Real-time</span>
+      </div>
+    </div>
+  </aside>
+
+  <script>
+    // ==================== THREE.JS SETUP ====================
+    const canvas = document.getElementById('oceanCanvas');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.outputEncoding = THREE.sRGBEncoding;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a1228);
+    scene.fog = new THREE.FogExp2(0x0a1228, 0.02);
+
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(10, 8, 12);
+
+    // Controls
+    let controls;
+    try {
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enablePan = false;
+      controls.enableZoom = true;
+      controls.zoomSpeed = 0.5;
+      controls.autoRotate = true;
+      controls.autoRotateSpeed = 0.3;
+      controls.target.set(0, 1, 0);
+      controls.update();
+    } catch (e) { console.warn('OrbitControls load issue', e); }
+
+    // Lights
+    const ambient = new THREE.AmbientLight(0x8899aa, 0.4);
+    scene.add(ambient);
+
+    const sun = new THREE.DirectionalLight(0xffaa77, 1.0);
+    sun.position.set(5, 15, 8);
+    scene.add(sun);
+
+    const moon = new THREE.DirectionalLight(0xaaccff, 0.6);
+    moon.position.set(-5, 10, -5);
+    scene.add(moon);
+
+    // Sky dome
+    const skyGeo = new THREE.SphereGeometry(80, 32, 32);
+    const skyMat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(0x040814),
+      side: THREE.BackSide,
+      fog: false,
+    });
+    const sky = new THREE.Mesh(skyGeo, skyMat);
+    scene.add(sky);
+
+    // Stars
+    const starCount = 800;
+    const starPos = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount * 3; i++) {
+      starPos[i] = (Math.random() - 0.5) * 160;
+    }
+    starPos.forEach((v, i) => { if (i % 3 === 1) starPos[i] = Math.abs(starPos[i]); }); // keep above horizon mostly
+    const starGeo = new THREE.BufferGeometry();
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+    const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.3, transparent: true, opacity: 0.6, sizeAttenuation: true });
+    const stars = new THREE.Points(starGeo, starMat);
+    scene.add(stars);
+
+    // Ocean Shader Material
+    const oceanGeo = new THREE.PlaneGeometry(200, 200, 256, 256);
+    oceanGeo.rotateX(-Math.PI / 2);
+
+    const oceanMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uWind: { value: 4.0 },
+        uHeight: { value: 1.2 },
+        uLight: { value: 1.0 },
+        uColorDeep: { value: new THREE.Color(0x003a5c) },
+        uColorShallow: { value: new THREE.Color(0x4fc3f7) },
+        uSunDir: { value: sun.position.clone().normalize() },
+      },
+      vertexShader: `
+        uniform float uTime;
+        uniform float uWind;
+        uniform float uHeight;
+        varying vec2 vUv;
+        varying float vHeight;
+
+        float hash(vec2 p) {
+          float h = dot(p, vec2(127.1, 311.7));
+          return fract(sin(h) * 43758.5453);
+        }
+
+        float noise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          float a = hash(i);
+          float b = hash(i + vec2(1.0, 0.0));
+          float c = hash(i + vec2(0.0, 1.0));
+          float d = hash(i + vec2(1.0, 1.0));
+          return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+        }
+
+        float fbm(vec2 p) {
+          float val = 0.0;
+          float amp = 0.5;
+          float freq = 1.0;
+          for (int i = 0; i < 5; i++) {
+            val += amp * noise(p * freq);
+            freq *= 2.0 + uWind * 0.15;
+            amp *= 0.55;
+            p += vec2(1.7, 3.1);
+          }
+          return val;
+        }
+
+        void main() {
+          vUv = uv;
+          vec3 pos = position;
+          float t = uTime * (0.5 + uWind * 0.08);
+          
+          // Layered directional waves
+          float w1 = sin(pos.x * 0.08 + t * 1.2) * cos(pos.z * 0.06 + t * 1.5);
+          float w2 = sin(pos.x * 0.05 - t * 0.8 + 1.0) * cos(pos.z * 0.09 - t * 1.1);
+          float w3 = sin(pos.x * 0.12 + t * 0.6) * cos(pos.z * 0.04 - t * 0.9);
+          float w4 = fbm(pos.xz * 0.08 + t * 0.4) * 2.0;
+
+          float height = (w1 + w2 + w3) * 2.5 * uHeight + w4 * 0.8 * uHeight;
+          vHeight = height;
+          pos.y = height;
+
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float uTime;
+        uniform float uWind;
+        uniform float uHeight;
+        uniform float uLight;
+        uniform vec3 uColorDeep;
+        uniform vec3 uColorShallow;
+        uniform vec3 uSunDir;
+        varying vec2 vUv;
+        varying float vHeight;
+
+        void main() {
+          // Normal approximation from height derivative
+          float eps = 0.05;
+          float hL = vHeight; // approximate
+          // Simple lighting approximation based on height gradient approximation via uv
+          float nx = vHeight - vHeight; // simplified; using height as rough proxy for lighting variation
+          // More realistic: compute approximate slope from uv variations using dFdx/dFdy
+          // Since we don't have dFdx easily, use a procedural normal
+          float t = uTime * 0.5;
+          vec2 grad = vec2(
+            sin(vUv.x * 10.0 + t) * cos(vUv.y * 8.0 - t),
+            cos(vUv.x * 8.0 - t) * sin(vUv.y * 10.0 + t)
+          ) * 0.2;
+          vec3 normal = normalize(vec3(-grad.x, 1.0, -grad.y));
+
+          vec3 lightDir = normalize(uSunDir);
+          float diff = max(dot(normal, lightDir), 0.0);
+          float spec = pow(max(dot(reflect(-lightDir, normal), vec3(0.0, 1.0, 0.0)), 0.0), 32.0);
+          
+          float fresnel = pow(1.0 - max(dot(normal, vec3(0.0, 1.0, 0.0)), 0.0), 3.0);
+          
+          vec3 baseColor = mix(uColorDeep, uColorShallow, vHeight * 0.2 + 0.4);
+          vec3 lit = baseColor * (0.3 + 0.7 * diff * uLight) + vec3(0.8, 0.9, 1.0) * spec * uLight * 0.6;
+          
+          // Subsurface / shimmer
+          float shimmer = sin(vUv.x * 30.0 + uTime * 2.0) * sin(vUv.y * 40.0 - uTime * 3.0);
+          shimmer = shimmer * 0.5 + 0.5;
+          lit += vec3(0.2, 0.6, 1.0) * shimmer * fresnel * 0.15 * uLight;
+          
+          gl_FragColor = vec4(lit, 1.0);
+        }
+      `,
+      side: THREE.DoubleSide,
+      wireframe: false,
+    });
+
+    const ocean = new THREE.Mesh(oceanGeo, oceanMat);
+    scene.add(ocean);
+
+    // Subtle underwater floor (for depth)
+    const floorGeo = new THREE.PlaneGeometry(500, 500);
+    floorGeo.rotateX(-Math.PI / 2);
+    const floorMat = new THREE.MeshBasicMaterial({ color: 0x001122, fog: true, transparent: true, opacity: 0.5 });
+    const floor = new THREE.Mesh(floorGeo, floorMat);
+    floor.position.y = -8;
+    scene.add(floor);
+
+    // ==================== UI CONTROLS ====================
+    const windInput = document.getElementById('windInput');
+    const heightInput = document.getElementById('heightInput');
+    const lightInput = document.getElementById('lightInput');
+    const windValue = document.getElementById('windValue');
+    const heightValue = document.getElementById('heightValue');
+    const lightValue = document.getElementById('lightValue');
+
+    windInput.addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      oceanMat.uniforms.uWind.value = v;
+      windValue.textContent = v.toFixed(1);
+    });
+
+    heightInput.addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      oceanMat.uniforms.uHeight.value = v;
+      heightValue.textContent = v.toFixed(1);
+    });
+
+    lightInput.addEventListener('input', (e) => {
+      const v = parseFloat(e.target.value);
+      oceanMat.uniforms.uLight.value = v;
+      sun.intensity = 1.0 * v;
+      moon.intensity = 0.6 * v;
+      ambient.intensity = 0.4 * v;
+      lightValue.textContent = v.toFixed(2);
+    });
+
+    // ==================== ANIMATION ====================
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = clock.getElapsedTime();
+      oceanMat.uniforms.uTime.value = dt;
+      oceanMat.uniforms.uSunDir.value = sun.position.clone().normalize();
+      if (controls) controls.update();
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // Resize
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

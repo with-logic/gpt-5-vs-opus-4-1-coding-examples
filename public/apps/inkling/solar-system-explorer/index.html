@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Solar System Explorer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    body { margin: 0; overflow: hidden; background: #02040a; font-family: 'Inter', sans-serif; }
+    .glass {
+      background: rgba(255,255,255,0.04);
+      backdrop-filter: blur(24px) saturate(140%);
+      -webkit-backdrop-filter: blur(24px) saturate(140%);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+    .planet-card { opacity: 0; transform: translateY(12px); transition: all 0.35s ease; pointer-events: none; }
+    .planet-card.active { opacity: 1; transform: translateY(0); pointer-events: auto; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
+    .orbit-ring { pointer-events: none; }
+    .glow-text { text-shadow: 0 0 30px rgba(255,255,255,0.15); }
+  </style>
+</head>
+<body class="text-white antialiased">
+
+  <!-- Main Canvas -->
+  <canvas id="canvas" class="absolute inset-0 z-0"></canvas>
+
+  <!-- Top Bar -->
+  <div class="absolute top-0 left-0 right-0 z-10 p-6 flex items-start justify-between pointer-events-none">
+    <div class="pointer-events-auto">
+      <h1 class="text-4xl md:text-6xl font-black tracking-tight leading-none glow-text" style="font-family:'Orbitron',sans-serif;">
+        <span class="text-transparent bg-clip-text bg-gradient-to-br from-amber-300 via-amber-100 to-amber-400">SOLAR</span>
+        <span class="text-white/90"> SYSTEM</span>
+      </h1>
+      <p class="text-sm md:text-base text-white/40 mt-2 tracking-widest uppercase font-medium">Interactive Explorer</p>
+    </div>
+
+    <!-- Speed Control -->
+    <div class="glass rounded-2xl px-5 py-4 pointer-events-auto max-w-xs">
+      <label for="speed" class="text-[11px] uppercase tracking-wider text-white/50 font-semibold mb-3 block">Orbit Speed</label>
+      <input id="speed" type="range" min="0" max="3" step="0.1" value="1" class="w-full accent-amber-300 h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer">
+      <div class="flex justify-between mt-2 text-[10px] text-white/30 font-medium tracking-wide">
+        <span>Slow</span><span>Fast</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom Info Panel -->
+  <div class="absolute bottom-6 left-6 z-10 pointer-events-none">
+    <div id="planetPanel" class="planet-card glass rounded-3xl p-7 max-w-md pointer-events-auto">
+      <div class="flex items-center gap-3 mb-1">
+        <div id="planetDot" class="w-3 h-3 rounded-full bg-amber-300 shadow-[0_0_15px_rgba(251,191,36,0.6)]"></div>
+        <h2 id="planetName" class="text-2xl font-bold" style="font-family:'Orbitron',sans-serif;">Sun</h2>
+      </div>
+      <div class="flex gap-6 text-xs text-white/40 font-medium mb-4">
+        <span id="planetType">Star</span>
+        <span class="text-white/10">|</span>
+        <span id="planetDist">0 AU</span>
+      </div>
+      <p id="planetDesc" class="text-sm text-white/70 leading-relaxed">The Sun is the star at the center of our Solar System, providing the light and heat that sustains life on Earth.</p>
+      <div class="mt-5 grid grid-cols-3 gap-3">
+        <div class="bg-white/5 rounded-xl p-3 text-center">
+          <div id="stat1" class="text-lg font-bold text-white">5,778</div>
+          <div class="text-[9px] text-white/30 uppercase tracking-wide">Temp (K)</div>
+        </div>
+        <div class="bg-white/5 rounded-xl p-3 text-center">
+          <div id="stat2" class="text-lg font-bold text-white">1.99e30</div>
+          <div class="text-[9px] text-white/30 uppercase tracking-wide">Mass (kg)</div>
+        </div>
+        <div class="bg-white/5 rounded-xl p-3 text-center">
+          <div id="stat3" class="text-lg font-bold text-white">696k</div>
+          <div class="text-[9px] text-white/30 uppercase tracking-wide">Radius (km)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls Hint -->
+  <div class="absolute bottom-6 right-6 z-10 pointer-events-none select-none">
+    <div class="glass rounded-2xl px-5 py-3 text-xs text-white/40 space-y-1 text-right">
+      <p><span class="text-white/70 font-semibold">Drag</span> to rotate</p>
+      <p><span class="text-white/70 font-semibold">Scroll</span> to zoom</p>
+      <p><span class="text-white/70 font-semibold">Click</span> a planet</p>
+    </div>
+  </div>
+
+  <script>
+    // ===== Setup =====
+    const canvas = document.getElementById('canvas');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputEncoding = THREE.sRGBEncoding;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x02040a);
+    scene.fog = new THREE.FogExp2(0x02040a, 0.025);
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 25, 35);
+
+    // ===== Lights =====
+    const ambient = new THREE.AmbientLight(0xffffff, 0.15);
+    scene.add(ambient);
+
+    const sunLight = new THREE.PointLight(0xffddaa, 3.5, 200, 1.5);
+    sunLight.position.set(0, 0, 0);
+    scene.add(sunLight);
+
+    const hemi = new THREE.HemisphereLight(0x4455aa, 0x224422, 0.3);
+    scene.add(hemi);
+
+    // ===== Controls (OrbitControls simulation) =====
+    let isDragging = false, prevMouse = { x: 0, y: 0 };
+    let targetRotation = { x: -0.35, y: 0.5 };
+    let currentRotation = { x: -0.35, y: 0.5 };
+    let zoomDistance = 35;
+    let zoomTarget = 35;
+    let zoomVelocity = 0;
+
+    canvas.addEventListener('mousedown', e => { isDragging = true; prevMouse = { x: e.clientX, y: e.clientY }; });
+    window.addEventListener('mouseup', () => isDragging = false);
+    window.addEventListener('mousemove', e => {
+      if (!isDragging) return;
+      const dx = e.clientX - prevMouse.x;
+      const dy = e.clientY - prevMouse.y;
+      targetRotation.y += dx * 0.005;
+      targetRotation.x += dy * 0.003;
+      targetRotation.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, targetRotation.x));
+      prevMouse = { x: e.clientX, y: e.clientY };
+    });
+    window.addEventListener('wheel', e => {
+      zoomTarget = Math.max(15, Math.min(80, zoomTarget + (e.deltaY > 0 ? 2 : -2)));
+    }, { passive: true });
+
+    // ===== Planets Data =====
+    const planets = [
+      { name: 'Mercury', color: 0x8c7b6e, size: 0.38, dist: 4, speed: 4.1, desc: 'The smallest planet in the Solar System and closest to the Sun.', temp: '700 K', mass: '3.3e23 kg', radius: '2,440 km', type: 'Terrestrial', dotColor: '#a89880' },
+      { name: 'Venus', color: 0xe3b08c, size: 0.95, dist: 7, speed: 1.62, desc: 'Venus has a thick toxic atmosphere and is the hottest planet.', temp: '737 K', mass: '4.87e24 kg', radius: '6,052 km', type: 'Terrestrial', dotColor: '#d4a070' },
+      { name: 'Earth', color: 0x2b6cb0, size: 1.0, dist: 10, speed: 1.0, desc: 'Our home world—blue, living, and the only known harbor for life.', temp: '288 K', mass: '5.97e24 kg', radius: '6,371 km', type: 'Terrestrial', dotColor: '#2b6cb0' },
+      { name: 'Mars', color: 0xc1440e, size: 0.53, dist: 15, speed: 0.53, desc: 'The Red Planet—dusty, cold, and home to the tallest volcano.', temp: '210 K', mass: '6.42e23 kg', radius: '3,389 km', type: 'Terrestrial', dotColor: '#c1440e' },
+      { name: 'Jupiter', color: 0xe0a060, size: 2.8, dist: 25, speed: 0.084, desc: 'The gas giant is a massive storm system twice the mass of all others combined.', temp: '165 K', mass: '1.90e27 kg', radius: '71,492 km', type: 'Gas Giant', dotColor: '#e0a060' },
+      { name: 'Saturn', color: 0xd4b070, size: 2.3, dist: 35, speed: 0.034, desc: 'Famous for its stunning ring system made of ice and rock fragments.', temp: '134 K', mass: '5.68e26 kg', radius: '58,232 km', type: 'Gas Giant', dotColor: '#d4b070' },
+      { name: 'Uranus', color: 0x7ec8e3, size: 1.3, dist: 45, speed: 0.012, desc: 'An ice giant tilted on its side, rotating nearly horizontally.', temp: '76 K', mass: '8.68e25 kg', radius: '25,362 km', type: 'Ice Giant', dotColor: '#7ec8e3' },
+      { name: 'Neptune', color: 0x2a5298, size: 1.25, dist: 55, speed: 0.006, desc: 'Deep blue and icy, with supersonic winds exceeding 2,000 km/h.', temp: '72 K', mass: '1.02e26 kg', radius: '24,622 km', type: 'Ice Giant', dotColor: '#2a5298' },
+    ];
+
+    let speedFactor = 1;
+    let selectedPlanet = null;
+
+    // ===== Sun =====
+    const sunGeo = new THREE.SphereGeometry(3, 64, 64);
+    const sunMat = new THREE.MeshStandardMaterial({
+      color: 0xffaa44, emissive: 0xff8800, emissiveIntensity: 0.6,
+      roughness: 0.7, metalness: 0.1
+    });
+    const sun = new THREE.Mesh(sunGeo, sunMat);
+    scene.add(sun);
+
+    // Glow sprite
+    const glowCanvas = document.createElement('canvas');
+    glowCanvas.width = 256; glowCanvas.height = 256;
+    const ctx = glowCanvas.getContext('2d');
+    const grad = ctx.createRadialGradient(128, 128, 10, 128, 128, 128);
+    grad.addColorStop(0, 'rgba(255,200,80,0.9)');
+    grad.addColorStop(0.4, 'rgba(255,160,60,0.3)');
+    grad.addColorStop(1, 'rgba(255,160,60,0)');
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, 256, 256);
+    const glowTex = new THREE.CanvasTexture(glowCanvas);
+    const glowMat = new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false, color: 0xffcc66, opacity: 0.8 });
+    const glow = new THREE.Sprite(glowMat);
+    glow.scale.set(16, 16, 4);
+    scene.add(glow);
+
+    // ===== Orbit Rings =====
+    planets.forEach(p => {
+      const ringGeo = new THREE.RingGeometry(p.dist - 0.02, p.dist + 0.02, 128);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.06, side: THREE.DoubleSide });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = Math.PI / 2;
+      scene.add(ring);
+    });
+
+    // ===== Planets =====
+    const planetMeshes = [];
+    planets.forEach((p, i) => {
+      const geo = new THREE.SphereGeometry(p.size, 32, 32);
+      const mat = new THREE.MeshStandardMaterial({
+        color: p.color, roughness: 0.8, metalness: 0.15,
+        emissive: p.color, emissiveIntensity: 0.05
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.userData = { index: i, info: p };
+      scene.add(mesh);
+
+      // Rings for Saturn
+      if (p.name === 'Saturn') {
+        const ringGeo = new THREE.RingGeometry(p.size * 1.5, p.size * 2.2, 64);
+        const ringMat = new THREE.MeshStandardMaterial({
+          color: 0xe0c898, roughness: 0.9, metalness: 0.1,
+          transparent: true, opacity: 0.7, side: THREE.DoubleSide
+        });
+        const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+        ringMesh.rotation.x = Math.PI * 0.25;
+        mesh.add(ringMesh);
+      }
+      planetMeshes.push(mesh);
+    });
+
+    // ===== Background Stars =====
+    const starGeo = new THREE.BufferGeometry();
+    const starCount = 2500;
+    const positions = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount * 3; i++) positions[i] = (Math.random() - 0.5) * 200;
+    starGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.45, sizeAttenuation: true, transparent: true, opacity: 0.8 });
+    const stars = new THREE.Points(starGeo, starMat);
+    scene.add(stars);
+
+    // ===== Interaction Raycaster =====
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    function onClick(e) {
+      mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObjects(planetMeshes.concat([sun]));
+      if (hits.length > 0) {
+        const obj = hits[0].object;
+        if (obj === sun) {
+          selectPlanet(null);
+          showPanel({ name: 'Sun', color: '#ffcc66', type: 'Star', desc: 'The Sun is the star at the center of our Solar System, providing the light and heat that sustains life on Earth.', temp: '5,778 K', mass: '1.99e30 kg', radius: '696,000 km', distance: '0 AU' }, '#ffcc66');
+        } else {
+          const info = obj.userData.info;
+          selectPlanet(obj);
+          showPanel({ name: info.name, color: info.dotColor || '#ffffff', type: info.type, desc: info.desc, temp: info.temp, mass: info.mass, radius: info.radius, distance: info.dist + ' AU' }, info.dotColor);
+        }
+      } else {
+        selectPlanet(null);
+      }
+    }
+    window.addEventListener('click', onClick);
+
+    function selectPlanet(obj) {
+      selectedPlanet = obj;
+      planetMeshes.forEach(m => { if (m === obj) { m.scale.multiplyScalar(1.05); } else { m.scale.multiplyScalar(1 / 1.05); } });
+    }
+
+    function showPanel(data, dotColor) {
+      document.getElementById('planetName').textContent = data.name;
+      document.getElementById('planetType').textContent = data.type;
+      document.getElementById('planetDist').textContent = data.distance;
+      document.getElementById('planetDesc').textContent = data.desc;
+      document.getElementById('planetDot').style.backgroundColor = dotColor;
+      document.getElementById('stat1').textContent = data.temp;
+      document.getElementById('stat2').textContent = data.mass;
+      document.getElementById('stat3').textContent = data.radius;
+      document.getElementById('planetPanel').classList.add('active');
+    }
+
+    // Initialize with Sun
+    showPanel({ name: 'Sun', color: '#ffcc66', type: 'Star', desc: 'The Sun is the star at the center of our Solar System, providing the light and heat that sustains life on Earth.', temp: '5,778 K', mass: '1.99e30 kg', radius: '696,000 km', distance: '0 AU' }, '#ffcc66');
+
+    // ===== Speed Slider =====
+    document.getElementById('speed').addEventListener('input', e => {
+      speedFactor = parseFloat(e.target.value);
+    });
+
+    // ===== Animation =====
+    let time = 0;
+    function animate() {
+      requestAnimationFrame(animate);
+      time += 0.008 * speedFactor;
+
+      // Smooth rotation
+      currentRotation.y += (targetRotation.y - currentRotation.y) * 0.06;
+      currentRotation.x += (targetRotation.x - currentRotation.x) * 0.06;
+      camera.position.x = Math.sin(currentRotation.y) * zoomTarget;
+      camera.position.z = Math.cos(currentRotation.y) * zoomTarget;
+      camera.position.y = Math.sin(currentRotation.x) * zoomTarget;
+      camera.lookAt(0, 0, 0);
+
+      // Zoom smoothing
+      zoomVelocity += (zoomTarget - zoomDistance) * 0.05;
+      zoomDistance += zoomVelocity * 0.8;
+      zoomVelocity *= 0.7;
+
+      // Sun rotation
+      sun.rotation.y += 0.002 * speedFactor;
+
+      // Planets orbit
+      planetMeshes.forEach((mesh, i) => {
+        const info = planets[i];
+        const angle = time * info.speed * 0.2;
+        const x = Math.sin(angle) * info.dist;
+        const z = Math.cos(angle) * info.dist;
+        mesh.position.set(x, 0, z);
+        mesh.rotation.y += 0.015 * speedFactor;
+        if (mesh === selectedPlanet) {
+          mesh.scale.setScalar(1.08);
+        }
+      });
+
+      // Glow pulse
+      glow.scale.setScalar(16 + Math.sin(time * 2) * 0.5);
+
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // ===== Resize =====
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

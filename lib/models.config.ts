@@ -1,4 +1,4 @@
-export type Provider = "openai" | "anthropic" | "google" | "moonshot" | "z-ai" | "qwen" | "xai";
+export type Provider = "openai" | "anthropic" | "google" | "moonshot" | "z-ai" | "qwen" | "xai" | "thinking-machines";
 
 export interface ProviderConfig {
   id: Provider;
@@ -13,6 +13,7 @@ export const providers: ProviderConfig[] = [
   { id: "z-ai", name: "Z.ai" },
   { id: "qwen", name: "Qwen" },
   { id: "xai", name: "xAI" },
+  { id: "thinking-machines", name: "Thinking Machines" },
 ];
 
 export interface ModelConfig {
@@ -249,10 +250,23 @@ export const models: ModelConfig[] = [
     color: "bg-zinc-700",
     provider: "xai",
   },
+  {
+    id: "inkling",
+    name: "Inkling",
+    cli: "anthropic-proxy",
+    // Fireworks DEDICATED deployment — Inkling isn't on Serverless/OpenRouter yet.
+    // The 52 committed apps are static and don't need this at runtime, but any
+    // (re)generation does. The deployment is spun down between runs and comes
+    // back under a NEW id each time, so this string is stale as soon as it's off.
+    // Before running generate.ts for inkling, update it to the current deployment id.
+    model: "accounts/logic-inc/deployments/vpscp78b",
+    color: "bg-slate-500",
+    provider: "thinking-machines",
+  },
 ];
 
 /** Default models shown in the side-by-side comparison view */
-export const DEFAULT_COMPARISON_MODELS = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] as const;
+export const DEFAULT_COMPARISON_MODELS = ["inkling", "opus-4.8", "gpt-5.6-sol"] as const;
 
 /** Helper to get a model by ID */
 export function getModel(id: string): ModelConfig | undefined {

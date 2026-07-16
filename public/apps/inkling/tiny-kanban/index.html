@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tiny Kanban — Standup Ready</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0b0e14;
+    --surface: #11131a;
+    --surface-2: #16182a;
+    --surface-3: #1b1f2e;
+    --text: #f0f2f8;
+    --text-dim: #9aa0b5;
+    --text-faint: #5a6078;
+    --accent: #5eead4;
+    --accent-deep: #2dd4bf;
+    --high: #f87171;
+    --medium: #fbbf24;
+    --low: #34d399;
+    --done: #818cf8;
+  }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: 'Outfit', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    letter-spacing: -0.01em;
+  }
+  .font-mono { font-family: 'JetBrains Mono', monospace; }
+  /* Custom scrollbar */
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: linear-gradient(180deg, #2a2e42, #1b1f2e); border-radius: 99px; border: 2px solid var(--bg); }
+  ::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #3a3e52, #25283a); }
+  /* Column glass */
+  .col-glass {
+    background: rgba(255,255,255,0.012);
+    border: 1px solid rgba(255,255,255,0.05);
+    backdrop-filter: blur(14px) saturate(120%);
+    -webkit-backdrop-filter: blur(14px) saturate(120%);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02), 0 10px 40px rgba(0,0,0,0.35);
+  }
+  .col-glass:hover { border-color: rgba(255,255,255,0.08); }
+  /* Card */
+  .kanban-card {
+    background: linear-gradient(160deg, #16182a 60%, #12132a);
+    border: 1px solid rgba(255,255,255,0.06);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.06);
+    transition: transform 0.12s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+  .kanban-card:hover { border-color: rgba(255,255,255,0.12); box-shadow: 0 8px 30px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06); }
+  .kanban-card.dragging { transform: rotate(2deg) scale(1.03); opacity: 0.7; box-shadow: 0 20px 60px rgba(0,0,0,0.5); z-index: 50; }
+  /* Priority strip */
+  .priority-strip { width: 5px; border-radius: 0 99px 99px 0; }
+  /* WIP warning pulse */
+  @keyframes pulse-warn {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(251,191,36,0.25); }
+    50% { box-shadow: 0 0 0 4px rgba(251,191,36,0.15); }
+  }
+  .wip-warn { animation: pulse-warn 2.5s infinite ease-in-out; }
+  /* Badge */
+  .badge { font-family: 'JetBrains Mono', monospace; letter-spacing: 0.04em; }
+  /* Search */
+  .search-glow:focus-within { box-shadow: 0 0 0 2px rgba(94,234,212,0.25); border-color: rgba(94,234,212,0.35); }
+  /* Add button */
+  .btn-glow:hover { box-shadow: 0 0 20px rgba(94,234,212,0.25); border-color: rgba(94,234,212,0.55); }
+  /* Smooth layout */
+  .layout-col { min-width: 0; }
+</style>
+</head>
+<body class="h-screen flex flex-col">
+
+  <!-- Header -->
+  <header class="flex-none shrink-0 px-6 md:px-10 py-5 flex items-center justify-between gap-6 border-b border-white/5 bg-[#0b0e14]/80 backdrop-blur-md z-30">
+    <div class="flex items-center gap-4">
+      <div class="w-3 h-3 rounded-full bg-[#5eead4] shadow-[0_0_14px_#5eead4] animate-pulse"></div>
+      <div>
+        <h1 class="text-2xl md:text-3xl font-extrabold tracking-tight leading-none text-white">Tiny Kanban</h1>
+        <p class="text-[11px] md:text-xs font-medium text-[#9aa0b5] tracking-wide mt-1 uppercase">Daily Standup Board</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3 md:gap-5 flex-wrap justify-end">
+      <!-- Search -->
+      <div class="search-glow flex items-center gap-2 bg-[#11131a] border border-white/10 rounded-full px-4 py-2 transition-all">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9aa0b5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input id="searchInput" type="text" placeholder="Filter cards…" class="bg-transparent text-sm text-white placeholder-[#5a6078] outline-none w-40 md:w-56 font-medium" />
+      </div>
+
+      <button onclick="openForm()" class="btn-glow inline-flex items-center gap-2 bg-[#5eead4] text-[#0b0e14] font-extrabold rounded-full px-5 py-2.5 text-sm shadow-[0_4px_20px_-4px_#5eead4] transition-all hover:-translate-y-0.5 active:translate-y-0">
+        <span>+</span> Add Card
+      </button>
+    </div>
+  </header>
+
+  <!-- Metrics -->
+  <section class="flex-none px-6 md:px-10 py-3 flex gap-6 md:gap-10 text-xs font-semibold text-[#5a6078] border-b border-white/5 bg-gradient-to-b from-[#0b0e14]/60 to-transparent">
+    <div><span class="text-[#f0f2f8] text-base font-extrabold" id="countTotal">0</span> <span class="text-[#5a6078]">cards</span></div>
+    <div><span class="text-[#f87171] text-base font-extrabold" id="countWIP">0</span> <span class="text-[#5a6078]">WIP</span></div>
+    <div><span class="text-[#818cf8] text-base font-extrabold" id="countDone">0</span> <span class="text-[#5a6078]">Done</span></div>
+  </section>
+
+  <!-- Board -->
+  <main id="board" class="flex-1 overflow-auto px-4 md:px-10 py-6 grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 items-start content-start min-h-0">
+
+    <!-- Todo -->
+    <div class="layout-col flex flex-col gap-4" data-col="todo">
+      <div class="flex items-center gap-3 mb-1">
+        <h2 class="text-2xl md:text-[2rem] font-extrabold tracking-tight text-[#f0f2f8]">Todo</h2>
+        <span class="badge text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#f87171]/15 text-[#f87171] border border-[#f87171]/20" id="badge-todo">0</span>
+        <span class="badge text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#5a6078]/15 text-[#5a6078] border border-[#5a6078]/10">Open</span>
+      </div>
+      <div id="col-todo" class="col-glass rounded-3xl p-5 min-h-[320px] flex flex-col gap-4 overflow-y-auto" ondragover="allowDrop(event)" ondrop="dropCard(event, 'todo')"></div>
+      <div class="text-[11px] text-[#5a6078] font-medium pl-1">No WIP limit</div>
+    </div>
+
+    <!-- Doing -->
+    <div class="layout-col flex flex-col gap-4" data-col="doing">
+      <div class="flex items-center gap-3 mb-1">
+        <h2 class="text-2xl md:text-[2rem] font-extrabold tracking-tight text-[#fbbf24]">Doing</h2>
+        <span class="badge text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#fbbf24]/15 text-[#fbbf24] border border-[#fbbf24]/20" id="badge-doing">0 / 3</span>
+        <span id="wip-tag" class="hidden badge text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#fbbf24]/15 text-[#fbbf24] border border-[#fbbf24]/20 animate-pulse">WIP Full</span>
+      </div>
+      <div id="col-doing" class="col-glass rounded-3xl p-5 min-h-[320px] flex flex-col gap-4 overflow-y-auto wip-warn" ondragover="allowDrop(event)" ondrop="dropCard(event, 'doing')"></div>
+      <div class="text-[11px] text-[#5a6078] font-medium pl-1">WIP limit: <span class="text-[#fbbf24] font-extrabold">3</span></div>
+    </div>
+
+    <!-- Done -->
+    <div class="layout-col flex flex-col gap-4" data-col="done">
+      <div class="flex items-center gap-3 mb-1">
+        <h2 class="text-2xl md:text-[2rem] font-extrabold tracking-tight text-[#818cf8]">Done</h2>
+        <span class="badge text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#818cf8]/15 text-[#818cf8] border border-[#818cf8]/20" id="badge-done">0</span>
+        <span class="badge text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#34d399]/15 text-[#34d399] border border-[#34d399]/10">Complete</span>
+      </div>
+      <div id="col-done" class="col-glass rounded-3xl p-5 min-h-[320px] flex flex-col gap-4 overflow-y-auto" ondragover="allowDrop(event)" ondrop="dropCard(event, 'done')"></div>
+      <div class="text-[11px] text-[#5a6078] font-medium pl-1">No WIP limit</div>
+    </div>
+
+  </main>
+
+  <!-- Form Modal -->
+  <div id="formOverlay" onclick="closeForm(event)" class="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm hidden items-center justify-center p-6">
+    <div onclick="event.stopPropagation()" class="w-full max-w-md bg-[#11131a]/95 border border-white/10 rounded-[2.5rem] p-8 shadow-[0_40px_120px_rgba(0,0,0,0.6)] backdrop-blur-2xl relative overflow-hidden">
+      <div class="absolute top-0 right-0 w-40 h-40 bg-[#5eead4]/10 rounded-full blur-3xl -translate-y-1/3 translate-x-1/3 pointer-events-none"></div>
+      <h3 class="text-2xl font-extrabold text-white mb-1 tracking-tight">New Card</h3>
+      <p class="text-sm text-[#5a6078] mb-6">Quick add for standup tracking.</p>
+
+      <form onsubmit="createCard(event)" class="space-y-4">
+        <div>
+          <label for="cardTitle" class="block text-[11px] font-bold uppercase tracking-wider text-[#9aa0b5] mb-1.5">Title</label>
+          <input id="cardTitle" required type="text" class="w-full bg-[#16182a] border border-white/10 rounded-2xl px-4 py-3 text-white font-semibold placeholder-[#5a6078] focus:outline-none focus:border-[#5eead4]/50 transition-colors" placeholder="What needs doing?" />
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="cardAssignee" class="block text-[11px] font-bold uppercase tracking-wider text-[#9aa0b5] mb-1.5">Assignee</label>
+            <select id="cardAssignee" class="w-full bg-[#16182a] border border-white/10 rounded-2xl px-4 py-3 text-white font-medium focus:outline-none focus:border-[#5eead4]/50 transition-colors appearance-none cursor-pointer">
+              <option value="Alex">Alex</option>
+              <option value="Jordan">Jordan</option>
+              <option value="Taylor">Taylor</option>
+              <option value="Sam">Sam</option>
+              <option value="You">You</option>
+            </select>
+          </div>
+          <div>
+            <label for="cardPriority" class="block text-[11px] font-bold uppercase tracking-wider text-[#9aa0b5] mb-1.5">Priority</label>
+            <select id="cardPriority" class="w-full bg-[#16182a] border border-white/10 rounded-2xl px-4 py-3 text-white font-medium focus:outline-none focus:border-[#5eead4]/50 transition-colors appearance-none cursor-pointer">
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label for="cardDesc" class="block text-[11px] font-bold uppercase tracking-wider text-[#9aa0b5] mb-1.5">Notes</label>
+          <textarea id="cardDesc" rows="2" class="w-full bg-[#16182a] border border-white/10 rounded-2xl px-4 py-3 text-white font-medium placeholder-[#5a6078] focus:outline-none focus:border-[#5eead4]/50 transition-colors resize-none" placeholder="Brief context for the team…"></textarea>
+        </div>
+
+        <div class="flex gap-3 pt-1">
+          <button type="button" onclick="closeForm()" class="flex-1 py-3 rounded-2xl font-extrabold text-sm text-[#9aa0b5] border border-white/10 hover:bg-white/5 transition-colors">Cancel</button>
+          <button type="submit" class="flex-1 py-3 rounded-2xl font-extrabold text-sm bg-[#5eead4] text-[#0b0e14] hover:shadow-[0_0_20px_#5eead4] transition-all">Create Card</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+<script>
+// State
+let cards = [
+  { id: 'c1', title: 'Deploy v2.1 to staging', assignee: 'Alex', priority: 'high', desc: 'Merge CI pipeline and run smoke tests.', col: 'todo' },
+  { id: 'c2', title: 'Fix navigation header z-index', assignee: 'Jordan', priority: 'medium', desc: 'Overlapping dropdown on mobile.', col: 'doing' },
+  { id: 'c3', title: 'Update onboarding copy', assignee: 'Taylor', priority: 'low', desc: 'Simplify first-time user message.', col: 'doing' },
+  { id: 'c4', title: 'Add keyboard shortcuts', assignee: 'Sam', priority: 'medium', desc: 'Ctrl+K for quick search.', col: 'done' },
+  { id: 'c5', title: 'Refactor auth middleware', assignee: 'Alex', priority: 'high', desc: 'Move to new token validation.', col: 'todo' },
+  { id: 'c6', title: 'Design dark-mode palette', assignee: 'You', priority: 'low', desc: 'Adjust shadows for OLED screens.', col: 'done' },
+];
+
+const assigneeColors = {
+  Alex: '#f87171', Jordan: '#fbbf24', Taylor: '#5eead4', Sam: '#818cf8', You: '#a78bfa'
+};
+const priorityColors = { high: '#f87171', medium: '#fbbf24', low: '#34d399' };
+const priorityLabels = { high: 'High', medium: 'Medium', low: 'Low' };
+
+function render() {
+  // Clear columns
+  ['todo','doing','done'].forEach(col => {
+    document.getElementById('col-'+col).innerHTML = '';
+  });
+
+  // Filter by search
+  const query = document.getElementById('searchInput').value.toLowerCase();
+  const filtered = cards.filter(c => {
+    if (!query) return true;
+    return c.title.toLowerCase().includes(query) || c.assignee.toLowerCase().includes(query) || c.desc.toLowerCase().includes(query);
+  });
+
+  filtered.forEach(card => {
+    const colEl = document.getElementById('col-'+card.col);
+    if (!colEl) return;
+    const el = document.createElement('article');
+    el.className = 'kanban-card rounded-2xl p-5 cursor-grab active:cursor-grabbing relative group';
+    el.draggable = true;
+    el.dataset.id = card.id;
+    el.innerHTML = `
+      <div class="flex gap-4">
+        <div class="priority-strip mt-1 shrink-0" style="background:${priorityColors[card.priority]};"></div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-start justify-between gap-3 mb-2">
+            <h3 class="text-lg md:text-xl font-extrabold text-white leading-snug tracking-tight">${escapeHtml(card.title)}</h3>
+            <button onclick="deleteCard('${card.id}')" aria-label="Delete" class="opacity-0 group-hover:opacity-100 transition-opacity text-[#5a6078] hover:text-[#f87171] p-1 -mr-1 shrink-0" title="Delete">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <p class="text-sm md:text-base text-[#9aa0b5] mb-4 leading-relaxed">${escapeHtml(card.desc)}</p>
+          <div class="flex items-center gap-3">
+            <div class="flex items-center gap-2 bg-[#16182a] border border-white/5 rounded-full pl-1 pr-3 py-1">
+              <span class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-extrabold text-[#0b0e14]" style="background:${assigneeColors[card.assignee]};">${card.assignee[0]}</span>
+              <span class="text-xs font-bold text-[#9aa0b5]">${card.assignee}</span>
+            </div>
+            <span class="badge text-[9px] font-extrabold px-2 py-0.5 rounded-md uppercase tracking-widest" style="background:${priorityColors[card.priority]}15; color:${priorityColors[card.priority]}; border:1px solid ${priorityColors[card.priority]}25;">${priorityLabels[card.priority]}</span>
+          </div>
+        </div>
+      </div>
+    `;
+    el.addEventListener('dragstart', e => dragStart(e, card.id));
+    el.addEventListener('dragend', dragEnd);
+    colEl.appendChild(el);
+  });
+
+  // Metrics
+  document.getElementById('countTotal').textContent = cards.length;
+  document.getElementById('countDone').textContent = cards.filter(c => c.col === 'done').length;
+  const doingCount = cards.filter(c => c.col === 'doing').length;
+  document.getElementById('countWIP').textContent = doingCount;
+  document.getElementById('badge-todo').textContent = cards.filter(c => c.col === 'todo').length;
+  document.getElementById('badge-doing').textContent = doingCount + ' / 3';
+  document.getElementById('badge-done').textContent = cards.filter(c => c.col === 'done').length;
+
+  // WIP warning
+  const wipCol = document.getElementById('col-doing');
+  const wipTag = document.getElementById('wip-tag');
+  if (doingCount >= 3) {
+    wipCol.classList.add('wip-warn');
+    wipTag.classList.remove('hidden');
+  } else {
+    wipCol.classList.remove('wip-warn');
+    wipTag.classList.add('hidden');
+  }
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div'); d.textContent = s; return d.innerHTML;
+}
+
+// Drag
+function dragStart(e, id) {
+  e.dataTransfer.setData('text/plain', id);
+  e.dataTransfer.effectAllowed = 'move';
+  setTimeout(() => e.target.classList.add('dragging'), 0);
+}
+function dragEnd(e) { e.target.classList.remove('dragging'); }
+function allowDrop(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
+function dropCard(e, col) {
+  e.preventDefault();
+  const id = e.dataTransfer.getData('text/plain');
+  const card = cards.find(c => c.id === id);
+  if (card) {
+    // Enforce WIP limit on Doing
+    if (col === 'doing' && cards.filter(c => c.col === 'doing').length >= 3) {
+      // Reject drop into doing if at limit (unless already in doing)
+      if (card.col !== 'doing') {
+        // Shake animation on column
+        const colEl = document.getElementById('col-doing');
+        colEl.animate([
+          { transform: 'translateX(0)' },
+          { transform: 'translateX(-6px)' },
+          { transform: 'translateX(6px)' },
+          { transform: 'translateX(-4px)' },
+          { transform: 'translateX(4px)' },
+          { transform: 'translateX(0)' }
+        ], { duration: 300, easing: 'ease-out' });
+        return;
+      }
+    }
+    card.col = col;
+    render();
+  }
+}
+
+// CRUD
+function openForm() { document.getElementById('formOverlay').classList.remove('hidden'); document.getElementById('formOverlay').classList.add('flex'); document.getElementById('cardTitle').focus(); }
+function closeForm(e) { if (e && e.target !== document.getElementById('formOverlay')) return; document.getElementById('formOverlay').classList.add('hidden'); document.getElementById('formOverlay').classList.remove('flex'); document.getElementById('searchInput').focus(); }
+function createCard(e) {
+  e.preventDefault();
+  const title = document.getElementById('cardTitle').value.trim();
+  const assignee = document.getElementById('cardAssignee').value;
+  const priority = document.getElementById('cardPriority').value;
+  const desc = document.getElementById('cardDesc').value.trim() || 'No description.';
+  cards.push({ id: 'c'+Date.now(), title, assignee, priority, desc, col: 'todo' });
+  document.getElementById('cardTitle').value = '';
+  document.getElementById('cardDesc').value = '';
+  closeForm();
+  render();
+}
+function deleteCard(id) {
+  cards = cards.filter(c => c.id !== id);
+  render();
+}
+
+// Search listener
+let debounce;
+document.getElementById('searchInput').addEventListener('input', () => {
+  clearTimeout(debounce);
+  debounce = setTimeout(render, 120);
+});
+
+// Init
+render();
+</script>
+</body>
+</html>
