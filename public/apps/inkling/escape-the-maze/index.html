@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Escape the Maze</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700&family=Inter:wght@300;500;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            display: ['"Cinzel Decorative"', 'serif'],
+            body: ['"Inter"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            ink: '#0b0c15',
+            slate: '#15162b',
+            mist: '#e4f0ff',
+            gold: '#f0d878',
+            goldDim: '#bfa84a',
+            cyanGlint: '#68f0ff',
+            roseGlint: '#ff6b9d',
+          },
+          boxShadow: {
+            'glow-gold': '0 0 30px rgba(240,216,120,0.35)',
+            'glow-cyan': '0 0 25px rgba(104,240,255,0.35)',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    html, body { height: 100%; overflow: hidden; }
+    body { background: #0b0c15; color: #e4f0ff; }
+    ::selection { background: rgba(240,216,120,0.25); color: #fff; }
+
+    /* Subtle noise overlay */
+    .noise {
+      position: fixed; inset: 0; pointer-events: none; z-index: 9999; opacity: 0.035;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      background-size: 256px;
+    }
+
+    /* Maze cell styles */
+    .cell-wall {
+      background: linear-gradient(135deg, #1a1c2e 0%, #111220 100%);
+      border: 1px solid rgba(104,240,255,0.12);
+      box-shadow: inset 0 0 12px rgba(0,0,0,0.6);
+    }
+    .cell-path {
+      background: radial-gradient(ellipse at 40% 40%, #181b30 0%, #0f1120 100%);
+    }
+
+    /* Avatar */
+    .avatar {
+      width: 70%; height: 70%; margin: auto;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #8df5ff 0%, #2fa0ff 60%, #0a3a66 100%);
+      box-shadow: 0 0 14px rgba(104,240,255,0.55), inset 0 0 10px rgba(255,255,255,0.3);
+      position: relative;
+      animation: floatAv 3s ease-in-out infinite;
+    }
+    .avatar::after {
+      content: ''; position: absolute; inset: 0; border-radius: 50%;
+      box-shadow: inset 0 -4px 8px rgba(0,0,0,0.4);
+    }
+    @keyframes floatAv {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-3px); }
+    }
+
+    /* Finish */
+    .finish {
+      width: 70%; height: 70%; margin: auto;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, #ffe382 0%, #e6a92c 60%, #8a5e00 100%);
+      box-shadow: 0 0 18px rgba(240,216,120,0.45), inset 0 0 10px rgba(255,255,255,0.35);
+      animation: pulseFinish 2s ease-in-out infinite;
+    }
+    @keyframes pulseFinish {
+      0%, 100% { box-shadow: 0 0 14px rgba(240,216,120,0.45), inset 0 0 10px rgba(255,255,255,0.35); }
+      50% { box-shadow: 0 0 28px rgba(240,216,120,0.7), inset 0 0 12px rgba(255,255,255,0.45); }
+    }
+
+    /* Win overlay */
+    @keyframes winIn {
+      from { opacity: 0; transform: scale(0.92); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    .win-in { animation: winIn 0.5s ease-out both; }
+
+    /* Button hover */
+    .btn-glow:hover {
+      box-shadow: 0 0 20px rgba(240,216,120,0.5), 0 0 40px rgba(240,216,120,0.15);
+      transform: translateY(-2px);
+    }
+  </style>
+</head>
+<body class="font-body antialiased">
+  <div class="noise"></div>
+
+  <div class="relative min-h-screen flex flex-col items-center justify-center px-4 py-6">
+
+    <!-- Header -->
+    <header class="text-center mb-6 select-none">
+      <h1 class="font-display text-4xl md:text-6xl tracking-widest text-gold mb-1 drop-shadow-[0_0_20px_rgba(240,216,120,0.35)]">Escape the Maze</h1>
+      <p class="text-slate-400 text-sm md:text-base tracking-wide">Navigate from start to finish. Shortest path earns a bonus.</p>
+    </header>
+
+    <!-- Stats bar -->
+    <div class="flex gap-6 md:gap-10 mb-5 text-sm md:text-base font-mono tracking-tight">
+      <div class="text-center">
+        <div class="text-[10px] uppercase tracking-[0.2em] text-slate-500">Time</div>
+        <div id="timer" class="text-gold text-xl md:text-2xl">0.0s</div>
+      </div>
+      <div class="text-center">
+        <div class="text-[10px] uppercase tracking-[0.2em] text-slate-500">Steps</div>
+        <div id="steps" class="text-cyanGlint text-xl md:text-2xl">0</div>
+      </div>
+      <div class="text-center">
+        <div class="text-[10px] uppercase tracking-[0.2em] text-slate-500">Best</div>
+        <div id="best" class="text-roseGlint text-xl md:text-2xl">—</div>
+      </div>
+    </div>
+
+    <!-- Maze -->
+    <main id="maze-container" class="relative rounded-2xl overflow-hidden shadow-[0_0_60px_rgba(104,240,255,0.08)] border border-white/5"></main>
+
+    <!-- Controls hint -->
+    <div class="mt-5 text-slate-500 text-xs md:text-sm tracking-wider text-center">Use Arrow Keys or WASD to move</div>
+
+    <!-- Replay -->
+    <button onclick="newMaze()" class="btn-glow mt-6 px-7 py-3 rounded-full bg-gradient-to-br from-gold/20 to-goldDim/10 border border-gold/30 text-gold font-bold tracking-wide shadow-glow-gold transition-all duration-300 hover:border-gold/60 active:scale-[0.97]">New Maze</button>
+  </div>
+
+  <!-- Win overlay -->
+  <div id="win-overlay" class="fixed inset-0 z-[100] hidden items-center justify-center bg-ink/80 backdrop-blur-md">
+    <div class="win-in bg-slate/80 border border-gold/30 rounded-3xl px-8 py-10 md:px-14 md:py-12 text-center max-w-md shadow-[0_0_80px_rgba(240,216,120,0.3)]">
+      <div class="text-5xl md:text-7xl mb-3">🏁</div>
+      <h2 class="font-display text-3xl md:text-4xl text-gold mb-2">Maze Escaped!</h2>
+      <p class="text-slate-300 mb-5 text-sm md:text-base">You reached the finish.</p>
+      <div class="grid grid-cols-3 gap-4 text-sm md:text-base mb-6">
+        <div class="bg-ink/60 rounded-xl p-3 border border-white/5">
+          <div class="text-[10px] uppercase text-slate-500 mb-1">Time</div>
+          <div id="win-time" class="font-mono text-gold">0.0s</div>
+        </div>
+        <div class="bg-ink/60 rounded-xl p-3 border border-white/5">
+          <div class="text-[10px] uppercase text-slate-500 mb-1">Steps</div>
+          <div id="win-steps" class="font-mono text-cyanGlint">0</div>
+        </div>
+        <div class="bg-ink/60 rounded-xl p-3 border border-white/5">
+          <div class="text-[10px] uppercase text-slate-500 mb-1">Bonus</div>
+          <div id="win-bonus" class="font-mono text-roseGlint">+0</div>
+        </div>
+      </div>
+      <button onclick="newMaze()" class="w-full py-3 rounded-xl bg-gradient-to-r from-gold/90 to-goldDim/80 text-ink font-bold tracking-wide shadow-[0_0_30px_rgba(240,216,120,0.5)] hover:brightness-110 transition">Play Again</button>
+    </div>
+  </div>
+
+  <script>
+    // Game state
+    const COLS = 21;
+    const ROWS = 15;
+    let cells = []; // 2D array: 1 = wall, 0 = path
+    let start = { r: 1, c: 1 };
+    let finish = { r: ROWS - 2, c: COLS - 2 };
+    let player = { ...start };
+    let timerInterval = null;
+    let timerMs = 0;
+    let steps = 0;
+    let bestSteps = null;
+    let shortestPathLength = null;
+
+    // Generate maze using recursive backtracker
+    function generateMaze() {
+      const grid = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 1));
+      const visited = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+      const stack = [];
+      const sr = 1, sc = 1;
+      grid[sr][sc] = 0;
+      visited[sr][sc] = true;
+      stack.push({ r: sr, c: sc });
+
+      const dirs = [
+        { r: 0, c: 2 },
+        { r: 2, c: 0 },
+        { r: 0, c: -2 },
+        { r: -2, c: 0 }
+      ];
+
+      while (stack.length) {
+        const curr = stack[stack.length - 1];
+        const unvisited = dirs
+          .map(d => ({ r: curr.r + d.r, c: curr.c + d.c }))
+          .filter(n => n.r > 0 && n.r < ROWS - 1 && n.c > 0 && n.c < COLS - 1 && !visited[n.r][n.c]);
+        if (unvisited.length === 0) {
+          stack.pop();
+          continue;
+        }
+        const next = unvisited[Math.floor(Math.random() * unvisited.length)];
+        const midR = (curr.r + next.r) / 2;
+        const midC = (curr.c + next.c) / 2;
+        grid[midR][midC] = 0;
+        grid[next.r][next.c] = 0;
+        visited[next.r][next.c] = true;
+        stack.push({ r: next.r, c: next.c });
+      }
+      // Ensure start/finish open
+      grid[start.r][start.c] = 0;
+      grid[finish.r][finish.c] = 0;
+      return grid;
+    }
+
+    // BFS shortest path from player to finish
+    function shortestPath(grid, from, to) {
+      const queue = [[from]];
+      const seen = new Set();
+      seen.add(`${from.r},${from.c}`);
+      while (queue.length) {
+        const path = queue.shift();
+        const { r, c } = path[path.length - 1];
+        if (r === to.r && c === to.c) return path.length - 1;
+        for (const [dr, dc] of [[0, 1], [1, 0], [0, -1], [-1, 0]]) {
+          const nr = r + dr, nc = c + dc;
+          if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
+          if (grid[nr][nc] === 1) continue;
+          const key = `${nr},${nc}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          queue.push([...path, { r: nr, c: nc }]);
+        }
+      }
+      return Infinity;
+    }
+
+    // Render maze
+    function render() {
+      const container = document.getElementById('maze-container');
+      container.innerHTML = '';
+      const cellSize = Math.min(36, Math.floor(Math.min(window.innerWidth - 80, window.innerHeight - 400) / COLS));
+      const w = COLS * cellSize;
+      const h = ROWS * cellSize;
+      container.style.width = w + 'px';
+      container.style.height = h + 'px';
+
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const div = document.createElement('div');
+          div.className = 'absolute flex items-center justify-center ' + (cells[r][c] === 1 ? 'cell-wall' : 'cell-path');
+          div.style.width = cellSize + 'px';
+          div.style.height = cellSize + 'px';
+          div.style.left = (c * cellSize) + 'px';
+          div.style.top = (r * cellSize) + 'px';
+
+          if (r === finish.r && c === finish.c && cells[r][c] === 0) {
+            const f = document.createElement('div');
+            f.className = 'finish';
+            div.appendChild(f);
+          }
+
+          if (r === player.r && c === player.c) {
+            const av = document.createElement('div');
+            av.className = 'avatar';
+            div.appendChild(av);
+          }
+
+          container.appendChild(div);
+        }
+      }
+    }
+
+    // Game reset
+    function newMaze() {
+      cells = generateMaze();
+      player = { ...start };
+      steps = 0;
+      timerMs = 0;
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        timerMs += 100;
+        document.getElementById('timer').textContent = (timerMs / 1000).toFixed(1) + 's';
+      }, 100);
+      shortestPathLength = shortestPath(cells, start, finish);
+      bestSteps = null;
+      document.getElementById('steps').textContent = '0';
+      document.getElementById('best').textContent = '—';
+      document.getElementById('timer').textContent = '0.0s';
+      document.getElementById('win-overlay').classList.add('hidden');
+      document.getElementById('win-overlay').classList.remove('flex');
+      render();
+      document.getElementById('maze-container').focus();
+    }
+
+    // Move
+    function move(dr, dc) {
+      const nr = player.r + dr;
+      const nc = player.c + dc;
+      if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) return;
+      if (cells[nr][nc] === 1) return; // wall
+      player = { r: nr, c: nc };
+      steps++;
+      document.getElementById('steps').textContent = steps;
+      render();
+      if (player.r === finish.r && player.c === finish.c) {
+        clearInterval(timerInterval);
+        const timeSec = timerMs / 1000;
+        const shortest = shortestPath(cells, start, finish);
+        const bonus = Math.max(0, shortest - steps);
+        bestSteps = bestSteps === null ? steps : Math.min(bestSteps, steps);
+        document.getElementById('best').textContent = bestSteps;
+        document.getElementById('win-time').textContent = timeSec.toFixed(1) + 's';
+        document.getElementById('win-steps').textContent = steps;
+        document.getElementById('win-bonus').textContent = '+' + bonus;
+        document.getElementById('win-overlay').classList.remove('hidden');
+        document.getElementById('win-overlay').classList.add('flex');
+      }
+    }
+
+    // Key controls
+    document.addEventListener('keydown', e => {
+      if (document.getElementById('win-overlay').classList.contains('flex')) return;
+      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') move(-1, 0);
+      if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') move(1, 0);
+      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') move(0, -1);
+      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') move(0, 1);
+      e.preventDefault();
+    });
+
+    // Start
+    newMaze();
+  </script>
+</body>
+</html>

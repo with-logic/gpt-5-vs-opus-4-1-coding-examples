@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tea Dunkability Simulator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,600;1,400&family=Inter:wght@200;300;400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            serif: ['"Cormorant Garamond"', 'Georgia', 'serif'],
+            sans: ['"Inter"', 'system-ui', 'sans-serif'],
+          },
+          colors: {
+            ink: '#0f0e17',
+            parchment: '#f8f4e3',
+            amber: '#cfa855',
+            clay: '#8c6e54',
+            tea: '#8b5a2b',
+            fog: '#e8e6e1',
+            glass: 'rgba(255,255,255,0.05)',
+            glassBorder: 'rgba(255,255,255,0.08)',
+          },
+          backdropBlur: {
+            xl: '24px',
+          },
+          animation: {
+            'steam-up': 'steamUp 3s ease-out infinite',
+            'steam-up-2': 'steamUp 4s ease-out infinite 1s',
+            'cup-bob': 'cupBob 4s ease-in-out infinite',
+            'crumb-float': 'crumbFloat 6s linear infinite',
+          },
+          keyframes: {
+            steamUp: {
+              '0%': { transform: 'translateY(0) scale(0.6)', opacity: 0.6 },
+              '50%': { opacity: 0.9 },
+              '100%': { transform: 'translateY(-80px) scale(1.2)', opacity: 0 },
+            },
+            cupBob: {
+              '0%, 100%': { transform: 'translateY(0)' },
+              '50%': { transform: 'translateY(-6px)' },
+            },
+            crumbFloat: {
+              '0%': { transform: 'translateY(0) rotate(0deg)' },
+              '50%': { transform: 'translateY(-40px) rotate(180deg)' },
+              '100%': { transform: 'translateY(-80px) rotate(360deg)', opacity: 0 },
+            },
+          },
+        },
+      },
+    }
+  </script>
+
+  <style>
+    body {
+      background-color: #0f0e17;
+      background-image:
+        radial-gradient(circle at 20% 30%, rgba(207,168,85,0.08) 0%, transparent 40%),
+        radial-gradient(circle at 80% 70%, rgba(140,110,84,0.1) 0%, transparent 40%);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    ::selection { background: rgba(207,168,85,0.25); color: #f8f4e3; }
+    .glass-panel {
+      background: rgba(255,255,255,0.035);
+      border: 1px solid rgba(255,255,255,0.08);
+      backdrop-filter: blur(20px) saturate(130%);
+      -webkit-backdrop-filter: blur(20px) saturate(130%);
+      box-shadow: 0 8px 32px 0 rgba(0,0,0,0.3);
+    }
+    .glass-card {
+      background: linear-gradient(160deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.015) 100%);
+      border: 1px solid rgba(255,255,255,0.08);
+      backdrop-filter: blur(16px);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+    input[type="range"] {
+      -webkit-appearance: none;
+      height: 6px;
+      border-radius: 3px;
+      background: linear-gradient(90deg, #cfa855 0%, #8c6e54 100%);
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #f8f4e3, #cfa855);
+      border: 2px solid #0f0e17;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(207,168,85,0.4);
+    }
+    .crumb {
+      position: absolute;
+      width: 6px;
+      height: 6px;
+      background: #d4b07c;
+      border-radius: 50% 40% 60% 30%;
+      pointer-events: none;
+      opacity: 0.8;
+      filter: blur(0.5px);
+      z-index: 50;
+    }
+    @keyframes floatUp {
+      0% { transform: translateY(0) rotate(0); opacity: 0.8; }
+      100% { transform: translateY(-60px) rotate(180deg); opacity: 0; }
+    }
+    .dunk-ring {
+      transition: all 0.15s ease-out;
+      box-shadow: 0 0 0 0 rgba(207,168,85,0);
+    }
+    .dunk-active .dunk-ring {
+      box-shadow: 0 0 30px 8px rgba(207,168,85,0.15);
+    }
+  </style>
+</head>
+<body class="text-parchment antialiased selection:bg-amber/25">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // --- Data ---
+    const BISCUITS = [
+      { id: 'digestive', name: 'Digestive', desc: 'Robust whole wheat with a caramel edge.', dunkRisk: 0.35, color: '#cfa855', integrity: 72 },
+      { id: 'hobnob', name: 'Hobnob', desc: 'Oaty, rugged — the tank of biscuits.', dunkRisk: 0.2, color: '#a07a3f', integrity: 85 },
+      { id: 'rich-tea', name: 'Rich Tea', desc: 'Elegant but fragile under heat.', dunkRisk: 0.7, color: '#e8d5a3', integrity: 42 },
+      { id: 'shortbread', name: 'Shortbread', desc: 'Buttery crumb, dissolves like dreams.', dunkRisk: 0.85, color: '#f5e6c8', integrity: 28 },
+    ];
+
+    // --- Components ---
+
+    const GlassPanel = ({ children, className = '' }) => (
+      <div className={`glass-panel rounded-3xl p-6 md:p-8 ${className}`}>
+        {children}
+      </div>
+    );
+
+    const GlassCard = ({ children, className = '', onClick }) => (
+      <button
+        onClick={onClick}
+        className={`glass-card rounded-2xl p-5 text-left w-full transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_12px_40px_rgba(207,168,85,0.12)] active:translate-y-0 focus:outline-none focus:ring-2 focus:ring-amber/40 ${className}`}
+      >
+        {children}
+      </button>
+    );
+
+    const SectionTitle = ({ children, subtitle }) => (
+      <div className="mb-6 md:mb-8">
+        <h2 className="font-serif text-3xl md:text-4xl font-semibold tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-parchment via-amber to-parchment">
+          {children}
+        </h2>
+        {subtitle && <p className="mt-2 text-sm text-parchment/50 font-sans font-light tracking-wide">{subtitle}</p>}
+      </div>
+    );
+
+    const CrumbleChart = ({ value, max = 100, color }) => {
+      const pct = Math.min(100, Math.max(0, (value / max) * 100));
+      return (
+        <div className="w-full">
+          <div className="flex items-end justify-between gap-2 h-28 md:h-36 mb-3">
+            {Array.from({ length: 10 }, (_, i) => {
+              const barHeight = Math.max(15, Math.sin(i * 0.5 + value * 0.02) * 50 + 40 + (i / 10) * 20);
+              const active = i < value / 10;
+              return (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                  <div
+                    className="w-full rounded-t-md transition-all duration-500 ease-out"
+                    style={{
+                      height: `${Math.min(100, barHeight)}%`,
+                      background: active
+                        ? `linear-gradient(to top, ${color}cc, ${color}99)`
+                        : 'rgba(255,255,255,0.05)',
+                      boxShadow: active ? `0 -4px 12px ${color}33` : 'none',
+                    }}
+                  />
+                  <span className={`text-[10px] font-sans ${active ? 'text-parchment/40' : 'text-parchment/10'}`}>
+                    {i + 1}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex justify-between text-xs font-sans text-parchment/30 tracking-widest uppercase">
+            <span>Intact</span>
+            <span>Critical</span>
+          </div>
+        </div>
+      );
+    };
+
+    const Steam = () => (
+      <div className="absolute -top-12 left-1/2 -translate-x-1/2 pointer-events-none z-10">
+        <div className="relative w-8 h-12">
+          {[1, 2, 3, 4, 5].map(i => (
+            <span
+              key={i}
+              className="absolute left-1/2 top-0 w-2 h-2 rounded-full bg-gradient-to-t from-transparent via-parchment/40 to-parchment/10 blur-[1px]"
+              style={{
+                animation: `steamUp ${3 + i * 0.5}s ease-out infinite`,
+                animationDelay: `${i * 0.4}s`,
+                left: `${50 + (i - 3) * 8}%`,
+                opacity: 0.6,
+                transform: 'translateX(-50%)',
+              }}
+            />
+          ))}
+        </div>
+      </div>
+    );
+
+    const Teacup = () => (
+      <div className="relative w-48 h-48 md:w-64 md:h-64 mx-auto">
+        <div className="absolute inset-x-0 bottom-0 h-3 bg-gradient-to-r from-transparent via-amber/20 to-transparent blur-xl rounded-full" />
+        <Steam />
+        <div className="absolute inset-x-4 bottom-8 top-8 rounded-[60%_60%_45%_45%] bg-gradient-to-br from-amber/10 to-amber/30 border border-amber/20 backdrop-blur-sm shadow-[inset_0_4px_20px_rgba(207,168,85,0.15)] overflow-hidden animate-cup-bob">
+          <div className="absolute inset-0 rounded-full bg-gradient-to-t from-tea/90 via-tea/70 to-tea/40" />
+          <div className="absolute top-1/3 left-1/4 w-16 h-16 rounded-full bg-gradient-to-br from-parchment/10 to-transparent blur-sm" />
+          <div className="absolute bottom-1/4 right-1/4 w-10 h-10 rounded-full bg-gradient-to-tl from-parchment/8 to-transparent blur-sm" />
+        </div>
+        <div className="absolute -right-4 top-16 w-10 h-14 border-2 border-amber/30 rounded-r-2xl rounded-l-md -rotate-12 bg-gradient-to-b from-transparent to-amber/5 backdrop-blur-sm" />
+      </div>
+    );
+
+    // --- Main App ---
+    function App() {
+      const [temp, setTemp] = useState(82);
+      const [time, setTime] = useState(3);
+      const [biscuit, setBiscuit] = useState('digestive');
+      const [integrity, setIntegrity] = useState(72);
+      const [crumbs, setCrumbs] = useState([]);
+      const [isDunking, setIsDunking] = useState(false);
+      const [stats, setStats] = useState({ attempts: 124, avgDunk: 2.4 });
+      const crumbId = useRef(0);
+      const containerRef = useRef(null);
+
+      const selectedBiscuit = BISCUITS.find(b => b.id === biscuit) || BISCUITS[0];
+
+      // Compute dunk outcome
+      const computeDunk = useCallback(() => {
+        const heatFactor = (temp - 70) / 30; // 0 at 70C, 1 at 100C
+        const timeFactor = time / 8; // 0 to 1 over 0-8s
+        const risk = selectedBiscuit.dunkRisk;
+        const baseDecay = (heatFactor * 0.5 + timeFactor * 0.5) * risk * 100;
+        const newIntegrity = Math.max(5, Math.round(selectedBiscuit.integrity - baseDecay));
+        return newIntegrity;
+      }, [temp, time, selectedBiscuit, biscuit]);
+
+      const currentIntegrity = computeDunk();
+      const isOverDunked = currentIntegrity < 30;
+      const dunkScore = Math.round((currentIntegrity / selectedBiscuit.integrity) * 100);
+
+      // Spawn crumbs when over-dunked changes
+      useEffect(() => {
+        if (isOverDunked) {
+          const count = 8 + Math.floor(Math.random() * 12);
+          const newCrumbs = Array.from({ length: count }, () => ({
+            id: crumbId.current++,
+            left: Math.random() * 100,
+            delay: Math.random() * 2,
+            duration: 4 + Math.random() * 4,
+            size: 4 + Math.random() * 8,
+          }));
+          setCrumbs(prev => [...prev, ...newCrumbs]);
+          setTimeout(() => {
+            setCrumbs(prev => prev.filter(c => !newCrumbs.find(n => n.id === c.id)));
+          }, 6000);
+        }
+      }, [isOverDunked, temp, time, biscuit]);
+
+      // Keyboard shortcuts
+      useEffect(() => {
+        const handler = (e) => {
+          if (e.target.tagName === 'INPUT') return;
+          switch (e.key) {
+            case 't': case 'T':
+              document.getElementById('slider-temp').focus();
+              break;
+            case 'd': case 'D':
+              document.getElementById('slider-time').focus();
+              break;
+            case 'i': case 'I':
+              document.getElementById('slider-integrity').focus();
+              break;
+            case ' ': case 'Spacebar':
+              e.preventDefault();
+              setIsDunking(d => !d);
+              break;
+            case '1': setBiscuit('digestive'); break;
+            case '2': setBiscuit('hobnob'); break;
+            case '3': setBiscuit('rich-tea'); break;
+            case '4': setBiscuit('shortbread'); break;
+          }
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+      }, [biscuit]);
+
+      // Update integrity when sliders change
+      useEffect(() => {
+        setIntegrity(computeDunk);
+      }, [computeDunk]);
+
+      const handleDunk = () => {
+        setIsDunking(true);
+        setTimeout(() => setIsDunking(false), 1200);
+      };
+
+      return (
+        <div ref={containerRef} className="min-h-screen px-4 md:px-8 py-8 md:py-14 relative overflow-hidden">
+          {/* Background decorative elements */}
+          <div className="absolute top-0 right-0 w-[600px] h-[600px] rounded-full bg-amber/5 blur-[120px] -translate-y-1/3 translate-x-1/4 pointer-events-none" />
+          <div className="absolute bottom-0 left-0 w-[500px] h-[500px] rounded-full bg-tea/10 blur-[100px] translate-y-1/3 -translate-x-1/4 pointer-events-none" />
+
+          {/* Header */}
+          <header className="relative z-10 max-w-6xl mx-auto mb-10 md:mb-16">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-1.5 h-8 rounded-full bg-gradient-to-b from-amber/80 to-transparent" />
+              <span className="text-[11px] font-sans font-semibold tracking-[0.2em] uppercase text-parchment/40">Simulator v2.4</span>
+            </div>
+            <h1 className="font-serif text-5xl md:text-7xl lg:text-8xl font-light leading-[0.9] tracking-tight">
+              <span className="block text-parchment/90">Tea</span>
+              <span className="block italic text-transparent bg-clip-text bg-gradient-to-r from-amber via-parchment to-amber/60">Dunkability</span>
+              <span className="block text-parchment/90">Simulator</span>
+            </h1>
+            <p className="mt-5 max-w-lg text-parchment/40 font-sans font-light text-sm md:text-base leading-relaxed">
+              A scientific exploration of structural integrity under thermal stress and aqueous immersion. Adjust parameters and witness the ancient ritual of biscuit dunking.
+            </p>
+          </header>
+
+          <main className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8 relative z-10">
+            {/* Left Column: Controls */}
+            <div className="lg:col-span-2 space-y-6 md:space-y-8">
+
+              {/* Biscuit Selector */}
+              <GlassPanel>
+                <SectionTitle subtitle="Select your subject">Biscuit Profile</SectionTitle>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {BISCUITS.map(b => (
+                    <GlassCard
+                      key={b.id}
+                      onClick={() => setBiscuit(b.id)}
+                      className={biscuit === b.id ? 'ring-1 ring-amber/50 bg-amber/[0.06]' : ''}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: b.color }} />
+                        <h3 className="font-serif text-lg leading-none">{b.name}</h3>
+                      </div>
+                      <p className="text-xs text-parchment/40 font-sans mb-3 leading-snug">{b.desc}</p>
+                      <div className="flex items-center justify-between text-[10px] font-sans text-parchment/30 uppercase tracking-wider">
+                        <span>Risk {Math.round(b.dunkRisk * 100)}%</span>
+                        <span>Int. {b.integrity}%</span>
+                      </div>
+                      <div className="mt-2 h-1.5 rounded-full bg-parchment/5 overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-500"
+                          style={{ width: `${b.integrity}%`, backgroundColor: b.color }} />
+                      </div>
+                    </GlassCard>
+                  ))}
+                </div>
+              </GlassPanel>
+
+              {/* Sliders */}
+              <GlassPanel>
+                <SectionTitle subtitle="Calibrate conditions">Simulation Parameters</SectionTitle>
+                <div className="grid md:grid-cols-3 gap-8 md:gap-6">
+                  <div>
+                    <label htmlFor="slider-temp" className="flex items-center justify-between mb-3">
+                      <span className="text-xs font-sans uppercase tracking-[0.15em] text-parchment/30">Tea Temperature</span>
+                      <span className="font-serif text-2xl text-amber">{temp}°C</span>
+                    </label>
+                    <input id="slider-temp" type="range" min={60} max={100} step={1} value={temp} onChange={e => setTemp(Number(e.target.value))} className="w-full" />
+                    <p className="mt-2 text-[10px] text-parchment/25 font-sans">Above 90°C accelerates structural failure.</p>
+                  </div>
+                  <div>
+                    <label htmlFor="slider-time" className="flex items-center justify-between mb-3">
+                      <span className="text-xs font-sans uppercase tracking-[0.15em] text-parchment/30">Dunk Duration</span>
+                      <span className="font-serif text-2xl text-amber">{time}s</span>
+                    </label>
+                    <input id="slider-time" type="range" min={0.5} max={8} step={0.5} value={time} onChange={e => setTime(Number(e.target.value))} className="w-full" />
+                    <p className="mt-2 text-[10px] text-parchment/25 font-sans">Every second is a gamble with physics.</p>
+                  </div>
+                  <div>
+                    <label htmlFor="slider-integrity" className="flex items-center justify-between mb-3">
+                      <span className="text-xs font-sans uppercase tracking-[0.15em] text-parchment/30">Structural Integrity</span>
+                      <span className={`font-serif text-2xl ${isOverDunked ? 'text-rose-300' : 'text-amber'}`}>{currentIntegrity}%</span>
+                    </label>
+                    <input id="slider-integrity" type="range" min={5} max={95} step={1} value={currentIntegrity} onChange={e => setIntegrity(Number(e.target.value))} className="w-full" disabled style={{ opacity: 0.5 }} />
+                    <p className="mt-2 text-[10px] text-parchment/25 font-sans">Live computed from tea and biscuit properties.</p>
+                  </div>
+                </div>
+              </GlassPanel>
+
+              {/* Dunk Action */}
+              <div className="text-center">
+                <button
+                  onClick={handleDunk}
+                  className={`relative inline-flex items-center gap-3 px-10 py-5 rounded-full font-serif text-xl tracking-wide transition-all duration-300 overflow-hidden group ${isDunking ? 'scale-95' : ''}`}
+                  style={{
+                    background: `linear-gradient(135deg, ${selectedBiscuit.color}, #8c6e54)`,
+                    boxShadow: isDunking ? `0 0 40px ${selectedBiscuit.color}40` : `0 8px 32px ${selectedBiscuit.color}30`,
+                  }}
+                >
+                  <span className="relative z-10 text-ink font-semibold">DUNK</span>
+                  <span className="w-px h-5 bg-ink/20" />
+                  <span className="text-xs font-sans text-ink/60 font-light">Spacebar</span>
+                </button>
+                <p className="mt-4 text-[10px] text-parchment/20 font-sans tracking-widest uppercase">Press D for duration · T for temperature</p>
+              </div>
+
+              {/* Crumble Chart */}
+              <GlassPanel>
+                <div className="flex items-center justify-between mb-6">
+                  <SectionTitle subtitle="Real-time structural analysis">Crumble-o-Meter</SectionTitle>
+                  <span className={`font-serif text-5xl font-light ${isOverDunked ? 'text-rose-300' : 'text-parchment'}`}>
+                    {dunkScore}<span className="text-xl text-parchment/30">%</span>
+                  </span>
+                </div>
+                <div className="relative">
+                  <CrumbleChart value={currentIntegrity} max={selectedBiscuit.integrity} color={selectedBiscuit.color} />
+                  <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-ink/40 to-transparent pointer-events-none rounded-b-2xl" />
+                </div>
+                <div className="mt-5 flex gap-4 text-xs font-sans text-parchment/30">
+                  <span className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-amber/60" /> Stable</span>
+                  <span className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-rose-400/60" /> Critical</span>
+                  <span className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-parchment/20" /> Collapse</span>
+                </div>
+              </GlassPanel>
+            </div>
+
+            {/* Right Column: Visualization */}
+            <div className="lg:col-span-1 space-y-6 md:space-y-8">
+              {/* Teacup Visualization */}
+              <GlassPanel className="flex flex-col items-center justify-center min-h-[360px] md:min-h-[420px] relative overflow-hidden">
+                <div className="absolute top-4 right-4 text-[10px] font-sans uppercase tracking-[0.2em] text-parchment/20">Live Feed</div>
+                <div className={`transition-all duration-700 ${isDunking ? 'scale-[0.92] rotate-2' : ''}`}>
+                  <Teacup />
+                </div>
+                <div className="mt-4 text-center">
+                  <h3 className="font-serif text-2xl md:text-3xl text-parchment">{selectedBiscuit.name}</h3>
+                  <p className="text-xs text-parchment/30 font-sans mt-1">Dunking at {temp}°C · {time}s</p>
+                </div>
+                {/* Crumb particles */}
+                <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                  {crumbs.map(c => (
+                    <span
+                      key={c.id}
+                      className="crumb"
+                      style={{
+                        left: `${c.left}%`,
+                        bottom: '20%',
+                        width: `${c.size}px`,
+                        height: `${c.size}px`,
+                        animation: `floatUp ${c.duration}s linear ${c.delay}s forwards`,
+                      }}
+                    />
+                  ))}
+                </div>
+                {/* Dunk splash ring */}
+                {isDunking && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="w-32 h-32 rounded-full border-2 border-amber/20 animate-pulse" />
+                    <div className="absolute w-48 h-48 rounded-full border border-amber/10" />
+                  </div>
+                )}
+              </GlassPanel>
+
+              {/* Stats */}
+              <GlassPanel>
+                <h3 className="font-serif text-xl mb-4">Session Log</h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center py-2 border-b border-parchment/5">
+                    <span className="text-xs font-sans text-parchment/30">Total Dunks</span>
+                    <span className="font-serif text-lg">{stats.attempts}</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-b border-parchment/5">
+                    <span className="text-xs font-sans text-parchment/30">Avg Duration</span>
+                    <span className="font-serif text-lg">{stats.avgDunk}s</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2 border-b border-parchment/5">
+                    <span className="text-xs font-sans text-parchment/30">Current Risk</span>
+                    <span className={`font-serif text-lg ${isOverDunked ? 'text-rose-300' : 'text-amber'}`}>{Math.round(selectedBiscuit.dunkRisk * 100)}%</span>
+                  </div>
+                  <div className="flex justify-between items-center py-2">
+                    <span className="text-xs font-sans text-parchment/30">Integrity Score</span>
+                    <span className={`font-serif text-lg ${currentIntegrity < 30 ? 'text-rose-300' : currentIntegrity < 60 ? 'text-amber' : 'text-parchment'}`}>{currentIntegrity}</span>
+                  </div>
+                </div>
+              </GlassPanel>
+
+              {/* Keyboard Shortcuts */}
+              <GlassPanel>
+                <h3 className="font-serif text-xl mb-4">Keyboard</h3>
+                <div className="grid grid-cols-2 gap-2 text-xs font-sans text-parchment/40">
+                  <div><kbd className="px-1.5 py-0.5 rounded bg-parchment/5 border border-parchment/10 text-[10px]">1-4</kbd> Biscuit</div>
+                  <div><kbd className="px-1.5 py-0.5 rounded bg-parchment/5 border border-parchment/10 text-[10px]">T</kbd> Temp</div>
+                  <div><kbd className="px-1.5 py-0.5 rounded bg-parchment/5 border border-parchment/10 text-[10px]">D</kbd> Duration</div>
+                  <div><kbd className="px-1.5 py-0.5 rounded bg-parchment/5 border border-parchment/10 text-[10px]">Space</kbd> Dunk</div>
+                  <div><kbd className="px-1.5 py-0.5 rounded bg-parchment/5 border border-parchment/10 text-[10px]">I</kbd> Integrity</div>
+                </div>
+              </GlassPanel>
+            </div>
+          </main>
+
+          {/* Footer */}
+          <footer className="max-w-6xl mx-auto mt-16 md:mt-24 pt-8 border-t border-parchment/5 text-center">
+            <p className="text-[10px] font-sans text-parchment/15 tracking-[0.3em] uppercase">Tea Dunkability Simulator — A ritual study in structural physics</p>
+          </footer>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(React.createElement(App));
+  </script>
+</body>
+</html>

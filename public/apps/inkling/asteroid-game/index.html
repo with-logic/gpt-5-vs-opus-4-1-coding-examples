@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Asteroid Dogfight — Nebula Strike</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+    @keyframes starDrift {
+      from { background-position: 0 0; }
+      to { background-position: -800px 400px; }
+    }
+    @keyframes pulseGlow {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    @keyframes slideUp {
+      from { transform: translateY(30px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .font-space { font-family: 'Orbitron', sans-serif; }
+    .font-mono-sleek { font-family: 'Rajdhani', monospace; }
+    .glass-panel {
+      background: rgba(10, 15, 30, 0.65);
+      backdrop-filter: blur(16px) saturate(120%);
+      -webkit-backdrop-filter: blur(16px) saturate(120%);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 8px 32px 0 rgba(0, 240, 255, 0.08), inset 0 1px 0 rgba(255,255,255,0.05);
+    }
+    .text-glow-cyan { text-shadow: 0 0 12px rgba(0,255,255,0.6), 0 0 30px rgba(0,255,255,0.3); }
+    .text-glow-amber { text-shadow: 0 0 12px rgba(255,180,60,0.6), 0 0 30px rgba(255,180,60,0.3); }
+    .text-glow-rose { text-shadow: 0 0 12px rgba(255,60,100,0.6), 0 0 30px rgba(255,60,100,0.3); }
+  </style>
+</head>
+<body class="bg-black text-white overflow-hidden select-none font-sleek h-screen w-screen relative" style="font-family: 'Rajdhani', sans-serif;">
+
+  <!-- Starfield background -->
+  <div id="stars" class="absolute inset-0 z-0 pointer-events-none"></div>
+
+  <!-- Nebula glow spots -->
+  <div class="absolute top-[-20%] left-[-10%] w-[60vw] h-[60vw] rounded-full bg-gradient-to-br from-cyan-900/30 via-blue-900/20 to-transparent blur-[120px] z-0 pointer-events-none"></div>
+  <div class="absolute bottom-[-20%] right-[-10%] w-[50vw] h-[50vw] rounded-full bg-gradient-to-tl from-rose-900/20 via-fuchsia-900/10 to-transparent blur-[100px] z-0 pointer-events-none"></div>
+
+  <!-- HUD -->
+  <div class="absolute top-0 left-0 right-0 z-50 flex items-start justify-between p-4 md:p-6 pointer-events-none">
+    <div class="glass-panel rounded-2xl px-5 py-3 min-w-[220px]">
+      <div class="text-[10px] uppercase tracking-[0.2em] text-cyan-300/80 mb-1">Commander</div>
+      <div id="scoreDisplay" class="font-space text-2xl md:text-3xl font-black text-glow-cyan">0</div>
+      <div class="text-[10px] text-slate-400 mt-1">Score</div>
+      <div class="mt-3 h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
+        <div id="shieldBar" class="h-full w-full bg-gradient-to-r from-cyan-400 via-blue-300 to-cyan-200 rounded-full transition-all duration-300 shadow-[0_0_10px_rgba(0,255,255,0.5)]" style="width: 100%"></div>
+      </div>
+      <div id="shieldLabel" class="text-[10px] text-cyan-200/90 mt-0.5">Shield: 100%</div>
+    </div>
+
+    <div class="glass-panel rounded-2xl px-5 py-3 text-right min-w-[200px]">
+      <div class="text-[10px] uppercase tracking-[0.2em] text-amber-300/80 mb-1">Nebula Status</div>
+      <div class="font-space text-xl md:text-2xl font-bold text-glow-amber" id="waveDisplay">Wave 1</div>
+      <div class="text-[10px] text-slate-400 mt-0.5">Asteroids remaining: <span id="asteroidCount">—</span></div>
+      <div class="text-[10px] text-slate-400">Enemies active: <span id="enemyCount">—</span></div>
+    </div>
+  </div>
+
+  <!-- Crosshair / reticle -->
+  <div id="reticle" class="absolute z-40 pointer-events-none hidden md:block" style="width: 40px; height: 40px; transform: translate(-50%, -50%);">
+    <svg viewBox="0 0 40 40" class="w-full h-full drop-shadow-[0_0_8px_rgba(0,240,255,0.8)]">
+      <circle cx="20" cy="20" r="14" stroke="rgba(0,240,255,0.4)" stroke-width="0.5" fill="none"/>
+      <circle cx="20" cy="20" r="6" stroke="rgba(0,240,255,0.8)" stroke-width="1" fill="none"/>
+      <line x1="20" y1="2" x2="20" y2="10" stroke="rgba(0,240,255,0.6)" stroke-width="1"/>
+      <line x1="20" y1="30" x2="20" y2="38" stroke="rgba(0,240,255,0.6)" stroke-width="1"/>
+      <line x1="2" y1="20" x2="10" y2="20" stroke="rgba(0,240,255,0.6)" stroke-width="1"/>
+      <line x1="30" y1="20" x2="38" y2="20" stroke="rgba(0,240,255,0.6)" stroke-width="1"/>
+      <circle cx="20" cy="20" r="1.5" fill="#0ff"/>
+    </svg>
+  </div>
+
+  <!-- Game Canvas -->
+  <canvas id="gameCanvas" class="absolute inset-0 z-10 w-full h-full block"></canvas>
+
+  <!-- Start / Game Over Overlay -->
+  <div id="overlay" class="absolute inset-0 z-[60] flex items-center justify-center bg-gradient-to-b from-black/80 via-black/60 to-black/90 backdrop-blur-sm">
+    <div class="text-center px-8 max-w-2xl">
+      <h1 class="font-space text-5xl md:text-8xl font-black tracking-tighter mb-2 bg-gradient-to-b from-cyan-200 via-blue-300 to-cyan-100 bg-clip-text text-transparent drop-shadow-[0_0_60px_rgba(0,255,255,0.4)]">
+        NEBULA STRIKE
+      </h1>
+      <p class="text-cyan-200/70 font-space text-lg md:text-2xl mb-8 tracking-[0.3em] uppercase">Asteroid Dogfight</p>
+
+      <div class="glass-panel rounded-3xl p-6 md:p-8 mb-8 max-w-md mx-auto text-left">
+        <h3 class="font-space text-xl font-bold text-cyan-200 mb-4">Mission Brief</h3>
+        <ul class="space-y-2 text-sm md:text-base text-slate-300 leading-relaxed">
+          <li class="flex items-center gap-3"><span class="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0 shadow-[0_0_6px_rgba(0,255,255,0.8)]"></span> <span>WASD / Arrow Keys — Pilot your interceptor</span></li>
+          <li class="flex items-center gap-3"><span class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0 shadow-[0_0_6px_rgba(255,200,60,0.8)]"></span> <span>Mouse — Aim. Click / Space — Fire</span></li>
+          <li class="flex items-center gap-3"><span class="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0 shadow-[0_0_6px_rgba(255,80,120,0.8)]"></span> <span>Destroy asteroids & AI fighters</span></li>
+          <li class="flex items-center gap-3"><span class="w-1.5 h-1.5 rounded-full bg-violet-400 shrink-0 shadow-[0_0_6px_rgba(180,100,255,0.8)]"></span> <span>Catch glowing orbs to restore shields</span></li>
+        </ul>
+      </div>
+
+      <button onclick="startGame()" class="font-space text-xl md:text-2xl px-12 py-4 rounded-full bg-gradient-to-r from-cyan-600 to-blue-700 hover:from-cyan-500 hover:to-blue-600 text-white font-black shadow-[0_0_40px_rgba(0,240,255,0.35),inset_0_2px_0_rgba(255,255,255,0.15)] transition-all hover:scale-105 active:scale-95 uppercase tracking-[0.2em]">
+        Launch Mission
+      </button>
+      <div class="mt-4 text-xs text-slate-500">Best played in fullscreen • Desktop recommended</div>
+    </div>
+  </div>
+
+  <script>
+  // =========================== GAME ENGINE ===========================
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  let W = window.innerWidth;
+  let H = window.innerHeight;
+  canvas.width = W;
+  canvas.height = H;
+
+  window.addEventListener('resize', () => {
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = W; canvas.height = H;
+  });
+
+  // =========================== INPUT ===========================
+  const keys = {};
+  const mouse = { x: 0, y: 0, down: false };
+  window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(e.key.toLowerCase())) e.preventDefault(); });
+  window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+  window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+  window.addEventListener('mousedown', () => mouse.down = true);
+  window.addEventListener('mouseup', () => mouse.down = false);
+
+  // =========================== STATE ===========================
+  let running = false;
+  let score = 0;
+  let wave = 1;
+  let frame = 0;
+
+  // =========================== STARFIELD ===========================
+  const stars = [];
+  for (let i = 0; i < 300; i++) {
+    stars.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      z: Math.random() * 3 + 1,
+      size: Math.random() * 1.5 + 0.2,
+      phase: Math.random() * Math.PI * 2,
+    });
+  }
+
+  // =========================== ENTITIES ===========================
+  class Particle {
+    constructor(x, y, vx, vy, life, color, size = 2) {
+      this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+      this.life = life; this.maxLife = life; this.color = color; this.size = size;
+    }
+    update() {
+      this.x += this.vx; this.y += this.vy;
+      this.vx *= 0.95; this.vy *= 0.95;
+      this.life--;
+    }
+    draw() {
+      const a = this.life / this.maxLife;
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.fillStyle = this.color;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size * a, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  class Projectile {
+    constructor(x, y, angle) {
+      this.x = x; this.y = y;
+      this.vx = Math.cos(angle) * 14;
+      this.vy = Math.sin(angle) * 14;
+      this.life = 60;
+      this.type = 'plasma';
+    }
+    update() {
+      this.x += this.vx; this.y += this.vy;
+      this.life--;
+    }
+    draw() {
+      ctx.save();
+      ctx.shadowColor = '#0ff';
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = '#0ff';
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  class Asteroid {
+    constructor() {
+      const side = Math.random() < 0.5 ? 0 : W;
+      this.x = side;
+      this.y = Math.random() * H;
+      this.vx = (side ? -1 : 1) * (Math.random() * 1.5 + 0.5);
+      this.vy = (Math.random() - 0.5) * 1.5;
+      this.angle = Math.random() * Math.PI * 2;
+      this.spin = (Math.random() - 0.5) * 0.06;
+      this.radius = Math.random() * 25 + 15;
+      this.vertices = 8 + Math.floor(Math.random() * 6);
+      this.verts = [];
+      const r = this.radius;
+      for (let i = 0; i < this.vertices; i++) {
+        const a = (Math.PI * 2 / this.vertices) * i + Math.random() * 0.8;
+        const rr = r * (0.7 + Math.random() * 0.6);
+        this.verts.push({ x: Math.cos(a) * rr, y: Math.sin(a) * rr });
+      }
+      this.color = `hsl(${20 + Math.random() * 40}, 60%, 40%)`;
+      this.cracks = Math.floor(Math.random() * 3) + 1;
+      this.health = 1;
+    }
+    update() {
+      this.x += this.vx; this.y += this.vy; this.angle += this.spin;
+      if (this.x < -100 || this.x > W + 100 || this.y < -100 || this.y > H + 100) this.dead = true;
+    }
+    draw() {
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.rotate(this.angle);
+      ctx.shadowColor = 'rgba(255, 120, 60, 0.4)';
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = this.color;
+      ctx.beginPath();
+      const v0 = this.verts[0];
+      ctx.moveTo(v0.x, v0.y);
+      for (let i = 1; i < this.verts.length; i++) ctx.lineTo(this.verts[i].x, this.verts[i].y);
+      ctx.closePath();
+      ctx.fill();
+      // Cracks
+      ctx.strokeStyle = 'rgba(255, 200, 150, 0.4)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < this.cracks; i++) {
+        const v = this.verts[i];
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(v.x * 0.8, v.y * 0.8);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
+  class Enemy {
+    constructor(type = 'hunter') {
+      this.type = type;
+      this.x = Math.random() * W;
+      this.y = Math.random() * 30;
+      this.angle = Math.PI / 2 + (Math.random() - 0.5) * 0.5;
+      this.speed = 2 + Math.random() * 2;
+      this.health = 3 + Math.floor(Math.random() * 3);
+      this.maxHealth = this.health;
+      this.fireCooldown = 0;
+      this.color = type === 'hunter' ? '#ff6b6b' : '#c084fc';
+    }
+    update() {
+      // AI: chase player or move in patterns
+      if (player && !player.dead) {
+        const dx = player.x - this.x;
+        const dy = player.y - this.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 300) {
+          this.angle = Math.atan2(dy, dx);
+        }
+        // Avoid asteroids slightly
+        asteroids.forEach(a => {
+          const d = Math.hypot(this.x - a.x, this.y - a.y);
+          if (d < this.radius + a.radius + 20) {
+            const away = Math.atan2(this.y - a.y, this.x - a.x);
+            this.angle = this.angle * 0.8 + away * 0.2;
+          }
+        });
+      }
+      this.vx = Math.cos(this.angle) * this.speed;
+      this.vy = Math.sin(this.angle) * this.speed;
+      this.x += this.vx; this.y += this.vy;
+      if (this.x < 0) this.x = W; if (this.x > W) this.x = 0;
+      if (this.y < 0) this.y = H; if (this.y > H) this.y = 0;
+
+      this.fireCooldown--;
+      if (this.fireCooldown <= 0 && player && !player.dead) {
+        const dx = player.x - this.x;
+        const dy = player.y - this.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 500 && Math.abs(Math.atan2(dy, dx) - this.angle) < 0.8) {
+          enemyProjectiles.push({
+            x: this.x + Math.cos(this.angle) * 15,
+            y: this.y + Math.sin(this.angle) * 15,
+            vx: Math.cos(Math.atan2(dy, dx)) * 6,
+            vy: Math.sin(Math.atan2(dy, dx)) * 6,
+            life: 80,
+          });
+          this.fireCooldown = 30 + Math.random() * 30;
+        }
+      }
+    }
+    draw() {
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.rotate(this.angle);
+      // Body
+      ctx.shadowColor = this.color;
+      ctx.shadowBlur = 15;
+      ctx.fillStyle = this.color;
+      ctx.beginPath();
+      ctx.moveTo(16, 0);
+      ctx.lineTo(-10, 6);
+      ctx.lineTo(-6, 0);
+      ctx.lineTo(-10, -6);
+      ctx.closePath();
+      ctx.fill();
+      // Cockpit
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(4, 0, 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Health bar
+      if (this.health < this.maxHealth) {
+        ctx.fillStyle = '#ff4444';
+        ctx.fillRect(-8, -14, 16, 3);
+        ctx.fillStyle = '#44ff44';
+        ctx.fillRect(-8, -14, 16 * (this.health / this.maxHealth), 3);
+      }
+      ctx.restore();
+    }
+  }
+
+  class Orb {
+    constructor() {
+      this.x = Math.random() * W;
+      this.y = Math.random() * H;
+      this.vx = (Math.random() - 0.5) * 1;
+      this.vy = (Math.random() - 0.5) * 1;
+      this.radius = 8;
+      this.pulse = 0;
+    }
+    update() {
+      this.x += this.vx; this.y += this.vy; this.pulse += 0.1;
+      if (this.x < 0 || this.x > W) this.vx *= -1;
+      if (this.y < 0 || this.y > H) this.vy *= -1;
+    }
+    draw() {
+      ctx.save();
+      const s = 1 + Math.sin(this.pulse) * 0.3;
+      ctx.shadowColor = '#0ff';
+      ctx.shadowBlur = 20;
+      ctx.fillStyle = '#0ff';
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius * s, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // =========================== PLAYER ===========================
+  let player = null;
+  const projectiles = [];
+  const asteroids = [];
+  const enemies = [];
+  const enemyProjectiles = [];
+  const particles = [];
+  const orbs = [];
+
+  function spawnPlayer() {
+    player = {
+      x: W / 2, y: H / 2,
+      vx: 0, vy: 0,
+      angle: -Math.PI / 2,
+      speed: 0,
+      maxSpeed: 6,
+      accel: 0.25,
+      friction: 0.97,
+      health: 100,
+      maxHealth: 100,
+      shieldRegen: 0.01,
+      dead: false,
+      radius: 14,
+    };
+  }
+
+  function spawnAsteroids(count) {
+    for (let i = 0; i < count; i++) asteroids.push(new Asteroid());
+  }
+
+  function spawnEnemies(count) {
+    for (let i = 0; i < count; i++) enemies.push(new Enemy(Math.random() < 0.3 ? 'drone' : 'hunter'));
+  }
+
+  function spawnOrbs() {
+    if (Math.random() < 0.005) orbs.push(new Orb());
+  }
+
+  function spawnParticles(x, y, count, color) {
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = Math.random() * 4 + 1;
+      particles.push(new Particle(x, y, Math.cos(a) * s, Math.sin(a) * s, 30 + Math.random() * 30, color, Math.random() * 3 + 1));
+    }
+  }
+
+  // =========================== GAME LOOP ===========================
+  function update() {
+    if (!running) return;
+    frame++;
+
+    // Player movement
+    if (player && !player.dead) {
+      if (keys['w'] || keys['arrowup']) {
+        player.vx += Math.cos(player.angle) * player.accel;
+        player.vy += Math.sin(player.angle) * player.accel;
+      }
+      if (keys['s'] || keys['arrowdown']) {
+        player.vx -= Math.cos(player.angle) * player.accel * 0.3;
+        player.vy -= Math.sin(player.angle) * player.accel * 0.3;
+      }
+      if (keys['a'] || keys['arrowleft']) {
+        player.angle -= 0.08;
+      }
+      if (keys['d'] || keys['arrowright']) {
+        player.angle += 0.08;
+      }
+
+      const speed = Math.hypot(player.vx, player.vy);
+      if (speed > player.maxSpeed) {
+        player.vx = (player.vx / speed) * player.maxSpeed;
+        player.vy = (player.vy / speed) * player.maxSpeed;
+      }
+      player.vx *= player.friction;
+      player.vy *= player.friction;
+      player.x += player.vx;
+      player.y += player.vy;
+
+      // Wrap
+      if (player.x < 0) player.x = W; if (player.x > W) player.x = 0;
+      if (player.y < 0) player.y = H; if (player.y > H) player.y = 0;
+
+      // Aim
+      const dx = mouse.x - W / 2; // relative to center? Actually mouse is absolute
+      // Let's adjust: mouse is screen position, player is world position
+      const mx = mouse.x, my = mouse.y;
+      player.angle = Math.atan2(my - player.y, mx - player.x);
+
+      // Fire
+      if ((keys[' '] || mouse.down) && frame % 6 === 0) {
+        projectiles.push(new Projectile(player.x, player.y, player.angle));
+      }
+      player.health = Math.min(player.maxHealth, player.health + player.shieldRegen);
+    }
+
+    // Projectiles
+    for (let i = projectiles.length - 1; i >= 0; i--) {
+      projectiles[i].update();
+      if (projectiles[i].life <= 0) { projectiles.splice(i, 1); continue; }
+    }
+
+    // Enemy projectiles
+    for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+      const p = enemyProjectiles[i];
+      p.x += p.vx; p.y += p.vy; p.life--;
+      if (p.life <= 0) { enemyProjectiles.splice(i, 1); continue; }
+      // Hit player
+      if (player && !player.dead) {
+        const d = Math.hypot(p.x - player.x, p.y - player.y);
+        if (d < 14) {
+          player.health -= 8;
+          spawnParticles(p.x, p.y, 10, '#ff4444');
+          enemyProjectiles.splice(i, 1);
+          if (player.health <= 0) { player.dead = true; spawnParticles(player.x, player.y, 60, '#ff6b6b'); }
+        }
+      }
+    }
+
+    // Asteroids
+    for (let i = asteroids.length - 1; i >= 0; i--) {
+      asteroids[i].update();
+      if (asteroids[i].dead) { asteroids.splice(i, 1); continue; }
+      // Hit player
+      if (player && !player.dead) {
+        const d = Math.hypot(asteroids[i].x - player.x, asteroids[i].y - player.y);
+        if (d < asteroids[i].radius + 14) {
+          player.health -= 20;
+          spawnParticles(asteroids[i].x, asteroids[i].y, 20, '#ff8800');
+          asteroids.splice(i, 1);
+          if (player.health <= 0) { player.dead = true; spawnParticles(player.x, player.y, 60, '#ff6b6b'); }
+          continue;
+        }
+      }
+      // Hit by projectile
+      for (let j = projectiles.length - 1; j >= 0; j--) {
+        const p = projectiles[j];
+        const d = Math.hypot(p.x - asteroids[i].x, p.y - asteroids[i].y);
+        if (d < asteroids[i].radius + 5) {
+          score += 50;
+          spawnParticles(asteroids[i].x, asteroids[i].y, 20, '#ffaa44');
+          asteroids.splice(i, 1);
+          projectiles.splice(j, 1);
+          break;
+        }
+      }
+    }
+
+    // Enemies
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      if (e.dead) { enemies.splice(i, 1); continue; }
+      e.update();
+      e.draw(); // We call draw separately? Actually let's do draw in main loop.
+      // Hit by projectile
+      for (let j = projectiles.length - 1; j >= 0; j--) {
+        const p = projectiles[j];
+        const d = Math.hypot(p.x - e.x, p.y - e.y);
+        if (d < 12) {
+          e.health--;
+          spawnParticles(p.x, p.y, 8, '#ff4444');
+          projectiles.splice(j, 1);
+          if (e.health <= 0) {
+            score += 200;
+            spawnParticles(e.x, e.y, 30, '#ff6b6b');
+            e.dead = true;
+          }
+          break;
+        }
+      }
+      // Hit player
+      if (player && !player.dead) {
+        const d = Math.hypot(e.x - player.x, e.y - player.y);
+        if (d < 20) {
+          player.health -= 15;
+          spawnParticles((e.x + player.x)/2, (e.y + player.y)/2, 20, '#ff8800');
+          e.health = 0; e.dead = true;
+          score += 50;
+          if (player.health <= 0) { player.dead = true; spawnParticles(player.x, player.y, 60, '#ff6b6b'); }
+        }
+      }
+    }
+
+    // Orbs
+    for (let i = orbs.length - 1; i >= 0; i--) {
+      orbs[i].update();
+      if (player && !player.dead) {
+        const d = Math.hypot(orbs[i].x - player.x, orbs[i].y - player.y);
+        if (d < 20) {
+          player.health = Math.min(100, player.health + 25);
+          spawnParticles(orbs[i].x, orbs[i].y, 20, '#0ff');
+          orbs.splice(i, 1);
+        }
+      }
+    }
+
+    // Spawn logic
+    spawnOrbs();
+    if (frame % 120 === 0) spawnAsteroids(1 + Math.floor(wave / 3));
+    if (frame % 300 === 0) spawnEnemies(1 + Math.floor(wave / 2));
+    if (asteroids.length === 0 && frame > 300 && !running === false) {
+      // Wave complete
+      wave++;
+      spawnAsteroids(3 + wave);
+      spawnEnemies(Math.floor(wave / 2) + 1);
+    }
+
+    // Update HUD
+    document.getElementById('scoreDisplay').textContent = score.toLocaleString();
+    document.getElementById('waveDisplay').textContent = `Wave ${wave}`;
+    document.getElementById('asteroidCount').textContent = asteroids.length;
+    document.getElementById('enemyCount').textContent = enemies.filter(e => !e.dead).length;
+    if (player) {
+      const pct = Math.max(0, Math.round((player.health / player.maxHealth) * 100));
+      document.getElementById('shieldBar').style.width = pct + '%';
+      document.getElementById('shieldLabel').textContent = `Shield: ${pct}%`;
+      document.getElementById('shieldBar').className = `h-full rounded-full transition-all duration-300 shadow-[0_0_10px_rgba(0,255,255,0.5)] ${pct < 30 ? 'bg-gradient-to-r from-rose-500 to-rose-400' : 'bg-gradient-to-r from-cyan-400 via-blue-300 to-cyan-200'}`;
+    }
+
+    // Particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      particles[i].update();
+      if (particles[i].life <= 0) particles.splice(i, 1);
+    }
+
+    // End check
+    if (player && player.dead && frame > 100) {
+      setTimeout(() => {
+        document.getElementById('overlay').innerHTML = `
+          <div class="text-center px-8 max-w-lg animate-[slideUp_0.8s_ease-out]">
+            <h2 class="font-space text-6xl font-black text-glow-rose mb-2">MISSION LOST</h2>
+            <div class="font-space text-3xl text-cyan-200 mb-6">Score: ${score}</div>
+            <div class="glass-panel rounded-3xl p-6 mb-8">
+              <p class="text-slate-300">Wave reached: <span class="text-amber-300 font-bold">${wave}</span></p>
+              <p class="text-slate-300">Asteroids destroyed: <span class="text-cyan-300 font-bold">${Math.floor(score / 50)}</span></p>
+            </div>
+            <button onclick="startGame()" class="font-space text-xl px-10 py-3 rounded-full bg-gradient-to-r from-cyan-600 to-blue-700 hover:from-cyan-500 hover:to-blue-600 text-white font-black shadow-[0_0_40px_rgba(0,240,255,0.35)] transition hover:scale-105">Relaunch</button>
+          </div>`;
+        document.getElementById('overlay').classList.remove('hidden');
+      }, 1500);
+      running = false;
+    }
+  }
+
+  // =========================== RENDER ===========================
+  function draw() {
+    // Clear with slight trail for motion blur feel? No, clean for crisp.
+    ctx.fillStyle = '#050a14';
+    ctx.fillRect(0, 0, W, H);
+
+    // Stars
+    for (const s of stars) {
+      const twinkle = 0.3 + 0.7 * Math.abs(Math.sin(frame * 0.02 + s.phase));
+      ctx.fillStyle = `rgba(255, 255, 255, ${twinkle * s.z / 3})`;
+      ctx.fillRect(s.x, s.y, s.size, s.size);
+    }
+
+    // Grid floor (subtle)
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < W; i += 60) {
+      ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, H); ctx.stroke();
+    }
+    for (let i = 0; i < H; i += 60) {
+      ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(W, i); ctx.stroke();
+    }
+    ctx.restore();
+
+    // Orbs
+    for (const o of orbs) o.draw();
+
+    // Asteroids
+    for (const a of asteroids) a.draw();
+
+    // Enemies
+    for (const e of enemies) {
+      if (!e.dead) e.draw();
+    }
+
+    // Projectiles
+    for (const p of projectiles) p.draw();
+    for (const p of enemyProjectiles) {
+      ctx.save();
+      ctx.shadowColor = '#ff4444';
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = '#ff4444';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Player
+    if (player && !player.dead) {
+      ctx.save();
+      ctx.translate(player.x, player.y);
+      ctx.rotate(player.angle);
+      // Engine glow
+      const thrust = (keys['w'] || keys['arrowup']) ? 1 : 0;
+      ctx.shadowColor = thrust ? '#0ff' : '#00aa88';
+      ctx.shadowBlur = thrust ? 20 : 8;
+      // Body
+      ctx.fillStyle = '#e0ffff';
+      ctx.beginPath();
+      ctx.moveTo(18, 0);
+      ctx.lineTo(-8, 8);
+      ctx.lineTo(-2, 0);
+      ctx.lineTo(-8, -8);
+      ctx.closePath();
+      ctx.fill();
+      // Cockpit
+      ctx.fillStyle = '#0ff';
+      ctx.beginPath();
+      ctx.arc(4, 0, 3, 0, Math.PI * 2);
+      ctx.fill();
+      // Wings
+      ctx.fillStyle = '#88ccff';
+      ctx.beginPath();
+      ctx.moveTo(0, 8);
+      ctx.lineTo(12, 14);
+      ctx.lineTo(18, 8);
+      ctx.closePath();
+      ctx.beginPath();
+      ctx.moveTo(0, -8);
+      ctx.lineTo(12, -14);
+      ctx.lineTo(18, -8);
+      ctx.closePath();
+      // Engine flame
+      if (thrust) {
+        ctx.shadowColor = '#0ff';
+        ctx.shadowBlur = 25;
+        ctx.fillStyle = `rgba(0, 255, 255, ${0.6 + Math.random() * 0.4})`;
+        ctx.beginPath();
+        ctx.moveTo(-10, 0);
+        ctx.lineTo(-22 - Math.random() * 12, 4);
+        ctx.lineTo(-26 - Math.random() * 10, 0);
+        ctx.lineTo(-22 - Math.random() * 12, -4);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // Particles
+    for (const p of particles) p.draw();
+
+    // Crosshair at mouse
+    const reticle = document.getElementById('reticle');
+    reticle.style.left = mouse.x + 'px';
+    reticle.style.top = mouse.y + 'px';
+  }
+
+  // =========================== MAIN LOOP ===========================
+  function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function startGame() {
+    score = 0; wave = 1; frame = 0;
+    projectiles.length = 0;
+    asteroids.length = 0;
+    enemies.length = 0;
+    enemyProjectiles.length = 0;
+    particles.length = 0;
+    orbs.length = 0;
+    spawnPlayer();
+    spawnAsteroids(3);
+    spawnEnemies(1);
+    running = true;
+    document.getElementById('overlay').classList.add('hidden');
+  }
+
+  // Initialize stars
+  const starContainer = document.getElementById('stars');
+  // We render stars in canvas, not DOM.
+
+  // Start loop without game
+  loop();
+
+  // Show overlay initially
+  document.getElementById('overlay').classList.remove('hidden');
+  </script>
+</body>
+</html>
