@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<title>Polyglot — Travel Flashcards</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=Noto+Sans+JP:wght@500;700&display=swap" rel="stylesheet">
+<script>
+tailwind.config={theme:{extend:{fontFamily:{display:['Fraunces','serif'],sans:['Inter','system-ui','sans-serif'],jp:['Noto Sans JP','sans-serif']}}}}
+</script>
+<style>
+*{ -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility }
+body{ background:#FCFAF7; overscroll-behavior:none }
+.grain:after{content:"";position:fixed;inset:0;pointer-events:none;opacity:.03;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");mix-blend-mode:multiply;z-index:9999}
+.orb{ position:absolute; border-radius:50%; filter:blur(70px); pointer-events:none; mix-blend-mode:multiply; }
+.scene{ perspective:1400px; -webkit-perspective:1400px; }
+.card3d{ transform-style:preserve-3d; -webkit-transform-style:preserve-3d; transition:transform .75s cubic-bezier(.23,1,.32,1); will-change:transform }
+.card3d.flipped{ transform:rotateY(180deg) }
+.face{ backface-visibility:hidden; -webkit-backface-visibility:hidden; }
+.face.back{ transform:rotateY(180deg) }
+.stack-card{ transition: all .6s cubic-bezier(.23,1,.32,1); }
+@keyframes shuffle-out{0%{transform:translate3d(0,0,0) rotate(0)}35%{transform:translate3d(-18%,-8%,0) rotate(-8deg)}100%{transform:translate3d(130%,10%,0) rotate(18deg); opacity:0}}
+@keyframes shuffle-in{0%{transform:translate3d(0,30px,0) scale(.96); opacity:0}100%{transform:translate3d(0,0,0) scale(1); opacity:1}}
+@keyframes pop{0%{transform:scale(.9)}50%{transform:scale(1.04)}100%{transform:scale(1)}}
+@keyframes check-draw{0%{stroke-dashoffset:40}100%{stroke-dashoffset:0}}
+@keyframes confetti{0%{transform:translateY(0) rotate(0)}100%{transform:translateY(700px) rotate(720deg); opacity:0}}
+.shuffling .active-card{ animation:shuffle-out .45s cubic-bezier(.6,0,.4,1) both }
+.card-enter{ animation:shuffle-in .55s cubic-bezier(.23,1,.32,1) both }
+.learned-pop{ animation:pop .45s cubic-bezier(.175,.885,.32,1.275) }
+.check-path{ stroke-dasharray:40; stroke-dashoffset:40; animation:check-draw .4s .2s ease forwards }
+::-webkit-scrollbar{ display:none }
+</style>
+</head>
+<body class="grain font-sans text-zinc-900 min-h-[100dvh] flex flex-col selection:bg-zinc-900 selection:text-white">
+<!-- background orbs -->
+<div class="fixed inset-0 overflow-hidden pointer-events-none">
+  <div class="orb w-[700px] h-[700px] bg-[#FFD6BA] -top-[200px] -right-[200px] opacity-70"></div>
+  <div class="orb w-[600px] h-[600px] bg-[#D6E8FF] -bottom-[150px] -left-[180px] opacity-70"></div>
+  <div class="orb w-[500px] h-[500px] bg-[#E2EAD9] top-[35%] left-[30%] opacity-60"></div>
+</div>
+
+<header id="appHeader" class="relative z-20 w-full max-w-[1200px] mx-auto px-6 md:px-8 h-[68px] flex items-center justify-between opacity-0 pointer-events-none transition-opacity">
+  <div class="flex items-center gap-3">
+    <div class="w-8 h-8 rounded-full bg-zinc-900 text-white grid place-items-center font-display font-bold text-[16px] tracking-tight">P</div>
+    <span class="font-display font-semibold text-[17px] tracking-tight">polyglot</span>
+    <span id="headerTarget" class="ml-3 hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-zinc-200 text-[11px] font-medium tracking-wide uppercase"></span>
+  </div>
+  <div class="flex items-center gap-2">
+    <button id="uiLangBtn" class="h-8 px-3 rounded-full bg-white border border-zinc-200 text-[12px] font-medium flex items-center gap-1.5 hover:bg-zinc-50 transition"></button>
+    <button id="changeTrackBtn" class="h-8 px-3 rounded-full bg-zinc-900 text-white text-[12px] font-medium hover:bg-zinc-800 transition">Change</button>
+  </div>
+</header>
+
+<!-- ONBOARDING -->
+<div id="onboarding" class="relative z-10 flex-1 flex flex-col items-center justify-center px-5 py-10">
+  <div class="w-full max-w-[980px] grid lg:grid-cols-[1.1fr_.9fr] gap-10 items-center">
+    <div>
+      <div id="localeBadge" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white border border-zinc-200 shadow-[0_2px_10px_rgba(0,0,0,.04)] text-[12px] font-medium mb-6">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span><span id="localeText"></span>
+      </div>
+      <h1 id="heroTitle" class="font-display text-[42px] md:text-[64px] leading-[0.9] tracking-[-0.03em] font-[700]">Where to<br/>next?</h1>
+      <p id="heroSub" class="mt-5 text-[17px] leading-[1.5] text-zinc-600 max-w-[36ch]"></p>
+
+      <div class="mt-8 grid grid-cols-3 gap-2 max-w-[360px]">
+        <div class="p-3 rounded-2xl bg-white border border-zinc-200"><div class="text-[10px] uppercase tracking-widest font-semibold text-zinc-400" id="statLabel1">Phrases</div><div class="font-display text-[22px] font-semibold leading-none mt-1">40</div></div>
+        <div class="p-3 rounded-2xl bg-white border border-zinc-200"><div class="text-[10px] uppercase tracking-widest font-semibold text-zinc-400">For travelers</div><div class="font-display text-[22px] font-semibold leading-none mt-1">10 / lang</div></div>
+        <div class="p-3 rounded-2xl bg-zinc-900 text-white"><div class="text-[10px] uppercase tracking-widest font-semibold text-white/60">Flip</div><div class="font-display text-[22px] font-semibold leading-none mt-1">3D</div></div>
+      </div>
+
+      <p id="kbdHint" class="mt-8 hidden lg:flex items-center gap-2 text-[12px] text-zinc-500"><span class="px-1.5 py-0.5 rounded border bg-white border-zinc-200">SPACE</span> flip · <span class="px-1.5 py-0.5 rounded border bg-white border-zinc-200">←→</span> navigate</p>
+    </div>
+
+    <div>
+      <div class="mb-3 flex items-center justify-between">
+        <h2 id="chooseLabel" class="font-display font-semibold text-[15px]">Choose a language to learn</h2>
+        <span id="uiLangHint" class="text-[11px] text-zinc-500"></span>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="langGrid"></div>
+      <p id="onboardFoot" class="mt-4 text-[12px] leading-[1.5] text-zinc-500"></p>
+    </div>
+  </div>
+</div>
+
+<!-- LEARNING -->
+<div id="learning" class="relative z-10 hidden flex-1 flex-col max-w-[1200px] w-full mx-auto px-5 md:px-8 pb-10">
+  <!-- progress -->
+  <div class="w-full mt-2 mb-6">
+    <div class="flex items-center justify-between mb-3">
+      <div class="flex items-center gap-3">
+        <div class="h-[6px] w-[160px] md:w-[240px] rounded-full bg-zinc-200 overflow-hidden">
+          <div id="progressBar" class="h-full bg-zinc-900 transition-all duration-700 ease-[cubic-bezier(.23,1,.32,1)]" style="width:0%"></div>
+        </div>
+        <span id="progressText" class="text-[12px] font-medium tracking-wide"></span>
+      </div>
+      <div id="dots" class="flex items-center gap-[5px]"></div>
+    </div>
+  </div>
+
+  <div class="flex-1 grid lg:grid-cols-[1fr_340px] gap-8 items-start">
+    <!-- card area -->
+    <div class="order-1 lg:order-1">
+      <div class="relative mx-auto w-full max-w-[560px]">
+        <!-- stack behind -->
+        <div class="absolute inset-0 -z-10">
+          <div class="stack-card absolute inset-0 top-2 scale-[.97] rounded-[28px] bg-white/70 border border-zinc-200 shadow-[0_10px_30px_rgba(0,0,0,.04)] rotate-[-1.2deg]"></div>
+          <div class="stack-card absolute inset-0 top-4 scale-[.94] rounded-[28px] bg-white/50 border border-zinc-200 shadow-[0_10px_30px_rgba(0,0,0,.03)] rotate-[1.4deg]"></div>
+        </div>
+
+        <div id="scene" class="scene w-full">
+          <div id="card" class="card3d relative w-full h-[430px] md:h-[460px] cursor-pointer select-none">
+            <!-- FRONT -->
+            <div class="face front absolute inset-0 rounded-[28px] bg-white border border-zinc-200 shadow-[0_20px_60px_rgba(0,0,0,.08)] overflow-hidden flex flex-col">
+              <div class="flex items-center justify-between px-6 pt-5">
+                <span id="frontLangBadge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-900 text-white text-[10px] font-semibold tracking-widest uppercase"></span>
+                <div class="flex items-center gap-1.5">
+                  <button id="speakFront" class="w-8 h-8 rounded-full border border-zinc-200 grid place-items-center hover:bg-zinc-50 transition" aria-label="Speak">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="flex-1 px-8 flex flex-col justify-center">
+                <p id="frontCategory" class="text-[11px] font-semibold tracking-widest uppercase text-zinc-400 mb-3"></p>
+                <h3 id="frontText" class="font-display font-[600] text-[32px] md:text-[38px] leading-[1.05] tracking-[-0.02em]"></h3>
+                <p id="frontRomaji" class="mt-3 text-[14px] text-zinc-500 font-medium hidden"></p>
+              </div>
+              <div class="px-6 pb-5 flex items-center justify-between">
+                <span id="tapHint" class="text-[12px] text-zinc-500 flex items-center gap-1.5"><span class="w-5 h-5 rounded-full border border-zinc-300 grid place-items-center">↻</span></span>
+                <span class="text-[11px] text-zinc-400 font-medium">FRONT</span>
+              </div>
+              <div id="frontBigBg" class="pointer-events-none absolute -right-8 -bottom-10 font-display font-bold text-[140px] leading-none opacity-[0.035] select-none">A</div>
+            </div>
+
+            <!-- BACK -->
+            <div class="face back absolute inset-0 rounded-[28px] bg-[#151515] text-[#FAF7F2] shadow-[0_20px_60px_rgba(0,0,0,.22)] overflow-hidden flex flex-col">
+              <div class="flex items-center justify-between px-6 pt-5">
+                <span id="backLangBadge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/10 border border-white/10 text-[10px] font-semibold tracking-widest uppercase"></span>
+                <button id="speakBack" class="w-8 h-8 rounded-full bg-white/10 border border-white/10 grid place-items-center hover:bg-white/15 transition">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+                </button>
+              </div>
+              <div class="flex-1 px-8 flex flex-col justify-center">
+                <p id="backCategory" class="text-[11px] font-semibold tracking-widest uppercase text-white/40 mb-3"></p>
+                <h3 id="backText" class="font-display font-[600] text-[30px] md:text-[36px] leading-[1.08] tracking-[-0.02em]"></h3>
+                <p id="backNote" class="mt-4 text-[13px] leading-[1.5] text-white/60 max-w-[34ch]"></p>
+              </div>
+              <div class="px-6 pb-5 flex items-center justify-between">
+                <span id="backTapHint" class="text-[12px] text-white/50"></span>
+                <span class="text-[11px] text-white/30 font-medium">BACK • TRANSLATION</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- controls under card -->
+        <div class="mt-6 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <button id="prevBtn" class="w-10 h-10 rounded-full bg-white border border-zinc-200 grid place-items-center hover:bg-zinc-50 active:scale-[.98] transition"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M15 18l-6-6 6-6"/></svg></button>
+            <button id="nextBtn" class="w-10 h-10 rounded-full bg-white border border-zinc-200 grid place-items-center hover:bg-zinc-50 active:scale-[.98] transition"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 6l6 6-6 6"/></svg></button>
+            <div class="w-px h-5 bg-zinc-200 mx-1"></div>
+            <button id="shuffleBtn" class="h-10 px-4 rounded-full bg-white border border-zinc-200 text-[12px] font-semibold tracking-wide flex items-center gap-1.5 hover:bg-zinc-50 active:scale-[.98] transition">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 3h5v5"/><path d="M4 8h10a4 4 0 0 1 4 4v0a4 4 0 0 1-4 4H8"/><path d="M16 21h5v-5"/><path d="M4 16h10a4 4 0 0 0 4-4"/></svg>
+              <span id="shuffleLabel"></span>
+            </button>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="flipBtn" class="md:hidden h-10 px-4 rounded-full bg-zinc-900 text-white text-[12px] font-semibold">Flip</button>
+            <button id="learnBtn" class="h-10 pl-3 pr-4 rounded-full bg-zinc-900 text-white text-[12.5px] font-semibold flex items-center gap-2 hover:bg-black active:scale-[.98] transition shadow-[0_8px_20px_rgba(0,0,0,.15)]">
+              <span class="w-5 h-5 rounded-full bg-white text-zinc-900 grid place-items-center"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12l5 5l10-10"/></svg></span>
+              <span id="learnLabel"></span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- side panel -->
+    <div class="order-2 lg:order-2 w-full">
+      <div class="rounded-[24px] bg-white border border-zinc-200 p-5 shadow-[0_12px_40px_rgba(0,0,0,.04)]">
+        <div class="flex items-center justify-between">
+          <h4 id="deckTitle" class="font-display font-semibold text-[16px]">Travel deck</h4>
+          <span id="deckCount" class="text-[11px] font-medium px-2 py-1 rounded-full bg-zinc-100 border border-zinc-200"></span>
+        </div>
+        <div id="miniList" class="mt-4 grid gap-2 max-h-[300px] overflow-auto pr-1"></div>
+        <div class="mt-4 pt-4 border-t border-zinc-100 flex items-center justify-between">
+          <span id="learnedLabel" class="text-[12px] text-zinc-500"></span>
+          <button id="resetLearned" class="text-[12px] font-semibold underline underline-offset-4 decoration-zinc-300 hover:decoration-zinc-900">Reset</button>
+        </div>
+      </div>
+
+      <div class="mt-4 rounded-[20px] bg-[#111] text-white p-4 flex items-center gap-3">
+        <div class="w-9 h-9 rounded-full bg-white/10 grid place-items-center">⌘</div>
+        <div class="text-[12px] leading-[1.3]"><b id="tipTitle" class="font-semibold">Tip:</b> <span id="tipText"></span></div>
+      </div>
+
+      <div id="completeCard" class="hidden mt-4 rounded-[24px] bg-[#E8F0E0] border border-[#C8DBB8] p-6 text-[14px] leading-[1.5]">
+        <div class="w-10 h-10 rounded-full bg-zinc-900 text-white grid place-items-center mb-3">✓</div>
+        <h4 id="completeTitle" class="font-display font-semibold text-[18px] leading-[1.1]"></h4>
+        <p id="completeDesc" class="mt-2 text-[13px] text-zinc-700"></p>
+        <div class="mt-4 flex gap-2">
+          <button id="restartBtn" class="h-9 px-4 rounded-full bg-zinc-900 text-white text-[12px] font-semibold"></button>
+          <button id="shuffleAfterBtn" class="h-9 px-4 rounded-full bg-white border border-zinc-200 text-[12px] font-semibold">Shuffle & replay</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<canvas id="confetti" class="fixed inset-0 pointer-events-none z-50"></canvas>
+
+<script>
+/* ---------- i18n UI ---------- */
+const ui = {
+  en:{
+    localeDetected:(l)=>`UI in ${l} • auto-detected`,
+    heroTitle:`Where to<br/>next?`,
+    heroSub:`Learn 10 essential travel phrases. Flip, speak, shuffle and mark them as learned. Your interface adapts to your locale — the flashcards adapt to your destination.`,
+    choose:`Choose a language to learn`,
+    uiHint:`Your browser says`,
+    foot:`Built for travelers. No signup. Works offline. Press space to flip, arrows to move.`,
+    stats:["Phrases","For travelers"],
+    tapFront:`Click to reveal`,
+    tapBack:`Click to flip back`,
+    front:`FRONT`,
+    back:`BACK • TRANSLATION`,
+    shuffle:`Shuffle`,
+    learnedBtn:`Mark learned`,
+    learnedBtnDone:`Learned ✓`,
+    learnedCount:(n,t)=>`${n} / ${t} learned`,
+    progress:(c,t)=>`${c} of ${t}`,
+    deck:`Travel deck`,
+    cards:`cards`,
+    reset:`Reset`,
+    tipTitle:`Tip:`,
+    tip:`Use your voice — tap speaker to hear native pronunciation.`,
+    category:`Travel phrase`,
+    completed:`You're ready to travel!`,
+    completedDesc:`You've marked all 10 phrases as learned. Review again or shuffle for a surprise order.`,
+    restart:`Restart`,
+    change:`Change`,
+    changeLang:`Change language`,
+    kbd:`SPACE flip · ←→ navigate`,
+  },
+  es:{
+    localeDetected:(l)=>`Interfaz en ${l} • detectado automáticamente`,
+    heroTitle:`¿A dónde<br/>ahora?`,
+    heroSub:`Aprende 10 frases esenciales para viajar. Gira, escucha, mezcla y márcalas como aprendidas. La interfaz se adapta a tu idioma, las tarjetas a tu destino.`,
+    choose:`Elige un idioma para aprender`,
+    uiHint:`Tu navegador dice`,
+    foot:`Hecho para viajeros. Sin registro. Funciona offline. Espacio para girar, flechas para navegar.`,
+    stats:["Frases","Para viajeros"],
+    tapFront:`Toca para revelar`,
+    tapBack:`Toca para volver`,
+    front:`ANVERSO`,
+    back:`REVERSO • TRADUCCIÓN`,
+    shuffle:`Mezclar`,
+    learnedBtn:`Marcar aprendida`,
+    learnedBtnDone:`¡Aprendida ✓`,
+    learnedCount:(n,t)=>`${n} / ${t} aprendidas`,
+    progress:(c,t)=>`${c} de ${t}`,
+    deck:`Mazo de viaje`,
+    cards:`tarjetas`,
+    reset:`Reiniciar`,
+    tipTitle:`Consejo:`,
+    tip:`Usa tu voz — toca el altavoz para escuchar la pronunciación nativa.`,
+    category:`Frase de viaje`,
+    completed:`¡Listo para viajar!`,
+    completedDesc:`Has marcado las 10 frases como aprendidas. Repasa de nuevo o mezcla para un orden sorpresa.`,
+    restart:`Reiniciar`,
+    change:`Cambiar`,
+    changeLang:`Cambiar idioma`,
+    kbd:`ESPACIO girar · ←→ navegar`,
+  },
+  fr:{
+    localeDetected:(l)=>`Interface en ${l} • détection auto`,
+    heroTitle:`Où aller<br/>ensuite ?`,
+    heroSub:`Apprenez 10 phrases de voyage essentielles. Retournez, écoutez, mélangez et marquez comme acquises. L'interface s'adapte à votre langue, les cartes à votre destination.`,
+    choose:`Choisissez une langue à apprendre`,
+    uiHint:`Votre navigateur dit`,
+    foot:`Conçu pour les voyageurs. Sans inscription. Fonctionne hors ligne. Espace pour retourner, flèches pour naviguer.`,
+    stats:["Phrases","Pour voyageurs"],
+    tapFront:`Cliquez pour révéler`,
+    tapBack:`Cliquez pour revenir`,
+    front:`RECTO`,
+    back:`VERSO • TRADUCTION`,
+    shuffle:`Mélanger`,
+    learnedBtn:`Marquer appris`,
+    learnedBtnDone:`Appris ✓`,
+    learnedCount:(n,t)=>`${n} / ${t} apprises`,
+    progress:(c,t)=>`${c} sur ${t}`,
+    deck:`Paquet voyage`,
+    cards:`cartes`,
+    reset:`Réinitialiser`,
+    tipTitle:`Astuce :`,
+    tip:`Utilisez votre voix — appuyez sur le haut-parleur pour entendre la prononciation.`,
+    category:`Phrase de voyage`,
+    completed:`Prêt à voyager !`,
+    completedDesc:`Vous avez marqué les 10 phrases comme apprises. Révisez ou mélangez pour un ordre surprise.`,
+    restart:`Recommencer`,
+    change:`Changer`,
+    changeLang:`Changer de langue`,
+    kbd:`ESPACE retourner · ←→ naviguer`,
+  },
+  ja:{
+    localeDetected:(l)=>`UIは${l} • 自動検出`,
+    heroTitle:`次は<br/>どこへ？`,
+    heroSub:`旅行に必須の10フレーズを学ぼう。めくって、聞いて、シャッフルして、覚えたらマーク。インターフェースはあなたの言語に、カードは目的地に合わせます。`,
+    choose:`学びたい言語を選ぶ`,
+    uiHint:`ブラウザの言語`,
+    foot:`旅行者のために設計。登録不要。オフライン可。スペースでめくる、矢印で移動。`,
+    stats:["フレーズ","旅行者向け"],
+    tapFront:`タップして表示`,
+    tapBack:`タップで戻る`,
+    front:`オモテ`,
+    back:`ウラ • 翻訳`,
+    shuffle:`シャッフル`,
+    learnedBtn:`覚えた`,
+    learnedBtnDone:`覚えた ✓`,
+    learnedCount:(n,t)=>`${n} / ${t} 覚えた`,
+    progress:(c,t)=>`${c} / ${t}`,
+    deck:`トラベルデッキ`,
+    cards:`枚`,
+    reset:`リセット`,
+    tipTitle:`ヒント：`,
+    tip:`スピーカーをタップしてネイティブの発音を聞いてみよう。`,
+    category:`旅行フレーズ`,
+    completed:`旅行の準備完了！`,
+    completedDesc:`10フレーズすべて覚えました。もう一度復習するか、シャッフルして再挑戦しよう。`,
+    restart:`最初から`,
+    change:`変更`,
+    changeLang:`言語を変更`,
+    kbd:`SPACEでめくる · ←→で移動`,
+  }
+};
+
+const flagMap={en:"🇬🇧",es:"🇪🇸",fr:"🇫🇷",ja:"🇯🇵"};
+const langNames={en:{en:"English",es:"Inglés",fr:"Anglais",ja:"英語"}, es:{en:"Spanish",es:"Español",fr:"Espagnol",ja:"スペイン語"}, fr:{en:"French",es:"Francés",fr:"Français",ja:"フランス語"}, ja:{en:"Japanese",es:"Japonés",fr:"Japonais",ja:"日本語"}};
+const nativeSample={en:"Hello, where is…",es:"Hola, ¿dónde está…",fr:"Bonjour, où est…",ja:"すみません、駅は…"};
+
+const phrases=[
+  {cat:{en:"Directions",es:"Direcciones",fr:"Directions",ja:"道案内"}, en:"Hello, where is the train station?", es:"Hola, ¿dónde está la estación de tren?", fr:"Bonjour, où est la gare ?", ja:"すみません、駅はどこですか？", r:"Sumimasen, eki wa doko desu ka?", note:{en:"Polite starter + essential landmark",es:"Inicio educado + lugar esencial",fr:"Début poli + lieu essentiel",ja:"丁寧な出だし＋必須の場所"}},
+  {cat:{en:"Shopping",es:"Compras",fr:"Achats",ja:"買い物"}, en:"How much does this cost?", es:"¿Cuánto cuesta esto?", fr:"Combien ça coûte ?", ja:"これはいくらですか？", r:"Kore wa ikura desu ka?", note:{en:"Point + ask. Works everywhere.",es:"Señala y pregunta. Sirve en todos lados.",fr:"Montrez et demandez. Partout.",ja:"指さして聞ける万能フレーズ"}},
+  {cat:{en:"Help",es:"Ayuda",fr:"Aide",ja:"ヘルプ"}, en:"Do you speak English?", es:"¿Habla inglés?", fr:"Parlez-vous anglais ?", ja:"英語を話せますか？", r:"Eigo o hanasemasu ka?", note:{en:"Lifesaver when you're stuck",es:"Salvavidas cuando te bloqueas",fr:"Sauvetage quand bloqué",ja:"困った時の一言"}},
+  {cat:{en:"Emergency",es:"Emergencia",fr:"Urgence",ja:"緊急"}, en:"I need help.", es:"Necesito ayuda.", fr:"J'ai besoin d'aide.", ja:"助けてください。", r:"Tasukete kudasai.", note:{en:"Short, clear, urgent",es:"Corta, clara y urgente",fr:"Court et urgent",ja:"短く明確、緊急時に"}},
+  {cat:{en:"Essentials",es:"Esenciales",fr:"Essentiel",ja:"必須"}, en:"Where is the bathroom?", es:"¿Dónde está el baño?", fr:"Où sont les toilettes ?", ja:"トイレはどこですか？", r:"Toire wa doko desu ka?", note:{en:"You will use this daily",es:"La usarás a diario",fr:"Utilisée quotidiennement",ja:"毎日必ず使う"}},
+  {cat:{en:"Dining",es:"Restaurante",fr:"Restaurant",ja:"食事"}, en:"Can I have the bill, please?", es:"¿Me trae la cuenta, por favor?", fr:"L'addition, s'il vous plaît.", ja:"お会計をお願いします。", r:"Okaikei o onegaishimasu.", note:{en:"Polite closing for any meal",es:"Cierre educado para cualquier comida",fr:"Clôture polie d'un repas",ja:"食事の丁寧な締めくくり"}},
+  {cat:{en:"Hotel",es:"Hotel",fr:"Hôtel",ja:"宿泊"}, en:"I would like to book a room.", es:"Quisiera reservar una habitación.", fr:"Je voudrais réserver une chambre.", ja:"部屋を予約したいです。", r:"Heya o yoyaku shitai desu.", note:{en:"Key for last-minute stays",es:"Clave para estancias de último minuto",fr:"Clé pour réserver sur place",ja:"直前の宿泊に必須"}},
+  {cat:{en:"Time",es:"Horario",fr:"Horaires",ja:"時間"}, en:"What time does it open?", es:"¿A qué hora abre?", fr:"À quelle heure ça ouvre ?", ja:"何時に開きますか？", r:"Nanji ni akimasu ka?", note:{en:"Museums, shops, stations",es:"Museos, tiendas, estaciones",fr:"Musées, boutiques, gares",ja:"博物館、店、駅で"}},
+  {cat:{en:"Lost",es:"Perdido",fr:"Perdu",ja:"迷子"}, en:"I'm lost.", es:"Estoy perdido.", fr:"Je suis perdu(e).", ja:"道に迷いました。", r:"Michi ni mayoimashita.", note:{en:"Instant empathy from locals",es:"Empatía instantánea de locales",fr:"Empathie immédiate",ja:"地元の人が助けてくれる一言"}},
+  {cat:{en:"Gratitude",es:"Gracias",fr:"Merci",ja:"感謝"}, en:"Thank you very much.", es:"Muchas gracias.", fr:"Merci beaucoup.", ja:"ありがとうございます。", r:"Arigatou gozaimasu.", note:{en:"Always end with gratitude",es:"Termina siempre con gratitud",fr:"Terminez par gratitude",ja:"最後は感謝で締める"}},
+];
+
+function detectUILang(){
+  const nav = (navigator.languages && navigator.languages[0]) || navigator.language || 'en';
+  const low = nav.toLowerCase();
+  if(low.startsWith('es')) return 'es';
+  if(low.startsWith('fr')) return 'fr';
+  if(low.startsWith('ja')) return 'ja';
+  if(low.startsWith('en')) return 'en';
+  return 'en';
+}
+let uiLang = detectUILang();
+let targetLang = null;
+
+function t(k, ...args){
+  const dict = ui[uiLang] || ui.en;
+  const v = dict[k] ?? ui.en[k] ?? k;
+  return typeof v === 'function' ? v(...args) : v;
+}
+function langLabel(code){ return (langNames[code] && langNames[code][uiLang]) || langNames[code].en; }
+
+/* ---------- State ---------- */
+let deck = []; // indices
+let curr = 0;
+let flipped = false;
+let learned = new Set();
+let shuffling = false;
+
+function loadLearned(){
+  try{
+    const raw = localStorage.getItem('polyglot_learned_'+targetLang);
+    if(raw) learned = new Set(JSON.parse(raw));
+  }catch{}
+}
+function saveLearned(){
+  localStorage.setItem('polyglot_learned_'+targetLang, JSON.stringify([...learned]));
+}
+function initDeck(){
+  deck = phrases.map((_,i)=>i);
+  curr = 0;
+  // keep learned order? No, fresh random?
+  // no shuffle initially to preserve teaching order
+}
+function shuffleDeck(withAnim=true){
+  if(shuffling) return;
+  if(withAnim){
+    shuffling = true;
+    document.getElementById('scene').classList.add('shuffling');
+    setTimeout(()=>{
+      for(let i=deck.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [deck[i],deck[j]]=[deck[j],deck[i]]; }
+      curr=0; flipped=false;
+      renderAll();
+      document.getElementById('card').classList.remove('flipped');
+      setTimeout(()=>{
+        document.getElementById('scene').classList.remove('shuffling');
+        const c=document.getElementById('card'); c.classList.add('card-enter'); setTimeout(()=>c.classList.remove('card-enter'),600);
+        shuffling=false;
+      },100);
+    },420);
+  }else{
+    for(let i=deck.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [deck[i],deck[j]]=[deck[j],deck[i]]; }
+    curr=0; flipped=false; renderAll();
+  }
+}
+
+/* ---------- Render ---------- */
+function renderOnboarding(){
+  const badge = document.getElementById('localeBadge');
+  const pretty = {en:"English",es:"Español",fr:"Français",ja:"日本語"}[uiLang] || uiLang;
+  document.getElementById('localeText').textContent = (ui[uiLang]?.localeDetected?.(pretty) ?? ui.en.localeDetected(pretty));
+  document.getElementById('heroTitle').innerHTML = t('heroTitle');
+  document.getElementById('heroSub').textContent = t('heroSub');
+  document.getElementById('chooseLabel').textContent = t('choose');
+  document.getElementById('uiLangHint').textContent = `${t('uiHint')} ${navigator.language}`;
+  document.getElementById('onboardFoot').textContent = t('foot');
+  document.getElementById('statLabel1').textContent = (t('stats')[0]);
+  document.getElementById('kbdHint').textContent = t('kbd');
+
+  const grid=document.getElementById('langGrid');
+  grid.innerHTML="";
+  ['en','es','fr','ja'].forEach(code=>{
+    const div=document.createElement('button');
+    div.className="group text-left p-[14px] rounded-[20px] bg-white border border-zinc-200 hover:border-zinc-900 hover:shadow-[0_12px_30px_rgba(0,0,0,.08)] transition-all flex items-center justify-between";
+    div.innerHTML=`<div class="flex items-center gap-3"><div class="w-10 h-10 rounded-full bg-zinc-50 border border-zinc-200 grid place-items-center text-[18px]">${flagMap[code]}</div><div><div class="font-semibold text-[15px] leading-none">${langLabel(code)}</div><div class="mt-1 text-[12px] text-zinc-500">${nativeSample[code]}</div></div></div><div class="w-7 h-7 rounded-full bg-zinc-900 text-white grid place-items-center opacity-0 group-hover:opacity-100 translate-x-[-6px] group-hover:translate-x-0 transition">→</div>`;
+    div.onclick=()=>{ targetLang=code; startLearning(); };
+    grid.appendChild(div);
+  });
+
+  // ui lang switcher pills in onboarding
+  const headerUb = document.getElementById('uiLangBtn');
+  // built later
+}
+
+function startLearning(){
+  uiLang = uiLang; // keep
+  loadLearned();
+  initDeck();
+  document.getElementById('onboarding').classList.add('hidden');
+  document.getElementById('learning').classList.remove('hidden');
+  document.getElementById('learning').classList.add('flex');
+  const hdr=document.getElementById('appHeader');
+  hdr.classList.remove('opacity-0','pointer-events-none');
+  renderAll();
+  renderHeader();
+}
+
+function renderHeader(){
+  document.getElementById('headerTarget').innerHTML=`<span>${flagMap[targetLang]}</span> ${langLabel(targetLang)}`;
+  document.getElementById('headerTarget').classList.remove('hidden');
+  const ub=document.getElementById('uiLangBtn');
+  ub.innerHTML=`${flagMap[uiLang]||'🌐'} ${uiLang.toUpperCase()} ▾`;
+  document.getElementById('changeTrackBtn').textContent = t('change');
+  ub.onclick=()=>{
+    uiLang = uiLang==='en' ? 'es' : uiLang==='es' ? 'fr' : uiLang==='fr' ? 'ja' : 'en';
+    // persist? not needed
+    renderAll();
+    renderOnboarding();
+    renderHeader();
+  };
+  document.getElementById('changeTrackBtn').onclick=()=>{
+    document.getElementById('learning').classList.add('hidden');
+    document.getElementById('learning').classList.remove('flex');
+    document.getElementById('onboarding').classList.remove('hidden');
+    document.getElementById('appHeader').classList.add('opacity-0','pointer-events-none');
+    renderOnboarding();
+  };
+}
+
+function getCurrentPhrase(){
+  return phrases[deck[curr]];
+}
+function renderAll(){
+  // progress
+  const total=phrases.length;
+  const learnedCount=learned.size;
+  const pct = total? Math.round((learnedCount/total)*100):0;
+  document.getElementById('progressBar').style.width=pct+'%';
+  document.getElementById('progressText').textContent = t('learnedCount',learnedCount,total);
+  document.getElementById('deckTitle').textContent = t('deck');
+  document.getElementById('deckCount').textContent = `${total} ${t('cards')}`;
+  document.getElementById('learnedLabel').textContent = t('progress',curr+1,total);
+  document.getElementById('shuffleLabel').textContent = t('shuffle');
+  document.getElementById('tipTitle').textContent = t('tipTitle');
+  document.getElementById('tipText').textContent = t('tip');
+  document.getElementById('tapHint').innerHTML = `<span class="w-5 h-5 rounded-full border border-zinc-300 grid place-items-center">↻</span> ${t('tapFront')}`;
+  document.getElementById('backTapHint').textContent = t('tapBack');
+  document.getElementById('frontCategory').textContent = (getCurrentPhrase()?.cat[uiLang] || getCurrentPhrase()?.cat.en || '');
+  document.getElementById('backCategory').textContent = (getCurrentPhrase()?.cat[uiLang] || getCurrentPhrase()?.cat.en || '');
+  document.getElementById('learnedLabel').textContent = t('progress',curr+1,total);
+
+  // dots
+  const dots=document.getElementById('dots');
+  dots.innerHTML='';
+  deck.forEach((idx,i)=>{
+    const d=document.createElement('div');
+    const isLearned = learned.has(idx);
+    const isActive = i===curr;
+    d.className=`h-[6px] rounded-full transition-all duration-500 ${isActive?'w-6 bg-zinc-900':'w-[6px] '+(isLearned?'bg-emerald-500':'bg-zinc-300')}`;
+    d.title = `${i+1}`;
+    d.onclick=()=>{ curr=i; flipped=false; document.getElementById('card').classList.remove('flipped'); renderAll(); };
+    d.style.cursor='pointer';
+    dots.appendChild(d);
+  });
+
+  renderCard();
+  renderMiniList();
+  renderComplete();
+  renderLearnBtn();
+}
+
+function renderCard(){
+  const ph = getCurrentPhrase();
+  if(!ph) return;
+  const frontLang = targetLang;
+  const backLang = uiLang===targetLang ? 'en' : uiLang;
+  const frontText = ph[frontLang];
+  const backText = ph[backLang] || ph.en;
+
+  document.getElementById('frontLangBadge').textContent = `${flagMap[frontLang]||''} ${langLabel(frontLang)} • ${t('front')}`;
+  document.getElementById('backLangBadge').textContent = `${flagMap[backLang]||''} ${(langNames[backLang]?.[uiLang]||backLang).toUpperCase()} • ${t('back')}`;
+  document.getElementById('frontText').textContent = frontText;
+  document.getElementById('backText').textContent = backText;
+  document.getElementById('frontText').className = `font-display font-[600] leading-[1.05] tracking-[-0.02em] ${frontLang==='ja'?'font-jp text-[34px] md:text-[40px]': 'text-[28px] md:text-[34px]'}`;
+  document.getElementById('backText').className = `font-display font-[600] leading-[1.08] tracking-[-0.02em] ${backLang==='ja'?'font-jp text-[30px] md:text-[36px]': 'text-[26px] md:text-[32px]'}`;
+
+  // romaji
+  const rom = document.getElementById('frontRomaji');
+  if(frontLang==='ja'){
+    rom.textContent = ph.r;
+    rom.classList.remove('hidden');
+  }else rom.classList.add('hidden');
+
+  document.getElementById('backNote').textContent = ph.note[uiLang] || ph.note.en;
+  document.getElementById('frontBigBg').textContent = frontText[0] || 'A';
+}
+
+function renderMiniList(){
+  const mini=document.getElementById('miniList');
+  mini.innerHTML='';
+  deck.forEach((idx,i)=>{
+    const ph=phrases[idx];
+    const isActive=i===curr;
+    const isLearned=learned.has(idx);
+    const row=document.createElement('button');
+    row.className=`w-full text-left p-3 rounded-2xl border flex items-center justify-between transition ${isActive?'bg-zinc-900 text-white border-zinc-900 shadow-[0_8px_20px_rgba(0,0,0,.15)]':'bg-zinc-50 hover:bg-white border-zinc-200'}`;
+    row.innerHTML=`<div class="flex-1 min-w-0 pr-3"><div class="text-[12px] leading-[1.2] truncate ${isActive?'text-white/60':'text-zinc-500'}">${ph[ targetLang ]}</div><div class="font-medium text-[13px] leading-[1.2] truncate mt-0.5 ${isActive?'text-white':''}">${ph[uiLang===targetLang?'en':uiLang]||ph.en}</div></div><div class="w-5 h-5 rounded-full border grid place-items-center shrink-0 ${isLearned?(isActive?'bg-white text-zinc-900 border-white':'bg-emerald-500 text-white border-emerald-500'):(isActive?'border-white/20':'border-zinc-300')}">${isLearned?'✓':''}</div>`;
+    row.onclick=()=>{ curr=i; flipped=false; document.getElementById('card').classList.remove('flipped'); renderAll(); };
+    mini.appendChild(row);
+  });
+}
+
+function renderLearnBtn(){
+  const btn=document.getElementById('learnBtn');
+  const lbl=document.getElementById('learnLabel');
+  const isLearned = learned.has(deck[curr]);
+  lbl.textContent = isLearned ? t('learnedBtnDone') : t('learnedBtn');
+  btn.className = `h-10 pl-3 pr-4 rounded-full text-[12.5px] font-semibold flex items-center gap-2 active:scale-[.98] transition shadow-[0_8px_20px_rgba(0,0,0,.15)] ${isLearned?'bg-emerald-600 text-white hover:bg-emerald-700':'bg-zinc-900 text-white hover:bg-black'}`;
+}
+
+function renderComplete(){
+  const cc=document.getElementById('completeCard');
+  if(learned.size>=phrases.length){
+    cc.classList.remove('hidden');
+    document.getElementById('completeTitle').textContent = t('completed');
+    document.getElementById('completeDesc').textContent = t('completedDesc');
+    document.getElementById('restartBtn').textContent = t('restart');
+  }else cc.classList.add('hidden');
+}
+
+/* ---------- Interactions ---------- */
+function flip(){
+  if(shuffling) return;
+  flipped=!flipped;
+  const c=document.getElementById('card');
+  c.classList.toggle('flipped', flipped);
+  if(navigator.vibrate) navigator.vibrate(10);
+}
+function next(){
+  if(shuffling) return;
+  curr=(curr+1)%deck.length;
+  flipped=false;
+  document.getElementById('card').classList.remove('flipped');
+  document.getElementById('card').classList.add('card-enter');
+  setTimeout(()=>document.getElementById('card').classList.remove('card-enter'),500);
+  renderAll();
+}
+function prev(){
+  if(shuffling) return;
+  curr=(curr-1+deck.length)%deck.length;
+  flipped=false;
+  document.getElementById('card').classList.remove('flipped');
+  document.getElementById('card').classList.add('card-enter');
+  setTimeout(()=>document.getElementById('card').classList.remove('card-enter'),500);
+  renderAll();
+}
+function toggleLearned(){
+  const id=deck[curr];
+  if(learned.has(id)){
+    learned.delete(id);
+  }else{
+    learned.add(id);
+    // pop + confetti
+    const cardEl=document.getElementById('card');
+    cardEl.classList.add('learned-pop');
+    setTimeout(()=>cardEl.classList.remove('learned-pop'),500);
+    if(learned.size<phrases.length){
+      launchConfetti(24);
+      setTimeout(()=>{ if(!flipped) next(); }, 500);
+    }else{
+      launchConfetti(120);
+    }
+    if(navigator.vibrate) navigator.vibrate([20,30,50]);
+  }
+  saveLearned();
+  renderAll();
+}
+function speak(text, langCode){
+  if(!('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text);
+  const map={en:'en-US', es:'es-ES', fr:'fr-FR', ja:'ja-JP'};
+  u.lang=map[langCode]||'en-US';
+  u.rate=0.9;
+  window.speechSynthesis.speak(u);
+}
+
+/* confetti canvas */
+function launchConfetti(count){
+  const canvas=document.getElementById('confetti');
+  const ctx=canvas.getContext('2d');
+  canvas.width=innerWidth; canvas.height=innerHeight;
+  const pieces=[];
+  const colors=['#111','#FFD6BA','#D6E8FF','#C8DBB8','#FFEC99'];
+  for(let i=0;i<count;i++){
+    pieces.push({x: Math.random()*canvas.width, y: -20 - Math.random()*100, r: 4+Math.random()*6, c: colors[Math.floor(Math.random()*colors.length)], vx: (Math.random()-0.5)*6, vy: 2+Math.random()*5, rot: Math.random()*360, vr:(Math.random()-0.5)*10});
+  }
+  let frame=0;
+  function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    pieces.forEach(p=>{
+      p.x+=p.vx; p.y+=p.vy; p.rot+=p.vr; p.vy+=0.08;
+      ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot*Math.PI/180);
+      ctx.fillStyle=p.c; ctx.fillRect(-p.r/2,-p.r/2,p.r,p.r*0.6);
+      ctx.restore();
+    });
+    frame++;
+    if(frame<180) requestAnimationFrame(draw); else ctx.clearRect(0,0,canvas.width,canvas.height);
+  }
+  draw();
+}
+
+/* events */
+document.getElementById('card').addEventListener('click', (e)=>{
+  if(e.target.closest('button')) return;
+  flip();
+});
+document.getElementById('flipBtn').addEventListener('click', flip);
+document.getElementById('nextBtn').addEventListener('click', next);
+document.getElementById('prevBtn').addEventListener('click', prev);
+document.getElementById('shuffleBtn').addEventListener('click', ()=>shuffleDeck(true));
+document.getElementById('learnBtn').addEventListener('click', toggleLearned);
+document.getElementById('speakFront').addEventListener('click', (e)=>{ e.stopPropagation(); const ph=getCurrentPhrase(); speak(ph[targetLang], targetLang); });
+document.getElementById('speakBack').addEventListener('click', (e)=>{ e.stopPropagation(); const bLang=uiLang===targetLang?'en':uiLang; const ph=getCurrentPhrase(); speak(ph[bLang]||ph.en, bLang); });
+document.getElementById('resetLearned').addEventListener('click', ()=>{ learned.clear(); saveLearned(); renderAll(); });
+document.getElementById('restartBtn')?.addEventListener('click', ()=>{ learned.clear(); saveLearned(); initDeck(); renderAll(); });
+document.getElementById('shuffleAfterBtn')?.addEventListener('click', ()=>{ learned.clear(); saveLearned(); shuffleDeck(false); renderAll(); });
+
+window.addEventListener('keydown', (e)=>{
+  if(document.getElementById('learning').classList.contains('hidden')) return;
+  if(e.code==='Space'){ e.preventDefault(); flip(); }
+  if(e.code==='ArrowRight'){ e.preventDefault(); next(); }
+  if(e.code==='ArrowLeft'){ e.preventDefault(); prev(); }
+  if(e.code==='KeyS'){ e.preventDefault(); shuffleDeck(true); }
+  if(e.code==='KeyL'){ e.preventDefault(); toggleLearned(); }
+});
+
+/* init */
+renderOnboarding();
+document.getElementById('uiLangBtn').textContent = `${flagMap[uiLang]||'🌐'} ${uiLang.toUpperCase()}`;
+document.getElementById('uiLangBtn').onclick=()=>{
+  const order=['en','es','fr','ja'];
+  const idx=order.indexOf(uiLang);
+  uiLang=order[(idx+1)%order.length];
+  renderOnboarding();
+  if(targetLang){ renderAll(); renderHeader(); }
+};
+</script>
+</body>
+</html>

@@ -405,12 +405,14 @@ async function validateHtml(htmlPath: string): Promise<ValidationResult> {
 }
 
 function buildFixPrompt(spec: ExampleSpec, errors: string[]): string {
+  const sanitizedErrors = errors.map((error) => error.replaceAll("\0", "\\0"));
+
   return `The HTML file you created has JavaScript errors. Please fix them.
 
 ## Original App: ${spec.title}
 
 ## Errors found:
-${errors.map((e) => `- ${e}`).join("\n")}
+${sanitizedErrors.map((e) => `- ${e}`).join("\n")}
 
 ## Instructions:
 1. Read the current output/index.html file

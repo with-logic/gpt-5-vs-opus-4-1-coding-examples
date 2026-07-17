@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Interactive World Clock — Circadian</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: { sans:['Geist','sans-serif'], mono:['Geist Mono','monospace'] },
+    }
+  }
+}
+</script>
+<style>
+*{ -webkit-font-smoothing:antialiased }
+body{ background:#080a11; color:#e8e9ee; overflow-x:hidden }
+.grain:before{
+  content:''; position:fixed; inset:-50%; z-index:0; pointer-events:none; opacity:.04;
+  background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="4" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(%23n)"/></svg>');
+  animation:grain 8s steps(10) infinite;
+}
+@keyframes grain{0%,100%{transform:translate(0,0)}10%{transform:translate(-5%,-5%)}20%{transform:translate(-10%,5%)}30%{transform:translate(5%,-10%)}40%{transform:translate(-5%,15%)}50%{transform:translate(-10%,5%)}60%{transform:translate(15%,0)}70%{transform:translate(0,10%)}80%{transform:translate(3%,-15%)}90%{transform:translate(-10%,10%)}}
+.analog-face{
+  background: radial-gradient(circle at 30% 30%, rgba(255,255,255,.08), transparent 50%), radial-gradient(circle at 50% 50%, rgba(255,255,255,.06), rgba(255,255,255,.01));
+  box-shadow: inset 0 1px 1px rgba(255,255,255,.15), inset 0 -1px 10px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.4);
+}
+.hand{ transform-origin: bottom center; }
+.tick{ position:absolute; left:50%; top:50%; width:1px; height:100%; transform-origin:center; }
+.tick i{ position:absolute; top:6%; left:50%; width:1px; height:6%; background:rgba(255,255,255,.22); transform:translateX(-50%); }
+.tick.major i{ height:9%; background:rgba(255,255,255,.5); width:1.5px; }
+.card{
+  transition: transform .5s cubic-bezier(.16,1,.3,1), box-shadow .5s ease, border-color .3s ease;
+}
+.card:hover{ transform:translateY(-4px) scale(1.01); }
+.card.morning{ --g1:#ff7e29; --g2:#ffd23f; --accent:#ff8c21; --glow:255,140,33 }
+.card.afternoon{ --g1:#0ea5e9; --g2:#facc15; --accent:#22d3ee; --glow:14,165,233 }
+.card.evening{ --g1:#7c3aed; --g2:#fb7185; --accent:#a78bfa; --glow:124,58,237 }
+.card.night{ --g1:#0f172a; --g2:#1e293b; --accent:#94a3b8; --glow:30,41,59 }
+.shimmer{ position:relative; overflow:hidden }
+.shimmer:after{
+  content:''; position:absolute; inset:0;
+  background: linear-gradient(105deg, transparent 20%, rgba(255,255,255,.08) 40%, transparent 60%);
+  transform:translateX(-100%); transition:transform .9s ease;
+}
+.card:hover .shimmer:after{ transform:translateX(100%); }
+.scrollbar{ scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.15) transparent }
+.scrollbar::-webkit-scrollbar{ width:5px; height:5px }
+.scrollbar::-webkit-scrollbar-thumb{ background:rgba(255,255,255,.15); border-radius:10px }
+.dot-pulse{ animation:pulse 2s infinite }
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.7)}70%{box-shadow:0 0 0 6px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+.float{ animation:float 6s ease-in-out infinite }
+@keyframes twinkle{0%,100%{opacity:.2}50%{opacity:1}}
+</style>
+</head>
+<body class="font-sans min-h-screen grain selection:bg-white selection:text-black">
+<!-- Ambient Lights -->
+<div class="fixed inset-0 pointer-events-none">
+  <div class="absolute -top-[40%] left-[10%] w-[80%] h-[80%] rounded-full blur-[140px] opacity-[.15]" style="background: radial-gradient(circle, #7c3aed, transparent 60%)"></div>
+  <div class="absolute -bottom-[30%] right-[0%] w-[70%] h-[70%] rounded-full blur-[140px] opacity-[.12]" style="background: radial-gradient(circle, #f59e0b, transparent 60%)"></div>
+  <div class="absolute top-[30%] left-[50%] w-[60%] h-[40%] -translate-x-1/2 rounded-full blur-[120px] opacity-[.08]" style="background: radial-gradient(circle, #06b6d4, transparent 70%)"></div>
+</div>
+
+<div class="relative z-10 max-w-[1440px] mx-auto px-5 md:px-8 lg:px-10">
+  <!-- Header -->
+  <header class="sticky top-0 z-50 -mx-5 md:-mx-8 lg:-mx-10 px-5 md:px-8 lg:px-10 py-4 backdrop-blur-2xl bg-[#080a11]/60 border-b border-white/[0.06]">
+    <div class="flex items-center justify-between gap-4">
+      <div class="flex items-center gap-5">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-[10px] bg-white text-black grid place-items-center font-bold text-[14px] tracking-tight">◷</div>
+          <div class="leading-tight">
+            <div class="font-semibold text-[13px] tracking-[0.14em]">CIRCADIAN</div>
+            <div class="font-mono text-[10px] tracking-[0.2em] text-white/40 -mt-0.5">WORLD CLOCK</div>
+          </div>
+        </div>
+        <div class="hidden md:flex items-center gap-2.5 pl-5 ml-1 border-l border-white/10">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 dot-pulse"></span>
+          <span class="font-mono text-[11px] tracking-wide text-white/50">LIVE • <span id="utc-label">UTC</span></span>
+          <span id="header-local-time" class="font-mono text-[11px] text-white/90 ml-2"></span>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2.5">
+        <!-- 12/24 Toggle -->
+        <div class="flex items-center gap-1.5 rounded-full bg-white/[0.06] border border-white/[0.08] p-1">
+          <button id="btn-12" class="px-3.5 h-7 rounded-full text-[11px] font-medium tracking-wide transition-all">12H</button>
+          <button id="btn-24" class="px-3.5 h-7 rounded-full text-[11px] font-medium tracking-wide transition-all">24H</button>
+        </div>
+        <button id="add-trigger" class="h-9 px-4 rounded-full bg-white text-black text-[12.5px] font-semibold tracking-wide hover:bg-white/90 transition flex items-center gap-1.5">
+          <span class="text-[16px] leading-none -mt-[1px]">+</span> ADD CITY
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Stats -->
+  <div class="mt-8 md:mt-12 grid grid-cols-12 gap-4">
+    <div class="col-span-12 lg:col-span-8">
+      <h1 class="text-[42px] md:text-[64px] lg:text-[84px] font-[300] tracking-[-0.04em] leading-[0.9]">Time is<br/><span class="font-[600] bg-gradient-to-r from-white via-white to-white/40 bg-clip-text text-transparent">geography.</span></h1>
+      <p class="mt-5 max-w-[520px] text-[14.5px] leading-[1.6] text-white/45">Every city breathes at its own circadian rhythm. Track golden hour in Tokyo while it's deep night in New York.</p>
+    </div>
+    <div class="col-span-12 lg:col-span-4 flex lg:justify-end">
+      <div class="w-full lg:w-[340px] rounded-[18px] bg-white/[0.03] border border-white/[0.07] p-4 backdrop-blur-xl">
+        <div class="flex items-center justify-between">
+          <span class="font-mono text-[10px] tracking-[0.18em] text-white/40">DAY PROGRESS • LOCAL</span>
+          <span id="local-date" class="font-mono text-[10px] text-white/60"></span>
+        </div>
+        <div class="mt-4 h-[6px] rounded-full bg-white/[0.06] overflow-hidden">
+          <div id="day-progress" class="h-full bg-white rounded-full transition-all duration-1000" style="width:0%"></div>
+        </div>
+        <div class="mt-3 grid grid-cols-4 text-[10px] font-mono tracking-wide">
+          <span class="text-amber-300/60">MORNING</span><span class="text-sky-300/60 text-center">DAY</span><span class="text-violet-300/60 text-center">EVE</span><span class="text-slate-400/60 text-right">NIGHT</span>
+        </div>
+        <div id="local-big-time" class="mt-5 font-mono text-[34px] tracking-[-0.04em] leading-none"></div>
+        <div class="mt-3 flex gap-2" id="period-legend"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Clock Grid -->
+  <main class="mt-10 md:mt-14 pb-24">
+    <div id="clock-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-5 auto-rows-fr"></div>
+    <div id="empty-state" class="hidden py-24 text-center rounded-[24px] border border-dashed border-white/10 bg-white/[0.02]">
+      <div class="text-[32px]">◷</div>
+      <p class="mt-3 text-white/60 text-[14px]">No cities yet. Add one to start tracking.</p>
+    </div>
+  </main>
+
+  <footer class="py-8 border-t border-white/[0.06] flex flex-col md:flex-row items-center justify-between gap-3">
+    <span class="font-mono text-[10px] tracking-[0.15em] text-white/25">CIRCADIAN © 2026 • CRAFTED FOR TEMPORAL NAVIGATION</span>
+    <span class="font-mono text-[10px] text-white/25 flex items-center gap-2"><span class="w-1 h-1 bg-white/30 rounded-full"></span> times via Intl • no external time API • offline-ready</span>
+  </footer>
+</div>
+
+<!-- Add City Sheet -->
+<div id="modal" class="fixed inset-0 z-[100] hidden">
+  <div id="modal-backdrop" class="absolute inset-0 bg-[#020205]/80 backdrop-blur-[14px]"></div>
+  <div class="absolute inset-0 grid place-items-center p-4">
+    <div class="w-full max-w-[520px] rounded-[22px] bg-[#12131a] border border-white/[0.08] shadow-[0_20px_80px_-20px_rgba(0,0,0,.8),inset_0_1px_0_0_rgba(255,255,255,.08)] overflow-hidden">
+      <div class="p-6 md:p-7">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h2 class="text-[20px] font-semibold tracking-tight">Add a city</h2>
+            <p class="mt-1 text-[13px] text-white/45 leading-snug">Search 80+ timezones. Your clock stays lit by circadian color.</p>
+          </div>
+          <button id="modal-close" class="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-white/[0.1] grid place-items-center text-white/60">✕</button>
+        </div>
+        <div class="mt-5 relative">
+          <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30">⌕</span>
+          <input id="city-search" placeholder="Search city, country or timezone…" class="w-full h-[46px] pl-10 pr-4 rounded-full bg-white/[0.06] border border-white/[0.08] text-[14px] placeholder:text-white/30 focus:outline-none focus:border-white/20 focus:bg-white/[0.08] transition"/>
+        </div>
+      </div>
+      <div id="city-list" class="max-h-[380px] overflow-auto scrollbar px-2 pb-3"></div>
+      <div class="p-3 border-t border-white/[0.06] bg-white/[0.02] flex items-center justify-between">
+        <span class="font-mono text-[10px] tracking-wide text-white/30 px-2">TIP: PRESS ESC TO CLOSE • ENTER TO ADD FIRST</span>
+        <div class="flex gap-1.5"><span class="w-2 h-2 rounded-full bg-amber-400/60"></span><span class="w-2 h-2 rounded-full bg-sky-400/60"></span><span class="w-2 h-2 rounded-full bg-violet-400/60"></span><span class="w-2 h-2 rounded-full bg-slate-400/60"></span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// City database
+const CITY_DB = [
+  {name:'New York', country:'United States', tz:'America/New_York', flag:'🇺🇸'},
+  {name:'Los Angeles', country:'United States', tz:'America/Los_Angeles', flag:'🇺🇸'},
+  {name:'Chicago', country:'United States', tz:'America/Chicago', flag:'🇺🇸'},
+  {name:'Toronto', country:'Canada', tz:'America/Toronto', flag:'🇨🇦'},
+  {name:'Vancouver', country:'Canada', tz:'America/Vancouver', flag:'🇨🇦'},
+  {name:'Mexico City', country:'Mexico', tz:'America/Mexico_City', flag:'🇲🇽'},
+  {name:'São Paulo', country:'Brazil', tz:'America/Sao_Paulo', flag:'🇧🇷'},
+  {name:'Buenos Aires', country:'Argentina', tz:'America/Argentina/Buenos_Aires', flag:'🇦🇷'},
+  {name:'Lima', country:'Peru', tz:'America/Lima', flag:'🇵🇪'},
+  {name:'Reykjavik', country:'Iceland', tz:'Atlantic/Reykjavik', flag:'🇮🇸'},
+  {name:'London', country:'United Kingdom', tz:'Europe/London', flag:'🇬🇧'},
+  {name:'Paris', country:'France', tz:'Europe/Paris', flag:'🇫🇷'},
+  {name:'Berlin', country:'Germany', tz:'Europe/Berlin', flag:'🇩🇪'},
+  {name:'Rome', country:'Italy', tz:'Europe/Rome', flag:'🇮🇹'},
+  {name:'Madrid', country:'Spain', tz:'Europe/Madrid', flag:'🇪🇸'},
+  {name:'Lisbon', country:'Portugal', tz:'Europe/Lisbon', flag:'🇵🇹'},
+  {name:'Amsterdam', country:'Netherlands', tz:'Europe/Amsterdam', flag:'🇳🇱'},
+  {name:'Zurich', country:'Switzerland', tz:'Europe/Zurich', flag:'🇨🇭'},
+  {name:'Stockholm', country:'Sweden', tz:'Europe/Stockholm', flag:'🇸🇪'},
+  {name:'Copenhagen', country:'Denmark', tz:'Europe/Copenhagen', flag:'🇩🇰'},
+  {name:'Oslo', country:'Norway', tz:'Europe/Oslo', flag:'🇳🇴'},
+  {name:'Helsinki', country:'Finland', tz:'Europe/Helsinki', flag:'🇫🇮'},
+  {name:'Athens', country:'Greece', tz:'Europe/Athens', flag:'🇬🇷'},
+  {name:'Istanbul', country:'Turkey', tz:'Europe/Istanbul', flag:'🇹🇷'},
+  {name:'Moscow', country:'Russia', tz:'Europe/Moscow', flag:'🇷🇺'},
+  {name:'Dubai', country:'UAE', tz:'Asia/Dubai', flag:'🇦🇪'},
+  {name:'Riyadh', country:'Saudi Arabia', tz:'Asia/Riyadh', flag:'🇸🇦'},
+  {name:'Tehran', country:'Iran', tz:'Asia/Tehran', flag:'🇮🇷'},
+  {name:'Karachi', country:'Pakistan', tz:'Asia/Karachi', flag:'🇵🇰'},
+  {name:'Kolkata', country:'India', tz:'Asia/Kolkata', flag:'🇮🇳'},
+  {name:'Mumbai', country:'India', tz:'Asia/Kolkata', flag:'🇮🇳'},
+  {name:'Dhaka', country:'Bangladesh', tz:'Asia/Dhaka', flag:'🇧🇩'},
+  {name:'Bangkok', country:'Thailand', tz:'Asia/Bangkok', flag:'🇹🇭'},
+  {name:'Singapore', country:'Singapore', tz:'Asia/Singapore', flag:'🇸🇬'},
+  {name:'Kuala Lumpur', country:'Malaysia', tz:'Asia/Kuala_Lumpur', flag:'🇲🇾'},
+  {name:'Manila', country:'Philippines', tz:'Asia/Manila', flag:'🇵🇭'},
+  {name:'Hong Kong', country:'Hong Kong', tz:'Asia/Hong_Kong', flag:'🇭🇰'},
+  {name:'Shanghai', country:'China', tz:'Asia/Shanghai', flag:'🇨🇳'},
+  {name:'Beijing', country:'China', tz:'Asia/Shanghai', flag:'🇨🇳'},
+  {name:'Taipei', country:'Taiwan', tz:'Asia/Taipei', flag:'🇹🇼'},
+  {name:'Seoul', country:'South Korea', tz:'Asia/Seoul', flag:'🇰🇷'},
+  {name:'Tokyo', country:'Japan', tz:'Asia/Tokyo', flag:'🇯🇵'},
+  {name:'Sydney', country:'Australia', tz:'Australia/Sydney', flag:'🇦🇺'},
+  {name:'Melbourne', country:'Australia', tz:'Australia/Melbourne', flag:'🇦🇺'},
+  {name:'Brisbane', country:'Australia', tz:'Australia/Brisbane', flag:'🇦🇺'},
+  {name:'Perth', country:'Australia', tz:'Australia/Perth', flag:'🇦🇺'},
+  {name:'Auckland', country:'New Zealand', tz:'Pacific/Auckland', flag:'🇳🇿'},
+  {name:'Honolulu', country:'USA Hawaii', tz:'Pacific/Honolulu', flag:'🇺🇸'},
+  {name:'Cairo', country:'Egypt', tz:'Africa/Cairo', flag:'🇪🇬'},
+  {name:'Johannesburg', country:'South Africa', tz:'Africa/Johannesburg', flag:'🇿🇦'},
+  {name:'Lagos', country:'Nigeria', tz:'Africa/Lagos', flag:'🇳🇬'},
+  {name:'Nairobi', country:'Kenya', tz:'Africa/Nairobi', flag:'🇰🇪'},
+];
+
+const DEFAULT_CITIES = ['America/New_York','Europe/London','Asia/Tokyo','Asia/Dubai','Australia/Sydney','Europe/Paris'];
+
+let state = {
+  cities: [],
+  is24h: false,
+};
+
+function loadState(){
+  try{
+    const saved = JSON.parse(localStorage.getItem('circadian_cities')||'null');
+    const fmt = localStorage.getItem('circadian_24h');
+    if(fmt) state.is24h = fmt==='1';
+    if(saved && Array.isArray(saved) && saved.length){
+      state.cities = saved.map(tz=> CITY_DB.find(c=>c.tz===tz)).filter(Boolean);
+    } else {
+      state.cities = DEFAULT_CITIES.map(tz=> CITY_DB.find(c=>c.tz===tz)).filter(Boolean);
+    }
+  }catch(e){
+    state.cities = DEFAULT_CITIES.map(tz=> CITY_DB.find(c=>c.tz===tz)).filter(Boolean);
+  }
+}
+function saveState(){
+  localStorage.setItem('circadian_cities', JSON.stringify(state.cities.map(c=>c.tz)));
+  localStorage.setItem('circadian_24h', state.is24h?'1':'0');
+}
+
+function getParts(tz, date=new Date()){
+  const fmt = new Intl.DateTimeFormat('en-US', {timeZone: tz, hour12:false, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', weekday:'short'});
+  const parts = fmt.formatToParts(date);
+  const map={}; parts.forEach(p=>map[p.type]=p.value);
+  return {
+    year:+map.year, month:+map.month, day:+map.day, hour:+map.hour===24?0:+map.hour, minute:+map.minute, second:+map.second, weekday:map.weekday,
+    hourRaw: map.hour
+  };
+}
+function getOffsetMinutes(tz, date=new Date()){
+  const fmt = new Intl.DateTimeFormat('en-US', {timeZone: tz, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false});
+  const parts = fmt.formatToParts(date);
+  const m={}; parts.forEach(p=>m[p.type]=p.value);
+  const tzUTC = Date.UTC(m.year, m.month-1, m.day, m.hour, m.minute, m.second);
+  const utc = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), date.getUTCHours(), date.getUTCMinutes(), date.getUTCSeconds());
+  return Math.round((tzUTC - utc)/60000);
+}
+function getPeriod(hour){
+  if(hour>=5 && hour<=11) return {key:'morning', label:'MORNING', icon:'◐', color:'amber', desc:'Golden start'};
+  if(hour>=12 && hour<=16) return {key:'afternoon', label:'AFTERNOON', icon:'☀', color:'sky', desc:'High sun'};
+  if(hour>=17 && hour<=20) return {key:'evening', label:'EVENING', icon:'◑', color:'violet', desc:'Blue hour'};
+  return {key:'night', label:'NIGHT', icon:'◍', color:'slate', desc:'Deep rest'};
+}
+function formatTime(tz, is24h){
+  const p = getParts(tz);
+  let h = p.hour, ampm='';
+  if(!is24h){
+    ampm = h>=12?' PM':' AM';
+    h = h%12; if(h===0) h=12;
+  }
+  const mm = String(p.minute).padStart(2,'0');
+  const ss = String(p.second).padStart(2,'0');
+  return {h, mm, ss, ampm, weekday:p.weekday, day:p.day, hour24:p.hour, p};
+}
+function diffLabel(targetTz){
+  const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const d = getOffsetMinutes(targetTz) - getOffsetMinutes(localTz);
+  const absH = Math.abs(d)/60;
+  if(d===0) return 'Same as local';
+  const sign = d>0?'+':'-';
+  if(Number.isInteger(absH)) return `${sign}${Math.abs(absH)}h ${d>0?'ahead':'behind'}`;
+  // half hours
+  const hours = Math.floor(absH);
+  const mins = Math.round((absH-hours)*60);
+  if(hours===0) return `${sign}${mins}m ${d>0?'ahead':'behind'}`;
+  return `${sign}${hours}h ${mins}m ${d>0?'ahead':'behind'}`;
+}
+
+function periodVisual(period){
+  if(period.key==='morning') return `<div class="absolute inset-0 opacity-[0.12]"><div class="absolute top-[-30%] right-[-10%] w-[70%] h-[70%] rounded-full blur-[40px]" style="background:radial-gradient(circle,#ff8c21,transparent 60%)"></div><div class="absolute bottom-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-amber-300/30 to-transparent"></div></div>`;
+  if(period.key==='afternoon') return `<div class="absolute inset-0 opacity-[0.12]"><div class="absolute top-[10%] left-[20%] w-[60%] h-[50%] rounded-full blur-[50px]" style="background:radial-gradient(circle,#0ea5e9,transparent 60%)"></div></div>`;
+  if(period.key==='evening') return `<div class="absolute inset-0 opacity-[0.18]"><div class="absolute -top-[20%] left-[-10%] w-[80%] h-[70%] rounded-full blur-[60px]" style="background:radial-gradient(circle at 30% 30%,#7c3aed,#fb7185 70%)"></div></div>`;
+  return `<div class="absolute inset-0 opacity-[0.5]"><div class="absolute inset-0" style="background-image: radial-gradient(white 1px, transparent 1px); background-size: 22px 22px; opacity:0.06"></div><div class="absolute top-[20%] right-[15%] w-1 h-1 bg-white rounded-full animate-[twinkle_3s_infinite]"></div><div class="absolute top-[40%] left-[30%] w-0.5 h-0.5 bg-white rounded-full animate-[twinkle_2s_infinite_1s]"></div><div class="absolute bottom-[30%] right-[40%] w-0.5 h-0.5 bg-white rounded-full animate-[twinkle_2.5s_infinite_0.5s]"></div></div>`;
+}
+
+function renderGrid(){
+  const grid = document.getElementById('clock-grid');
+  const empty = document.getElementById('empty-state');
+  if(state.cities.length===0){ grid.innerHTML=''; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  grid.innerHTML = state.cities.map((city, idx)=>{
+    const info = formatTime(city.tz, state.is24h);
+    const period = getPeriod(info.hour24);
+    const diff = diffLabel(city.tz);
+    return `
+    <div data-tz="${city.tz}" data-idx="${idx}" class="card ${period.key} group relative rounded-[22px] border border-white/[0.07] bg-[radial-gradient(120%_120%_at_20%_10%,rgba(255,255,255,.06),rgba(255,255,255,.015))] backdrop-blur-xl overflow-hidden shimmer">
+      <div class="absolute inset-0 opacity-[0.55]" style="background: radial-gradient(120% 80% at 80% 0%, rgba(var(--glow),.18), transparent 60%), radial-gradient(80% 60% at 0% 100%, rgba(var(--glow),.12), transparent)"></div>
+      ${periodVisual(period)}
+      <div class="relative p-5 md:p-6 flex flex-col h-full min-h-[240px]">
+        <!-- Top -->
+        <div class="flex items-start justify-between gap-4">
+          <div class="flex items-center gap-3">
+            <div class="w-[38px] h-[38px] rounded-full bg-white/[0.06] border border-white/10 grid place-items-center text-[15px]">${city.flag}</div>
+            <div>
+              <div class="font-semibold text-[15px] tracking-tight leading-tight flex items-center gap-2">${city.name}<span class="w-1 h-1 rounded-full bg-white/30"></span><span class="font-mono text-[10px] tracking-widest text-white/40">${city.country.toUpperCase()}</span></div>
+              <div class="mt-1 flex items-center gap-2">
+                <span class="inline-flex items-center gap-1.5 px-2 h-5 rounded-full bg-white/[0.07] border border-white/[0.06] font-mono text-[10px] tracking-wide"><span class="w-1.5 h-1.5 rounded-full" style="background:rgb(var(--glow)); box-shadow:0 0 8px rgba(var(--glow),.6)"></span>${period.label}</span>
+                <span class="font-mono text-[10px] text-white/30">${city.tz.replace('_',' ').split('/').pop()}</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button data-remove="${city.tz}" class="w-7 h-7 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.06] grid place-items-center text-white/40 hover:text-white/80 transition">✕</button>
+          </div>
+        </div>
+
+        <div class="mt-auto flex items-end justify-between gap-4 pt-6">
+          <div class="flex-1">
+            <div class="flex items-baseline gap-2">
+              <div class="time-h font-mono font-[500] text-[42px] md:text-[48px] leading-[0.85] tracking-[-0.06em]">${String(info.h).padStart(2,'0')}</div>
+              <div class="font-mono text-white/20 text-[36px] leading-none -translate-y-[2px]">:</div>
+              <div class="time-m font-mono font-[500] text-[42px] md:text-[48px] leading-[0.85] tracking-[-0.06em]">${info.mm}</div>
+              <div class="ml-2 flex flex-col">
+                <span class="time-s font-mono text-[16px] leading-none text-white/60 tracking-tight">${info.ss}</span>
+                <span class="time-ampm font-mono text-[11px] tracking-[0.15em] text-white/40 mt-1">${state.is24h?'':info.ampm}</span>
+              </div>
+            </div>
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              <span class="font-mono text-[11px] text-white/30">${info.weekday} • ${info.day}</span>
+              <span class="px-2 py-0.5 rounded-full bg-white/[0.06] border border-white/[0.05] font-mono text-[10px] text-white/45">${diff}</span>
+            </div>
+            <div class="mt-4 h-[3px] w-full rounded-full bg-white/[0.06] overflow-hidden">
+              <div class="day-fill h-full rounded-full transition-all duration-1000" style="width:${(info.hour24/24*100).toFixed(1)}%; background:rgba(var(--glow),.9); box-shadow:0 0 12px rgba(var(--glow),.6)"></div>
+            </div>
+          </div>
+
+          <div class="shrink-0">
+            <div class="relative analog w-[84px] h-[84px] rounded-full analog-face border border-white/[0.08]">
+              <!-- ticks -->
+              ${Array.from({length:12}).map((_,i)=>`<div class="tick ${i%3===0?'major':''}" style="transform:translate(-50%,-50%) rotate(${i*30}deg)"><i></i></div>`).join('')}
+              <div class="absolute left-1/2 top-1/2 w-[64%] h-[1.5px] bg-white/90 hand hour-hand origin-left -translate-y-1/2 -translate-x-0 rounded-full" style="left:50%"></div>
+              <div class="absolute left-1/2 top-1/2 w-[82%] h-[1px] bg-white/70 hand minute-hand origin-left -translate-y-1/2 rounded-full"></div>
+              <div class="absolute left-1/2 top-1/2 w-[88%] h-[1px] bg-[rgb(var(--glow))] hand second-hand origin-left -translate-y-1/2 opacity-90"></div>
+              <div class="absolute left-1/2 top-1/2 w-2 h-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white border border-black/20 shadow"></div>
+              <div class="absolute left-1/2 top-1/2 w-1 h-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[rgb(var(--glow))] mt-[0.5px]"></div>
+            </div>
+            <div class="mt-2 text-center font-mono text-[9px] tracking-[0.18em] text-white/25">${period.desc.toUpperCase()}</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  grid.querySelectorAll('[data-remove]').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      const tz = e.currentTarget.getAttribute('data-remove');
+      state.cities = state.cities.filter(c=>c.tz!==tz);
+      saveState(); renderGrid();
+    });
+  });
+}
+
+function tick(){
+  const now = new Date();
+  // header local
+  const localTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const localParts = getParts(localTz, now);
+  const localFmt = formatTime(localTz, state.is24h);
+  document.getElementById('header-local-time').textContent = `${String(localFmt.h).padStart(2,'0')}:${localFmt.mm}:${localFmt.ss}${state.is24h?'':' '+localFmt.ampm.trim()} • ${localTz}`;
+  document.getElementById('utc-label').textContent = `UTC${getOffsetMinutes('UTC', now)>=0?'+':''}${(getOffsetMinutes(localTz)/60)} LOCAL`;
+  document.getElementById('local-big-time').innerHTML = `${String(localFmt.h).padStart(2,'0')}<span class="text-white/20">:</span>${localFmt.mm}<span class="text-[18px] align-super ml-2 text-white/40">${localFmt.ss}</span><span class="text-[13px] tracking-widest ml-2 text-white/30">${state.is24h?'':localFmt.ampm}</span>`;
+  const dayPct = ((localParts.hour*60+localParts.minute)/1440)*100;
+  document.getElementById('day-progress').style.width = dayPct+'%';
+  document.getElementById('local-date').textContent = `${localParts.weekday} ${localParts.day}/${localParts.month}`;
+
+  // update each card times
+  document.querySelectorAll('.card').forEach(card=>{
+    const tz = card.getAttribute('data-tz');
+    const info = formatTime(tz, state.is24h);
+    const period = getPeriod(info.hour24);
+    // swap class if period changed (crossing hour)
+    card.className = card.className.replace(/\b(morning|afternoon|evening|night)\b/g, period.key);
+    card.querySelector('.time-h').textContent = String(info.h).padStart(2,'0');
+    card.querySelector('.time-m').textContent = info.mm;
+    card.querySelector('.time-s').textContent = info.ss;
+    card.querySelector('.time-ampm').textContent = state.is24h?'':info.ampm;
+    const fill = card.querySelector('.day-fill');
+    if(fill) fill.style.width = (info.hour24/24*100+(info.p.minute/1440)*100).toFixed(2)+'%';
+    // analog
+    const hourDeg = (info.hour24%12)*30 + info.p.minute*0.5;
+    const minDeg = info.p.minute*6 + info.p.second*0.1;
+    const secDeg = info.p.second*6;
+    const hEl = card.querySelector('.hour-hand');
+    const mEl = card.querySelector('.minute-hand');
+    const sEl = card.querySelector('.second-hand');
+    if(hEl) hEl.style.transform = `translate(-1px,-50%) rotate(${hourDeg-90}deg)`;
+    if(mEl) mEl.style.transform = `translate(-1px,-50%) rotate(${minDeg-90}deg)`;
+    if(sEl) sEl.style.transform = `translate(-1px,-50%) rotate(${secDeg-90}deg)`;
+  });
+}
+
+// Modal logic
+function openModal(){ document.getElementById('modal').classList.remove('hidden'); document.getElementById('city-search').value=''; document.getElementById('city-search').focus(); renderCityList(''); }
+function closeModal(){ document.getElementById('modal').classList.add('hidden'); }
+function renderCityList(q){
+  const ql = q.toLowerCase();
+  const added = new Set(state.cities.map(c=>c.tz));
+  let list = CITY_DB.filter(c=>!added.has(c.tz));
+  if(ql){
+    list = list.filter(c=> `${c.name} ${c.country} ${c.tz}`.toLowerCase().includes(ql));
+  }
+  list = list.slice(0,40);
+  const el = document.getElementById('city-list');
+  if(list.length===0){
+    el.innerHTML=`<div class="py-10 text-center text-white/30 text-[13px]">No cities found for "${q}"</div>`;
+    return;
+  }
+  el.innerHTML = list.map(c=>{
+    const parts = getParts(c.tz);
+    const per = getPeriod(parts.hour);
+    return `<button data-add="${c.tz}" class="w-full text-left px-4 py-3.5 flex items-center justify-between gap-3 hover:bg-white/[0.06] rounded-[14px] transition group">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-full bg-white/[0.06] border border-white/[0.06] grid place-items-center text-[14px]">${c.flag}</div>
+        <div><div class="text-[14px] font-medium tracking-tight">${c.name} <span class="text-white/30 font-normal">${c.country}</span></div><div class="font-mono text-[11px] text-white/35 mt-0.5">${c.tz} • ${String(parts.hour).padStart(2,'0')}:${String(parts.minute).padStart(2,'0')} ${per.label}</div></div>
+      </div>
+      <div class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full" style="background:${per.key==='morning'?'#f59e0b':per.key==='afternoon'?'#0ea5e9':per.key==='evening'?'#8b5cf6':'#64748b'}"></span><span class="text-[11px] font-mono tracking-wide text-white/20 group-hover:text-white/50 transition">ADD</span></div>
+    </button>`;
+  }).join('');
+  el.querySelectorAll('[data-add]').forEach(b=>{
+    b.addEventListener('click', e=>{
+      const tz = e.currentTarget.getAttribute('data-add');
+      const city = CITY_DB.find(c=>c.tz===tz);
+      if(city){ state.cities.push(city); saveState(); renderGrid(); closeModal(); }
+    });
+  });
+}
+
+// Init
+loadState();
+renderGrid();
+tick();
+setInterval(tick, 1000);
+
+// Toggle 12/24
+function updateToggleUI(){
+  const b12 = document.getElementById('btn-12');
+  const b24 = document.getElementById('btn-24');
+  if(state.is24h){
+    b24.className='px-3.5 h-7 rounded-full text-[11px] font-medium tracking-wide bg-white text-black shadow';
+    b12.className='px-3.5 h-7 rounded-full text-[11px] font-medium tracking-wide text-white/40 hover:text-white/70';
+  }else{
+    b12.className='px-3.5 h-7 rounded-full text-[11px] font-medium tracking-wide bg-white text-black shadow';
+    b24.className='px-3.5 h-7 rounded-full text-[11px] font-medium tracking-wide text-white/40 hover:text-white/70';
+  }
+}
+updateToggleUI();
+document.getElementById('btn-12').addEventListener('click', ()=>{ state.is24h=false; saveState(); updateToggleUI(); tick(); });
+document.getElementById('btn-24').addEventListener('click', ()=>{ state.is24h=true; saveState(); updateToggleUI(); tick(); });
+
+// Modal bindings
+document.getElementById('add-trigger').addEventListener('click', openModal);
+document.getElementById('modal-close').addEventListener('click', closeModal);
+document.getElementById('modal-backdrop').addEventListener('click', closeModal);
+document.addEventListener('keydown', (e)=>{
+  if(e.key==='Escape') closeModal();
+  if(e.key==='Enter' && !document.getElementById('modal').classList.contains('hidden')){
+    const first = document.querySelector('#city-list [data-add]');
+    if(first) first.click();
+  }
+});
+document.getElementById('city-search').addEventListener('input', (e)=>renderCityList(e.target.value));
+
+/* legend dots */
+document.getElementById('period-legend').innerHTML = `
+  <div class="flex items-center gap-1.5 text-[10px] font-mono"><span class="w-2 h-2 rounded-full bg-amber-400"></span> Morning 5-11</div>
+  <div class="flex items-center gap-1.5 text-[10px] font-mono"><span class="w-2 h-2 rounded-full bg-sky-400"></span> Day 12-16</div>
+  <div class="flex items-center gap-1.5 text-[10px] font-mono"><span class="w-2 h-2 rounded-full bg-violet-400"></span> Evening 17-20</div>
+  <div class="flex items-center gap-1.5 text-[10px] font-mono"><span class="w-2 h-2 rounded-full bg-slate-500"></span> Night 21-4</div>
+`;
+</script>
+</body>
+</html>

@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tiny Kanban — Standup Board</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config={theme:{extend:{fontFamily:{display:['Syne','sans-serif'],body:['Inter','sans-serif'],mono:['JetBrains Mono','monospace']}}}}
+</script>
+<style>
+*{ -webkit-font-smoothing:antialiased }
+body{font-family:'Inter',sans-serif;background:#F6F5F1}
+.font-display{font-family:'Syne',sans-serif}
+::-webkit-scrollbar{height:6px;width:6px}
+::-webkit-scrollbar-thumb{background:#D1D0CB;border-radius:10px}
+.card-dragging{opacity:0.4;transform:rotate(2deg) scale(0.98)}
+.drop-active{background:rgba(0,0,0,0.04);outline:2px dashed #111;outline-offset:-4px}
+.wip-over{animation:wipPulse 1.2s infinite}
+@keyframes wipPulse{0%,100%{background:#FEF2F2}50%{background:#FEE2E2}}
+.drag-ghost{transform:rotate(2deg);box-shadow:0 25px 50px -12px rgba(0,0,0,0.25)}
+@media (max-width:1024px){.columns{grid-template-columns:1fr !important}}
+</style>
+</head>
+<body class="min-h-screen text-zinc-900 selection:bg-zinc-900 selection:text-white">
+<!-- Top Bar -->
+<header class="sticky top-0 z-30 bg-[#F6F5F1]/90 backdrop-blur-xl border-b border-zinc-200">
+  <div class="max-w-[1600px] mx-auto px-6 lg:px-10 h-[72px] flex items-center justify-between gap-6">
+    <div class="flex items-center gap-6">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 bg-zinc-900 text-white grid place-items-center rounded-[10px] font-display font-bold text-[18px] tracking-tight">K</div>
+        <div class="leading-none">
+          <div class="font-display font-bold text-[18px] tracking-tight leading-none">Tiny Kanban</div>
+          <div class="text-[11px] font-mono uppercase tracking-widest text-zinc-500 mt-[3px]">Standup Mode</div>
+        </div>
+      </div>
+      <div class="hidden lg:flex items-center gap-2 pl-6 ml-2 border-l border-zinc-200">
+        <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+        <span class="text-[13px] font-medium text-zinc-600" id="standupMeta">3 people • <span id="todayDate"></span></span>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2.5 flex-1 justify-end">
+      <!-- Search -->
+      <div class="relative group w-full max-w-[320px] hidden md:block">
+        <div class="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-zinc-900 transition-colors">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M7.333 12.667A5.333 5.333 0 1 0 7.333 2a5.333 5.333 0 0 0 0 10.667ZM14 14l-2.9-2.9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </div>
+        <input id="searchInput" placeholder="Filter cards, people…" class="w-full h-10 pl-10 pr-4 rounded-full bg-white border border-zinc-200 text-[14px] font-medium placeholder:text-zinc-400 focus:outline-none focus:border-zinc-900 focus:ring-4 focus:ring-zinc-900/10 transition-all">
+        <div id="searchClear" class="hidden absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 grid place-items-center rounded-full bg-zinc-900 text-white cursor-pointer"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1L1 9" stroke="currentColor" stroke-width="1.4"/></svg></div>
+      </div>
+
+      <!-- People filter -->
+      <div id="peopleFilter" class="hidden lg:flex items-center -space-x-2 p-1 rounded-full bg-white border border-zinc-200"></div>
+
+      <!-- Divider -->
+      <div class="w-px h-7 bg-zinc-200 hidden lg:block"></div>
+
+      <button id="newCardBtn" class="h-10 px-5 rounded-full bg-zinc-900 text-white text-[13.5px] font-semibold tracking-tight hover:bg-black transition-colors flex items-center gap-2 whitespace-nowrap">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2.5v9M2.5 7h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        New card
+      </button>
+    </div>
+  </div>
+  <!-- Mobile search -->
+  <div class="md:hidden px-6 pb-4">
+    <div class="relative">
+      <input id="searchInputM" placeholder="Search cards…" class="w-full h-10 pl-10 pr-4 rounded-full bg-white border border-zinc-200 text-[14px] font-medium">
+      <div class="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M7.333 12.667A5.333 5.333 0 1 0 7.333 2a5.333 5.333 0 0 0 0 10.667ZM14 14l-2.9-2.9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></div>
+    </div>
+  </div>
+</header>
+
+<!-- Stats Bar -->
+<div class="max-w-[1600px] mx-auto px-6 lg:px-10 pt-8 pb-6 flex flex-wrap gap-3">
+  <div class="flex items-center gap-3 bg-white rounded-full border border-zinc-200 px-4 h-9">
+    <span class="w-2 h-2 rounded-full bg-zinc-900"></span>
+    <span class="text-[13px] font-mono font-medium"><span id="statTotal">0</span> active cards</span>
+  </div>
+  <div class="flex items-center gap-3 bg-white rounded-full border border-zinc-200 px-4 h-9">
+    <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+    <span class="text-[13px] font-mono font-medium"><span id="statBlocked">0</span> high priority</span>
+  </div>
+  <div class="flex items-center gap-3 bg-white rounded-full border border-zinc-200 px-4 h-9">
+    <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+    <span class="text-[13px] font-mono font-medium"><span id="statDone">0</span> done today</span>
+  </div>
+  <div class="ml-auto flex items-center gap-2">
+    <button id="clearDoneBtn" class="text-[12px] font-semibold uppercase tracking-widest text-zinc-500 hover:text-zinc-900 transition-colors">Clear Done</button>
+    <span class="text-zinc-300">/</span>
+    <button id="resetBoardBtn" class="text-[12px] font-semibold uppercase tracking-widest text-zinc-500 hover:text-zinc-900">Reset demo</button>
+  </div>
+</div>
+
+<!-- Columns -->
+<main class="max-w-[1600px] mx-auto px-6 lg:px-10 pb-24">
+  <div class="columns grid grid-cols-3 gap-6 items-start" id="board"></div>
+</main>
+
+<!-- Card Modal -->
+<div id="modal" class="fixed inset-0 z-50 hidden">
+  <div id="modalBg" class="absolute inset-0 bg-zinc-900/60 backdrop-blur-sm"></div>
+  <div class="relative min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-[520px] bg-[#FFFEFB] rounded-[24px] shadow-[0_25px_80px_-20px_rgba(0,0,0,0.4)] border border-zinc-200 overflow-hidden animate-[scaleIn_0.2s_ease]">
+      <style>@keyframes scaleIn{from{transform:scale(0.96);opacity:0}to{transform:scale(1);opacity:1}}</style>
+      <div class="px-8 pt-7 pb-6">
+        <div class="flex items-start justify-between gap-4 mb-6">
+          <div>
+            <div class="text-[11px] font-mono uppercase tracking-widest text-zinc-400 font-semibold">Card Details</div>
+            <h2 class="font-display text-[22px] font-bold tracking-tight mt-1" id="modalTitle">New card</h2>
+          </div>
+          <button id="modalClose" class="w-9 h-9 rounded-full bg-zinc-100 grid place-items-center hover:bg-zinc-200 transition-colors"><svg width="14" height="14" viewBox="0 0 14 14"><path d="M3 3l8 8M11 3L3 11" stroke="currentColor" stroke-width="1.5"/></svg></button>
+        </div>
+
+        <form id="cardForm" class="space-y-5">
+          <input type="hidden" id="fId">
+          <div>
+            <label class="text-[11px] font-mono uppercase tracking-widest font-semibold text-zinc-500">Title</label>
+            <input id="fTitle" maxlength="80" placeholder="What needs to be done?" class="mt-2 w-full h-[48px] px-4 rounded-[14px] bg-white border border-zinc-200 text-[16px] font-semibold focus:outline-none focus:border-zinc-900 focus:ring-4 focus:ring-zinc-900/10 placeholder:text-zinc-300">
+          </div>
+          <div>
+            <label class="text-[11px] font-mono uppercase tracking-widest font-semibold text-zinc-500">Description</label>
+            <textarea id="fDesc" rows="3" placeholder="Add context for standup…" class="mt-2 w-full px-4 py-3 rounded-[14px] bg-white border border-zinc-200 text-[14px] font-medium leading-relaxed focus:outline-none focus:border-zinc-900 focus:ring-4 focus:ring-zinc-900/10 resize-none placeholder:text-zinc-300"></textarea>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="text-[11px] font-mono uppercase tracking-widest font-semibold text-zinc-500">Status</label>
+              <select id="fStatus" class="mt-2 w-full h-[44px] px-3 rounded-[12px] bg-white border border-zinc-200 text-[14px] font-semibold focus:outline-none focus:border-zinc-900">
+                <option value="todo">Todo</option>
+                <option value="doing">Doing</option>
+                <option value="done">Done</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-[11px] font-mono uppercase tracking-widest font-semibold text-zinc-500">Priority</label>
+              <div class="mt-2 flex gap-2">
+                <button type="button" data-p="low" class="prioBtn flex-1 h-[44px] rounded-[12px] border text-[13px] font-semibold transition-all">Low</button>
+                <button type="button" data-p="medium" class="prioBtn flex-1 h-[44px] rounded-[12px] border text-[13px] font-semibold transition-all">Med</button>
+                <button type="button" data-p="high" class="prioBtn flex-1 h-[44px] rounded-[12px] border text-[13px] font-semibold transition-all">High</button>
+              </div>
+            </div>
+          </div>
+          <div>
+            <label class="text-[11px] font-mono uppercase tracking-widest font-semibold text-zinc-500">Assignee</label>
+            <div id="fAssignees" class="mt-2 flex flex-wrap gap-2"></div>
+          </div>
+          <div class="flex gap-3 pt-2">
+            <button type="submit" class="flex-1 h-[48px] rounded-full bg-zinc-900 text-white font-semibold text-[15px] hover:bg-black transition-colors">Save card</button>
+            <button type="button" id="fDelete" class="hidden h-[48px] px-6 rounded-full bg-white border border-zinc-200 font-semibold text-[14px] hover:bg-zinc-50 text-zinc-600">Delete</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- WIP Toast -->
+<div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 hidden">
+  <div class="bg-zinc-900 text-white px-5 h-11 rounded-full flex items-center gap-3 shadow-xl text-[13.5px] font-medium">
+    <span class="w-6 h-6 rounded-full bg-amber-400 text-zinc-900 grid place-items-center font-bold">!</span>
+    <span id="toastMsg">WIP limit reached</span>
+  </div>
+</div>
+
+<script>
+const PEOPLE = [
+  { id:'alex', name:'Alex Rivera', color:'#111827', bg:'#E5E7EB' },
+  { id:'sam', name:'Sam Chen', color:'#065F46', bg:'#D1FAE5' },
+  { id:'morgan', name:'Morgan Blake', color:'#7C3AED', bg:'#EDE9FE' },
+  { id:'casey', name:'Casey Park', color:'#BE123C', bg:'#FFE4E6' },
+  { id:'jordan', name:'Jordan Lee', color:'#92400E', bg:'#FEF3C7' },
+];
+const PRIOS = {
+  low:{ label:'LOW', dot:'bg-zinc-400', border:'border-zinc-200', bg:'bg-white', text:'Low • Can wait' },
+  medium:{ label:'MED', dot:'bg-amber-500', border:'border-amber-200', bg:'bg-amber-50', text:'Medium • Soon' },
+  high:{ label:'HIGH', dot:'bg-red-500', border:'border-red-200', bg:'bg-red-50', text:'High • Standup blocker' },
+};
+const COLS = [
+  { id:'todo', name:'Todo', desc:'Queued', accent:'#A1A1AA', icon:'◧' },
+  { id:'doing', name:'Doing', desc:'In progress', accent:'#F59E0B', icon:'◩' },
+  { id:'done', name:'Done', desc:'Shipped', accent:'#10B981', icon:'◪' },
+];
+
+const DEMO = [
+  { id:'1', title:'Design standup template for Q3 review', desc:'Include blockers section + wins. Needs to work on TV.', status:'todo', prio:'high', assignee:'alex', created:Date.now()-86400000 },
+  { id:'2', title:'Fix drag-drop on Safari iPad', desc:'Pointer events not firing after long press', status:'todo', prio:'medium', assignee:'sam', created:Date.now()-9000000 },
+  { id:'3', title:'API rate limit dashboard', desc:'GraphQL cost analysis', status:'doing', prio:'high', assignee:'morgan', created:Date.now()-4000000 },
+  { id:'4', title:'Interview notes → Notion', desc:'3 candidates from yesterday', status:'doing', prio:'low', assignee:'casey', created:Date.now()-2000000 },
+  { id:'5', title:'Update onboarding checklist', desc:'Add SOC2 steps', status:'done', prio:'medium', assignee:'jordan', created:Date.now()-1000000 },
+  { id:'6', title:'Weekly demo prep', desc:'Record loom for async folks', status:'done', prio:'low', assignee:'alex', created:Date.now()-500000 },
+];
+
+let state = {
+  cards: [],
+  wip: { todo: 10, doing: 3, done: 20 },
+  filterPerson: null,
+  search: '',
+  editingPrio: 'medium',
+  draggingId: null,
+};
+
+function load(){
+  try{
+    const raw = JSON.parse(localStorage.getItem('tinykanban:v3')||'null');
+    if(raw && raw.cards){ state.cards = raw.cards; state.wip = raw.wip||state.wip; }
+    else { state.cards = structuredClone(DEMO); }
+  }catch{ state.cards = structuredClone(DEMO); }
+}
+function save(){
+  localStorage.setItem('tinykanban:v3', JSON.stringify({cards:state.cards,wip:state.wip}));
+}
+
+function initials(name){ return name.split(' ').map(n=>n[0]).join('').toUpperCase(); }
+
+function filteredCards(colId){
+  let list = state.cards.filter(c=>c.status===colId);
+  if(state.search){
+    const q = state.search.toLowerCase();
+    list = list.filter(c=> (c.title+' '+c.desc+' '+c.assignee).toLowerCase().includes(q));
+  }
+  if(state.filterPerson){
+    list = list.filter(c=>c.assignee===state.filterPerson);
+  }
+  return list;
+}
+
+function renderBoard(){
+  const board = document.getElementById('board');
+  board.innerHTML = COLS.map(col=>{
+    const cards = filteredCards(col.id);
+    const allInCol = state.cards.filter(c=>c.status===col.id).length;
+    const isOver = allInCol > state.wip[col.id];
+    const searchActive = !!(state.search || state.filterPerson);
+    return `
+    <section data-col="${col.id}" class="group/col rounded-[24px] bg-white border ${isOver?'border-red-200 wip-over':'border-zinc-200'} shadow-[0_1px_2px_rgba(0,0,0,0.04)] min-h-[520px] flex flex-col">
+      <header class="px-6 pt-6 pb-5 flex items-start justify-between gap-4">
+        <div class="flex gap-3">
+          <div class="w-9 h-9 rounded-full border border-zinc-200 grid place-items-center text-[14px] font-bold">${col.icon}</div>
+          <div>
+            <h2 class="font-display font-bold text-[20px] leading-none tracking-tight flex items-center gap-2">
+              ${col.name}
+              <span class="inline-flex items-center justify-center min-w-[24px] h-[22px] px-1.5 rounded-full text-[12px] font-mono font-bold ${isOver?'bg-red-500 text-white':'bg-zinc-900 text-white'}">${cards.length}${searchActive?`/${allInCol}`:''}</span>
+            </h2>
+            <div class="text-[12px] font-mono text-zinc-500 mt-1.5 font-medium">${col.desc} • WIP ${state.wip[col.id]}</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <div class="flex items-center gap-1 bg-zinc-50 border border-zinc-200 rounded-full h-8 px-2">
+            <span class="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-widest">WIP</span>
+            <input type="number" min="1" max="20" data-wip="${col.id}" value="${state.wip[col.id]}" class="w-8 h-6 bg-white border border-zinc-200 rounded-full text-center text-[12px] font-bold outline-none focus:border-zinc-900">
+          </div>
+          <button data-add="${col.id}" class="w-8 h-8 rounded-full border border-zinc-200 grid place-items-center hover:bg-zinc-900 hover:text-white hover:border-zinc-900 transition-colors"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M6 2v8M2 6h8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+        </div>
+      </header>
+
+      ${isOver?`<div class="mx-6 mb-3 px-3 py-2 rounded-full bg-red-50 border border-red-200 flex items-center gap-2 text-[11px] font-mono font-bold uppercase tracking-widest text-red-700"><span class="w-4 h-4 rounded-full bg-red-500 text-white grid place-items-center">!</span>WIP limit exceeded — move or raise limit</div>`:''}
+
+      <div data-drop="${col.id}" class="flex-1 px-3 pb-4 space-y-3 min-h-[380px] transition-all">
+        ${cards.length? cards.map(c=>cardHTML(c)).join('') : emptyHTML(col)}
+      </div>
+
+      <div class="px-6 pb-5 pt-3">
+        <button data-add="${col.id}" class="w-full h-10 rounded-full border border-dashed border-zinc-300 text-[13px] font-semibold text-zinc-500 hover:border-zinc-900 hover:text-zinc-900 transition-colors">+ Add card to ${col.name}</button>
+      </div>
+    </section>`;
+  }).join('');
+
+  document.getElementById('statTotal').textContent = state.cards.length;
+  document.getElementById('statBlocked').textContent = state.cards.filter(c=>c.prio==='high').length;
+  document.getElementById('statDone').textContent = state.cards.filter(c=>c.status==='done').length;
+
+  attachCardEvents();
+  attachColEvents();
+  save();
+}
+
+function emptyHTML(col){
+  return `<div class="h-[240px] grid place-items-center border border-dashed border-zinc-200 rounded-[16px] bg-zinc-50/50">
+    <div class="text-center">
+      <div class="w-10 h-10 mx-auto rounded-full bg-white border border-zinc-200 grid place-items-center text-zinc-400 mb-3">∅</div>
+      <div class="text-[13px] font-semibold text-zinc-600">No cards</div>
+      <div class="text-[11px] font-mono text-zinc-400 mt-1">Drop here or add new</div>
+    </div>
+  </div>`;
+}
+
+function cardHTML(c){
+  const p = PEOPLE.find(x=>x.id===c.assignee) || PEOPLE[0];
+  const prio = PRIOS[c.prio];
+  return `
+  <article draggable="true" data-card="${c.id}" class="group/card relative bg-[#FFFEFB] border border-zinc-200 rounded-[18px] p-[1px] hover:shadow-[0_8px_24px_-8px_rgba(0,0,0,0.15)] hover:border-zinc-300 transition-all select-none cursor-grab active:cursor-grabbing">
+    <div class="absolute left-0 top-0 bottom-0 w-[4px] rounded-l-[18px] ${prio.dot}"></div>
+    <div class="pl-[14px] pr-4 py-4">
+      <div class="flex items-start justify-between gap-3">
+        <h3 class="font-semibold text-[15px] leading-[1.35] tracking-[-0.01em] line-clamp-3">${esc(c.title)}</h3>
+        <button data-menu="${c.id}" class="opacity-0 group-hover/card:opacity-100 w-7 h-7 rounded-full bg-zinc-100 grid place-items-center hover:bg-zinc-900 hover:text-white transition-all"><svg width="12" height="12" viewBox="0 0 12 12"><circle cx="2.5" cy="6" r="1" fill="currentColor"/><circle cx="6" cy="6" r="1" fill="currentColor"/><circle cx="9.5" cy="6" r="1" fill="currentColor"/></svg></button>
+      </div>
+      ${c.desc?`<p class="mt-2 text-[13px] leading-[1.5] text-zinc-500 line-clamp-2">${esc(c.desc)}</p>`:''}
+      <div class="mt-4 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <div class="w-7 h-7 rounded-full grid place-items-center text-[10px] font-bold tracking-wide border" style="background:${p.bg};color:${p.color};border-color:${p.color}20">${initials(p.name)}</div>
+          <span class="text-[11px] font-mono font-semibold text-zinc-500 max-w-[90px] truncate">${p.name.split(' ')[0]}</span>
+          <span class="inline-flex items-center gap-1 h-6 px-2 rounded-full border text-[10px] font-mono font-bold tracking-widest ${prio.bg} ${prio.border}">${prio.label}</span>
+        </div>
+        <div class="flex items-center gap-1">
+          <button data-move-left="${c.id}" class="w-7 h-7 rounded-full border border-zinc-200 grid place-items-center hover:bg-zinc-900 hover:text-white transition-colors ${c.status==='todo'?'opacity-30 pointer-events-none':''}"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M6.5 2L3 5l3.5 3" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button data-move-right="${c.id}" class="w-7 h-7 rounded-full border border-zinc-200 grid place-items-center hover:bg-zinc-900 hover:text-white transition-colors ${c.status==='done'?'opacity-30 pointer-events-none':''}"><svg width="10" height="10" viewBox="0 0 10 10"><path d="M3.5 2L7 5l-3.5 3" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </article>`;
+}
+
+function esc(s){ return (s||'').replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+function attachCardEvents(){
+  document.querySelectorAll('[data-card]').forEach(el=>{
+    el.addEventListener('dragstart',e=>{
+      state.draggingId = el.dataset.card;
+      el.classList.add('card-dragging');
+      e.dataTransfer.effectAllowed='move';
+      e.dataTransfer.setData('text/plain',el.dataset.card);
+      setTimeout(()=>el.style.display='none',0);
+    });
+    el.addEventListener('dragend',()=>{
+      el.style.display=''; el.classList.remove('card-dragging');
+      document.querySelectorAll('[data-drop]').forEach(d=>d.classList.remove('drop-active'));
+      state.draggingId=null;
+    });
+    el.addEventListener('click', (ev)=>{
+      if(ev.target.closest('[data-move-left]')||ev.target.closest('[data-move-right]')||ev.target.closest('[data-menu]')) return;
+      openEdit(el.dataset.card);
+    });
+  });
+
+  document.querySelectorAll('[data-move-left]').forEach(b=>{
+    b.addEventListener('click',e=>{
+      e.stopPropagation();
+      const id=b.dataset.moveLeft;
+      const c=state.cards.find(x=>x.id===id);
+      if(!c) return;
+      const idx=COLS.findIndex(x=>x.id===c.status);
+      if(idx>0) moveCard(c.id, COLS[idx-1].id);
+    });
+  });
+  document.querySelectorAll('[data-move-right]').forEach(b=>{
+    b.addEventListener('click',e=>{
+      e.stopPropagation();
+      const id=b.dataset.moveRight;
+      const c=state.cards.find(x=>x.id===id);
+      if(!c) return;
+      const idx=COLS.findIndex(x=>x.id===c.status);
+      if(idx<COLS.length-1) moveCard(c.id, COLS[idx+1].id);
+    });
+  });
+  document.querySelectorAll('[data-menu]').forEach(b=>{
+    b.addEventListener('click',e=>{
+      e.stopPropagation();
+      openEdit(b.dataset.menu);
+    });
+  });
+}
+
+function attachColEvents(){
+  document.querySelectorAll('[data-drop]').forEach(zone=>{
+    zone.addEventListener('dragover',e=>{
+      e.preventDefault();
+      zone.classList.add('drop-active');
+    });
+    zone.addEventListener('dragleave',e=>{
+      if(!zone.contains(e.relatedTarget)) zone.classList.remove('drop-active');
+    });
+    zone.addEventListener('drop',e=>{
+      e.preventDefault();
+      zone.classList.remove('drop-active');
+      const id = e.dataTransfer.getData('text/plain') || state.draggingId;
+      if(id) moveCard(id, zone.dataset.drop);
+    });
+  });
+  document.querySelectorAll('[data-add]').forEach(b=>{
+    b.addEventListener('click',()=>openNew(b.dataset.add));
+  });
+  document.querySelectorAll('[data-wip]').forEach(inp=>{
+    inp.addEventListener('change',()=>{
+      const col=inp.dataset.wip;
+      let v=parseInt(inp.value,10);
+      if(isNaN(v)||v<1) v=1;
+      if(v>20) v=20;
+      state.wip[col]=v;
+      save(); renderBoard();
+    });
+  });
+}
+
+function moveCard(id, newStatus){
+  const c = state.cards.find(x=>x.id===id);
+  if(!c) return;
+  const colCount = state.cards.filter(x=>x.status===newStatus).length;
+  if(newStatus!==c.status && colCount >= state.wip[newStatus]){
+    toast(`WIP limit ${state.wip[newStatus]} reached for ${COLS.find(x=>x.id===newStatus).name}`);
+  }
+  c.status=newStatus;
+  save(); renderBoard();
+}
+
+function toast(msg){
+  const t=document.getElementById('toast');
+  document.getElementById('toastMsg').textContent=msg;
+  t.classList.remove('hidden');
+  clearTimeout(t._to);
+  t._to=setTimeout(()=>t.classList.add('hidden'),2600);
+}
+
+/* Modal */
+function openNew(status='todo'){
+  state.editingPrio='medium';
+  document.getElementById('modalTitle').textContent='New card';
+  document.getElementById('fId').value='';
+  document.getElementById('fTitle').value='';
+  document.getElementById('fDesc').value='';
+  document.getElementById('fStatus').value=status;
+  document.getElementById('fDelete').classList.add('hidden');
+  updatePrioUI(); renderAssigneePicker(null);
+  showModal();
+}
+function openEdit(id){
+  const c=state.cards.find(x=>x.id===id);
+  if(!c) return;
+  state.editingPrio=c.prio;
+  document.getElementById('modalTitle').textContent='Edit card';
+  document.getElementById('fId').value=c.id;
+  document.getElementById('fTitle').value=c.title;
+  document.getElementById('fDesc').value=c.desc;
+  document.getElementById('fStatus').value=c.status;
+  document.getElementById('fDelete').classList.remove('hidden');
+  updatePrioUI(); renderAssigneePicker(c.assignee);
+  showModal();
+}
+function showModal(){
+  document.getElementById('modal').classList.remove('hidden');
+  document.body.style.overflow='hidden';
+  setTimeout(()=>document.getElementById('fTitle').focus(),10);
+}
+function hideModal(){
+  document.getElementById('modal').classList.add('hidden');
+  document.body.style.overflow='';
+}
+function updatePrioUI(){
+  document.querySelectorAll('.prioBtn').forEach(b=>{
+    const p=b.dataset.p;
+    const active = p===state.editingPrio;
+    b.className='prioBtn flex-1 h-[44px] rounded-[12px] border text-[13px] font-semibold transition-all ' + (active ? (p==='high'?'bg-red-500 text-white border-red-500': p==='medium'?'bg-amber-400 text-zinc-900 border-amber-400':'bg-zinc-900 text-white border-zinc-900') : 'bg-white border-zinc-200 text-zinc-500 hover:border-zinc-300');
+  });
+}
+function renderAssigneePicker(selected){
+  const wrap=document.getElementById('fAssignees');
+  wrap.innerHTML=PEOPLE.map(p=>{
+    const sel = p.id===selected || (!selected && p.id===PEOPLE[0].id && !document.getElementById('fId').value);
+    return `<button type="button" data-assign="${p.id}" class="group flex items-center gap-2 h-9 px-3 rounded-full border text-[13px] font-semibold transition-all ${sel?'bg-zinc-900 text-white border-zinc-900':'bg-white border-zinc-200 text-zinc-600 hover:border-zinc-300'}">
+      <span class="w-6 h-6 rounded-full grid place-items-center text-[10px] font-bold" style="background:${sel? 'rgba(255,255,255,0.15)': p.bg};color:${sel?'white':p.color}">${initials(p.name)}</span>
+      ${p.name.split(' ')[0]}
+    </button>`;
+  }).join('');
+  wrap.querySelectorAll('[data-assign]').forEach(b=>{
+    b.addEventListener('click',()=>{
+      wrap.querySelectorAll('[data-assign]').forEach(x=>x.dataset.sel='');
+      b.dataset.sel='1';
+      const id=b.dataset.assign;
+      [...wrap.children].forEach(ch=>{
+        const isThis = ch.dataset.assign===id;
+        ch.className=`group flex items-center gap-2 h-9 px-3 rounded-full border text-[13px] font-semibold transition-all ${isThis?'bg-zinc-900 text-white border-zinc-900':'bg-white border-zinc-200 text-zinc-600 hover:border-zinc-300'}`;
+        const dot=ch.querySelector('span');
+        const person=PEOPLE.find(x=>x.id===ch.dataset.assign);
+        dot.style.background=isThis?'rgba(255,255,255,0.15)':person.bg;
+        dot.style.color=isThis?'white':person.color;
+      });
+      wrap.dataset.value=id;
+    });
+  });
+  wrap.dataset.value = selected || (document.getElementById('fId').value?'':PEOPLE[0].id) || PEOPLE[0].id;
+  if(!selected && !document.getElementById('fId').value){
+    wrap.dataset.value = PEOPLE[0].id;
+  }
+}
+
+/* Events */
+document.getElementById('cardForm').addEventListener('submit',e=>{
+  e.preventDefault();
+  const id=document.getElementById('fId').value;
+  const title=document.getElementById('fTitle').value.trim();
+  if(!title) { document.getElementById('fTitle').focus(); return; }
+  const data={
+    title,
+    desc:document.getElementById('fDesc').value.trim(),
+    status:document.getElementById('fStatus').value,
+    prio:state.editingPrio,
+    assignee:document.getElementById('fAssignees').dataset.value || PEOPLE[0].id,
+  };
+  if(id){
+    Object.assign(state.cards.find(x=>x.id===id), data);
+  }else{
+    state.cards.unshift({ id: Math.random().toString(36).slice(2,9), created:Date.now(), ...data });
+  }
+  hideModal(); renderBoard();
+});
+document.getElementById('fDelete').addEventListener('click',()=>{
+  const id=document.getElementById('fId').value;
+  if(!id) return;
+  if(confirm('Delete this card?')){
+    state.cards=state.cards.filter(c=>c.id!==id);
+    hideModal(); renderBoard();
+  }
+});
+document.getElementById('modalClose').addEventListener('click',hideModal);
+document.getElementById('modalBg').addEventListener('click',hideModal);
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') hideModal(); });
+
+document.querySelectorAll('.prioBtn').forEach(b=>{
+  b.addEventListener('click',()=>{ state.editingPrio=b.dataset.p; updatePrioUI(); });
+});
+
+/* People filter top */
+function renderPeopleFilter(){
+  const wrap=document.getElementById('peopleFilter');
+  wrap.innerHTML = `<button data-pf="all" class="h-8 px-3 rounded-full text-[12px] font-bold tracking-wide transition-all ${!state.filterPerson?'bg-zinc-900 text-white':'bg-transparent text-zinc-500 hover:text-zinc-900'}">ALL</button>` +
+    PEOPLE.map(p=>{
+      const active=state.filterPerson===p.id;
+      return `<button data-pf="${p.id}" class="w-8 h-8 rounded-full grid place-items-center text-[11px] font-bold border transition-all ${active?'!border-zinc-900 ring-2 ring-zinc-900 ring-offset-1':''}" style="background:${p.bg};color:${p.color};border-color:${p.color}20" title="${p.name}">${initials(p.name)[0]}</button>`;
+    }).join('');
+  wrap.querySelectorAll('[data-pf]').forEach(b=>{
+    b.addEventListener('click',()=>{
+      const v=b.dataset.pf;
+      state.filterPerson = v==='all'? null : (state.filterPerson===v? null : v);
+      renderPeopleFilter(); renderBoard();
+    });
+  });
+}
+
+/* Search */
+function bindSearch(){
+  const handler = (val)=>{
+    state.search=val;
+    document.getElementById('searchClear').classList.toggle('hidden', !val);
+    renderBoard();
+  };
+  document.getElementById('searchInput').addEventListener('input',e=>handler(e.target.value));
+  const m=document.getElementById('searchInputM');
+  if(m) m.addEventListener('input',e=>{
+    document.getElementById('searchInput').value=e.target.value;
+    handler(e.target.value);
+  });
+  document.getElementById('searchClear').addEventListener('click',()=>{
+    document.getElementById('searchInput').value='';
+    const mm=document.getElementById('searchInputM'); if(mm) mm.value='';
+    handler('');
+  });
+}
+
+/* Top actions */
+document.getElementById('newCardBtn').addEventListener('click',()=>openNew('todo'));
+document.getElementById('clearDoneBtn').addEventListener('click',()=>{
+  if(confirm('Clear all Done cards?')){
+    state.cards=state.cards.filter(c=>c.status!=='done');
+    renderBoard();
+  }
+});
+document.getElementById('resetBoardBtn').addEventListener('click',()=>{
+  if(confirm('Reset to demo data?')){ localStorage.removeItem('tinykanban:v3'); state.cards=structuredClone(DEMO); renderBoard(); }
+});
+
+/* Init */
+load();
+document.getElementById('todayDate').textContent = new Date().toLocaleDateString('en-US',{ month:'short', day:'numeric' });
+bindSearch();
+renderPeopleFilter();
+renderBoard();
+
+/* Keyboard: N new */
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey) && e.key==='k'){ e.preventDefault(); document.getElementById('searchInput').focus(); }
+  if(e.key==='n' && !e.metaKey && document.activeElement.tagName!=='INPUT' && document.activeElement.tagName!=='TEXTAREA'){ openNew('todo'); }
+});
+</script>
+</body>
+</html>

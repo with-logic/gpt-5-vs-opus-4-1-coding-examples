@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Cloud Painter — Paint the Sky!</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  *{font-family:'Nunito',sans-serif}
+  .fredoka{font-family:'Fredoka',sans-serif}
+  canvas{touch-action:none}
+  .brush-btn{transition:all .25s cubic-bezier(.34,1.56,.64,1)}
+  .brush-btn:active{transform:scale(.92)}
+  .brush-btn.active{transform:translateY(-4px) scale(1.06); box-shadow:0 12px 24px -8px rgba(121,164,255,.5), 0 0 0 3px #93C5FD inset}
+  .color-dot{transition:all .25s cubic-bezier(.34,1.56,.64,1); box-shadow:0 2px 0 rgba(0,0,0,.08) inset, 0 4px 10px rgba(0,0,0,.08)}
+  .color-dot.active{transform:scale(1.25); box-shadow:0 0 0 3px white, 0 0 0 5px var(--ring), 0 6px 16px rgba(0,0,0,.12)}
+  input[type=range]{-webkit-appearance:none; appearance:none; height:14px; background:#E8F0FF; border-radius:999px; outline:none}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none; width:32px; height:32px; border-radius:50%; background:white; border:3px solid #93C5FD; box-shadow:0 4px 12px rgba(147,197,253,.6), 0 2px 0 #DBEAFE inset; cursor:pointer; transition:all .2s}
+  input[type=range]::-webkit-slider-thumb:active{transform:scale(1.15)}
+  .bouncy{animation:bouncy 3s ease-in-out infinite}
+  @keyframes bouncy{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+  .float-slow{animation:floatSlow 6s ease-in-out infinite}
+  @keyframes floatSlow{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-10px) rotate(1deg)}}
+  .paper-shadow{box-shadow:0 20px 40px -12px rgba(110,140,190,.25), 0 0 0 1px rgba(255,255,255,.8) inset, 0 2px 0 white inset}
+</style>
+</head>
+<body class="bg-[#EFF7FF] h-[100dvh] w-screen overflow-hidden flex flex-col select-none">
+  <!-- Sky Header -->
+  <header class="relative z-20 flex items-center justify-between px-4 sm:px-6 py-3">
+    <div class="flex items-center gap-3">
+      <div class="w-[52px] h-[52px] rounded-[16px] bg-white paper-shadow flex items-center justify-center text-[28px] bouncy">☁️</div>
+      <div>
+        <h1 class="fredoka text-[22px] sm:text-[26px] font-bold tracking-tight leading-none text-[#3B5B8A]">Cloud Painter</h1>
+        <p class="text-[11px] sm:text-[12px] font-extrabold tracking-[0.14em] text-[#8AA6CB] uppercase mt-[1px]">Paint the sky • For little dreamers</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="clearBtn" class="h-[44px] px-4 rounded-full bg-white paper-shadow text-[#7A9BC6] font-bold text-[13px] tracking-wide hover:bg-[#FFF8F0] active:scale-[.97] transition flex items-center gap-1.5">
+        <span class="text-[16px]">🧹</span> <span class="hidden sm:inline">Clear Sky</span><span class="sm:hidden">Clear</span>
+      </button>
+      <button id="saveBtn" class="h-[44px] px-5 rounded-full bg-[#3B5B8A] text-white font-bold text-[13px] tracking-wide shadow-[0_8px_20px_-6px_#3B5B8A,0_2px_0_rgba(255,255,255,.25)_inset] hover:bg-[#324e77] active:scale-[.97] transition flex items-center gap-2">
+        <span>Save</span> <span class="text-[16px]">💾</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Canvas Stage -->
+  <main class="relative flex-1 mx-3 sm:mx-5 mb-3 rounded-[28px] overflow-hidden paper-shadow bg-[#D8EBFF] isolate">
+    <canvas id="skyCanvas" class="absolute inset-0 w-full h-full"></canvas>
+    <canvas id="paintCanvas" class="absolute inset-0 w-full h-full"></canvas>
+
+    <!-- hint -->
+    <div id="hint" class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none transition-all duration-700">
+      <div class="bg-white/90 backdrop-blur-xl rounded-[24px] paper-shadow px-7 py-5 flex flex-col items-center gap-2 text-center max-w-[300px]">
+        <div class="text-[40px]">👆✨</div>
+        <p class="fredoka font-semibold text-[#3B5B8A] text-[18px] leading-tight">Drag to paint clouds across the sky!</p>
+        <p class="text-[12px] font-bold text-[#9AB3D5] tracking-wide">Try different brushes below</p>
+      </div>
+    </div>
+
+    <!-- wind / speed indicator -->
+    <div class="absolute top-4 left-4 sm:top-5 sm:left-5 flex items-center gap-2 bg-white/80 backdrop-blur rounded-full pl-2 pr-3 py-1.5 paper-shadow">
+      <div class="w-7 h-7 rounded-full bg-[#F0F7FF] flex items-center justify-center text-[14px]">🍃</div>
+      <div class="flex flex-col leading-none">
+        <span class="text-[10px] font-extrabold tracking-widest text-[#9AB3D5] uppercase">Wind</span>
+        <div class="flex items-center gap-1.5">
+          <div class="w-[54px] h-[4px] rounded-full bg-[#E3EDFA] overflow-hidden"><div id="windBar" class="h-full bg-[#93C5FD] w-[35%] rounded-full transition-all"></div></div>
+          <span id="windLabel" class="text-[11px] font-bold text-[#5C84B8]">Breezy</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- airplane summon bubble -->
+    <button id="planeBtn" class="absolute top-4 right-4 sm:top-5 sm:right-5 bg-white paper-shadow rounded-full h-[48px] pl-3 pr-4 flex items-center gap-2 hover:scale-[1.03] active:scale-[.97] transition">
+      <span class="w-8 h-8 rounded-full bg-[#FFF2D1] flex items-center justify-center text-[18px]">✈️</span>
+      <span class="fredoka font-semibold text-[13px] text-[#6B86AB]">Fly plane!</span>
+    </button>
+
+    <!-- brush preview follows mouse -->
+    <div id="brushCursor" class="pointer-events-none fixed w-0 h-0 z-50 hidden md:block" style="transform:translate(-50%,-50%)">
+      <div id="cursorInner" class="rounded-full bg-white/40 border-[2px] border-white shadow-[0_0_0_1px_rgba(0,0,0,.06),0_8px_16px_rgba(0,0,0,.1)] backdrop-blur-[1px]"></div>
+    </div>
+  </main>
+
+  <!-- Bottom Toolbar - whimsical -->
+  <div class="relative z-20 px-3 sm:px-5 pb-3 sm:pb-4">
+    <div class="max-w-[980px] mx-auto bg-white/95 backdrop-blur-xl rounded-[24px] sm:rounded-[28px] paper-shadow border border-white flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-5 p-3 sm:p-3.5">
+
+      <!-- Brush Shapes -->
+      <div class="flex items-center gap-2 overflow-x-auto scrollbar-none">
+        <span class="text-[10px] font-extrabold tracking-[0.15em] text-[#9AB3D5] uppercase shrink-0 mr-1 hidden sm:block">Brush</span>
+        <div id="brushList" class="flex gap-2"></div>
+      </div>
+
+      <div class="h-px sm:h-[36px] sm:w-px bg-[#E8F0FF] shrink-0"></div>
+
+      <!-- Size + Color -->
+      <div class="flex items-center gap-4 flex-1 min-w-0">
+        <div class="flex items-center gap-2.5 flex-1">
+          <span class="text-[18px]">🌥️</span>
+          <input id="sizeSlider" type="range" min="18" max="88" value="46" class="flex-1">
+          <span class="text-[22px]">☁️</span>
+        </div>
+        <div id="colorList" class="flex items-center gap-2 shrink-0"></div>
+      </div>
+
+      <!-- Fun extras -->
+      <div class="flex items-center gap-2 shrink-0">
+        <button id="birdBtn" title="Add birds" class="w-[44px] h-[44px] rounded-full bg-[#F0F7FF] hover:bg-[#E3EFFF] active:scale-95 transition flex items-center justify-center text-[18px]">🐦</button>
+        <button id="rainbowBtn" title="Rainbow mode" class="w-[44px] h-[44px] rounded-full bg-[#FFF5F0] hover:bg-[#FFEEE5] active:scale-95 transition flex items-center justify-center text-[18px]">🌈</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+const skyCanvas = document.getElementById('skyCanvas');
+const paintCanvas = document.getElementById('paintCanvas');
+const sCtx = skyCanvas.getContext('2d');
+const pCtx = paintCanvas.getContext('2d');
+
+let W=0,H=0,dpr=1;
+function resize(){
+  dpr = Math.min(window.devicePixelRatio||1, 2);
+  const rect = skyCanvas.parentElement.getBoundingClientRect();
+  W = rect.width; H = rect.height;
+  [skyCanvas, paintCanvas].forEach(c=>{
+    c.width = W*dpr; c.height = H*dpr;
+    c.style.width = W+'px'; c.style.height = H+'px';
+    c.getContext('2d').setTransform(dpr,0,0,dpr,0,0);
+  });
+  // regenerate bg clouds if needed
+  if(bgClouds.length===0) makeBgClouds();
+}
+window.addEventListener('resize', resize);
+
+/* ---------- State ---------- */
+const brushes = [
+  {id:'fluff', label:'Fluff', emoji:'☁️', desc:'Soft & puffy'},
+  {id:'cotton', label:'Cotton', emoji:'🐑', desc:'Dense & cuddly'},
+  {id:'wisp', label:'Wisp', emoji:'〰️', desc:'Light & airy'},
+  {id:'bubble', label:'Bubble', emoji:'🫧', desc:'Round bubbles'},
+  {id:'sparkle', label:'Sparkle', emoji:'✨', desc:'Magic dust'}
+];
+const colors = [
+  {hex:'#FFFFFF', ring:'#CBD5E1', name:'Snow'},
+  {hex:'#FFF8E7', ring:'#FDE68A', name:'Cream'},
+  {hex:'#FFE8D6', ring:'#FDBA74', name:'Peach'},
+  {hex:'#FFD6E7', ring:'#F9A8D4', name:'Candy'},
+  {hex:'#E0D9FF', ring:'#C4B5FD', name:'Lilac'},
+  {hex:'#D6F0FF', ring:'#7DD3FC', name:'Sky'},
+  {hex:'#D9F5E8', ring:'#6EE7B7', name:'Mint'}
+];
+let brushType='fluff', brushColor='#FFFFFF', brushSize=46;
+let rainbow=false;
+let hue=0;
+
+let puffs=[]; // painted puffs
+const MAX_PUFFS=2800;
+let bgClouds=[];
+let planes=[];
+let birds=[];
+let t=0;
+
+let isDown=false, lastX=0,lastY=0, distAcc=0;
+let hasDrawn=false;
+
+function makeBgClouds(){
+  bgClouds=[];
+  const count = Math.max(6, Math.floor(W/220));
+  for(let i=0;i<count;i++){
+    bgClouds.push({
+      x: Math.random()*W*1.4 - W*0.2,
+      y: Math.random()*H*0.7 + H*0.05,
+      baseY: 0,
+      scale: 0.7 + Math.random()*1.2,
+      speed: 0.15 + Math.random()*0.35,
+      wob: Math.random()*Math.PI*2,
+      wobSpeed: 0.0003 + Math.random()*0.0007,
+      op: 0.55 + Math.random()*0.35
+    });
+  }
+  bgClouds.forEach(c=>c.baseY=c.y);
+}
+
+function spawnPlane(x){
+  const dir = x!=null ? 1 : (Math.random()<0.5?1:-1);
+  const y = H*0.12 + Math.random()*H*0.35;
+  planes.push({
+    x: x!=null ? x : (dir>0? -140 : W+140),
+    y, dir,
+    speed: 1.2 + Math.random()*1.1,
+    trail: [],
+    scale: 0.9 + Math.random()*0.3,
+    wob:0
+  });
+}
+function spawnBirdFlock(){
+  const count = 6+ Math.floor(Math.random()*6);
+  const dir = Math.random()<0.5?1:-1;
+  const baseY = H*0.18 + Math.random()*H*0.3;
+  for(let i=0;i<count;i++){
+    birds.push({
+      x: dir>0? -40 - i*22 : W+40 + i*22,
+      y: baseY + (Math.random()-0.5)*50 + Math.sin(i)*18,
+      dir, speed: 1.6+Math.random()*1.2,
+      flap: Math.random()*Math.PI*2,
+      flapS: 0.3+Math.random()*0.2,
+      off: i*0.4
+    });
+  }
+}
+
+function addPuff(x,y, opts={}){
+  if(puffs.length>MAX_PUFFS) puffs.splice(0, 200);
+  const col = rainbow ? `hsl(${hue%360} 90% 92%)` : brushColor;
+  const puff = {
+    x, y,
+    r: opts.r || brushSize* (0.5 + Math.random()*0.7),
+    rot: Math.random()*Math.PI*2,
+    alpha: opts.alpha ?? (0.84 + Math.random()*0.16),
+    col,
+    drift: 0.12 + Math.random()*0.38 + brushSize*0.003,
+    driftY: (Math.random()-0.5)*0.18,
+    wobAmp: 2+Math.random()*6,
+    wobFreq: 0.0008+Math.random()*0.0018,
+    wobPhase: Math.random()*10,
+    life:0
+  };
+  puffs.push(puff);
+  if(rainbow) hue+= 2.5;
+  return puff;
+}
+
+function dab(x,y, pressure=1){
+  const s = brushSize*pressure;
+  if(brushType==='fluff'){
+    const n = 3 + Math.floor(Math.random()*2);
+    for(let i=0;i<n;i++){
+      addPuff(x + (Math.random()-0.5)*s*0.5, y + (Math.random()-0.5)*s*0.5, {r: s*(0.5+Math.random()*0.6), alpha:0.9});
+    }
+  } else if(brushType==='cotton'){
+    const n=5+Math.floor(Math.random()*3);
+    for(let i=0;i<n;i++){
+      addPuff(x+(Math.random()-0.5)*s*0.7, y+(Math.random()-0.5)*s*0.6, {r: s*(0.35+Math.random()*0.4), alpha:0.95});
+    }
+  } else if(brushType==='wisp'){
+    addPuff(x, y, {r: s*0.95, alpha:0.42});
+    if(Math.random()<0.5) addPuff(x+(Math.random()-0.5)*s, y+(Math.random()-0.5)*s*0.4, {r: s*0.6, alpha:0.28});
+  } else if(brushType==='bubble'){
+    addPuff(x, y, {r: s*0.55, alpha:0.92});
+    if(Math.random()<0.7){
+      addPuff(x + s*0.35, y - s*0.15, {r: s*0.32, alpha:0.85});
+    }
+  } else if(brushType==='sparkle'){
+    addPuff(x, y, {r: s*0.38, alpha:0.88});
+    if(Math.random()<0.6){
+      const sx = x+(Math.random()-0.5)*s, sy=y+(Math.random()-0.5)*s;
+      // tiny star sparkle as separate particle
+      puffs.push({x:sx,y:sy,r:s*0.12, rot:0, alpha:1, col:'#FFF7AE', drift:0.1, driftY:0, wobAmp:0, wobFreq:0, wobPhase:0, life:0, star:true, starLife:0});
+    }
+  }
+}
+
+const cursorEl=document.getElementById('brushCursor');
+const cursorInner=document.getElementById('cursorInner');
+let brushCursorTitle='Fluff';
+
+/* ---------- Brush UI ---------- */
+const brushListEl = document.getElementById('brushList');
+brushes.forEach(b=>{
+  const btn=document.createElement('button');
+  btn.className='brush-btn group flex items-center gap-1.5 h-[40px] px-3.5 rounded-full bg-[#F7F9FF] border border-[#E8F0FF] text-[#6B86AB] font-bold text-[13px] shrink-0';
+  btn.innerHTML=`<span class="text-[16px]">${b.emoji}</span> ${b.label}`;
+  btn.onclick=()=>{ brushType=b.id; updateBrushUI(); };
+  btn.dataset.id=b.id;
+  brushListEl.appendChild(btn);
+});
+function updateBrushUI(){
+  document.querySelectorAll('.brush-btn').forEach(el=>{
+    el.classList.toggle('active', el.dataset.id===brushType);
+    el.classList.toggle('bg-[#3B5B8A]', el.dataset.id===brushType);
+    el.classList.toggle('text-white', el.dataset.id===brushType);
+    el.classList.toggle('border-[#3B5B8A]', el.dataset.id===brushType);
+  });
+  const b = brushes.find(x=>x.id===brushType);
+  if(b) brushCursorTitle = b.label;
+}
+updateBrushUI();
+
+const colorListEl=document.getElementById('colorList');
+colors.forEach(c=>{
+  const btn=document.createElement('button');
+  btn.className='color-dot w-[30px] h-[30px] rounded-full border-[2px] border-white shrink-0';
+  btn.style.background=c.hex; btn.style.setProperty('--ring', c.ring);
+  btn.title=c.name;
+  btn.onclick=()=>{ brushColor=c.hex; rainbow=false; hue=0; updateColorUI(); rainbowBtn.classList.remove('!bg-[#3B5B8A]','!text-white'); };
+  btn.dataset.hex=c.hex;
+  colorListEl.appendChild(btn);
+});
+function updateColorUI(){
+  document.querySelectorAll('.color-dot').forEach(el=>{
+    el.classList.toggle('active', el.dataset.hex===brushColor && !rainbow);
+  });
+}
+updateColorUI();
+
+const sizeSlider=document.getElementById('sizeSlider');
+sizeSlider.addEventListener('input', e=>{ brushSize=parseInt(e.target.value); updateCursorSize(); });
+
+/* ---------- Input ---------- */
+function getPos(e){
+  const rect = paintCanvas.getBoundingClientRect();
+  const cx = (e.touches? e.touches[0].clientX : e.clientX) - rect.left;
+  const cy = (e.touches? e.touches[0].clientY : e.clientY) - rect.top;
+  return [cx, cy];
+}
+paintCanvas.addEventListener('pointerdown', e=>{
+  e.preventDefault();
+  const [x,y]=getPos(e);
+  isDown=true; lastX=x; lastY=y; distAcc=0;
+  if(!hasDrawn){ hasDrawn=true; document.getElementById('hint').style.opacity='0'; document.getElementById('hint').style.transform='translate(-50%,-50%) scale(.9)'; }
+  dab(x,y,1);
+  paintCanvas.setPointerCapture(e.pointerId);
+});
+paintCanvas.addEventListener('pointermove', e=>{
+  const [x,y]=getPos(e);
+  // cursor
+  cursorEl.style.left = (e.clientX)+'px';
+  cursorEl.style.top = (e.clientY)+'px';
+  if(!isDown) return;
+  const dx=x-lastX, dy=y-lastY;
+  const dist=Math.hypot(dx,dy);
+  distAcc+=dist;
+  const steps=Math.max(1, Math.floor(dist/(brushSize*0.28)));
+  for(let i=0;i<steps;i++){
+    const p=i/steps;
+    const ix=lastX+dx*p, iy=lastY+dy*p;
+    if(distAcc>6){
+      dab(ix,iy, 0.9+Math.random()*0.2);
+      distAcc=0;
+    }
+  }
+  lastX=x; lastY=y;
+});
+paintCanvas.addEventListener('pointerup', e=>{ isDown=false; });
+paintCanvas.addEventListener('pointerleave', ()=>{/* keep cursor visible */});
+
+function updateCursorSize(){
+  const s=Math.max(18, brushSize);
+  cursorInner.style.width=s+'px';
+  cursorInner.style.height=s+'px';
+}
+updateCursorSize();
+paintCanvas.addEventListener('mouseenter', ()=>{ cursorEl.classList.remove('hidden'); });
+paintCanvas.addEventListener('mousemove', (e)=>{ cursorEl.style.left=e.clientX+'px'; cursorEl.style.top=e.clientY+'px'; });
+paintCanvas.addEventListener('mouseleave', ()=>{/* hide? keep hidden on mobile */});
+
+document.getElementById('clearBtn').onclick=()=>{
+  if(puffs.length===0) return;
+  // kiddie confirm with animation
+  if(confirm('Clear the sky and start fresh? ☁️')){
+    puffs=[];
+    document.getElementById('hint').style.opacity='1';
+    document.getElementById('hint').style.transform='translate(-50%,-50%) scale(1)';
+    hasDrawn=false;
+  }
+};
+document.getElementById('saveBtn').onclick=()=>{
+  // export combined
+  const exp = document.createElement('canvas');
+  exp.width = W*dpr; exp.height = H*dpr;
+  const ex = exp.getContext('2d');
+  ex.scale(dpr,dpr);
+  // draw sky gradient background
+  drawSky(ex, 0, true);
+  // draw bg clouds at current pos (without wob for simplicity)
+  bgClouds.forEach(c=> drawSoftCloud(ex, c.x, c.baseY, c.scale*1.05, c.op, '#FFFFFF'));
+  // draw puffs
+  drawPuffs(ex, t, true);
+  // draw planes (optional)
+  planes.forEach(pl=> drawPlane(ex, pl, true));
+  const a=document.createElement('a');
+  a.download='cloud-painting.png';
+  a.href=exp.toDataURL('image/png');
+  a.click();
+};
+document.getElementById('planeBtn').onclick=()=>{ spawnPlane(); };
+document.getElementById('birdBtn').onclick=()=>{ spawnBirdFlock(); };
+const rainbowBtn=document.getElementById('rainbowBtn');
+rainbowBtn.onclick=()=>{
+  rainbow=!rainbow;
+  rainbowBtn.classList.toggle('!bg-[#3B5B8A]', rainbow);
+  rainbowBtn.classList.toggle('!text-white', rainbow);
+  if(rainbow){ rainbowBtn.style.background='#3B5B8A'; rainbowBtn.style.color='white'; } else { rainbowBtn.style.background=''; rainbowBtn.style.color=''; }
+  if(rainbow) brushColor='#FFFFFF';
+  updateColorUI();
+};
+
+/* ---------- Drawing Helpers ---------- */
+function drawSky(ctx, time, isExport=false){
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0, '#A9D6FF');
+  g.addColorStop(0.35, '#CBE6FF');
+  g.addColorStop(0.68, '#E7F2FF');
+  g.addColorStop(1, '#FFF7E6');
+  ctx.fillStyle=g;
+  ctx.fillRect(0,0,W,H);
+  // subtle sun glow
+  const sunX=W*0.78, sunY=H*0.12;
+  const rg = ctx.createRadialGradient(sunX,sunY,0,sunX,sunY,W*0.6);
+  rg.addColorStop(0, 'rgba(255,244,190,0.55)');
+  rg.addColorStop(0.35, 'rgba(255,244,190,0.18)');
+  rg.addColorStop(1, 'rgba(255,244,190,0)');
+  ctx.fillStyle=rg;
+  ctx.fillRect(0,0,W,H);
+  // faint diagonal light
+  if(!isExport){
+    ctx.fillStyle='rgba(255,255,255,0.18)';
+    for(let i=0;i<3;i++){
+      const off = (time*0.02 + i*120)% (W+200) -100;
+      ctx.beginPath();
+      ctx.moveTo(off,0); ctx.lineTo(off+80,0); ctx.lineTo(off+40,H); ctx.lineTo(off-40,H);
+      ctx.fill();
+    }
+  }
+}
+function drawSoftCloud(ctx, x,y, scale, opacity, col){
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.scale(scale, scale);
+  ctx.globalAlpha=opacity;
+  const parts=[
+    {x:0,y:0,r:44},{x:32,y:-8,r:36},{x:-28,y:-6,r:32},{x:52,y:10,r:26},{x:-42,y:12,r:24},{x:8,y:12,r:30}
+  ];
+  parts.forEach(p=>{
+    const g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r);
+    g.addColorStop(0, col);
+    g.addColorStop(0.7, col);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle=g;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
+  });
+  ctx.restore();
+}
+function drawPuffShape(ctx, puff, batchAlpha=1){
+  ctx.save();
+  const wobY = Math.sin(t*puff.wobFreq + puff.wobPhase)*puff.wobAmp*0.25;
+  const wobX = Math.cos(t*puff.wobFreq*0.7 + puff.wobPhase)*puff.wobAmp*0.15;
+  ctx.translate(puff.x + wobX, puff.y + wobY);
+  ctx.rotate(puff.rot*0.03);
+  if(puff.star){
+    // star sparkle
+    ctx.globalAlpha = (0.6+0.4*Math.sin(puff.starLife*0.02))*batchAlpha;
+    ctx.fillStyle=puff.col;
+    drawStar(ctx,0,0, puff.r, puff.r*2.2, 4);
+    ctx.fill();
+    ctx.restore(); return;
+  }
+  // soft cloud puff - create highlight
+  const r=puff.r;
+  // base soft circle
+  const g = ctx.createRadialGradient(0,0,0,0,0,r);
+  // add inner lighter
+  if(puff.col==='#FFFFFF' || puff.col.startsWith('hsl')){
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.35, puff.col + (puff.col.startsWith('hsl')?'':''));
+    if(puff.col.startsWith('hsl')){ g.addColorStop(0.35, puff.col); g.addColorStop(0.75, puff.col.replace('92%)','86%)')); }
+    else { g.addColorStop(0.6, puff.col); }
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+  } else {
+    g.addColorStop(0, 'rgba(255,255,255,0.95)');
+    g.addColorStop(0.25, puff.col);
+    g.addColorStop(0.75, puff.col);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+  }
+  ctx.globalAlpha = puff.alpha*batchAlpha;
+  if(brushType==='bubble' && !puff.star){
+    // bubble with border
+    ctx.fillStyle=g;
+    ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill();
+    ctx.globalAlpha*=0.7;
+    ctx.strokeStyle='rgba(255,255,255,0.9)';
+    ctx.lineWidth = Math.max(1.5, r*0.08);
+    ctx.beginPath(); ctx.arc(-r*0.18,-r*0.18,r*0.86,0,Math.PI*2); ctx.stroke();
+  } else if(brushType==='wisp'){
+    ctx.scale(1.6,0.7);
+    ctx.fillStyle=g;
+    ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill();
+  } else {
+    ctx.fillStyle=g;
+    ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill();
+    // subtle second highlight
+    ctx.globalAlpha*=0.45;
+    const hg = ctx.createRadialGradient(-r*0.25,-r*0.28,0,-r*0.25,-r*0.28,r*0.8);
+    hg.addColorStop(0,'rgba(255,255,255,0.9)');
+    hg.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=hg;
+    ctx.beginPath(); ctx.arc(-r*0.18,-r*0.18,r*0.7,0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+function drawStar(ctx,cx,cy,r1,r2,points){
+  ctx.beginPath();
+  for(let i=0;i<points*2;i++){
+    const a = (Math.PI/points)*i - Math.PI/2;
+    const rad = i%2===0? r2 : r1;
+    const x=cx+Math.cos(a)*rad, y=cy+Math.sin(a)*rad;
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.closePath();
+}
+function drawPlane(ctx, pl, isExport=false){
+  ctx.save();
+  ctx.translate(pl.x, pl.y);
+  ctx.scale(pl.dir*pl.scale, pl.scale);
+  // trail
+  if(!isExport){
+    ctx.strokeStyle='rgba(255,255,255,0.65)';
+    ctx.lineWidth=3;
+    ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(pl.dir>0?-pl.trail.length*5: pl.trail.length*5,0);
+    if(pl.trail.length>1){
+      pl.trail.forEach((pt,i)=>{
+        if(i===0) ctx.moveTo(pt.x - pl.x, pt.y - pl.y);
+        else ctx.lineTo(pt.x - pl.x, pt.y - pl.y);
+      });
+    }
+    ctx.stroke();
+  }
+  // cute plane - simple but charming
+  ctx.fillStyle='#FFFFFF';
+  ctx.strokeStyle='#3B5B8A';
+  ctx.lineWidth=2;
+  ctx.save();
+  // fuselage
+  ctx.beginPath();
+  ctx.ellipse(0,0,26,9,0,0,Math.PI*2);
+  ctx.fill(); ctx.stroke();
+  // tail
+  ctx.beginPath();
+  ctx.moveTo(-18,-1); ctx.lineTo(-28,-11); ctx.lineTo(-20,-2); ctx.closePath(); ctx.fill(); ctx.stroke();
+  // wing
+  ctx.beginPath();
+  ctx.ellipse(-2,6,12,5,0,0,Math.PI*2);
+  ctx.fill(); ctx.stroke();
+  // cockpit
+  ctx.fillStyle='#AEDDFF';
+  ctx.beginPath(); ctx.arc(14,-2,6,0,Math.PI*2); ctx.fill(); ctx.stroke();
+  // windows
+  ctx.fillStyle='#FFF4A0';
+  ctx.beginPath(); ctx.arc(2,-2,2.2,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(-6,-2,2.2,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+  ctx.restore();
+}
+function drawBird(ctx, b){
+  ctx.save();
+  ctx.translate(b.x,b.y);
+  ctx.scale(b.dir,1);
+  const flap = Math.sin(b.flap)*0.6;
+  ctx.strokeStyle='#3B5B8A';
+  ctx.lineWidth=1.8;
+  ctx.lineCap='round';
+  // simple bird M shape
+  ctx.beginPath();
+  ctx.moveTo(-9, flap*6);
+  ctx.quadraticCurveTo(-4, -5+flap*2, 0,0);
+  ctx.quadraticCurveTo(4, -5+flap*2, 9, flap*6);
+  ctx.stroke();
+  ctx.restore();
+}
+function drawPuffs(ctx, time, exportNoDrift){
+  puffs.forEach(p=>{
+    drawPuffShape(ctx,p,1);
+  });
+}
+
+/* ---------- Animation Loop ---------- */
+function loop(now){
+  t=now;
+  // update wind bar
+  const wind = 0.35 + Math.sin(t*0.0012)*0.15 + Math.cos(t*0.0007)*0.1;
+  document.getElementById('windBar').style.width=(wind*100)+'%';
+  const labels = wind<0.32?'Calm':wind<0.5?'Breezy':'Windy';
+  document.getElementById('windLabel').textContent=labels;
+
+  // drift bg clouds
+  bgClouds.forEach(c=>{
+    c.x += c.speed * (0.6+wind);
+    c.wob += c.wobSpeed*(16);
+    c.y = c.baseY + Math.sin(c.wob)*12;
+    if(c.x > W+200){ c.x = -260; c.baseY = Math.random()*H*0.7 + H*0.05; }
+    if(c.x < -300){ c.x = W+200; }
+  });
+
+  // planes
+  for(let i=planes.length-1;i>=0;i--){
+    const pl=planes[i];
+    pl.x += pl.speed*pl.dir;
+    pl.trail.push({x:pl.x, y:pl.y + Math.sin(t*0.004+pl.wob)*2});
+    if(pl.trail.length>18) pl.trail.shift();
+    pl.wob+=0.02;
+    if(pl.dir>0 && pl.x>W+160 || pl.dir<0 && pl.x<-160) planes.splice(i,1);
+  }
+
+  // birds
+  for(let i=birds.length-1;i>=0;i--){
+    const b=birds[i];
+    b.x += b.speed*b.dir;
+    b.y += Math.sin(t*0.001 + b.off)*0.18;
+    b.flap += b.flapS;
+    if(b.dir>0 && b.x>W+100 || b.dir<0 && b.x<-100) birds.splice(i,1);
+  }
+
+  // drift painted puffs slowly to right
+  puffs.forEach(p=>{
+    if(!p.star){
+      p.x += p.drift * wind * 1.8;
+      p.y += p.driftY * 0.6 + Math.sin(t*0.001 + p.wobPhase)*0.05;
+      if(p.x > W+120){ p.x = -120; }
+      if(p.x < -130){ p.x = W+130; }
+    } else {
+      p.starLife=(p.starLife||0)+16;
+      if(p.starLife>1200){
+        p.alpha*=0.98;
+        if(p.alpha<0.05) { puffs.splice(puffs.indexOf(p),1); }
+      }
+    }
+  });
+
+  // draw bg
+  sCtx.clearRect(0,0,W,H);
+  drawSky(sCtx, t);
+  bgClouds.forEach(c=>{
+    drawSoftCloud(sCtx, c.x, c.y, c.scale, c.op, '#FFFFFF');
+  });
+  // subtle sun sparkles
+  birds.forEach(b=> drawBird(sCtx, b));
+  planes.forEach(pl=> drawPlane(sCtx, pl));
+
+  // draw painted
+  pCtx.clearRect(0,0,W,H);
+  puffs.forEach(p=> drawPuffShape(pCtx,p,1));
+
+  requestAnimationFrame(loop);
+}
+
+/* ---------- Init ---------- */
+resize();
+makeBgClouds();
+for(let i=0;i<2;i++) setTimeout(()=>spawnPlane(), i*3000);
+setTimeout(loop, 100);
+
+setInterval(()=>{ if(Math.random()<0.12 && planes.length<2) spawnPlane(); }, 3500);
+setInterval(()=>{ if(Math.random()<0.08 && birds.length<8) spawnBirdFlock(); }, 5000);
+
+// auto spawn initial bg clouds positions
+setTimeout(()=>{
+  // welcoming puff demo
+  const cx=W*0.5, cy=H*0.45;
+  for(let i=0;i<8;i++){
+    setTimeout(()=>dab(cx+ (Math.random()-0.5)*40, cy+ (Math.random()-0.5)*30), i*40);
+  }
+}, 800);
+</script>
+</body>
+</html>

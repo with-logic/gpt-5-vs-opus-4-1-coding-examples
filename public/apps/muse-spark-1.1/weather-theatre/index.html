@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Weather Theatre</title>
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,700&family=Instrument+Serif:ital@0;1&family=Fragment+Mono&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/react@18/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script>
+tailwind.config = { theme: { extend: { fontFamily: { serif:["Bodoni Moda","serif"], display:["Instrument Serif","serif"], mono:["Fragment Mono","monospace"] } } } }
+</script>
+<style>
+*{font-variant-ligatures:common-ligatures}
+body{background:#07070a;color:#e9e3d5;overflow-x:hidden}
+.curtain-fabric{
+  background:
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.04) 0 1px, transparent 1px 14px),
+    radial-gradient(120% 80% at 50% 0%, rgba(255,255,255,0.14), transparent 60%),
+    linear-gradient(180deg, #8a1a2a 0%, #5c0f1d 12%, #3d0a12 45%, #601220 90%);
+  box-shadow: inset -18px 0 30px rgba(0,0,0,0.55), inset 10px 0 20px rgba(255,255,255,0.08);
+}
+.curtain-fabric::after{
+  content:"";position:absolute;inset:0;
+  background:repeating-linear-gradient(90deg, transparent 0 22px, rgba(0,0,0,0.18) 22px 24px);
+  mix-blend-mode:multiply;opacity:.6
+}
+.valance{
+  background: linear-gradient(180deg, #7a1623, #4a0c16 70%, #2a070d);
+  border-bottom: 3px solid #c9a96a;
+  box-shadow: 0 12px 30px rgba(0,0,0,.8), inset 0 2px 0 rgba(255,215,140,.3);
+}
+.gold-edge{border:1px solid rgba(201,169,106,.35); box-shadow: inset 0 0 0 1px rgba(201,169,106,.18), 0 0 0 1px rgba(0,0,0,.8)}
+.proscenium-glow{box-shadow: 0 0 120px rgba(201,169,106,.18), inset 0 0 80px rgba(0,0,0,.9)}
+.fader-track{ background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.02)); border:1px solid rgba(255,255,255,.1) }
+.fader-fill-cosy{ background: linear-gradient(180deg, #ffd8a8, #ff8a4a) }
+.fader-fill-eerie{ background: linear-gradient(180deg, #8be0d0, #3d6f6a) }
+.fader-fill-heroic{ background: linear-gradient(180deg, #ffe27a, #ffb224) }
+.spot-blur{filter: blur(22px)}
+.type-cursor::after{content:"▌";animation:blink 1s steps(2) infinite;margin-left:2px;opacity:.7}
+@keyframes blink{50%{opacity:0}}
+.grain::before{
+ content:"";position:absolute;inset:0;pointer-events:none;opacity:.035;
+ background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+</style>
+</head>
+<body class="bg-[#07070a] antialiased selection:bg-[#c9a96a] selection:text-black">
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useRef,useMemo,useCallback} = React;
+
+const FORECAST = [
+  {d:"Tonight", dow:"ACT I", temp:17, high:22, low:13, cond:"Showers", wind:18, hum:78, desc:"scattered low showers"},
+  {d:"Tomorrow", dow:"ACT II", temp:21, high:24, low:14, cond:"Partly Cloudy", wind:12, hum:62, desc:"soft broken cloud"},
+  {d:"Friday", dow:"ACT III", temp:16, high:19, low:11, cond:"Fog & Drizzle", wind:9, hum:88, desc:"sea fret and mizzle"},
+  {d:"Saturday", dow:"ACT IV", temp:26, high:29, low:18, cond:"Thunder", wind:26, hum:71, desc:"high drama, thunderheads"},
+  {d:"Sunday", dow:"EPILOGUE", temp:19, high:21, low:12, cond:"Clear", wind:7, hum:54, desc:"washed clear"},
+];
+
+function lerp(a,b,t){return a+(b-a)*t}
+function lerpColor(c1,c2,t){return [lerp(c1[0],c2[0],t), lerp(c1[1],c2[1],t), lerp(c1[2],c2[2],t)]}
+
+function generateScript(current, moods, isNight){
+  const {temp,high,low,cond,wind,hum} = current;
+  const c = moods.cosy/100, e = moods.eerie/100, h = moods.heroic/100;
+  const dom = Object.entries(moods).sort((a,b)=>b[1]-a[1])[0][0];
+  const second = Object.entries(moods).sort((a,b)=>b[1]-a[1])[1];
+  const night = isNight ? "night" : "matinée";
+  const baseMap = {
+    cosy: isNight
+      ? `Night drapes the glass at ${temp}°. ${cond.toLowerCase()} keeps a soft rhythm on the sill — ${wind} km/h sighs through the eaves. Inside: high ${high}°, low ${low}°, hum ${hum}%. Everything held close, lit from within.`
+      : `Afternoon ${temp}°, ${cond.toLowerCase()} like a kettle left to whisper. Sun cuts in at ${high}° earlier, now settling. Wind ${wind} km/h stirs the curtains, ${hum}% humidity makes the light thick as honey.`,
+    eerie: isNight
+      ? `It is ${temp}° and the ${cond.toLowerCase()} isn’t falling — it’s listening. ${wind} km/h of still air moves without moving. ${hum}% damp clings to everything. High ${high}°, low ${low}°, but numbers feel thin out here.`
+      : `A pale ${night} — ${temp}°, ${cond.toLowerCase()} suspended mid-air. Wind ${wind} km/h drags low clouds across like muslin. Humidity ${hum}% — the world slightly out of focus.`,
+    heroic: isNight
+      ? `Curtain up on ${temp}° of ${cond.toLowerCase()} under assault. Winds ${wind} km/h drive the front hard — high ${high}° to low ${low}° in one charged breath, ${hum}% pressure in the wings. The sky decides.`
+      : `Broad ${night} light, ${temp}° — ${cond} in full formation. ${wind} km/h from the west, high ${high}°, low ${low}°, humidity ${hum}%. The weather takes centre stage and dares you to look away.`,
+  };
+  let text = baseMap[dom] || baseMap.cosy;
+  if(second && second[1] > 35){
+    if(second[0]==='cosy') text += " Yet a warm amber holds underneath — a lamp left on for you.";
+    if(second[0]==='eerie') text += " Under it, something cooler waits just out of sight, watching the light.";
+    if(second[0]==='heroic') text += " And through it all a bright edge cuts — heroic, unblinking.";
+  }
+  return text;
+}
+
+function StageCanvas({moods, isNight, weather, mouseRef}){
+  const ref = useRef(null);
+  const rafRef = useRef(0);
+  const particlesRef = useRef(null);
+  const tRef = useRef(0);
+
+  useEffect(()=>{
+    const canvas = ref.current;
+    if(!canvas) return;
+    const ctx = canvas.getContext('2d', {alpha:false});
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+
+    function initParts(w,h){
+      const rain = Array.from({length:300}, ()=>({
+        x: Math.random()*w, y: Math.random()*h,
+        l: 8+Math.random()*22, s: 3+Math.random()*9,
+        a: 0.1+Math.random()*0.4
+      }));
+      const dust = Array.from({length: 90}, ()=>({
+        x: Math.random()*w, y: Math.random()*h,
+        r: 0.6+Math.random()*2.4, s: 0.15+Math.random()*0.6, ph: Math.random()*Math.PI*2,
+        tw: 0.5+Math.random()*1.5
+      }));
+      const stars = Array.from({length: 120}, ()=>({
+        x: Math.random()*w, y: Math.random()*h*0.6,
+        r: Math.random()*1.6, tw: Math.random()*3
+      }));
+      particlesRef.current = {rain,dust,stars};
+    }
+
+    function resize(){
+      const rect = canvas.parentElement.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      canvas.style.width = rect.width+'px';
+      canvas.style.height = rect.height+'px';
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+      initParts(rect.width, rect.height);
+    }
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(canvas.parentElement);
+    window.addEventListener('resize', resize);
+
+    const drawHills = (ctx,w,h, yBase, amp, col, parallaxX, roughness, timeOff=0) => {
+      ctx.beginPath();
+      ctx.moveTo(-100, h+60);
+      const steps = 90;
+      for(let i=0;i<=steps;i++){
+        const x = (i/steps)*(w+200)-100 + parallaxX;
+        const n = Math.sin(i*0.23 + timeOff)*roughness + Math.sin(i*0.53)*roughness*0.6;
+        const y = yBase - n*amp - Math.sin(i*0.08)*amp*0.2;
+        if(i===0) ctx.lineTo(x,y);
+        else ctx.lineTo(x,y);
+      }
+      ctx.lineTo(w+100, h+60);
+      ctx.closePath();
+      ctx.fillStyle = col;
+      ctx.fill();
+    };
+
+    function frame(now){
+      tRef.current = now;
+      const w = canvas.parentElement.clientWidth;
+      const h = canvas.parentElement.clientHeight;
+      const cW = moods.cosy/100, eW = moods.eerie/100, hW = moods.heroic/100;
+      const tot = (cW+eW+hW) || 1;
+      const wnC=cW/tot, wnE=eW/tot, wnH=hW/tot;
+      const mouse = mouseRef.current || {x:0.5,y:0.5};
+
+      // sky colors
+      const palettes = {
+        day: {
+          cosy:[[252,232,195],[232,168,124]],
+          eerie:[[195,210,203],[90,110,104]],
+          heroic:[[169,214,235],[255,213,106]],
+          neutral:[[160,206,235],[255,244,214]],
+        },
+        night:{
+          cosy:[[28,22,34],[72,46,46]],
+          eerie:[[10,24,32],[8,14,18]],
+          heroic:[[16,24,58],[62,28,46]],
+          neutral:[[15,23,42],[38,32,62]],
+        }
+      };
+      const set = isNight? palettes.night : palettes.day;
+      const top = [0,0,0], bot=[0,0,0];
+      const add = (col,wgt,target)=>{
+        target[0]+=col[0]*wgt; target[1]+=col[1]*wgt; target[2]+=col[2]*wgt;
+      };
+      // if low mood sum, use neutral
+      const neutralW = Math.max(0, 1 - (cW+eW+hW)/2.2);
+      const rC = wnC*(1-neutralW), rE = wnE*(1-neutralW), rH = wnH*(1-neutralW), rN = neutralW;
+      // accumulate
+      top[0]=top[1]=top[2]=0; bot[0]=bot[1]=bot[2]=0;
+      add(set.cosy[0], rC, top); add(set.eerie[0], rE, top); add(set.heroic[0], rH, top); add(set.neutral[0], rN, top);
+      add(set.cosy[1], rC, bot); add(set.eerie[1], rE, bot); add(set.heroic[1], rH, bot); add(set.neutral[1], rN, bot);
+
+      const grad = ctx.createLinearGradient(0,0,0,h);
+      grad.addColorStop(0, `rgb(${top.map(v=>Math.round(v)).join(',')})`);
+      grad.addColorStop(1, `rgb(${bot.map(v=>Math.round(v)).join(',')})`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0,0,w,h);
+
+      // sun / moon
+      const orbX = w*0.78 + (mouse.x-0.5)*20;
+      const orbY = h* (isNight?0.28:0.22) + (mouse.y-0.5)*10;
+      const orbR = isNight ? 26 : 34;
+      if(isNight){
+        // moon glow
+        const g = ctx.createRadialGradient(orbX,orbY,2,orbX,orbY,orbR*3);
+        g.addColorStop(0, `rgba(210,220,230,${0.18+wnE*0.12})`);
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle=g; ctx.beginPath(); ctx.arc(orbX,orbY,orbR*3,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='rgba(235,240,255,0.9)'; ctx.beginPath(); ctx.arc(orbX,orbY,orbR,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='rgba(0,0,0,0.12)'; ctx.beginPath(); ctx.arc(orbX-6,orbY+3,7,0,Math.PI*2); ctx.fill();
+      } else {
+        const g = ctx.createRadialGradient(orbX,orbY,2,orbX,orbY,orbR*4);
+        g.addColorStop(0, 'rgba(255,244,190,0.9)');
+        g.addColorStop(0.3, 'rgba(255,210,120,0.28)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle=g; ctx.beginPath(); ctx.arc(orbX,orbY,orbR*4,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#fff6c9'; ctx.beginPath(); ctx.arc(orbX,orbY,orbR,0,Math.PI*2); ctx.fill();
+      }
+
+      // god rays heroic
+      if(wnH>0.18 && !isNight){
+        ctx.save();
+        ctx.globalAlpha = 0.09 + wnH*0.16;
+        ctx.strokeStyle = '#ffe9a8';
+        ctx.lineWidth=1;
+        for(let i=-6;i<=6;i++){
+          const ang = i*0.06 + (mouse.x-0.5)*0.15;
+          ctx.beginPath();
+          ctx.moveTo(orbX, orbY);
+          const tx = orbX + Math.sin(ang)*(h*1.4);
+          const ty = orbY + Math.cos(ang)*(h*1.4);
+          ctx.lineTo(tx,ty);
+          ctx.stroke();
+        }
+        ctx.restore();
+        // beam glow
+        const rayGrad = ctx.createLinearGradient(orbX,h*0.1,w*0.2,h);
+        rayGrad.addColorStop(0,'rgba(255,230,130,0.18)');
+        rayGrad.addColorStop(1,'rgba(0,0,0,0)');
+        ctx.fillStyle=rayGrad; ctx.fillRect(0,0,w,h);
+      }
+
+      // parallax mountains
+      const windFactor = (weather.wind/30);
+      const p1x = (mouse.x-0.5)*w*0.03 + Math.sin(now*0.00004*weather.wind)*8;
+      const p2x = (mouse.x-0.5)*w*0.06 + Math.sin(now*0.00006*weather.wind+1)*14;
+      const p3x = (mouse.x-0.5)*w*0.11 + Math.sin(now*0.00008*weather.wind+2)*22;
+
+      // far
+      drawHills(ctx,w,h, h*0.72, 36, isNight? 'rgba(22,28,38,1)' : 'rgba(92,122,133,1)', p1x, 18, now*0.0001);
+      // mid
+      drawHills(ctx,w,h, h*0.79, 54, isNight? 'rgba(18,22,30,1)' : 'rgba(58,78,84,1)', p2x, 22, now*0.00012+1.3);
+      // near
+      drawHills(ctx,w,h, h*0.92, 74, isNight? 'rgba(12,14,18,1)' : 'rgba(36,48,52,1)', p3x, 26, now*0.00015+2.6);
+
+      // props by mood
+      const props = particlesRef.current;
+      if(wnC>0.18){
+        // warm windows in mid hills
+        ctx.save();
+        for(let i=0;i<18;i++){
+          const x = (i/18)*w + p2x*0.6 + Math.sin(i*1.7)*40;
+          const y = h*0.72 + Math.sin(i*0.9)*18 + (i%2?10: -6);
+          if(y>h*0.88) continue;
+          const tw = 0.6+0.4*Math.sin(now*0.002 + i);
+          ctx.globalAlpha = tw* (0.5+wnC*0.6);
+          const glow = ctx.createRadialGradient(x,y,0,x,y,14);
+          glow.addColorStop(0, `rgba(255,190,90,${0.9*tw})`);
+          glow.addColorStop(1, 'rgba(255,140,30,0)');
+          ctx.fillStyle=glow;
+          ctx.fillRect(x-12,y-12,24,24);
+          ctx.fillStyle=`rgba(255,220,150,${tw})`;
+          ctx.fillRect(x-2,y-2,4,4);
+        }
+        ctx.restore();
+      }
+      if(wnE>0.18){
+        ctx.save();
+        ctx.strokeStyle = isNight? 'rgba(18,28,34,0.95)' : 'rgba(30,40,38,0.9)';
+        ctx.lineWidth=2;
+        for(let i=0;i<9;i++){
+          const x = (i/9)*w*0.9 + w*0.05 + p3x*0.4 + Math.sin(i*2.1)*12;
+          const y = h*0.92;
+          const hgt = 34 + Math.random()*28; // variation but static-ish per frame use sin
+          const h1 = 40 + Math.sin(i*3.1)*14;
+          ctx.beginPath();
+          ctx.moveTo(x,y);
+          ctx.lineTo(x+2, y - h1);
+          ctx.stroke();
+          // branches
+          ctx.beginPath();
+          ctx.moveTo(x+1, y - h1*0.6);
+          ctx.lineTo(x+10, y - h1*0.65);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(x+1, y - h1*0.75);
+          ctx.lineTo(x-8, y - h1*0.8);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      // weather particles
+      if(weather.cond.toLowerCase().includes('shower') || weather.cond.toLowerCase().includes('drizzle') || weather.cond.toLowerCase().includes('rain')){
+        const rain = props.rain;
+        const heroicDrift = wnH*20;
+        const cosySlow = 1 - wnC*0.55;
+        ctx.save();
+        ctx.strokeStyle = isNight ? 'rgba(180,200,220,0.32)' : 'rgba(80,100,120,0.28)';
+        if(wnE>0.3) ctx.strokeStyle = 'rgba(140,170,175,0.24)';
+        if(wnC>0.3) ctx.strokeStyle = 'rgba(210,185,150,0.26)';
+        ctx.lineWidth = 1;
+        for(let p of rain){
+          p.y += p.s * cosySlow * (1+ windFactor*0.6 + heroicDrift*0.03);
+          p.x += ( -2 + windFactor*2 + heroicDrift*0.15 + (mouse.x-0.5)*1.2);
+          if(p.y>h+20){ p.y = -20; p.x = Math.random()*w; }
+          if(p.x>w+20) p.x = -20;
+          if(p.x<-20) p.x = w+20;
+          const len = p.l * (0.7 + wnH*0.6) * cosySlow;
+          const ang = 0.18 + windFactor*0.18 + wnH*0.22;
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(p.x - Math.sin(ang)*len, p.y + Math.cos(ang)*len);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      if(weather.cond.toLowerCase().includes('fog') || wnE>0.25){
+        ctx.save();
+        const fogCount = 3 + Math.floor(wnE*2);
+        for(let f=0; f<fogCount; f++){
+          const y = h*(0.58 + f*0.1) + Math.sin(now*0.0002 + f)*6;
+          const xOff = (now*0.015 * (0.5+f*0.2) * (1+windFactor*0.5)) % (w+200) -100 + p2x*0.2;
+          const grd = ctx.createLinearGradient(0,y,w,y+40);
+          grd.addColorStop(0, 'rgba(200,215,210,0)');
+          grd.addColorStop(0.2, `rgba(200,215,210,${0.05+wnE*0.12})`);
+          grd.addColorStop(0.5, `rgba(210,220,220,${0.08+wnE*0.14})`);
+          grd.addColorStop(1, 'rgba(200,215,210,0)');
+          ctx.fillStyle=grd;
+          ctx.globalAlpha=0.9;
+          ctx.fillRect(xOff-50, y, w+200, 28 + f*10);
+        }
+        ctx.restore();
+      }
+
+      // cosy dust motes / bokeh
+      if(wnC>0.12){
+        const dust = props.dust;
+        ctx.save();
+        for(let d of dust){
+          d.y -= d.s * (0.5+wnC*0.6);
+          d.x += Math.sin(now*0.0005 + d.ph)*0.4 + (mouse.x-0.5)*0.3;
+          if(d.y < -10){ d.y = h+10; d.x = Math.random()*w; }
+          const tw = 0.5+0.5*Math.sin(now*0.001*d.tw + d.ph);
+          ctx.globalAlpha = tw*0.28* (isNight?0.9:0.45) * wnC;
+          const g = ctx.createRadialGradient(d.x,d.y,0,d.x,d.y,d.r*3);
+          g.addColorStop(0, isNight? 'rgba(255,210,130,0.9)' : 'rgba(255,240,200,0.9)');
+          g.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle=g;
+          ctx.beginPath(); ctx.arc(d.x,d.y,d.r*3,0,Math.PI*2); ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      // heroic wind streaks
+      if(wnH>0.28){
+        ctx.save();
+        ctx.strokeStyle = isNight? 'rgba(255,240,180,0.09)' : 'rgba(255,255,255,0.14)';
+        ctx.lineWidth=1;
+        for(let i=0;i<24;i++){
+          const y = ( (now*0.08 + i*68) % h );
+          const x = (i* (w/24)) - (now*0.12*windFactor)%w + p3x*0.2;
+          ctx.globalAlpha = 0.2 + Math.sin(i)*0.15;
+          ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x+ 60+wnH*90, y + Math.sin(i)*3); ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      // thunder flash for eerie+thunder
+      if(weather.cond.toLowerCase().includes('thunder') && Math.random() < 0.006 + wnE*0.008){
+        ctx.fillStyle = `rgba(210,230,255,${0.18+Math.random()*0.2})`;
+        ctx.fillRect(0,0,w,h*0.78);
+      }
+
+      // spotlights sweep
+      ctx.save();
+      const spotInt = isNight ? 0.22 + wnH*0.16 : 0.09 + wnH*0.08 + wnE*0.04;
+      const spotCols = {
+        cosy: [255,198,120],
+        eerie: [150,210,210],
+        heroic:[255,235,140],
+      };
+      let sr = spotCols.heroic;
+      if(wnC>=wnE && wnC>=wnH) sr = spotCols.cosy;
+      else if(wnE>=wnC && wnE>=wnH) sr = spotCols.eerie;
+      const sweeps = [
+        {x: w*(0.32 + Math.sin(now*0.00028)*0.18 + (mouse.x-0.5)*0.06), y: h*0.18, r: w*0.22},
+        {x: w*(0.72 + Math.cos(now*0.00033+1)*0.18 + (mouse.x-0.5)*0.06), y: h*0.20, r: w*0.24},
+      ];
+      sweeps.forEach((s,i)=>{
+        // beam cone from top
+        const topW = 36;
+        ctx.fillStyle = `rgba(${sr.join(',')},${spotInt*0.18})`;
+        ctx.beginPath();
+        ctx.moveTo(s.x - topW, 0);
+        ctx.lineTo(s.x + topW, 0);
+        ctx.lineTo(s.x + s.r*0.24, s.y);
+        ctx.lineTo(s.x - s.r*0.24, s.y);
+        ctx.closePath(); ctx.fill();
+        // spot pool
+        const g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r);
+        g.addColorStop(0, `rgba(${sr.join(',')},${spotInt})`);
+        g.addColorStop(0.25, `rgba(${sr.join(',')},${spotInt*0.45})`);
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle=g; ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fill();
+      });
+      // interactive mouse follow spot (small)
+      {
+        const mx = mouse.x*w, my = mouse.y*h;
+        const g = ctx.createRadialGradient(mx,my,0,mx,my, w*0.18);
+        g.addColorStop(0, `rgba(255,250,230,${spotInt*0.55})`);
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle=g; ctx.beginPath(); ctx.arc(mx,my,w*0.18,0,Math.PI*2); ctx.fill();
+      }
+      ctx.restore();
+
+      // stage haze vignette
+      const vig = ctx.createRadialGradient(w/2,h/2, h*0.3, w/2, h/2, w*1.1);
+      vig.addColorStop(0, 'rgba(0,0,0,0)');
+      vig.addColorStop(1, 'rgba(0,0,0,0.55)');
+      ctx.fillStyle=vig; ctx.fillRect(0,0,w,h);
+
+      // subtle color tint by mood
+      if(wnC>0.1){
+        ctx.fillStyle=`rgba(255,154,60,${wnC*0.07})`; ctx.fillRect(0,0,w,h);
+      }
+      if(wnE>0.1){
+        ctx.fillStyle=`rgba(80,130,120,${wnE*0.09})`; ctx.fillRect(0,0,w,h);
+      }
+      if(wnH>0.1){
+        ctx.fillStyle=`rgba(255,220,80,${wnH*0.05})`; ctx.fillRect(0,0,w,h);
+      }
+
+      rafRef.current = requestAnimationFrame(frame);
+    }
+    rafRef.current = requestAnimationFrame(frame);
+    return ()=>{
+      cancelAnimationFrame(rafRef.current);
+      ro.disconnect();
+      window.removeEventListener('resize', resize);
+    };
+  }, [moods, isNight, weather, mouseRef]);
+
+  return <canvas ref={ref} className="w-full h-full block" />;
+}
+
+function Fader({label, value, onChange, accent, icon, sub}){
+  return (
+    <div className="flex-1 flex flex-col items-center gap-2 select-none">
+      <div className="flex items-center gap-2 text-[11px] tracking-[0.18em] font-mono uppercase text-[#c9a96a]/80">
+        <span className="text-[14px] opacity-90">{icon}</span>{label}
+      </div>
+      <div className="relative w-full h-[112px] sm:h-[132px] rounded-[12px] fader-track proscenium-glow overflow-hidden flex items-end p-[5px]">
+        <div className="absolute inset-x-[9px] top-[12px] bottom-[12px] rounded-[6px] bg-black/60 shadow-[inset_0_2px_8px_rgba(0,0,0,.9)] overflow-hidden">
+          <div className="absolute inset-0 opacity-[0.15]" style={{background:`repeating-linear-gradient(0deg, transparent 0 7px, rgba(255,255,255,.4) 7px 8px)`}}/>
+        </div>
+        {/* fill */}
+        <div className={`absolute left-[9px] right-[9px] bottom-[12px] rounded-[6px] transition-all duration-150 ${accent}`} style={{height:`calc(${(value)}% * 0.82 + 6px)`}}/>
+        {/* thumb line */}
+        <div className="absolute left-[6px] right-[6px] h-[10px] rounded-[4px] bg-gradient-to-b from-[#e9e3d5] to-[#a99e8d] border border-black/40 shadow-[0_2px_6px_rgba(0,0,0,.6),inset_0_1px_0_rgba(255,255,255,.8)] pointer-events-none"
+          style={{bottom:`calc(${value}% * 0.82 + 8px)`}}/>
+        <input type="range" min="0" max="100" value={value} onChange={e=>onChange(+e.target.value)}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer touch-none"/>
+      </div>
+      <div className="text-[10px] font-mono tracking-wide text-white/50">{String(value).padStart(2,'0')}% <span className="opacity-50">• {sub}</span></div>
+    </div>
+  )
+}
+
+function App(){
+  const [moods,setMoods]=useState({cosy:62,eerie:18,heroic:34});
+  const [isNight,setIsNight]=useState(false);
+  const [curtain,setCurtain]=useState(false);
+  const [actIdx,setActIdx]=useState(0);
+  const [typed,setTyped]=useState('');
+  const [showCurtainHint,setShowCurtainHint]=useState(true);
+  const mouseRef=useRef({x:0.5,y:0.5});
+  const stageRef=useRef(null);
+
+  useEffect(()=>{ const t=setTimeout(()=>setCurtain(true), 900); return ()=>clearTimeout(t) },[]);
+  useEffect(()=>{ if(curtain) setTimeout(()=>setShowCurtainHint(false),2000) },[curtain]);
+
+  const weather = FORECAST[actIdx];
+  const scriptText = useMemo(()=>generateScript(weather, moods, isNight), [weather,moods,isNight]);
+
+  // typewriter
+  useEffect(()=>{
+    let i=0; setTyped('');
+    const id=setInterval(()=>{ i++; setTyped(scriptText.slice(0,i)); if(i>=scriptText.length) clearInterval(id)}, 16);
+    return ()=>clearInterval(id);
+  },[scriptText]);
+
+  const onStageMove = useCallback((e)=>{
+    const rect = stageRef.current?.getBoundingClientRect();
+    if(!rect) return;
+    const cx = (e.clientX ?? e.touches?.[0]?.clientX) - rect.left;
+    const cy = (e.clientY ?? e.touches?.[0]?.clientY) - rect.top;
+    mouseRef.current = {x: cx/rect.width, y: cy/rect.height};
+  },[]);
+
+  const totalMood = moods.cosy+moods.eerie+moods.heroic;
+  const dominant = Object.entries(moods).sort((a,b)=>b[1]-a[1])[0][0];
+
+  return (
+    <div className="min-h-screen w-full bg-[#08080a] relative flex flex-col items-center">
+      {/* top hairline */}
+      <div className="w-full h-[1px] bg-gradient-to-r from-transparent via-[#c9a96a]/50 to-transparent"/>
+
+      <header className="w-full max-w-[1240px] px-5 sm:px-8 py-5 flex items-center justify-between">
+        <div className="flex items-baseline gap-4">
+          <h1 className="font-serif text-[22px] sm:text-[26px] tracking-[0.14em] font-bold text-[#e9e3d5]">WEATHER THEATRE</h1>
+          <span className="hidden sm:inline font-mono text-[10px] tracking-[0.32em] text-white/40 uppercase border border-white/10 px-2 py-[2px] rounded-full">Live Forecast — No API</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="font-mono text-[10px] text-white/40 tracking-[0.2em] uppercase hidden md:block">House Lights</div>
+          <button onClick={()=>setIsNight(v=>!v)} className="relative w-[96px] h-[34px] rounded-full bg-black border border-[#c9a96a]/30 flex items-center p-[3px] transition-all">
+            <div className={`absolute inset-0 rounded-full transition-opacity ${isNight?'opacity-100':'opacity-0'}`} style={{background:'radial-gradient(120% 120% at 30% 50%, #1a2a4a, #0a0e1a)'}}/>
+            <div className={`absolute inset-0 rounded-full transition-opacity ${!isNight?'opacity-100':'opacity-0'}`} style={{background:'linear-gradient(90deg, #fff7d6, #ffd27a)'}}/>
+            <div className={`relative z-10 w-[28px] h-[28px] rounded-full bg-[#0a0a0a] flex items-center justify-center text-[14px] shadow-[0_2px_8px_rgba(0,0,0,.6)] transition-transform ${isNight?'translate-x-[60px]':'translate-x-0'}`}>
+              {isNight?'☾':'☀'}
+            </div>
+            <span className={`relative z-10 ml-1 font-mono text-[10px] tracking-[0.18em] uppercase ${isNight?'text-white/70 ml-[-2px]':'text-black/70 ml-[8px]'}`}>{isNight?'Night':'Matinée'}</span>
+          </button>
+        </div>
+      </header>
+
+      {/* STAGE FRAME */}
+      <div className="w-full max-w-[1240px] px-3 sm:px-6 pb-4">
+        <div ref={stageRef} onMouseMove={onStageMove} onTouchMove={onStageMove}
+          className="relative aspect-[16/9.2] sm:aspect-[16/8.2] w-full rounded-[18px] overflow-hidden gold-edge proscenium-glow bg-black">
+          {/* canvas */}
+          <div className="absolute inset-[8px] sm:inset-[10px] rounded-[12px] overflow-hidden bg-[#0e1116]">
+            <StageCanvas moods={moods} isNight={isNight} weather={weather} mouseRef={mouseRef}/>
+            {/* stage floor shadow */}
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[26%] bg-gradient-to-t from-black/70 to-transparent"/>
+            {/* top light spill */}
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-[22%] bg-gradient-to-b from-black/35 to-transparent"/>
+          </div>
+
+          {/* Valance */}
+          <div className="pointer-events-none absolute top-0 left-0 right-0 h-[42px] valance z-[6] flex items-center justify-center">
+            <div className="w-[90%] h-[1px] bg-gradient-to-r from-transparent via-[#c9a96a]/50 to-transparent mt-[28px]"/>
+            <div className="absolute left-1/2 -translate-x-1/2 top-[10px] font-display italic text-[12px] tracking-[0.22em] text-[#c9a96a]/80">— {weather.dow} • {weather.cond.toUpperCase()} • {weather.temp}° —</div>
+          </div>
+
+          {/* Curtains */}
+          <div className={`absolute inset-y-0 left-0 w-[51%] z-20 curtain-fabric transition-transform duration-[1.6s] ease-[cubic-bezier(.77,0,.175,1)] will-change-transform ${curtain?' -translate-x-[102%]':''} rounded-l-[12px]`} style={{clipPath:'polygon(0 0, 100% 0, 92% 100%, 0 100%)'}}>
+            <div className="absolute right-[14%] top-0 bottom-0 w-[2px] bg-black/30 blur-[0.5px]"/>
+          </div>
+          <div className={`absolute inset-y-0 right-0 w-[51%] z-20 curtain-fabric transition-transform duration-[1.6s] ease-[cubic-bezier(.77,0,.175,1)] will-change-transform ${curtain?' translate-x-[102%]':''} rounded-r-[12px]`} style={{clipPath:'polygon(8% 0, 100% 0, 100% 100%, 0 100%)'}}>
+            <div className="absolute left-[14%] top-0 bottom-0 w-[2px] bg-black/30"/>
+          </div>
+
+          {/* Curtain pull hint */}
+          {showCurtainHint && (
+            <button onClick={()=>setCurtain(v=>!v)} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-30 px-5 py-2 rounded-full bg-[#e9e3d5] text-black font-mono text-[11px] tracking-[0.18em] uppercase shadow-[0_8px_24px_rgba(0,0,0,.6)] hover:scale-[1.02] active:scale-[0.98] transition-all">
+              {curtain?'Close Curtain':'Open Curtain'} ✦
+            </button>
+          )}
+
+          {/* subtitle typewriter */}
+          <div className="absolute left-[10px] sm:left-[14px] right-[10px] sm:right-[14px] bottom-[10px] sm:bottom-[14px] z-[8] pointer-events-none">
+            <div className="grain relative rounded-[10px] bg-[rgba(12,12,14,0.78)] backdrop-blur-[10px] border border-white/[0.08] px-3 sm:px-4 py-3 sm:py-[13px] shadow-[0_8px_30px_rgba(0,0,0,.6)]">
+              <div className="flex items-start gap-3">
+                <div className="hidden sm:flex mt-[2px] w-[28px] h-[28px] rounded-full bg-[#c9a96a]/15 border border-[#c9a96a]/25 items-center justify-center text-[12px]">◐</div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="font-mono text-[9px] tracking-[0.22em] uppercase text-[#c9a96a]">{isNight?'Night Show':'Matinée'} • Scene {actIdx+1}</span>
+                    <span className="font-mono text-[9px] px-1.5 py-[1px] rounded-full bg-white/10 text-white/60">{dominant} {Math.round(moods[dominant])}%</span>
+                  </div>
+                  <p className="font-display text-[13px] sm:text-[15px] leading-[1.35] text-[#e9e3d5]/90 type-cursor min-h-[2.7em]">{typed}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* side footlights subtle */}
+          <div className="pointer-events-none absolute bottom-[8px] left-[10px] right-[10px] h-[2px] bg-gradient-to-r from-[#c9a96a]/0 via-[#c9a96a]/50 to-[#c9a96a]/0 opacity-60"/>
+        </div>
+      </div>
+
+      {/* CONTROLS */}
+      <div className="w-full max-w-[1240px] px-3 sm:px-6 pb-10">
+        <div className="grid grid-cols-12 gap-3 sm:gap-4">
+          {/* Faders */}
+          <div className="col-span-12 lg:col-span-7 rounded-[16px] bg-[#101013] border border-white/[0.06] p-3 sm:p-4 flex gap-2 sm:gap-3">
+            <Fader label="Cosy" sub="warmth" value={moods.cosy} onChange={v=>setMoods(s=>({...s,cosy:v}))} accent="fader-fill-cosy" icon="◍" />
+            <Fader label="Eerie" sub="mist" value={moods.eerie} onChange={v=>setMoods(s=>({...s,eerie:v}))} accent="fader-fill-eerie" icon="◎" />
+            <Fader label="Heroic" sub="scale" value={moods.heroic} onChange={v=>setMoods(s=>({...s,heroic:v}))} accent="fader-fill-heroic" icon="✦" />
+            <div className="hidden sm:flex w-[64px] flex-col gap-2">
+              <button onClick={()=>setMoods({cosy:78,eerie:12,heroic:18})} className="rounded-[9px] bg-white/[0.06] hover:bg-white/[0.10] border border-white/10 px-2 py-[7px] font-mono text-[9px] tracking-[0.16em] uppercase text-white/70">Warm Preset</button>
+              <button onClick={()=>setMoods({cosy:10,eerie:82,heroic:22})} className="rounded-[9px] bg-white/[0.06] hover:bg-white/[0.10] border border-white/10 px-2 py-[7px] font-mono text-[9px] tracking-[0.16em] uppercase text-white/70">Eerie Preset</button>
+              <button onClick={()=>setMoods({cosy:18,eerie:16,heroic:84})} className="rounded-[9px] bg-white/[0.06] hover:bg-white/[0.10] border border-white/10 px-2 py-[7px] font-mono text-[9px] tracking-[0.16em] uppercase text-white/70">Heroic Preset</button>
+              <button onClick={()=>setMoods({cosy:33,eerie:33,heroic:33})} className="rounded-[9px] bg-[#c9a96a]/15 hover:bg-[#c9a96a]/22 border border-[#c9a96a]/20 px-2 py-[7px] font-mono text-[9px] tracking-[0.16em] uppercase text-[#c9a96a]">Balance</button>
+            </div>
+          </div>
+
+          {/* Forecast reel */}
+          <div className="col-span-12 lg:col-span-5 rounded-[16px] bg-[#0e0e11] border border-white/[0.06] p-3 flex flex-col">
+            <div className="flex items-center justify-between px-1 pb-2">
+              <div className="font-mono text-[10px] tracking-[0.22em] uppercase text-white/40">Mock Forecast Reel — Same Script, New Staging</div>
+              <button onClick={()=>setCurtain(v=>!v)} className="font-mono text-[10px] tracking-[0.16em] uppercase px-2.5 py-1 rounded-full bg-white/10 hover:bg-white/15 text-white/70 border border-white/10">{curtain?'Lower Curtain':'Raise Curtain'}</button>
+            </div>
+            <div className="grid grid-cols-5 gap-2">
+              {FORECAST.map((f,i)=>(
+                <button key={i} onClick={()=>setActIdx(i)}
+                  className={`group text-left rounded-[12px] border px-2.5 py-2.5 transition-all ${i===actIdx?'bg-[#1a1a1e] border-[#c9a96a]/40 shadow-[0_0_0_1px_rgba(201,169,106,.15)]':'bg-black/40 border-white/5 hover:border-white/15 hover:bg-white/[0.05]'}`}>
+                  <div className="font-mono text-[8px] tracking-[0.18em] uppercase text-white/35">{f.dow}</div>
+                  <div className="font-serif text-[13px] tracking-wide text-white/90 mt-0.5 truncate">{f.d}</div>
+                  <div className="mt-2 flex items-baseline gap-1">
+                    <span className="font-display text-[20px] leading-none">{f.temp}°</span>
+                    <span className="font-mono text-[9px] text-white/35">{f.low}–{f.high}°</span>
+                  </div>
+                  <div className="mt-2 font-mono text-[8.5px] leading-[1.2] tracking-[0.08em] text-white/45 uppercase break-words">{f.cond}</div>
+                  <div className="mt-2 flex gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#c9a96a]/70 group-hover:bg-[#c9a96a]"/>
+                    <span className="w-1.5 h-1.5 rounded-full bg-white/15"/>
+                    <span className="w-1.5 h-1.5 rounded-full bg-white/10"/>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className="mt-3 rounded-[10px] bg-black/50 border border-white/5 px-3 py-2.5 flex items-center justify-between">
+              <div className="font-mono text-[10px] tracking-[0.12em] text-white/40">Mood blend total <span className="text-white/70">{totalMood}%</span> — move sliders to remix the same sky. Parallax follows cursor, spotlights sweep on their own.</div>
+              <div className="hidden sm:flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400/80 shadow-[0_0_8px_rgba(52,211,153,.6)] animate-pulse"/>
+                <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-emerald-300/70">Live Canvas</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 text-center font-mono text-[10px] tracking-[0.18em] uppercase text-white/20">
+          Built for stagecraft, not data — all weather is local theatre. Canvas • Parallax • Typewriter • Lighting Desk
+        </div>
+      </div>
+
+      {/* vignette */}
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(140%_90%_at_50%_0%,rgba(201,169,106,0.07),transparent_45%)]"/>
+    </div>
+  )
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
