@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DUNK LAB — Tea Dunkability Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fragment+Mono:ital@0;1&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config={darkMode:'class',theme:{extend:{fontFamily:{display:['Instrument Serif','serif'],mono:['Fragment Mono','monospace']},colors:{tea:{50:'#fdf6ec',100:'#f9e8c8',200:'#f2d09a',300:'#e9b26b',400:'#df8c3a',500:'#d46e21',600:'#b8551a'},ink:{900:'#0e0e0f',800:'#1a1a1e',700:'#26262c'}}}}}
+</script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js" integrity="sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z" crossorigin="anonymous"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" integrity="sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*{ -webkit-font-smoothing:antialiased; }
+body{ overscroll-behavior:none; }
+.glass{ background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.06)); backdrop-filter: blur(22px) saturate(1.4); -webkit-backdrop-filter: blur(22px) saturate(1.4); border:1px solid rgba(255,255,255,.12); }
+.glass-strong{ background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.07)); backdrop-filter: blur(32px) saturate(1.5); -webkit-backdrop-filter: blur(32px) saturate(1.5); border:1px solid rgba(255,255,255,.18); }
+.light .glass{ background: linear-gradient(180deg, rgba(255,255,255,.85), rgba(255,255,255,.65)); border-color: rgba(0,0,0,.08); }
+.scrollbar-none::-webkit-scrollbar{display:none}
+input[type=range]{ -webkit-appearance:none; appearance:none; height:32px; background:transparent; cursor:pointer; }
+input[type=range]::-webkit-slider-runnable-track{ height:4px; background:rgba(255,255,255,.14); border-radius:999px; }
+input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:18px; height:18px; margin-top:-7px; border-radius:50%; background:#fff; box-shadow:0 1px 8px rgba(0,0,0,.4), 0 0 0 4px rgba(255,255,255,.18); transition:.15s; }
+input[type=range]:active::-webkit-slider-thumb{ transform:scale(1.25); }
+.light input[type=range]::-webkit-slider-runnable-track{ background:rgba(0,0,0,.12); }
+@keyframes steam{0%{transform:translateY(0) translateX(0) scaleX(1); opacity:0}10%{opacity:.6}50%{transform:translateY(-70px) translateX(8px) scaleX(1.2); opacity:.35}100%{transform:translateY(-140px) translateX(-6px) scaleX(.8); opacity:0}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@keyframes crumbFall{0%{transform:translateY(-10px) rotate(0deg); opacity:1}100%{transform:translateY(420px) rotate(720deg); opacity:0}}
+@keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+</style>
+</head>
+<body class="min-h-screen bg-[#0e0e0f] text-zinc-100 dark:bg-[#0e0e0f] light:bg-[#f7f3eb] light:text-zinc-900 selection:bg-amber-300/40">
+<div id="root"></div>
+
+<script type="text/babel">
+const {useState,useEffect,useRef,useMemo,useCallback} = React;
+
+const BISCUITS = [
+  {id:'digestive', name:'Digestive', origin:'UK 1892', color:'#c9a77a', accent:'#a67c52', base:88, porosity:0.42, absorb:0.38, snap:0.72, note:'The control. Reliable 4.2s window.', icon:'◍'},
+  {id:'richtea', name:'Rich Tea', origin:'UK 18th C', color:'#e8d5b5', accent:'#c9b18f', base:52, porosity:0.68, absorb:0.85, snap:0.35, note:'Notoriously suicidal. Dunks at your peril.', icon:'◎'},
+  {id:'hobnob', name:'Hobnob', origin:'UK 1985', color:'#8d6a43', accent:'#5f4329', base:94, porosity:0.31, absorb:0.28, snap:0.88, note:'Oat armour. Built for builders tea.', icon:'⬡'},
+  {id:'bourbon', name:'Bourbon', origin:'UK 1910', color:'#3d2314', accent:'#7a4a33', base:76, porosity:0.48, absorb:0.52, snap:0.62, note:'Chocolate cap melts, structural risk.', icon:'⧉'},
+  {id:'custard', name:'Custard Cream', origin:'UK 1908', color:'#f6e6a6', accent:'#d4b85a', base:68, porosity:0.55, absorb:0.61, snap:0.45, note:'Sandwich shear failure at 3.1s.', icon:'⊡'},
+  {id:'shortbread', name:'Shortbread', origin:'SCOT 1736', color:'#f2e3c6', accent:'#c4a67a', base:90, porosity:0.26, absorb:0.22, snap:0.92, note:'Butter matrix resists. Almost too good.', icon:'⬣'},
+];
+
+function useTeaPhysics(biscuit, temp, isDunking, elapsed){
+  return useMemo(()=>{
+    if(!biscuit) return 100;
+    const tempF = 0.6 + (temp-55)*0.015; // 0.6-1.2
+    const timeF = elapsed * biscuit.absorb * (1 + biscuit.porosity*0.6);
+    const baseDecay = timeF * 22 * tempF;
+    const soggyPoint = biscuit.base / 28;
+    const over = Math.max(0, elapsed - soggyPoint);
+    const collapse = over>0 ? Math.pow(over, 2.2)* 35 * biscuit.porosity * tempF : 0;
+    return Math.max(-15, 100 - baseDecay - collapse);
+  },[biscuit,temp,elapsed]);
+}
+
+function CrumbleGraph({data, danger}){
+  const ref = React.useRef(null);
+  useEffect(()=>{
+    const c = ref.current; if(!c) return;
+    const dpr = window.devicePixelRatio||1;
+    const r = c.getBoundingClientRect();
+    c.width = r.width*dpr; c.height = r.height*dpr;
+    const ctx = c.getContext('2d'); ctx.scale(dpr,dpr);
+    const W = r.width, H = r.height;
+    ctx.clearRect(0,0,W,H);
+    // grid
+    ctx.strokeStyle = 'rgba(255,255,255,.07)';
+    ctx.lineWidth = 1;
+    for(let i=1;i<4;i++){ ctx.beginPath(); ctx.moveTo(0,H*i/4); ctx.lineTo(W,H*i/4); ctx.stroke(); }
+    // area
+    if(data.length>1){
+      ctx.beginPath();
+      ctx.moveTo(0,H);
+      data.forEach((p,i)=>{
+        const x = (i/(data.length-1))*W;
+        const y = H - (Math.max(0,p)/100)* (H*0.82) - H*0.06;
+        if(i===0) ctx.lineTo(x,y); else { const px = ( (i-1)/(data.length-1))*W; const py = H - (Math.max(0,data[i-1])/100)*(H*0.82)-H*0.06; const cx = (px+x)/2; ctx.quadraticCurveTo(px,py,cx,(py+y)/2); if(i===data.length-1) ctx.lineTo(x,y); }
+      });
+      ctx.lineTo(W,H); ctx.closePath();
+      const grad = ctx.createLinearGradient(0,0,0,H);
+      grad.addColorStop(0, danger ? 'rgba(239,68,68,.45)' : 'rgba(251,191,36,.45)');
+      grad.addColorStop(1, 'rgba(251,191,36,0)');
+      ctx.fillStyle = grad; ctx.fill();
+      // line
+      ctx.beginPath();
+      data.forEach((p,i)=>{
+        const x = (i/(data.length-1))*W;
+        const y = H - (Math.max(0,p)/100)*(H*0.82)-H*0.06;
+        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      });
+      ctx.strokeStyle = danger ? '#ef4444' : '#fbbf24';
+      ctx.lineWidth = 2.2; ctx.lineJoin='round'; ctx.stroke();
+      // dot
+      const last = data[data.length-1];
+      const lx = W; const ly = H - (Math.max(0,last)/100)*(H*0.82)-H*0.06;
+      ctx.beginPath(); ctx.arc(lx,ly,4,0,Math.PI*2); ctx.fillStyle = danger ? '#ef4444' : '#fde68a'; ctx.fill();
+      ctx.beginPath(); ctx.arc(lx,ly,10,0,Math.PI*2); ctx.fillStyle = danger ? 'rgba(239,68,68,.18)' : 'rgba(251,191,36,.18)'; ctx.fill();
+    }
+  },[data,danger]);
+  return <canvas ref={ref} className="w-full h-[92px] rounded-[12px]"/>;
+}
+
+function App(){
+  const [temp, setTemp] = useState(78);
+  const [biscuitId, setBiscuitId] = useState('hobnob');
+  const biscuit = useMemo(()=>BISCUITS.find(b=>b.id===biscuitId),[biscuitId]);
+  const [isDunking, setIsDunking] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [best, setBest] = useState(()=>{ try{ return JSON.parse(localStorage.getItem('dunk_best')||'{}')}catch{return {}}});
+  const [crumbs, setCrumbs] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [dark, setDark] = useState(true);
+  const [showKeys, setShowKeys] = useState(false);
+  const rafRef = useRef(null);
+  const startRef = useRef(0);
+  const integrity = useTeaPhysics(biscuit,temp,isDunking,elapsed);
+  const [crumbleLog, setCrumbleLog] = useState([100]);
+
+  // dunk loop
+  useEffect(()=>{
+    if(!isDunking) { if(rafRef.current) cancelAnimationFrame(rafRef.current); return; }
+    startRef.current = performance.now() - elapsed*1000;
+    const loop = (now)=>{
+      const e = (now - startRef.current)/1000;
+      setElapsed(e);
+      setCrumbleLog(l=>{
+        const nl = [...l, Math.max(0, integrity)];
+        return nl.length>72 ? nl.slice(-72) : nl;
+      });
+      rafRef.current = requestAnimationFrame(loop);
+    };
+    rafRef.current = requestAnimationFrame(loop);
+    return ()=>cancelAnimationFrame(rafRef.current);
+  },[isDunking]);
+
+  // crumble effect
+  useEffect(()=>{
+    if(integrity < -2){
+      // catastrophic
+      if(crumbs.length < 24){
+        const n = Array.from({length:18}).map((_,i)=>({id:Date.now()+i+Math.random(), x: 45+Math.random()*12, delay: Math.random()*0.3, rot: Math.random()*360, size: 3+Math.random()*7, type: Math.random()>0.5?'crumb':'choc'}));
+        setCrumbs(c=>[...c,...n]);
+        setTimeout(()=>setCrumbs([]), 2600);
+      }
+    } else if(integrity < 12 && isDunking){
+      if(Math.random()>0.7){
+        setCrumbs(c=>[...c, {id:Date.now()+Math.random(), x: 48+Math.random()*8, delay:0, rot:Math.random()*360, size:2+Math.random()*4, type:'tiny'}].slice(-30));
+      }
+    }
+  },[integrity]);
+
+  // record dunk
+  const handleRelease = useCallback(()=>{
+    if(!isDunking) return;
+    setIsDunking(false);
+    const score = Math.max(0, integrity);
+    const perfectWindow = biscuit.base/100 * (biscuit.id==='richtea'?1.8:2.6); // seconds-ish
+    let rating = 'Soggy';
+    if(score>85) rating='Under-dunked';
+    else if(score>60) rating='Prime';
+    else if(score>22) rating='Peril';
+    else if(score>0) rating='Catastrophic';
+    else rating='OBLITERATED';
+    const isPrime = elapsed>0.7 && elapsed<perfectWindow && score>40;
+    if(elapsed>0.3){
+      setHistory(h=>[{t:Date.now(), biscuit:biscuit.name, temp, elapsed:elapsed.toFixed(2), score:score.toFixed(1), rating, isPrime},...h].slice(0,12));
+      const key = biscuit.id;
+      if(!best[key] || (isPrime && parseFloat(elapsed)>0) || (!best[key].isPrime && rating==='Prime')){
+        const nb = {...best, [key]:{elapsed:elapsed.toFixed(2), score:score.toFixed(1), temp, at: new Date().toLocaleTimeString()}};
+        setBest(nb); localStorage.setItem('dunk_best', JSON.stringify(nb));
+      }
+    }
+    setElapsed(0);
+    setCrumbleLog([100]);
+    setTimeout(()=>setCrumbs(c=>c.filter(cr=>cr.type!=='tiny')),400);
+  },[isDunking,integrity,elapsed,biscuit,temp,best]);
+
+  // keyboard
+  useEffect(()=>{
+    const onKey = (e)=>{
+      if(e.code==='Space'){ e.preventDefault(); if(!isDunking) setIsDunking(true); }
+      if(e.key==='?' || (e.key==='/' && e.shiftKey)) setShowKeys(s=>!s);
+      if(e.key.toLowerCase()==='r'){ setElapsed(0); setCrumbleLog([100]); setCrumbs([]); }
+      if(e.key.toLowerCase()==='d' && (e.metaKey||e.ctrlKey)){ e.preventDefault(); setDark(d=>!d); }
+      if(e.key>='1' && e.key<='6'){ const idx = parseInt(e.key)-1; if(BISCUITS[idx]) setBiscuitId(BISCUITS[idx].id); }
+    };
+    const onKeyUp = (e)=>{ if(e.code==='Space'){ e.preventDefault(); handleRelease(); } };
+    window.addEventListener('keydown',onKey); window.addEventListener('keyup',onKeyUp);
+    return ()=>{ window.removeEventListener('keydown',onKey); window.removeEventListener('keyup',onKeyUp); };
+  },[isDunking,handleRelease]);
+
+  useEffect(()=>{ document.documentElement.classList.toggle('dark',dark); document.documentElement.classList.toggle('light',!dark); },[dark]);
+
+  const integrityLabel = integrity>65 ? 'STRUCTURAL' : integrity>30 ? 'SOGGY' : integrity>0 ? 'CRITICAL' : 'DISINTEGRATED';
+  const integrityColor = integrity>65 ? 'text-amber-200' : integrity>30 ? 'text-orange-300' : integrity>0 ? 'text-red-300' : 'text-red-400';
+  const dunkPct = Math.min(1, Math.max(0, elapsed/3.6));
+
+  return (
+    <div className={`min-h-screen w-full relative overflow-hidden ${dark?'bg-[#0e0e0f]':'bg-[#fbf6ec]'} transition-colors duration-500`}>
+      {/* ambient orbs */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -top-[30%] left-[15%] w-[70%] h-[70%] rounded-full blur-[120px] opacity-[.18]" style={{background:`radial-gradient(circle, ${biscuit.color} 0%, transparent 70%)`}}/>
+        <div className="absolute top-[20%] right-[-10%] w-[50%] h-[50%] rounded-full blur-[140px] opacity-[.12] bg-amber-300"/>
+        <div className="absolute bottom-[-20%] left-[10%] w-[60%] h-[55%] rounded-full blur-[130px] opacity-[.10] bg-orange-400"/>
+      </div>
+
+      {/* header */}
+      <header className="relative z-10 flex items-center justify-between px-6 md:px-10 py-6">
+        <div className="flex items-center gap-5">
+          <div className="w-10 h-10 rounded-[12px] glass-strong grid place-items-center font-mono text-[11px] tracking-[0.18em]">DUNK</div>
+          <div>
+            <h1 className="font-display text-[22px] leading-none tracking-[-0.02em]">Dunk Lab <span className="font-mono text-[10px] tracking-[0.2em] opacity-60 align-super ml-2">MK.II</span></h1>
+            <p className="font-mono text-[10px] tracking-[0.14em] opacity-50 mt-1">TEA TEMP • TIME • TENSILE FAILURE</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={()=>setShowKeys(v=>!v)} className="glass rounded-full px-4 h-9 font-mono text-[11px] tracking-widest hover:bg-white/10 transition">? KEYS</button>
+          <button onClick={()=>setDark(d=>!d)} className="glass rounded-full w-9 h-9 grid place-items-center hover:bg-white/10 transition" title="Toggle dark (⌘D)">{dark?'☾':'☀'}</button>
+        </div>
+      </header>
+
+      <div className="relative z-10 mx-auto max-w-[1520px] px-4 md:px-8 pb-10 grid grid-cols-12 gap-4 md:gap-5 auto-rows-min">
+
+        {/* left controls */}
+        <div className="col-span-12 lg:col-span-3 flex flex-col gap-4">
+          {/* biscuit selector */}
+          <div className="glass-strong rounded-[20px] p-5">
+            <div className="flex items-center justify-between mb-4">
+              <span className="font-mono text-[10px] tracking-[0.2em] opacity-60">BISCUIT TYPE</span>
+              <span className="font-mono text-[10px] px-2 py-1 rounded-full bg-white/10">{BISCUITS.length} CLASSICS</span>
+            </div>
+            <div className="grid gap-2">
+              {BISCUITS.map(b=>{
+                const active = b.id===biscuitId;
+                return (
+                  <button key={b.id} onClick={()=>{setBiscuitId(b.id); setElapsed(0); setCrumbleLog([100]);}}
+                    className={`group text-left rounded-[14px] px-3 py-3 flex items-center gap-3 transition-all border ${active?'bg-white/[.10] border-white/20 shadow-[0_0_0_1px_rgba(255,255,255,.12)_inset]':'bg-white/[.03] border-white/[.06] hover:bg-white/[.06]'} `}>
+                    <div className="w-10 h-10 rounded-[10px] grid place-items-center font-mono text-[14px]" style={{background:`color-mix(in srgb, ${b.color} 22%, transparent)`, border:`1px solid color-mix(in srgb, ${b.color} 36%, transparent)`, color:b.color}}>{b.icon}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline gap-2"><span className="font-display text-[16px] leading-none">{b.name}</span><span className="font-mono text-[8px] opacity-50 tracking-widest">{b.origin}</span></div>
+                      <div className="mt-1 flex items-center gap-1.5">
+                        <div className="h-1 flex-1 rounded-full bg-white/10 overflow-hidden"><div className="h-full rounded-full" style={{width:`${b.base}%`, background:b.accent}}/></div>
+                        <span className="font-mono text-[9px] opacity-50">{b.base}%</span>
+                      </div>
+                    </div>
+                    {active && <div className="w-1.5 h-1.5 rounded-full bg-amber-300 animate-pulse"/>}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-4 rounded-[12px] bg-black/20 border border-white/10 p-3">
+              <div className="font-mono text-[9px] tracking-[0.18em] opacity-50">TASTING NOTE</div>
+              <div className="font-display italic text-[13px] leading-[1.25] mt-1 opacity-85">“{biscuit.note}”</div>
+              <div className="mt-2 flex gap-2 font-mono text-[9px]">
+                <span className="px-2 py-1 rounded-full bg-white/10">ABS {biscuit.absorb.toFixed(2)}</span>
+                <span className="px-2 py-1 rounded-full bg-white/10">POR {biscuit.porosity.toFixed(2)}</span>
+                <span className="px-2 py-1 rounded-full bg-white/10">SNAP {biscuit.snap.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* sliders */}
+          <div className="glass rounded-[20px] p-5 space-y-6">
+            <div>
+              <div className="flex justify-between items-end mb-2">
+                <span className="font-mono text-[10px] tracking-[0.2em] opacity-60">TEA TEMPERATURE</span>
+                <span className="font-display text-[22px] leading-none">{temp}°<span className="font-mono text-[12px] opacity-60">C</span></span>
+              </div>
+              <input type="range" min="55" max="95" value={temp} onChange={e=>setTemp(parseInt(e.target.value))} className="w-full"/>
+              <div className="flex justify-between font-mono text-[9px] tracking-widest opacity-40 mt-1"><span>55°C TEA-BAG SAVER</span><span>95°C BUILDER'S FURNACE</span></div>
+              <div className="mt-2 h-2 rounded-full overflow-hidden bg-white/10 flex">
+                <div className="h-full transition-all duration-300" style={{width:`${((temp-55)/40)*100}%`, background:`linear-gradient(90deg, #60a5fa, #f59e0b, #ef4444)`, filter:'saturate(1.2)'}}/>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-white/10">
+              <div className="flex justify-between items-end mb-2">
+                <span className="font-mono text-[10px] tracking-[0.2em] opacity-60">TARGET DUNK WINDOW</span>
+                <span className="font-mono text-[10px] px-2 py-1 rounded-full border border-amber-200/30 text-amber-200 bg-amber-200/10">PRIME ≈ {(biscuit.base/100* (biscuit.id==='richtea'?1.8:2.6)).toFixed(1)}s</span>
+              </div>
+              <div className="flex gap-1.5">
+                {Array.from({length:18}).map((_,i)=>{
+                  const prime = biscuit.base/100*2.6;
+                  const isPrime = i/6 >= prime-0.5 && i/6 <= prime+0.4;
+                  return <div key={i} className={`h-[28px] flex-1 rounded-[6px] transition ${isPrime?'bg-amber-300/70':'bg-white/[.08]'}`}/>
+                })}
+              </div>
+              <div className="font-mono text-[9px] opacity-40 mt-2 leading-[1.3]">Hold SPACE or the DUNK button. Release before collapse. Over-dunk = crumbs & shame.</div>
+            </div>
+
+            {/* integrity */}
+            <div className="rounded-[14px] bg-black/30 border border-white/10 p-4 flex items-center justify-between">
+              <div>
+                <div className="font-mono text-[9px] tracking-[0.2em] opacity-50">LIVE INTEGRITY</div>
+                <div className={`font-display text-[30px] leading-none mt-1 ${integrityColor}`}>{Math.max(0,integrity).toFixed(1)}<span className="text-[16px] opacity-60">%</span></div>
+                <div className={`font-mono text-[10px] tracking-[0.18em] mt-1 ${integrityColor}`}>{integrityLabel}</div>
+              </div>
+              <div className="w-[68px] h-[68px] rounded-full border border-white/15 grid place-items-center relative overflow-hidden" style={{background:`conic-gradient(from -90deg, #fde68a ${Math.max(0,integrity)}%, rgba(255,255,255,.08) 0%)`}}>
+                <div className="absolute inset-[6px] rounded-full bg-[#141416] grid place-items-center"><span className="font-mono text-[11px]">{isDunking?'DUNK':'IDLE'}</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* center stage */}
+        <div className="col-span-12 lg:col-span-6 flex flex-col gap-4">
+          {/* teacup */}
+          <div className="glass-strong rounded-[28px] p-4 md:p-6 relative overflow-hidden min-h-[560px] flex flex-col">
+            {/* top bar */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-2 h-2 rounded-full bg-emerald-300 shadow-[0_0_12px_rgba(110,231,183,.8)] animate-pulse"/>
+                <span className="font-mono text-[10px] tracking-[0.22em] opacity-70">CHAMBER 02 • LIVE RIG</span>
+              </div>
+              <div className="flex items-center gap-2 font-mono text-[10px]">
+                <span className="px-2.5 py-1 rounded-full bg-white/10 border border-white/10">{biscuit.name.toUpperCase()}</span>
+                <span className="px-2.5 py-1 rounded-full bg-amber-300/15 border border-amber-300/30 text-amber-200">{elapsed.toFixed(2)}s</span>
+              </div>
+            </div>
+
+            {/* cup stage */}
+            <div className="flex-1 relative grid place-items-center mt-4">
+              {/* steam */}
+              <div className="absolute top-[14%] left-1/2 -translate-x-1/2 w-[200px] h-[200px] pointer-events-none">
+                {Array.from({length:7}).map((_,i)=>(
+                  <div key={i} className="absolute bottom-0 left-1/2 w-[2px] h-[60px] rounded-full bg-gradient-to-t from-white/0 via-white/40 to-white/0 blur-[0.3px]" style={{marginLeft:`${(i-3)*14}px`, animation:`steam ${2.2+i*0.3}s linear infinite`, animationDelay:`${i*0.22}s`}}/>
+                ))}
+              </div>
+
+              {/* cup svg */}
+              <div className="relative w-[360px] h-[420px] select-none">
+                <svg viewBox="0 0 360 420" className="absolute inset-0 w-full h-full">
+                  <defs>
+                    <radialGradient id="teaGrad" cx="50%" cy="30%" r="80%">
+                      <stop offset="0%" stopColor="#a65e26" stopOpacity="0.95"/>
+                      <stop offset="100%" stopColor="#5a2e12" stopOpacity="0.98"/>
+                    </radialGradient>
+                    <linearGradient id="cupGrad" x1="0" x2="0" y1="0" y2="1">
+                      <stop offset="0%" stopColor="rgba(255,255,255,.18)"/>
+                      <stop offset="100%" stopColor="rgba(255,255,255,.04)"/>
+                    </linearGradient>
+                    <filter id="blurTea"><feGaussianBlur stdDeviation="0.6"/></filter>
+                  </defs>
+                  {/* shadow */}
+                  <ellipse cx="180" cy="400" rx="110" ry="10" fill="black" opacity="0.35"/>
+                  {/* cup body */}
+                  <path d="M 56 142 Q 56 360 180 368 Q 304 360 304 142 Z" fill="url(#cupGrad)" stroke="rgba(255,255,255,.18)" strokeWidth="1.2"/>
+                  {/* inner wall */}
+                  <path d="M 62 142 Q 62 352 180 360 Q 298 352 298 142 Z" fill="none" stroke="rgba(255,255,255,.08)"/>
+                  {/* tea surface - wobble */}
+                  <g style={{transform:`translateY(${Math.sin(elapsed*12)* (isDunking?2:0.4)}px)`}}>
+                    <ellipse cx="180" cy="152" rx="118" ry="22" fill="#2a1a0e" opacity="0.9"/>
+                    <ellipse cx="180" cy="150" rx="114" ry="20" fill="url(#teaGrad)"/>
+                    <ellipse cx="180" cy="148" rx={114 - dunkPct*8} ry={20 - dunkPct*2} fill="#c48a4a" opacity={0.18 + dunkPct*0.22} style={{filter:'url(#blurTea)'}}/>
+                  </g>
+                  {/* handle */}
+                  <path d="M 298 180 Q 340 195 340 245 Q 340 295 298 310" fill="none" stroke="rgba(255,255,255,.18)" strokeWidth="10" strokeLinecap="round"/>
+                </svg>
+
+                {/* biscuit arm */}
+                <div className="absolute left-1/2 top-0 w-[120px] h-[390px] -ml-[60px] pointer-events-none">
+                  <div className="absolute left-1/2 w-[4px] h-[220px] -ml-[2px] top-[0px] bg-gradient-to-b from-zinc-300/70 to-zinc-300/10 rounded-full" style={{transform:`translateY(${isDunking ? dunkPct*166 : 0}px)`, transition: isDunking?'transform 0.06s linear':'transform 0.45s cubic-bezier(.34,1.56,.64,1)'}}/>
+                  <div className="absolute left-1/2 -ml-[52px] top-[196px] w-[104px] h-[84px]" style={{transform:`translateY(${isDunking? dunkPct*166 : 0}px) rotate(${isDunking? (integrity<20? (Math.sin(elapsed*18)*8) : 0) : 0}deg) scale(${integrity<0?0.92:1})`, transition: isDunking?'transform 0.06s linear':'transform 0.52s cubic-bezier(.34,1.56,.64,1)', filter: `saturate(${1-dunkPct*0.15}) brightness(${1-dunkPct*0.12})`}}>
+                    <div className="w-full h-full rounded-[18px] relative overflow-hidden border" style={{background:`linear-gradient(180deg, ${biscuit.color}, ${biscuit.accent})`, borderColor:`color-mix(in srgb, ${biscuit.color} 60%, black)`, boxShadow:`0 8px 22px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.4)`}}>
+                      <div className="absolute inset-0 opacity-[.35]" style={{background:`repeating-linear-gradient(90deg, transparent 0 14px, rgba(0,0,0,.08) 14px 15px)`}}/>
+                      {/* soggy gradient from bottom */}
+                      <div className="absolute bottom-0 left-0 right-0 transition-all" style={{height:`${dunkPct*85}%`, background:`linear-gradient(0deg, rgba(80,40,15,.85), rgba(80,40,15,0))`, opacity:0.9}}/>
+                      {/* dots typical */}
+                      <div className="absolute inset-0 grid place-items-center">
+                        <div className="grid grid-cols-3 gap-3 opacity-50">
+                          {Array.from({length:6}).map((_,i)=><div key={i} className="w-[6px] h-[6px] rounded-full bg-black/30"/>)}
+                        </div>
+                      </div>
+                      {biscuit.id==='bourbon' && <div className="absolute inset-x-2 top-2 h-[24px] rounded-[10px] bg-[#2a160b]/70 border border-white/10 grid place-items-center font-mono text-[9px] tracking-widest text-amber-100/80">BOURBON</div>}
+                      {biscuit.id==='custard' && <div className="absolute top-1/2 left-0 right-0 h-[10px] bg-[#fff9d8]/80 -translate-y-1/2"/>}
+                    </div>
+                    {/* drip */}
+                    {isDunking && dunkPct>0.55 && (
+                      <div className="absolute left-1/2 -ml-[2px] top-[100%] w-[4px] h-[18px] rounded-full bg-[#8a5a2e]/80 animate-[float_0.8s_ease-in-out_infinite]"/>
+                    )}
+                  </div>
+                </div>
+
+                {/* crumbs falling */}
+                {crumbs.map(c=>(
+                  <div key={c.id} className="absolute top-[158px] w-[1px] h-[1px] pointer-events-none" style={{left:`${c.x}%`}}>
+                    <div className="rounded-[2px] absolute" style={{width:c.size, height:c.size, background: c.type==='choc'?'#3d2314': c.type==='tiny'?'#c9a77a':'#a67c52', animation:`crumbFall ${0.9 + Math.random()*0.7}s cubic-bezier(.3,.1,.7,1) ${c.delay}s forwards`, transform:`rotate(${c.rot}deg)`}}/>
+                  </div>
+                ))}
+
+                {/* splash */}
+                {isDunking && dunkPct>0.02 && (
+                  <div className="absolute left-1/2 top-[146px] -translate-x-1/2 flex gap-1 pointer-events-none">
+                    <div className="w-[22px] h-[6px] rounded-full bg-[#d9ae7a]/40 blur-[0.5px]" style={{transform:`scaleX(${1+dunkPct})`}}/>
+                  </div>
+                )}
+              </div>
+
+              {/* bottom action bar */}
+              <div className="absolute bottom-0 inset-x-0 flex justify-center">
+                <div className="glass rounded-[20px] p-2 flex items-center gap-2 shadow-[0_12px_40px_rgba(0,0,0,.35)]">
+                  <button
+                    onMouseDown={()=>{setIsDunking(true); setElapsed(0); setCrumbleLog([100]);}}
+                    onMouseUp={handleRelease}
+                    onTouchStart={()=>{setIsDunking(true);}}
+                    onTouchEnd={handleRelease}
+                    className={`relative h-[52px] px-8 rounded-[14px] font-mono text-[13px] tracking-[0.18em] transition-all select-none ${isDunking?'bg-amber-300 text-black scale-[.98] shadow-[0_0_22px_rgba(251,191,36,.5)]':'bg-white text-black hover:bg-zinc-100 shadow-[0_6px_20px_rgba(255,255,255,.15)]'}`}>
+                    {isDunking?`DUNKING ${elapsed.toFixed(2)}s`:'HOLD TO DUNK — SPACE'}
+                  </button>
+                  <button onClick={()=>{setElapsed(0); setCrumbleLog([100]); setCrumbs([]); setIsDunking(false);}} className="h-[52px] w-[52px] rounded-[14px] bg-white/10 hover:bg-white/15 border border-white/15 grid place-items-center font-mono text-[16px]">↺</button>
+                  <div className={`h-[52px] px-4 rounded-[14px] grid place-items-center border font-mono text-[11px] tracking-widest ${integrity<0?'bg-red-500/20 border-red-400/30 text-red-200':'bg-white/[.06] border-white/10 text-white/60'}`}>
+                    {integrity<0?'CRUMBLE!': integrity<25?'EJECT!':'READY'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* crumble meter + logs */}
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div className="md:col-span-3 glass rounded-[20px] p-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className="font-mono text-[10px] tracking-[0.2em] opacity-60">CRUMBLE-O-METER</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[9px] px-2 py-1 rounded-full bg-white/10 border border-white/10">LIVE TRACE 6s</span>
+                  <span className={`w-2 h-2 rounded-full ${isDunking?'bg-emerald-300 shadow-[0_0_8px_rgba(110,231,183,.8)]':'bg-white/20'}`}/>
+                </div>
+              </div>
+              <CrumbleGraph data={crumbleLog} danger={integrity<30}/>
+              <div className="mt-3 grid grid-cols-3 gap-2 font-mono text-[9px]">
+                <div className="rounded-[10px] bg-white/[.06] border border-white/10 p-2 flex justify-between"><span className="opacity-50">AVG DECAY</span><span>{((100-Math.max(0,integrity))/Math.max(0.2,elapsed)).toFixed(1)}%/s</span></div>
+                <div className="rounded-[10px] bg-white/[.06] border border-white/10 p-2 flex justify-between"><span className="opacity-50">TEMP Δ</span><span className={temp>80?'text-orange-300':''}>{temp>80?'+22% decay':'nominal'}</span></div>
+                <div className="rounded-[10px] bg-white/[.06] border border-white/10 p-2 flex justify-between"><span className="opacity-50">SAT</span><span>{(dunkPct*100).toFixed(0)}%</span></div>
+              </div>
+            </div>
+            <div className="md:col-span-2 glass rounded-[20px] p-4 flex flex-col">
+              <span className="font-mono text-[10px] tracking-[0.2em] opacity-60">SESSION LOG</span>
+              <div className="mt-3 space-y-1.5 max-h-[132px] overflow-auto scrollbar-none pr-1">
+                {history.length===0 && <div className="font-mono text-[11px] opacity-40 py-6 text-center">No dunks yet. Hold SPACE.</div>}
+                {history.map(h=>(
+                  <div key={h.t} className={`rounded-[12px] px-3 py-2 flex items-center justify-between border ${h.isPrime?'bg-amber-300/10 border-amber-300/25':'bg-white/[.04] border-white/10'}`}>
+                    <div><div className="font-mono text-[11px] leading-none">{h.biscuit} • {h.elapsed}s • {h.temp}°C</div><div className={`font-mono text-[9px] tracking-widest mt-1 ${h.isPrime?'text-amber-200':'opacity-50'}`}>{h.rating}{h.isPrime?' • PRIME':''}</div></div>
+                    <div className={`font-display text-[18px] ${parseFloat(h.score)<20?'text-red-300':''}`}>{h.score}%</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* right panel */}
+        <div className="col-span-12 lg:col-span-3 flex flex-col gap-4">
+          <div className="glass rounded-[20px] p-5">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-[10px] tracking-[0.2em] opacity-60">PB BOARD</span>
+              <span className="font-mono text-[9px] px-2 py-1 rounded-full bg-white/10">LOCAL</span>
+            </div>
+            <div className="mt-4 grid gap-2">
+              {BISCUITS.map(b=>{
+                const pb = best[b.id];
+                return (
+                  <div key={b.id} className="rounded-[14px] bg-black/20 border border-white/10 px-3 py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5"><div className="w-7 h-7 rounded-[8px] grid place-items-center text-[12px]" style={{background:`color-mix(in srgb, ${b.color} 18%, transparent)`, color:b.color}}>{b.icon}</div><div><div className="font-mono text-[11px] leading-none">{b.name}</div><div className="font-mono text-[9px] opacity-50">{pb?`${pb.temp}°C • ${pb.at}`:'— no record —'}</div></div></div>
+                    <div className="text-right"><div className="font-display text-[16px] leading-none">{pb?`${pb.score}%`: '--'}</div><div className="font-mono text-[9px] opacity-60">{pb?`${pb.elapsed}s`:''}</div></div>
+                  </div>
+                );
+              })}
+            </div>
+            <button onClick={()=>{localStorage.removeItem('dunk_best'); setBest({});}} className="mt-3 w-full h-9 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 font-mono text-[10px] tracking-widest">CLEAR BOARD</button>
+          </div>
+
+          <div className="glass rounded-[20px] p-5 relative overflow-hidden">
+            <div className="absolute -right-10 -top-10 w-28 h-28 rounded-full bg-amber-300 blur-[28px] opacity-20"/>
+            <span className="font-mono text-[10px] tracking-[0.2em] opacity-60">DUNKALYTICS</span>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="rounded-[14px] bg-white/[.06] border border-white/10 p-3"><div className="font-mono text-[9px] opacity-50 tracking-widest">FAIL RATE</div><div className="font-display text-[26px] mt-1">{history.length? ((history.filter(h=>parseFloat(h.score)===0).length/history.length)*100).toFixed(0):0}%</div></div>
+              <div className="rounded-[14px] bg-amber-300/10 border border-amber-300/20 p-3"><div className="font-mono text-[9px] opacity-60 tracking-widest">PRIMES</div><div className="font-display text-[26px] mt-1">{history.filter(h=>h.isPrime).length}</div></div>
+              <div className="rounded-[14px] bg-white/[.06] border border-white/10 p-3 col-span-2"><div className="font-mono text-[9px] opacity-50">VERDICT</div><div className="font-display italic text-[14px] leading-[1.25] mt-1">{
+                !history.length? 'Begin by selecting a biscuit with backbone.' :
+                integrity<0? 'You absolute monster. The tea is now a soup.' :
+                history[0]?.isPrime? 'Textbook dunk. Marrow intact, crumb still proud.' :
+                history[0]?.rating==='Peril'? 'You’re flirting with slurry. Eject sooner.' :
+                'Try hotter tea with Hobnob — oat integrity laughs at thermodynamics.'
+              }</div></div>
+            </div>
+          </div>
+
+          <div className="rounded-[16px] border border-dashed border-white/15 p-3 flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-white/10 grid place-items-center">⚠︎</div>
+            <div className="font-mono text-[10px] leading-[1.35] opacity-70">Pro tip: Rich Tea disintegrates at 1.9× water uptake. If you hear a soft <i>plip</i>, it’s already gone.</div>
+          </div>
+        </div>
+      </div>
+
+      {/* keys modal */}
+      <div className={`fixed inset-0 z-50 grid place-items-center p-4 transition ${showKeys?'opacity-100 pointer-events-auto':'opacity-0 pointer-events-none'}`}>
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-[12px]" onClick={()=>setShowKeys(false)}/>
+        <div className="relative glass-strong rounded-[24px] w-full max-w-[520px] p-7">
+          <div className="flex items-center justify-between"><span className="font-mono text-[11px] tracking-[0.22em]">KEYBOARD • DUNK LAB</span><button onClick={()=>setShowKeys(false)} className="w-8 h-8 rounded-full bg-white/10 grid place-items-center">✕</button></div>
+          <div className="mt-6 grid grid-cols-2 gap-3 font-mono text-[12px]">
+            {[
+              ['SPACE (hold)','Dunk / Release'],
+              ['R','Reset rig & crumbs'],
+              ['⌘ + D','Toggle dark / light'],
+              ['1 — 6','Switch biscuit'],
+              ['?','Toggle this panel'],
+              ['↑↓ / Slider','Temp adjust'],
+            ].map(([k,v])=>(
+              <div key={k} className="rounded-[12px] bg-white/5 border border-white/10 px-4 py-3 flex justify-between"><span className="px-2 py-1 rounded bg-white text-black text-[10px]">{k}</span><span className="opacity-60 text-[11px]">{v}</span></div>
+            ))}
+          </div>
+          <div className="mt-6 rounded-[14px] bg-amber-300/10 border border-amber-300/20 p-4 font-display text-[15px] leading-[1.3]">Made for tea break physicists. Heat accelerates cellulose swelling — above 80°C expect 22% faster collapse. Oat biscuits cheat with fat-bound starch.</div>
+        </div>
+      </div>
+
+      <footer className="relative z-10 px-8 pb-8 flex justify-between font-mono text-[9px] tracking-[0.18em] opacity-30">
+        <span>© 2026 DUNK LAB INDUSTRIES — STEEP RESPONSIBLY</span>
+        <span className="hidden md:inline">STR {biscuit.base} • POR {biscuit.porosity} • ABS {biscuit.absorb} • T {temp}°C • t {elapsed.toFixed(2)}s</span>
+      </footer>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>

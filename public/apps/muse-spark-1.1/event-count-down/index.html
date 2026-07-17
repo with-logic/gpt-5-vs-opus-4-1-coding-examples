@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>CHRONO — Event Countdown</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fragment+Mono&family=Instrument+Serif:ital@0;1&family=Syne:wght@500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={theme:{extend:{fontFamily:{display:['Syne','sans-serif'],serif:['Instrument Serif','serif'],mono:['Fragment Mono','monospace']}}}}</script>
+<style>
+*{ -webkit-font-smoothing:antialiased; }
+:root{ --flip-h: 168px; }
+@media(max-width:640px){ :root{ --flip-h: 92px; } }
+
+body{ background:#0a0a0b; color:#f5f5f2; overscroll-behavior:none; }
+
+.grain:after{
+  content:""; position:absolute; inset:0; pointer-events:none; opacity:.035; mix-blend:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.glass{
+  background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.03));
+  backdrop-filter:blur(28px) saturate(1.4);
+  -webkit-backdrop-filter:blur(28px) saturate(1.4);
+  border:1px solid rgba(255,255,255,.12);
+}
+.glass-dark{
+  background:linear-gradient(180deg,rgba(18,18,20,.88),rgba(10,10,11,.92));
+  backdrop-filter:blur(40px) saturate(1.2);
+  -webkit-backdrop-filter:blur(40px) saturate(1.2);
+  border-left:1px solid rgba(255,255,255,.08);
+}
+.parallax-layer{ will-change:transform; transform:translateZ(0); }
+
+.flip{
+  perspective:1000px; width:100%; height:var(--flip-h);
+  position:relative;
+}
+.flip-inner{
+  position:relative; width:100%; height:100%; border-radius:24px;
+  background:linear-gradient(180deg,rgba(255,255,255,.11) 0%, rgba(255,255,255,.02) 100%);
+  border:1px solid rgba(255,255,255,.14);
+  box-shadow:0 20px 60px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.15);
+  overflow:hidden;
+  backdrop-filter:blur(16px);
+}
+.flip-top,.flip-bottom{
+  position:absolute; left:0; width:100%; height:50%; overflow:hidden; display:flex; align-items:center; justify-content:center;
+}
+.flip-top{ top:0; border-bottom:1px solid rgba(255,255,255,.08); border-radius:24px 24px 0 0; background:radial-gradient(80% 100% at 50% 0%,rgba(255,255,255,.08),transparent); }
+.flip-bottom{ bottom:0; border-radius:0 0 24px 24px; }
+.flip-num{
+  font-family:'Syne',sans-serif; font-weight:700; font-variant-numeric:tabular-nums; line-height:1;
+  font-size:clamp(38px,8.5vw,92px); letter-spacing:-.04em;
+}
+.flip-label{
+  position:absolute; bottom:10px; left:0; right:0; text-align:center;
+  font-family:'Fragment Mono',monospace; font-size:10px; letter-spacing:.18em; text-transform:uppercase; opacity:.5;
+}
+.flip-animate .flip-top{
+  animation: flipTop .55s cubic-bezier(.77,0,.175,1) forwards; transform-origin:bottom;
+}
+.flip-animate .flip-bottom-new{
+  animation: flipBottom .55s .28s cubic-bezier(.77,0,.175,1) forwards; transform-origin:top; transform:rotateX(-90deg);
+}
+@keyframes flipTop{ to{ transform:rotateX(-90deg); opacity:0; } }
+@keyframes flipBottom{ from{ transform:rotateX(-90deg);} to{ transform:rotateX(0deg);} }
+
+.orb{
+  position:absolute; border-radius:50%; filter:blur(60px); mix-blend:screen; opacity:.6; pointer-events:none;
+}
+.shimmer{
+  background:linear-gradient(100deg, #fff 20%, #aaa 40%, #fff 60%); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+  background-size:200% auto; animation:shimmer 4s linear infinite;
+}
+@keyframes shimmer{ to{ background-position:200% center; } }
+
+.input{
+  width:100%; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1); border-radius:12px;
+  padding:14px 14px; font-size:14px; outline:none; transition:.2s; font-family:'Fragment Mono',monospace;
+}
+.input:focus{ background:rgba(255,255,255,.09); border-color:rgba(255,255,255,.22); box-shadow:0 0 0 4px rgba(255,255,255,.06); }
+.input::placeholder{ color:rgba(255,255,255,.25); }
+
+.range{ -webkit-appearance:none; width:100%; height:2px; background:rgba(255,255,255,.15); border-radius:2px; }
+.range::-webkit-slider-thumb{ -webkit-appearance:none; width:18px; height:18px; border-radius:50%; background:#fff; box-shadow:0 2px 10px rgba(0,0,0,.4); cursor:pointer; }
+
+.cal-btn{
+  background:#f5f5f2; color:#0a0a0b; border-radius:999px; font-family:'Syne',sans-serif; font-weight:700; letter-spacing:-.02em;
+  transition:.25s cubic-bezier(.16,1,.3,1);
+}
+.cal-btn:hover{ transform:translateY(-1px) scale(1.01); box-shadow:0 12px 30px rgba(0,0,0,.35); background:#ffffff; }
+.cal-btn:active{ transform:translateY(0); }
+
+#panel{ transition:transform .7s cubic-bezier(.16,1,.3,1), opacity .5s; }
+#panel.closed{ transform:translateX(100%); }
+#overlay{ transition:opacity .6s; }
+#overlay.hidden{ opacity:0; pointer-events:none; }
+
+.pulse-dot{ box-shadow:0 0 0 0 rgba(34,197,94,.7); animation:pulse 2s infinite; }
+@keyframes pulse{ 0%{box-shadow:0 0 0 0 rgba(34,197,94,.6);} 70%{box-shadow:0 0 0 10px rgba(34,197,94,0);} 100%{box-shadow:0 0 0 0 rgba(34,197,94,0);} }
+</style>
+</head>
+<body class="relative min-h-screen overflow-x-hidden selection:bg-white selection:text-black">
+<!-- PARALLAX BACKGROUND -->
+<div id="parallax-root" class="fixed inset-0 w-screen h-screen overflow-hidden">
+  <div id="layer-bg" class="parallax-layer absolute -inset-[10%]">
+    <img id="bg-img" src="https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=2000&auto=format&fit=crop" class="w-full h-full object-cover scale-110" alt=""/>
+    <div class="absolute inset-0 bg-[#0a0a0b]/35"></div>
+    <div class="absolute inset-0 bg-gradient-to-b from-[#0a0a0b]/40 via-transparent to-[#0a0a0b]/90"></div>
+    <div class="absolute inset-0 bg-gradient-to-r from-[#0a0a0b]/60 via-transparent to-[#0a0a0b]/40"></div>
+  </div>
+  <div id="layer-orbs" class="parallax-layer absolute inset-0">
+    <div class="orb w-[600px] h-[600px] -top-[100px] -left-[100px] bg-[radial-gradient(circle_at_center,_rgba(168,85,247,.5),_transparent_70%)]"></div>
+    <div class="orb w-[700px] h-[700px] top-[30%] -right-[150px] bg-[radial-gradient(circle_at_center,_rgba(56,189,248,.35),_transparent_70%)]"></div>
+    <div class="orb w-[500px] h-[500px] bottom-[-100px] left-[30%] bg-[radial-gradient(circle_at_center,_rgba(251,146,60,.25),_transparent_70%)]"></div>
+  </div>
+  <div id="layer-vignette" class="absolute inset-0 pointer-events-none" style="background:radial-gradient(120% 120% at 50% 20%, transparent 30%, rgba(0,0,0,.55) 100%)"></div>
+  <div class="grain absolute inset-0"></div>
+</div>
+
+<!-- TOP NAV -->
+<header class="relative z-20 flex items-center justify-between px-6 md:px-10 py-7 md:py-8">
+  <div class="flex items-center gap-3">
+    <div class="w-9 h-9 rounded-full bg-white text-black grid place-items-center font-display font-bold text-[13px] tracking-widest">C</div>
+    <span class="font-mono text-[11px] tracking-[0.24em] uppercase opacity-70">Chrono — Live Countdown</span>
+  </div>
+  <div class="flex items-center gap-3">
+    <div class="hidden md:flex items-center gap-2 glass rounded-full px-4 py-2">
+      <span class="pulse-dot w-2 h-2 rounded-full bg-emerald-400"></span>
+      <span class="font-mono text-[10px] tracking-[0.18em] uppercase">Live SyNC</span>
+      <span id="now-time" class="font-mono text-[11px] opacity-60 ml-2">--:--</span>
+    </div>
+    <button id="open-panel" class="glass rounded-full w-10 h-10 grid place-items-center hover:bg-white/10 transition">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 009 15a1.65 1.65 0 00-1-1.51V13a2 2 0 014 0v.49c.23.14.5.24.79.33.28.08.53.12.74.12.2 0 .46-.04.74-.12.29-.09.55-.19.78-.33V13a2 2 0 014 0v.49c0 .58-.38 1.09-1 1.51z"/></svg>
+    </button>
+  </div>
+</header>
+
+<!-- MAIN CONTENT -->
+<main class="relative z-10 px-6 md:px-10 pb-24">
+  <div class="max-w-[1400px] mx-auto">
+    <!-- META ROW -->
+    <div class="flex flex-wrap items-center gap-3 mt-2 md:mt-8 mb-8 md:mb-12">
+      <div class="glass rounded-full px-4 py-2 flex items-center gap-2">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        <span id="meta-location" class="font-mono text-[11px] tracking-wide uppercase">Kyoto, Japan — Arashiyama Archive</span>
+      </div>
+      <div class="glass rounded-full px-4 py-2 flex items-center gap-2">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        <span id="meta-date" class="font-mono text-[11px] tracking-wide uppercase">Dec 31 2026 23:00 JST</span>
+      </div>
+      <div class="glass rounded-full px-3 py-2 font-mono text-[10px] tracking-widest uppercase bg-white/10">Parallax • Depth 0.38</div>
+    </div>
+
+    <!-- TITLE -->
+    <div class="mb-10 md:mb-16 max-w-[1000px]">
+      <h1 class="font-serif leading-[0.85] tracking-[-0.03em] text-[14vw] md:text-[10vw] lg:text-[108px] -ml-1">
+        <span id="title-line1" class="block font-[400] italic opacity-[.92]">Midnight</span>
+        <span id="title-line2" class="block font-display font-[700] ml-[0.08em] shimmer">Archive</span>
+      </h1>
+      <div class="mt-6 md:mt-8 flex gap-6 items-start">
+        <div class="hidden md:block w-[1px] h-[72px] bg-white/15 mt-1"></div>
+        <p id="desc-text" class="font-mono text-[13px] md:text-[14px] leading-[1.7] max-w-[460px] opacity-60">A private gathering to close the year. Film, sound, and a final projection beneath the bamboo canopy. Bring nothing, remember everything.</p>
+      </div>
+    </div>
+
+    <!-- COUNTDOWN GRID -->
+    <div id="countdown-grid" class="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-5 max-w-[1100px]">
+      <!-- Injected by JS -->
+    </div>
+
+    <!-- BOTTOM ROW -->
+    <div class="mt-10 md:mt-16 flex flex-col md:flex-row gap-6 md:items-end justify-between max-w-[1100px]">
+      <div class="flex items-center gap-4">
+        <div class="flex -space-x-2">
+          <img src="https://i.pravatar.cc/100?img=5" class="w-9 h-9 rounded-full border-[2px] border-[#0a0a0b]"/>
+          <img src="https://i.pravatar.cc/100?img=12" class="w-9 h-9 rounded-full border-[2px] border-[#0a0a0b]"/>
+          <img src="https://i.pravatar.cc/100?img=32" class="w-9 h-9 rounded-full border-[2px] border-[#0a0a0b]"/>
+          <div class="w-9 h-9 rounded-full bg-white text-black grid place-items-center text-[11px] font-mono border-[2px] border-[#0a0a0b]">+42</div>
+        </div>
+        <div class="font-mono text-[11px] leading-tight"><span class="opacity-50">ATTENDING</span><br/><span class="text-[13px] tracking-wide">128 confirmed — 3 tables left</span></div>
+      </div>
+
+      <div class="flex gap-3">
+        <button id="btn-calendar" class="cal-btn h-[52px] px-7 flex items-center gap-3 text-[14px]">
+          <span>Save to Calendar</span>
+          <span class="w-7 h-7 rounded-full bg-black text-white grid place-items-center">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+          </span>
+        </button>
+        <div class="relative">
+          <button id="btn-share" class="glass h-[52px] w-[52px] rounded-full grid place-items-center hover:bg-white/15 transition">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 10.7l5.8-3.4M8.6 13.3l5.8 3.4"/></svg>
+          </button>
+          <div id="cal-menu" class="hidden absolute bottom-[62px] right-0 glass rounded-[18px] p-2 w-[240px] z-20">
+            <button data-cal="google" class="w-full text-left px-4 py-3 rounded-[12px] hover:bg-white/10 text-[13px] font-mono flex justify-between">Google Calendar <span>↗</span></button>
+            <button data-cal="outlook" class="w-full text-left px-4 py-3 rounded-[12px] hover:bg-white/10 text-[13px] font-mono flex justify-between">Outlook <span>↗</span></button>
+            <button data-cal="ics" class="w-full text-left px-4 py-3 rounded-[12px] bg-white text-black text-[13px] font-mono flex justify-between">Download .ICS <span>⤓</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PROGRESS -->
+    <div class="mt-16 md:mt-24 max-w-[1100px]">
+      <div class="flex justify-between font-mono text-[10px] tracking-[0.2em] uppercase opacity-50 mb-3">
+        <span>Event Timeline</span><span id="progress-label">84% of year elapsed</span>
+      </div>
+      <div class="h-[2px] w-full bg-white/10 rounded-full overflow-hidden">
+        <div id="progress-bar" class="h-full bg-white w-[84%] transition-all duration-1000"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- EDIT PANEL -->
+<div id="overlay" class="fixed inset-0 bg-black/60 backdrop-blur-[6px] z-30 hidden md:block"></div>
+<aside id="panel" class="closed fixed top-0 right-0 z-40 w-full md:w-[420px] h-[100dvh] glass-dark flex flex-col">
+  <div class="p-7 md:p-8 flex items-center justify-between border-b border-white/10">
+    <div>
+      <h2 class="font-display font-bold tracking-tight text-[20px]">Configure</h2>
+      <p class="font-mono text-[11px] opacity-50 mt-1">All changes live instantly</p>
+    </div>
+    <button id="close-panel" class="w-9 h-9 rounded-full bg-white/10 grid place-items-center hover:bg-white/15 transition">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+
+  <div class="flex-1 overflow-y-auto p-7 md:p-8 space-y-8">
+    <div class="space-y-3">
+      <label class="font-mono text-[10px] tracking-[0.18em] uppercase opacity-60">Event Name</label>
+      <input id="inp-name" class="input" placeholder="Midnight Archive" value="Midnight Archive" maxlength="32"/>
+      <div class="flex gap-2">
+        <div class="flex-1">
+          <input id="inp-name-2" class="input !text-[13px] opacity-70" value="Archive" placeholder="Second line"/>
+        </div>
+        <select id="inp-style" class="input w-[110px]">
+          <option value="italic">Italic / Bold</option>
+          <option value="bold">Both Bold</option>
+          <option value="serif">Both Serif</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="space-y-3">
+      <label class="font-mono text-[10px] tracking-[0.18em] uppercase opacity-60">Date & Time</label>
+      <input id="inp-datetime" type="datetime-local" class="input"/>
+      <div class="flex gap-2">
+        <button data-quick="24h" class="flex-1 glass rounded-full py-2.5 text-[11px] font-mono uppercase tracking-wide hover:bg-white/10 transition">+24h</button>
+        <button data-quick="week" class="flex-1 glass rounded-full py-2.5 text-[11px] font-mono uppercase tracking-wide hover:bg-white/10 transition">+1 Week</button>
+        <button data-quick="midnight" class="flex-1 glass rounded-full py-2.5 text-[11px] font-mono uppercase tracking-wide hover:bg-white/10 transition">NYE '26</button>
+      </div>
+    </div>
+
+    <div class="space-y-3">
+      <label class="font-mono text-[10px] tracking-[0.18em] uppercase opacity-60">Location</label>
+      <input id="inp-location" class="input" placeholder="Kyoto, Japan — Arashiyama Archive" value="Kyoto, Japan — Arashiyama Archive"/>
+      <textarea id="inp-desc" class="input !h-[88px] resize-none leading-relaxed" placeholder="Short description for the hero">A private gathering to close the year. Film, sound, and a final projection beneath the bamboo canopy. Bring nothing, remember everything.</textarea>
+    </div>
+
+    <div class="space-y-3">
+      <label class="font-mono text-[10px] tracking-[0.18em] uppercase opacity-60">Background Visual</label>
+      <div id="drop-zone" class="group relative rounded-[16px] border border-dashed border-white/15 hover:border-white/25 bg-white/[0.03] hover:bg-white/[0.06] transition p-4 flex flex-col items-center justify-center text-center cursor-pointer">
+        <input id="inp-bg" type="file" accept="image/*" class="absolute inset-0 opacity-0 cursor-pointer"/>
+        <div id="bg-preview" class="w-full h-[120px] rounded-[12px] bg-cover bg-center mb-3 hidden"></div>
+        <div id="bg-placeholder">
+          <div class="w-9 h-9 rounded-full bg-white/10 grid place-items-center mx-auto mb-2 group-hover:scale-105 transition"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+          <p class="font-mono text-[11px] tracking-wide uppercase">Drop image or click</p>
+          <p class="font-mono text-[10px] opacity-40 mt-1">JPG, PNG, WEBP — 4K recommended</p>
+        </div>
+      </div>
+      <div class="grid grid-cols-4 gap-2">
+        <button class="preset-bg aspect-[4/3] rounded-[10px] bg-cover bg-center border border-white/10" style="background-image:url(https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=400)" data-url="https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=2000"></button>
+        <button class="preset-bg aspect-[4/3] rounded-[10px] bg-cover bg-center border border-white/10" style="background-image:url(https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=400)" data-url="https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?q=80&w=2000"></button>
+        <button class="preset-bg aspect-[4/3] rounded-[10px] bg-cover bg-center border border-white/10" style="background-image:url(https://images.unsplash.com/photo-1493246507139-91e8fad9978e?q=80&w=400)" data-url="https://images.unsplash.com/photo-1493246507139-91e8fad9978e?q=80&w=2000"></button>
+        <button class="preset-bg aspect-[4/3] rounded-[10px] bg-cover bg-center border border-white/10" style="background-image:url(https://images.unsplash.com/photo-1518837695005-2083093ee35b?q=80&w=400)" data-url="https://images.unsplash.com/photo-1518837695005-2083093ee35b?q=80&w=2000"></button>
+      </div>
+      <div class="space-y-2 pt-2">
+        <div class="flex justify-between font-mono text-[10px] uppercase tracking-wide opacity-60"><span>Parallax Intensity</span><span id="parallax-val">38%</span></div>
+        <input id="inp-parallax" type="range" min="0" max="100" value="38" class="range"/>
+        <div class="flex justify-between font-mono text-[10px] uppercase tracking-wide opacity-60"><span>Blur & Vignette</span><span id="blur-val">22%</span></div>
+        <input id="inp-blur" type="range" min="0" max="100" value="22" class="range"/>
+      </div>
+    </div>
+  </div>
+
+  <div class="p-7 md:p-8 border-t border-white/10 space-y-3">
+    <div class="flex items-center gap-2 font-mono text-[10px] tracking-wide uppercase opacity-40"><span class="w-2 h-2 rounded-full bg-emerald-400"></span> Autosaved locally • Press Esc to close</div>
+    <button id="btn-reset" class="w-full glass rounded-full py-3.5 font-mono text-[11px] tracking-[0.16em] uppercase hover:bg-white/10 transition">Reset to Original</button>
+  </div>
+</aside>
+
+<!-- ENDED OVERLAY -->
+<div id="ended" class="fixed inset-0 z-50 hidden place-items-center bg-[#0a0a0b]/90 backdrop-blur-[20px]">
+  <div class="text-center px-6">
+    <div class="inline-flex items-center gap-2 glass rounded-full px-4 py-2 font-mono text-[10px] tracking-[0.2em] uppercase mb-8">Live Now — The Moment Has Arrived</div>
+    <h2 class="font-serif text-[12vw] md:text-[9vw] leading-[0.85] italic">It’s time.</h2>
+    <p class="font-mono text-[13px] opacity-60 mt-6 max-w-[400px] mx-auto">Your event is happening now. We’ve kept the lights low.</p>
+    <button id="btn-dismiss-ended" class="cal-btn mt-8 px-8 h-[46px]">Keep the archive</button>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const pad = n => String(n).padStart(2,'0');
+
+const defaults = {
+  name1: 'Midnight',
+  name2: 'Archive',
+  style: 'italic',
+  location: 'Kyoto, Japan — Arashiyama Archive',
+  desc: 'A private gathering to close the year. Film, sound, and a final projection beneath the bamboo canopy. Bring nothing, remember everything.',
+  date: new Date(Date.now() + 1000*60*60*24*14 + 1000*60*63).toISOString().slice(0,16), // 14 days + bit
+  bg: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=2000&auto=format&fit=crop',
+  parallax: 38,
+  blur: 22
+};
+
+// Load saved
+let state = {...defaults};
+try{
+  const saved = JSON.parse(localStorage.getItem('chrono-state')||'{}');
+  if(saved.date) state = {...state, ...saved};
+}catch{}
+
+function save(){
+  try{ localStorage.setItem('chrono-state', JSON.stringify(state)); }catch{}
+}
+
+// Elements
+const title1 = $('#title-line1');
+const title2 = $('#title-line2');
+const metaLoc = $('#meta-location');
+const metaDate = $('#meta-date');
+const desc = $('#desc-text');
+const bgImg = $('#bg-img');
+const grid = $('#countdown-grid');
+const nowTime = $('#now-time');
+const progressBar = $('#progress-bar');
+const progressLabel = $('#progress-label');
+
+const inputs = {
+  name: $('#inp-name'),
+  name2: $('#inp-name-2'),
+  style: $('#inp-style'),
+  loc: $('#inp-location'),
+  desc: $('#inp-desc'),
+  dt: $('#inp-datetime'),
+  parallax: $('#inp-parallax'),
+  blur: $('#inp-blur'),
+  bg: $('#inp-bg')
+};
+
+function applyState(){
+  // Text
+  const n1 = (inputs.name.value || state.name1).trim();
+  const n2 = (inputs.name2.value || state.name2).trim() || state.name2;
+  let s1 = title1, s2 = title2;
+  const style = state.style;
+  if(style==='italic'){ title1.className='block font-[400] italic opacity-[.92] font-serif'; title2.className='block font-display font-[700] ml-[0.08em] shimmer'; }
+  else if(style==='bold'){ title1.className='block font-display font-[700] ml-[0.02em]'; title2.className='block font-display font-[700] ml-[0.08em] shimmer'; }
+  else { title1.className='block font-serif font-[400] italic'; title2.className='block font-serif font-[400] italic shimmer'; }
+  title1.textContent = n1.split(' ')[0] || n1;
+  title2.textContent = n2;
+
+  metaLoc.textContent = state.location;
+  desc.textContent = state.desc;
+
+  // Date meta
+  const d = new Date(state.date);
+  if(!isNaN(d)){
+    const fmt = d.toLocaleString('en-US',{month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit', timeZoneName:'short'});
+    metaDate.textContent = fmt;
+  }
+
+  // BG
+  if(state.bg) bgImg.src = state.bg;
+
+  // Sliders UI
+  $('#parallax-val').textContent = state.parallax + '%';
+  $('#blur-val').textContent = state.blur + '%';
+  $('#layer-bg').style.filter = `blur(${state.blur/12}px)`;
+  bgImg.style.opacity = String(0.9 + state.blur/500);
+}
+
+function initInputs(){
+  inputs.name.value = state.name1;
+  inputs.name2.value = state.name2;
+  inputs.style.value = state.style;
+  inputs.loc.value = state.location;
+  inputs.desc.value = state.desc;
+  inputs.dt.value = state.date;
+  inputs.parallax.value = state.parallax;
+  inputs.blur.value = state.blur;
+  applyState();
+}
+
+inputs.name.addEventListener('input', e=>{ state.name1 = e.target.value || defaults.name1; applyState(); save(); });
+inputs.name2.addEventListener('input', e=>{ state.name2 = e.target.value || defaults.name2; applyState(); save(); });
+inputs.style.addEventListener('change', e=>{ state.style = e.target.value; applyState(); save(); });
+inputs.loc.addEventListener('input', e=>{ state.location = e.target.value; metaLoc.textContent = state.location; save(); });
+inputs.desc.addEventListener('input', e=>{ state.desc = e.target.value; desc.textContent = state.desc; save(); });
+inputs.dt.addEventListener('change', e=>{ state.date = e.target.value; applyState(); save(); });
+inputs.parallax.addEventListener('input', e=>{ state.parallax = +e.target.value; $('#parallax-val').textContent = state.parallax+'%'; save(); });
+inputs.blur.addEventListener('input', e=>{ state.blur = +e.target.value; $('#blur-val').textContent = state.blur+'%'; $('#layer-bg').style.filter = `blur(${state.blur/12}px)`; save(); });
+
+$$('[data-quick]').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const type = btn.dataset.quick;
+    let d = new Date(state.date);
+    if(isNaN(d)) d = new Date();
+    if(type==='24h') d = new Date(d.getTime()+86400000);
+    if(type==='week') d = new Date(d.getTime()+604800000);
+    if(type==='midnight'){ d = new Date(); d.setMonth(11,31); d.setHours(23,0,0,0); d.setFullYear(2026); }
+    const iso = new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,16);
+    inputs.dt.value = iso; state.date = iso; applyState(); save();
+  });
+});
+
+// BG upload
+inputs.bg.addEventListener('change', e=>{
+  const file = e.target.files[0]; if(!file) return;
+  const r = new FileReader();
+  r.onload = ev=>{
+    state.bg = ev.target.result;
+    bgImg.src = state.bg;
+    $('#bg-preview').style.backgroundImage = `url(${state.bg})`;
+    $('#bg-preview').classList.remove('hidden');
+    $('#bg-placeholder').classList.add('hidden');
+    save();
+  };
+  r.readAsDataURL(file);
+});
+const dropZone = $('#drop-zone');
+dropZone.addEventListener('dragover', e=>{ e.preventDefault(); dropZone.classList.add('!border-white/30'); });
+dropZone.addEventListener('dragleave', ()=> dropZone.classList.remove('!border-white/30'));
+dropZone.addEventListener('drop', e=>{
+  e.preventDefault(); dropZone.classList.remove('!border-white/30');
+  const f = e.dataTransfer.files[0]; if(!f) return;
+  inputs.bg.files = e.dataTransfer.files;
+  inputs.bg.dispatchEvent(new Event('change'));
+});
+$$('.preset-bg').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    state.bg = b.dataset.url; bgImg.src = state.bg;
+    $('#bg-preview').style.backgroundImage = `url(${state.bg})`;
+    $('#bg-preview').classList.remove('hidden');
+    $('#bg-placeholder').classList.add('hidden');
+    save();
+  });
+});
+
+// Countdown rendering
+const units = [
+  {k:'days', label:'Days'},
+  {k:'hours', label:'Hours'},
+  {k:'mins', label:'Minutes'},
+  {k:'secs', label:'Seconds'}
+];
+let prev = {days:-1,hours:-1,mins:-1,secs:-1};
+
+function buildGrid(){
+  grid.innerHTML = units.map(u=>`
+    <div class="flip group" data-unit="${u.k}">
+      <div class="flip-inner relative">
+        <div class="flip-top"><span class="flip-num group-hover:scale-[1.02] transition duration-700" data-val>00</span></div>
+        <div class="flip-bottom top-[50%]"><span class="flip-num translate-y-[-50%] group-hover:scale-[1.02] transition duration-700" data-val-b>00</span></div>
+        <div class="flip-bottom-new flip-bottom top-[50%] bg-[rgba(10,10,11,.55)]"><span class="flip-num translate-y-[-50%]" data-val-n>00</span></div>
+        <span class="flip-label">${u.label}</span>
+        <div class="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition duration-700 bg-gradient-to-tr from-white/[0.06] to-transparent"></div>
+      </div>
+    </div>
+  `).join('');
+}
+buildGrid();
+
+function updateCountdown(){
+  const target = new Date(state.date).getTime();
+  const now = Date.now();
+  const diff = target - now;
+
+  // progress of this year
+  const startYear = new Date(new Date().getFullYear(),0,1).getTime();
+  const endYear = new Date(new Date().getFullYear()+1,0,1).getTime();
+  const p = Math.min(100, Math.max(0, ((now-startYear)/(endYear-startYear))*100));
+  progressBar.style.width = p.toFixed(1)+'%';
+  progressLabel.textContent = `${p.toFixed(0)}% of year elapsed`;
+
+  // now time
+  nowTime.textContent = new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+
+  if(diff <= 0){
+    $('#ended').classList.remove('hidden'); $('#ended').classList.add('grid');
+    return;
+  } else {
+    $('#ended').classList.add('hidden'); $('#ended').classList.remove('grid');
+  }
+
+  const days = Math.floor(diff/86400000);
+  const hours = Math.floor((diff%86400000)/3600000);
+  const mins = Math.floor((diff%3600000)/60000);
+  const secs = Math.floor((diff%60000)/1000);
+  const curr = {days,hours,mins,secs};
+
+  units.forEach(u=>{
+    const el = document.querySelector(`[data-unit="${u.k}"]`);
+    if(!el) return;
+    const v = curr[u.k];
+    const formatted = pad(v);
+    if(prev[u.k] !== v){
+      // trigger flip
+      if(prev[u.k] !== -1){
+        el.classList.remove('flip-animate');
+        void el.offsetWidth;
+        const topNum = el.querySelector('[data-val]');
+        const botNum = el.querySelector('[data-val-b]');
+        const newNum = el.querySelector('[data-val-n]');
+        topNum.textContent = pad(prev[u.k]);
+        botNum.textContent = pad(prev[u.k]);
+        newNum.textContent = formatted;
+        el.classList.add('flip-animate');
+        setTimeout(()=>{
+          topNum.textContent = formatted;
+          botNum.textContent = formatted;
+        }, 280);
+      } else {
+        el.querySelectorAll('[data-val],[data-val-b],[data-val-n]').forEach(n=>n.textContent=formatted);
+      }
+    }
+  });
+  prev = curr;
+}
+setInterval(updateCountdown, 1000);
+updateCountdown();
+
+// Parallax
+let mouseX = 0, mouseY = 0, rafId = null;
+const lBg = $('#layer-bg');
+const lOrbs = $('#layer-orbs');
+function onMouseMove(e){
+  mouseX = (e.clientX / window.innerWidth - 0.5);
+  mouseY = (e.clientY / window.innerHeight - 0.5);
+  if(!rafId) rafId = requestAnimationFrame(applyParallax);
+}
+function applyParallax(){
+  rafId = null;
+  const i = state.parallax/100;
+  lBg.style.transform = `translate3d(${mouseX * i * 40}px, ${mouseY * i * 30}px, 0) scale(1.08)`;
+  lOrbs.style.transform = `translate3d(${mouseX * i * 80}px, ${mouseY * i * 60}px, 0)`;
+}
+window.addEventListener('mousemove', onMouseMove, {passive:true});
+window.addEventListener('deviceorientation', e=>{
+  if(e.gamma==null) return;
+  mouseX = e.gamma/45; mouseY = e.beta/90 -0.5;
+  if(!rafId) rafId = requestAnimationFrame(applyParallax);
+}, {passive:true});
+
+// subtle scroll parallax
+window.addEventListener('scroll', ()=>{
+  const y = window.scrollY * 0.15;
+  lBg.style.transform += ` translateY(${y*0.1}px)`;
+}, {passive:true});
+
+// Panel handling
+const panel = $('#panel');
+const overlay = $('#overlay');
+function openPanel(){ panel.classList.remove('closed'); overlay.classList.remove('hidden'); overlay.style.opacity='1'; }
+function closePanel(){ panel.classList.add('closed'); overlay.style.opacity='0'; setTimeout(()=>overlay.classList.add('hidden'), 400); }
+$('#open-panel').addEventListener('click', openPanel);
+$('#close-panel').addEventListener('click', closePanel);
+overlay.addEventListener('click', closePanel);
+window.addEventListener('keydown', e=>{ if(e.key==='Escape'){ closePanel(); $('#cal-menu').classList.add('hidden'); }});
+
+// Calendar
+function toICSDate(d){ return d.toISOString().replace(/-|:|\.\d+/g,''); }
+function generateICS(){
+  const start = new Date(state.date);
+  const end = new Date(start.getTime()+ 2*3600000);
+  const uid = Date.now()+'@chrono';
+  const ics = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Chrono//Event//EN
+BEGIN:VEVENT
+UID:${uid}
+DTSTAMP:${toICSDate(new Date())}
+DTSTART:${toICSDate(start)}
+DTEND:${toICSDate(end)}
+SUMMARY:${state.name1} ${state.name2}
+DESCRIPTION:${state.desc.replace(/\n/g,'\\n')}
+LOCATION:${state.location}
+END:VEVENT
+END:VCALENDAR`;
+  return ics;
+}
+$('#btn-calendar').addEventListener('click', (e)=>{
+  e.stopPropagation();
+  $('#cal-menu').classList.toggle('hidden');
+});
+document.addEventListener('click', ()=> $('#cal-menu').classList.add('hidden'));
+$('#cal-menu').addEventListener('click', e=>e.stopPropagation());
+$$('[data-cal]').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    const type = b.dataset.cal;
+    const start = new Date(state.date);
+    const end = new Date(start.getTime()+2*3600000);
+    if(type==='ics'){
+      const blob = new Blob([generateICS()], {type:'text/calendar'});
+      const url = URL.createObjectURL(blob);
+      const a=document.createElement('a'); a.href=url; a.download=`${state.name1}-${state.name2}.ics`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+    }
+    if(type==='google'){
+      const gStart = toICSDate(start), gEnd = toICSDate(end);
+      const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(state.name1+' '+state.name2)}&dates=${gStart}/${gEnd}&details=${encodeURIComponent(state.desc)}&location=${encodeURIComponent(state.location)}`;
+      window.open(url,'_blank');
+    }
+    if(type==='outlook'){
+      const oStart = start.toISOString(), oEnd = end.toISOString();
+      const url = `https://outlook.live.com/calendar/0/deeplink/compose?path=/calendar/action/compose&rru=addevent&subject=${encodeURIComponent(state.name1+' '+state.name2)}&startdt=${oStart}&enddt=${oEnd}&body=${encodeURIComponent(state.desc)}&location=${encodeURIComponent(state.location)}`;
+      window.open(url,'_blank');
+    }
+    $('#cal-menu').classList.add('hidden');
+  });
+});
+
+// Share
+$('#btn-share').addEventListener('click', async ()=>{
+  const data = {title: `${state.name1} ${state.name2}`, text: state.desc, url: location.href};
+  if(navigator.share){ try{ await navigator.share(data);}catch{} }
+  else { await navigator.clipboard.writeText(location.href); const b=$('#btn-share'); const old=b.innerHTML; b.textContent='Copied'; setTimeout(()=>b.innerHTML=old,1200); }
+});
+
+$('#btn-reset').addEventListener('click', ()=>{
+  localStorage.removeItem('chrono-state');
+  state={...defaults};
+  initInputs();
+});
+$('#btn-dismiss-ended').addEventListener('click', ()=>{
+  $('#ended').classList.add('hidden');
+  const d = new Date(); d.setDate(d.getDate()+7);
+  state.date = new Date(d.getTime() - d.getTimezoneOffset()*60000).toISOString().slice(0,16);
+  inputs.dt.value = state.date; applyState(); save();
+});
+
+// init
+initInputs();
+if(state.bg.startsWith('data:') || state.bg.startsWith('https://')){
+  $('#bg-preview').style.backgroundImage = `url(${state.bg})`;
+  if(state.bg.startsWith('data:')){ $('#bg-preview').classList.remove('hidden'); $('#bg-placeholder').classList.add('hidden'); }
+}
+
+// entrance animation
+requestAnimationFrame(()=>{
+  document.body.style.opacity='0'; document.body.style.transition='opacity .8s ease';
+  setTimeout(()=>document.body.style.opacity='1',50);
+});
+</script>
+</body>
+</html>

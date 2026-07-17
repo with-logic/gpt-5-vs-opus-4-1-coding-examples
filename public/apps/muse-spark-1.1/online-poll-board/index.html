@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pollboard — Online Poll Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,600,0..100,0..1&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: {
+        display: ['Fraunces','serif'],
+        body: ['Plus Jakarta Sans','sans-serif'],
+      }
+    }
+  }
+}
+</script>
+<style>
+*{font-family:'Plus Jakarta Sans',sans-serif}
+.font-display{font-family:'Fraunces',serif}
+::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-thumb{background:#E8DDD0;border-radius:10px}
+body{background:#FFFBF0;color:#1F1A17}
+.blob{position:absolute;border-radius:50%;filter:blur(70px);opacity:.45;pointer-events:none}
+@keyframes floatA{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(18px,-22px) scale(1.05)}}
+@keyframes floatB{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-20px,16px) scale(0.95)}}
+@keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+.shimmer{background:linear-gradient(90deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.8) 50%,rgba(255,255,255,0) 100%);background-size:200% 100%;animation:shimmer 1.6s linear infinite}
+@keyframes popIn{0%{transform:scale(.9) translateY(8px);opacity:0}100%{transform:scale(1) translateY(0);opacity:1}}
+@keyframes confettiFall{0%{transform:translateY(-10vh) rotate(0deg);opacity:1}100%{transform:translateY(110vh) rotate(720deg);opacity:0}}
+.bar-fill{transition:width .9s cubic-bezier(.34,1.56,.64,1)}
+.vote-bubble{animation:popIn .45s cubic-bezier(.34,1.56,.64,1)}
+.count-tick{font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body class="min-h-screen relative overflow-x-hidden">
+<!-- background blobs -->
+<div class="fixed inset-0 overflow-hidden pointer-events-none">
+  <div class="blob w-[600px] h-[600px] bg-[#FFD6A7] -top-40 -left-32" style="animation:floatA 9s ease-in-out infinite"></div>
+  <div class="blob w-[540px] h-[540px] bg-[#FFB2D1] top-[10%] -right-40" style="animation:floatB 11s ease-in-out infinite"></div>
+  <div class="blob w-[680px] h-[680px] bg-[#C1BBFF] bottom-[-15%] left-[20%]" style="animation:floatA 13s ease-in-out infinite reverse"></div>
+  <div class="blob w-[380px] h-[380px] bg-[#A7F3D0] bottom-[10%] right-[18%]" style="animation:floatB 10s ease-in-out infinite"></div>
+</div>
+
+<canvas id="confetti" class="fixed inset-0 pointer-events-none z-[100]"></canvas>
+
+<!-- header -->
+<header class="sticky top-0 z-40 backdrop-blur-xl bg-[#FFFBF0]/75 border-b border-[#F1E6D6]">
+  <div class="max-w-[1120px] mx-auto px-5 sm:px-8 h-[68px] flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-[12px] bg-[#1F1A17] text-white flex items-center justify-center font-display font-bold text-[18px] tracking-tight">P•</div>
+      <span class="font-display text-[21px] tracking-[-0.02em] font-semibold">pollboard</span>
+      <div class="hidden sm:flex items-center gap-2 ml-6 pl-6 border-l border-[#EADFCE]">
+        <span class="w-2 h-2 rounded-full bg-[#20C18B] animate-pulse"></span>
+        <span class="text-[12px] font-semibold tracking-wide uppercase text-[#8A7F71]" id="liveCount">1,284 live now</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <div class="hidden md:flex items-center gap-1.5 bg-white border border-[#EDE3D5] rounded-full px-3.5 h-9 shadow-[0_2px_12px_rgba(0,0,0,.04)]">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#B9AD9D" stroke-width="2"><circle cx="11" cy="11" r="6"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="search" placeholder="Search polls..." class="bg-transparent outline-none text-[13.5px] w-[120px] placeholder:text-[#B9AD9D]">
+      </div>
+      <button id="newPollBtn" class="h-9 px-4 rounded-full bg-[#1F1A17] text-white text-[13.5px] font-semibold flex items-center gap-1.5 hover:bg-black transition shadow-[0_4px_16px_rgba(0,0,0,.15)]">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+        New poll
+      </button>
+    </div>
+  </div>
+</header>
+
+<main class="relative max-w-[1120px] mx-auto px-5 sm:px-8 pt-8 pb-20">
+  <!-- hero -->
+  <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-8">
+    <div>
+      <div class="inline-flex items-center gap-2 bg-white border border-[#F1E6D6] rounded-full px-3 py-1 text-[11.5px] font-bold tracking-wide uppercase text-[#9A8E7E] shadow-[0_2px_10px_rgba(0,0,0,.03)] mb-4">
+        <span class="w-1.5 h-1.5 bg-[#FF7A45] rounded-full"></span> Community picks • updates every minute
+      </div>
+      <h1 class="font-display text-[40px] sm:text-[54px] leading-[0.95] tracking-[-0.03em] font-[700]">What's <span class="relative inline-block">everyone <span class="absolute bottom-[6px] left-0 w-full h-[10px] bg-[#FFD6A7]/80 -z-10"></span></span><br>thinking today?</h1>
+    </div>
+    <div class="flex gap-3">
+      <div class="bg-white rounded-[18px] border border-[#F1E6D6] px-5 py-3.5 min-w-[128px] shadow-[0_8px_24px_rgba(0,0,0,.04)]">
+        <div class="text-[11px] font-bold tracking-widest uppercase text-[#B9AD9D] mb-1">Total votes</div>
+        <div class="font-display text-[26px] leading-none tracking-tight count-tick" id="statTotal">47,291</div>
+      </div>
+      <div class="bg-white rounded-[18px] border border-[#F1E6D6] px-5 py-3.5 min-w-[128px] shadow-[0_8px_24px_rgba(0,0,0,.04)]">
+        <div class="text-[11px] font-bold tracking-widest uppercase text-[#B9AD9D] mb-1">Active polls</div>
+        <div class="font-display text-[26px] leading-none tracking-tight count-tick" id="statPolls">6 live</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- filters -->
+  <div class="flex flex-wrap items-center gap-2.5 mb-7">
+    <div id="filters" class="flex flex-wrap gap-2"></div>
+    <div class="h-5 w-px bg-[#EADFCE] mx-1 hidden sm:block"></div>
+    <select id="sort" class="bg-white border border-[#EDE3D5] rounded-full h-8 px-3 pr-7 text-[12.5px] font-semibold text-[#5B5349] outline-none shadow-[0_2px_10px_rgba(0,0,0,.03)]">
+      <option value="trending">🔥 Trending</option>
+      <option value="new">✦ Newest</option>
+      <option value="votes">Most votes</option>
+    </select>
+  </div>
+
+  <!-- polls grid -->
+  <div id="grid" class="grid grid-cols-1 md:grid-cols-2 gap-5"></div>
+</main>
+
+<!-- create modal -->
+<div id="modal" class="fixed inset-0 z-50 hidden">
+  <div class="absolute inset-0 bg-[#1F1A17]/40 backdrop-blur-[6px]" id="modalBg"></div>
+  <div class="relative min-h-screen flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-[480px] rounded-[28px] shadow-[0_24px_64px_rgba(0,0,0,.18)] border border-[#F1E6D6] overflow-hidden vote-bubble">
+      <div class="p-7 pb-4 flex items-center justify-between">
+        <h3 class="font-display text-[22px] tracking-tight font-semibold">Create a poll</h3>
+        <button id="closeModal" class="w-8 h-8 rounded-full bg-[#FFF3E6] flex items-center justify-center hover:bg-[#FFE6CC]"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9A8E7E" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      </div>
+      <div class="px-7 pb-7 space-y-4">
+        <div>
+          <label class="text-[11px] font-bold tracking-widest uppercase text-[#B9AD9D]">Question</label>
+          <input id="qInput" class="mt-1.5 w-full bg-[#FFFBF0] border border-[#F1E6D6] rounded-[14px] px-4 h-12 text-[14.5px] font-medium outline-none focus:border-[#FFB86A] focus:ring-2 focus:ring-[#FFD6A7]/60" placeholder="Ask something juicy...">
+        </div>
+        <div>
+          <label class="text-[11px] font-bold tracking-widest uppercase text-[#B9AD9D]">Options</label>
+          <div id="optInputs" class="mt-1.5 space-y-2">
+            <input class="opt w-full bg-white border border-[#EDE3D5] rounded-[12px] px-4 h-11 text-[14px] outline-none focus:border-[#C1BBFF]" placeholder="Option 1">
+            <input class="opt w-full bg-white border border-[#EDE3D5] rounded-[12px] px-4 h-11 text-[14px] outline-none focus:border-[#C1BBFF]" placeholder="Option 2">
+          </div>
+          <button id="addOpt" class="mt-2 text-[12.5px] font-semibold text-[#7C5CFF] hover:underline">+ Add option</button>
+        </div>
+        <div class="flex gap-2 pt-2">
+          <button id="submitPoll" class="flex-1 h-12 rounded-full bg-[#1F1A17] text-white font-semibold text-[14px] hover:bg-black">Publish poll</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const categories = [
+  {id:'all', label:'All boards', emoji:'✦'},
+  {id:'work', label:'Work', emoji:'💼'},
+  {id:'music', label:'Music', emoji:'🎧'},
+  {id:'tech', label:'Tech', emoji:'💻'},
+  {id:'design', label:'Design', emoji:'🎨'},
+  {id:'fun', label:'Culture', emoji:'🍿'},
+  {id:'life', label:'Life', emoji:'🌿'},
+];
+let activeCat='all';
+
+let polls = [
+  {
+    id:1, cat:'work', q:"What's your focus ritual before deep work?", color:'#FFD6A7',
+    total:4321, time:'2h left', author:'@maya', avatar:'M',
+    options:[
+      {t:'Lo-fi + coffee', v:1842, c:'#FF7A45'},
+      {t:'Noise cancelling silence', v:1123, c:'#7C5CFF'},
+      {t:'Walk around the block', v:889, c:'#20C18B'},
+      {t:'Messy desk, just start', v:467, c:'#FFB2D1'},
+    ], voted:null, trending:true
+  },
+  {
+    id:2, cat:'tech', q:'Where is AI actually useful today?', color:'#C1BBFF',
+    total:8214, time:'5h left', author:'@alexchen', avatar:'A',
+    options:[
+      {t:'Writing & brainstorming', v:3421, c:'#7C5CFF'},
+      {t:'Code autocomplete', v:2988, c:'#1F1A17'},
+      {t:'Image generation', v:1102, c:'#FFB2D1'},
+      {t:'Customer support', v:703, c:'#FFD166'},
+    ], voted:null, trending:true
+  },
+  {
+    id:3, cat:'design', q:'Which detail makes a product feel premium?', color:'#FFB2D1',
+    total:2890, time:'1d left', author:'@sophia', avatar:'S',
+    options:[
+      {t:'Micro-interactions', v:1455, c:'#FF6B9D'},
+      {t:'Typography', v:899, c:'#C1BBFF'},
+      {t:'Sound design', v:336, c:'#FFD166'},
+      {t:'Packaging', v:200, c:'#A7F3D0'},
+    ], voted:null, trending:false
+  },
+  {
+    id:4, cat:'fun', q:'Best movie rewatch comfort pick?', color:'#A7F3D0',
+    total:15620, time:'12h left', author:'@jules', avatar:'J',
+    options:[
+      {t:'Studio Ghibli marathon', v:6220, c:'#20C18B'},
+      {t:"The Office (again)", v:4800, c:'#FFD166'},
+      {t:'Interstellar', v:2900, c:'#1F1A17'},
+      {t:'Past Lives', v:1700, c:'#FFB2D1'},
+    ], voted:null, trending:true
+  },
+  {
+    id:5, cat:'music', q:'You can only keep one →', color:'#FFD166',
+    total:3422, time:'3h left', author:'@kaito', avatar:'K',
+    options:[
+      {t:'AirPods forever', v:1211, c:'#1F1A17'},
+      {t:'Vinyl collection', v:1189, c:'#FF7A45'},
+      {t:'Concert tickets', v:1022, c:'#7C5CFF'},
+    ], voted:null, trending:false
+  },
+  {
+    id:6, cat:'life', q:'Ideal Sunday reset?', color:'#FFE5E5',
+    total:5134, time:'8h left', author:'@nori', avatar:'N',
+    options:[
+      {t:'Long walk + podcast', v:2100, c:'#A7F3D0'},
+      {t:'Deep clean apartment', v:1434, c:'#C1BBFF'},
+      {t:'Cook something slow', v:1000, c:'#FFD166'},
+      {t:'Do absolutely nothing', v:600, c:'#FF7A45'},
+    ], voted:null, trending:false
+  },
+];
+
+const grid = document.getElementById('grid');
+const filtersEl = document.getElementById('filters');
+const searchEl = document.getElementById('search');
+const sortEl = document.getElementById('sort');
+
+function renderFilters(){
+  filtersEl.innerHTML = categories.map(c=>`
+    <button data-cat="${c.id}" class="filter-btn h-8 px-3.5 rounded-full text-[12.5px] font-semibold border flex items-center gap-1.5 transition ${activeCat===c.id?'bg-[#1F1A17] text-white border-[#1F1A17] shadow-[0_4px_12px_rgba(0,0,0,.12)]':'bg-white border-[#EDE3D5] text-[#6B6259] hover:border-[#D9CFC0]'}">
+      <span>${c.emoji}</span>${c.label}
+    </button>
+  `).join('');
+  document.querySelectorAll('.filter-btn').forEach(b=>{
+    b.onclick=()=>{activeCat=b.dataset.cat; renderFilters(); renderPolls();}
+  });
+}
+
+function getFiltered(){
+  let list=[...polls];
+  if(activeCat!=='all') list=list.filter(p=>p.cat===activeCat);
+  const q=searchEl.value.toLowerCase();
+  if(q) list=list.filter(p=>p.q.toLowerCase().includes(q) || p.options.some(o=>o.t.toLowerCase().includes(q)));
+  const sort=sortEl.value;
+  if(sort==='trending') list.sort((a,b)=> (b.trending?1:0)-(a.trending?1:0) || b.total-a.total);
+  if(sort==='new') list.sort((a,b)=>b.id-a.id);
+  if(sort==='votes') list.sort((a,b)=>b.total-a.total);
+  return list;
+}
+
+function pct(opt,total){return total? Math.round((opt.v/total)*100):0}
+
+function renderPolls(){
+  const list=getFiltered();
+  document.getElementById('statPolls').textContent=list.length+' live';
+  grid.innerHTML = list.map(p=>{
+    const total=p.total;
+    const maxV=Math.max(...p.options.map(o=>o.v));
+    const voted=p.voted!==null;
+    return `
+    <article class="group relative bg-white rounded-[26px] border border-[#F1E6D6] shadow-[0_12px_32px_rgba(31,26,23,.06)] overflow-hidden hover:shadow-[0_20px_48px_rgba(31,26,23,.10)] hover:-translate-y-[2px] transition-all duration-300" data-id="${p.id}">
+      <div class="absolute top-0 left-0 right-0 h-[6px]" style="background:${p.color}"></div>
+      <div class="p-6 sm:p-7">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-2">
+            <span class="text-[10.5px] font-bold tracking-widest uppercase px-2.5 py-1 rounded-full border" style="background:${p.color}22;border-color:${p.color}66;color:#5B5349">${categories.find(c=>c.id===p.cat)?.label||p.cat}</span>
+            ${p.trending?`<span class="inline-flex items-center gap-1 text-[11px] font-bold text-[#FF6B35] bg-[#FFF0E6] px-2.5 py-1 rounded-full">🔥 Trending</span>`:''}
+          </div>
+          <div class="flex items-center gap-2 text-[11px] text-[#B9AD9D] font-medium"><span class="w-1.5 h-1.5 rounded-full bg-[#20C18B] animate-pulse"></span>${p.time}</div>
+        </div>
+        <h2 class="font-display text-[22px] sm:text-[24px] leading-[1.15] tracking-[-0.02em] font-[600] mb-5">${p.q}</h2>
+
+        <div class="space-y-2.5" data-options>
+        ${p.options.map((o,i)=>{
+          const per=pct(o,total);
+          const isWinning=o.v===maxV && voted;
+          const isChosen=p.voted===i;
+          return `
+          <button data-vote="${i}" class="opt-btn w-full text-left relative rounded-[14px] border ${isChosen?'border-[#1F1A17] bg-[#1F1A17] text-white':'border-[#F1E6D6] bg-[#FFFCF6] hover:bg-white hover:border-[#EADFCE]'} overflow-hidden transition-all group/opt">
+            <div class="bar-fill absolute top-0 left-0 h-full rounded-[14px] ${isChosen?'opacity-20':'opacity-100'}" style="width:${voted?per:0}%;background:${isChosen?'#fff':o.c};background:${isChosen?'#ffffff30':o.c+'22'};border-right:${isChosen?'':'3px solid '+o.c}"></div>
+            ${voted?`<div class="bar-fill absolute top-0 left-0 h-full" style="width:${per}%;background:${o.c};opacity:${isChosen?.15:.10}"></div>`:''}
+            <div class="relative flex items-center justify-between px-4 h-[52px]">
+              <div class="flex items-center gap-3">
+                <div class="w-7 h-7 rounded-full border flex items-center justify-center text-[12px] font-bold transition ${isChosen?'bg-white text-black border-white':'bg-white border-[#EDE3D5] text-[#8A7F71]'}">${isChosen?'✓':String.fromCharCode(65+i)}</div>
+                <span class="text-[14px] font-[600] tracking-[-0.01em]">${o.t}</span>
+                ${isWinning?`<span class="ml-1">👑</span>`:''}
+              </div>
+              <div class="flex items-center gap-2">
+                ${voted?`<span class="text-[13px] font-bold count-tick tabular-nums">${per}%</span>`:''}
+                <span class="text-[11px] ${isChosen?'text-white/70':'text-[#B9AD9D]'} font-medium count-tick">${voted?o.v.toLocaleString()+' votes':'Vote'}</span>
+              </div>
+            </div>
+          </button>`
+        }).join('')}
+        </div>
+
+        <div class="mt-5 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <div class="flex -space-x-2">
+              ${[0,1,2].map(k=>`<div class="w-7 h-7 rounded-full border-2 border-white flex items-center justify-center text-[10px] font-bold" style="background:${['#FFD6A7','#C1BBFF','#A7F3D0'][k]};color:#1F1A17">${['M','A','J'][k]}</div>`).join('')}
+            </div>
+            <span class="text-[12.5px] text-[#8A7F71] font-medium"><span class="font-bold text-[#1F1A17] count-tick">${total.toLocaleString()}</span> votes • ${p.author}</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <button class="share-btn w-8 h-8 rounded-full bg-[#FFFBF0] border border-[#F1E6D6] flex items-center justify-center hover:bg-white"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A7F71" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg></button>
+            <button class="w-8 h-8 rounded-full bg-[#FFFBF0] border border-[#F1E6D6] flex items-center justify-center hover:bg-white">⋯</button>
+          </div>
+        </div>
+
+        ${voted?`
+        <div class="mt-4 bg-[#FFFBF0] border border-dashed border-[#EADFCE] rounded-[14px] px-4 py-3 flex items-center justify-between">
+          <span class="text-[12px] font-semibold text-[#8A7F71]">You voted for <span class="text-[#1F1A17]">${p.options[p.voted].t}</span></span>
+          <button data-undo="${p.id}" class="text-[11.5px] font-bold uppercase tracking-wide text-[#7C5CFF] hover:underline">Change</button>
+        </div>`:''}
+      </div>
+    </article>`
+  }).join('');
+
+  // bind votes
+  grid.querySelectorAll('[data-vote]').forEach(btn=>{
+    btn.addEventListener('click', e=>{
+      const card = e.currentTarget.closest('article');
+      const pid = Number(card.dataset.id);
+      const idx = Number(e.currentTarget.dataset.vote);
+      vote(pid, idx, e.currentTarget);
+    });
+  });
+  grid.querySelectorAll('[data-undo]').forEach(b=>{
+    b.onclick=()=>{
+      const p=polls.find(x=>x.id==b.dataset.undo);
+      if(p.options[p.voted]) p.options[p.voted].v--;
+      p.total--;
+      p.voted=null;
+      renderPolls();
+    }
+  });
+  grid.querySelectorAll('.share-btn').forEach(b=>{
+    b.onclick=()=>{
+      b.innerHTML='✓';
+      setTimeout(()=>b.innerHTML='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8A7F71" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>',1200);
+    }
+  });
+}
+
+function vote(pid, idx, btnEl){
+  const p=polls.find(x=>x.id===pid);
+  if(p.voted===idx) return;
+  const rect=btnEl.getBoundingClientRect();
+  if(p.voted!==null){
+    p.options[p.voted].v--;
+  } else {
+    p.total++;
+  }
+  p.options[idx].v++;
+  p.voted=idx;
+
+  // animate
+  spawnConfetti(rect.left+rect.width/2, rect.top+rect.height/2, p.options[idx].c);
+  bumpLive();
+  renderPolls();
+  // after render animate bars with delay
+  requestAnimationFrame(()=>{
+    document.querySelectorAll(`article[data-id="${pid}"] .bar-fill`).forEach(b=>{
+      b.style.width=b.style.width;
+    });
+  });
+}
+
+function bumpLive(){
+  const el=document.getElementById('statTotal');
+  let cur = parseInt(el.textContent.replace(/,/g,''));
+  cur+=1;
+  el.textContent=cur.toLocaleString();
+  el.classList.add('scale-110');setTimeout(()=>el.classList.remove('scale-110'),200);
+}
+
+// confetti
+const cvs=document.getElementById('confetti');
+const ctx=cvs.getContext('2d');
+function resize(){cvs.width=innerWidth;cvs.height=innerHeight}
+resize();addEventListener('resize',resize);
+let particles=[];
+function spawnConfetti(x,y,color){
+  const count=18;
+  for(let i=0;i<count;i++){
+    particles.push({
+      x:x, y:y,
+      vx:(Math.random()-0.5)*8,
+      vy:(Math.random()-.3)* -8 -2,
+      r:Math.random()*6+3,
+      col: color || `hsl(${Math.random()*80+20},100%,60%)`,
+      rot:Math.random()*Math.PI,
+      vr:(Math.random()-0.5)*0.3,
+      life:1
+    });
+  }
+}
+function loop(){
+  ctx.clearRect(0,0,cvs.width,cvs.height);
+  particles=particles.filter(p=>p.life>0);
+  particles.forEach(p=>{
+    p.x+=p.vx; p.y+=p.vy; p.vy+=0.18; p.rot+=p.vr; p.life-=0.012;
+    ctx.globalAlpha=p.life;
+    ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot);
+    ctx.fillStyle=p.col;
+    ctx.fillRect(-p.r/2,-p.r/2,p.r,p.r*0.6);
+    ctx.restore();
+  });
+  requestAnimationFrame(loop);
+}
+loop();
+
+// modal
+const modal=document.getElementById('modal');
+document.getElementById('newPollBtn').onclick=()=>modal.classList.remove('hidden');
+document.getElementById('closeModal').onclick=()=>modal.classList.add('hidden');
+document.getElementById('modalBg').onclick=()=>modal.classList.add('hidden');
+document.getElementById('addOpt').onclick=(e)=>{
+  e.preventDefault();
+  const cont=document.getElementById('optInputs');
+  if(cont.children.length>=5) return;
+  const inp=document.createElement('input');
+  inp.className='opt w-full bg-white border border-[#EDE3D5] rounded-[12px] px-4 h-11 text-[14px] outline-none focus:border-[#C1BBFF]';
+  inp.placeholder='Option '+(cont.children.length+1);
+  cont.appendChild(inp);
+};
+document.getElementById('submitPoll').onclick=()=>{
+  const q=document.getElementById('qInput').value.trim();
+  const opts=[...document.querySelectorAll('#optInputs .opt')].map(i=>i.value.trim()).filter(Boolean);
+  if(!q || opts.length<2) {shake(); return;}
+  polls.unshift({
+    id:Date.now(), cat:'work', q, color:['#FFD6A7','#C1BBFF','#A7F3D0','#FFB2D1'][Math.floor(Math.random()*4)],
+    total:0, time:'just now', author:'@you', avatar:'Y',
+    options:opts.map((t,i)=>({t, v:0, c:['#FF7A45','#7C5CFF','#20C18B','#FFB2D1','#FFD166'][i%5]})),
+    voted:null, trending:true
+  });
+  document.getElementById('qInput').value='';
+  document.getElementById('optInputs').innerHTML='<input class="opt w-full bg-white border border-[#EDE3D5] rounded-[12px] px-4 h-11 text-[14px] outline-none" placeholder="Option 1"><input class="opt w-full bg-white border border-[#EDE3D5] rounded-[12px] px-4 h-11 text-[14px] outline-none" placeholder="Option 2">';
+  modal.classList.add('hidden');
+  spawnConfetti(innerWidth/2, innerHeight/2.5, '#7C5CFF');
+  renderPolls();
+};
+function shake(){
+  const m=modal.querySelector('.vote-bubble');
+  m.animate([{transform:'translateX(0)'},{transform:'translateX(6px)'},{transform:'translateX(-6px)'},{transform:'translateX(0)'}],{duration:200});
+}
+
+// live jitter
+setInterval(()=>{
+  const el=document.getElementById('liveCount');
+  const n=1200+Math.floor(Math.random()*200);
+  el.textContent=n.toLocaleString()+' live now';
+},3200);
+
+// init
+renderFilters();
+renderPolls();
+searchEl.addEventListener('input',()=>renderPolls());
+sortEl.addEventListener('change',()=>renderPolls());
+</script>
+</body>
+</html>

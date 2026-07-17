@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FM — voice playground</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fragment+Mono:ital@0;1&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config={theme:{extend:{fontFamily:{sans:['Inter','system-ui'],mono:['Fragment Mono','monospace'],serif:['Instrument Serif','serif']}}}}
+</script>
+<style>
+*{ -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:#2a2a2e;border-radius:99px}
+input[type=range]{-webkit-appearance:none;appearance:none;height:2px;background:#222225;border-radius:99px;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:#fff;cursor:pointer;box-shadow:0 0 0 3px rgba(255,255,255,.15);transition:.15s}
+input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.2)}
+.glass{backdrop-filter:blur(24px) saturate(1.4);-webkit-backdrop-filter:blur(24px) saturate(1.4)}
+.noise::before{content:"";position:absolute;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");pointer-events:none;z-index:2}
+.voice-card{transition:all .28s cubic-bezier(.16,1,.3,1)}
+.voice-card:hover{transform:translateY(-1px)}
+.voice-card.active{box-shadow:0 0 0 1px rgba(255,255,255,.2), 0 8px 24px -8px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.1)}
+@keyframes drift{0%{transform:translate(0,0) scale(1)}50%{transform:translate(-10px,8px) scale(1.05)}100%{transform:translate(0,0) scale(1)}}
+.shimmer{position:relative;overflow:hidden}
+.shimmer::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg, transparent 20%, rgba(255,255,255,.08) 50%, transparent 80%);transform:translateX(-100%);animation:shim 3.2s infinite}
+@keyframes shim{100%{transform:translateX(100%)}}
+</style>
+</head>
+<body class="bg-[#070708] text-zinc-100 font-sans selection:bg-white selection:text-black overflow-hidden">
+<div id="app" class="h-[100svh] flex flex-col relative">
+  <!-- ambient gradients -->
+  <div class="pointer-events-none absolute inset-0 overflow-hidden">
+    <div class="absolute -top-[40%] left-1/2 -translate-x-1/2 w-[1100px] h-[800px] rounded-[100%] bg-[radial-gradient(ellipse_at_center,_rgba(255,255,255,0.07),transparent_60%)] blur-[20px]"></div>
+    <div id="glow1" class="absolute top-[20%] left-[35%] w-[420px] h-[420px] rounded-full opacity-[0.18] blur-[80px] transition-all duration-1000" style="background: radial-gradient(circle, #a8d8ff, #7a5cff 60%)"></div>
+    <div id="glow2" class="absolute top-[28%] right-[28%] w-[360px] h-[360px] rounded-full opacity-[0.14] blur-[90px] transition-all duration-1000" style="background: radial-gradient(circle, #ff8ec6, #ff5a2f 70%)"></div>
+  </div>
+
+  <!-- header -->
+  <header class="relative z-30 h-[56px] shrink-0 flex items-center justify-between px-[18px] md:px-7 border-b border-white/[0.06]">
+    <div class="flex items-center gap-6">
+      <div class="flex items-center gap-2.5">
+        <div class="w-7 h-7 rounded-full bg-white text-black grid place-items-center font-serif text-[17px] tracking-[-0.02em] leading-none">fm</div>
+        <span class="font-medium text-[13.5px] tracking-[-0.01em]">openai.fm</span>
+        <span class="hidden md:inline-flex ml-3 text-[10px] tracking-[0.14em] uppercase font-mono text-white/40 border border-white/10 rounded-full px-2 py-1">Inspired Concept • Web Speech API</span>
+      </div>
+      <nav class="hidden md:flex items-center gap-1 ml-2 p-1 rounded-full bg-white/[0.04] border border-white/[0.06]">
+        <button class="px-3.5 h-7 rounded-full bg-white text-black text-[12px] font-medium">Playground</button>
+        <button class="px-3.5 h-7 rounded-full text-white/60 text-[12px] hover:text-white transition">Voices</button>
+        <button class="px-3.5 h-7 rounded-full text-white/60 text-[12px] hover:text-white transition">API</button>
+      </nav>
+    </div>
+    <div class="flex items-center gap-2">
+      <div class="hidden md:flex items-center gap-2 text-[11px] font-mono text-white/30"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,.7)]"></span> live synthesis</div>
+      <button id="shareBtn" class="h-8 px-3.5 rounded-full bg-white/[0.08] hover:bg-white/[0.12] border border-white/[0.08] text-[12px] font-medium transition">Share</button>
+      <button class="h-8 w-8 rounded-full bg-white text-black grid place-items-center">⌘</button>
+    </div>
+  </header>
+
+  <div class="relative z-10 flex-1 flex min-h-0">
+    <!-- left rail -->
+    <aside class="w-[360px] xl:w-[380px] shrink-0 hidden md:flex flex-col border-r border-white/[0.06] bg-[#0c0c0e]/70 glass">
+      <!-- search + chips -->
+      <div class="p-4 pb-3 border-b border-white/[0.04]">
+        <div class="relative">
+          <input id="voiceSearch" placeholder="Find a voice…" class="w-full h-9 rounded-full bg-white/[0.06] border border-white/[0.08] pl-9 pr-3 text-[13px] placeholder:text-white/30 focus:outline-none focus:border-white/20 transition">
+          <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30 text-[12px]">⌕</span>
+        </div>
+        <div class="mt-3 flex gap-1.5 overflow-x-auto scrollbar-none">
+          <button data-filter="all" class="filter-chip shrink-0 h-6 px-2.5 rounded-full bg-white text-black text-[11px] font-medium">All</button>
+          <button data-filter="warm" class="filter-chip shrink-0 h-6 px-2.5 rounded-full bg-white/[0.07] hover:bg-white/[0.12] text-white/70 text-[11px]">Warm</button>
+          <button data-filter="crisp" class="filter-chip shrink-0 h-6 px-2.5 rounded-full bg-white/[0.07] hover:bg-white/[0.12] text-white/70 text-[11px]">Crisp</button>
+          <button data-filter="character" class="filter-chip shrink-0 h-6 px-2.5 rounded-full bg-white/[0.07] hover:bg-white/[0.12] text-white/70 text-[11px]">Character</button>
+        </div>
+      </div>
+      <!-- voice list -->
+      <div id="voiceList" class="flex-1 overflow-y-auto p-2.5 space-y-1.5"></div>
+
+      <!-- controls -->
+      <div class="border-t border-white/[0.06] p-4 space-y-4 bg-[#0a0a0c]">
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-mono uppercase tracking-[0.12em] text-white/40">Expression</span>
+          <button id="randomize" class="text-[11px] font-mono text-white/50 hover:text-white underline underline-offset-4">Randomize</button>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="rounded-2xl bg-white/[0.04] border border-white/[0.06] p-3">
+            <div class="flex justify-between text-[11px] font-mono text-white/40 mb-2"><span>Speed</span><span id="speedVal" class="text-white/80">1.0×</span></div>
+            <input id="speed" type="range" min="0.6" max="1.4" step="0.05" value="1" class="w-full">
+          </div>
+          <div class="rounded-2xl bg-white/[0.04] border border-white/[0.06] p-3">
+            <div class="flex justify-between text-[11px] font-mono text-white/40 mb-2"><span>Tone</span><span id="pitchVal" class="text-white/80">-2.0</span></div>
+            <input id="pitch" type="range" min="-6" max="6" step="0.5" value="-1" class="w-full">
+          </div>
+        </div>
+        <div>
+          <div class="flex gap-1.5 flex-wrap" id="moodChips"></div>
+        </div>
+        <div class="flex items-center gap-2 pt-1 text-[11px] font-mono text-white/30">
+          <label class="flex items-center gap-2 cursor-pointer"><input id="autoplay" type="checkbox" class="accent-white w-3 h-3"> Auto-play</label>
+          <span class="mx-1">·</span><span>Space to play</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- center stage -->
+    <main class="flex-1 min-w-0 flex flex-col relative">
+      <!-- top tabs / prompt presets -->
+      <div class="shrink-0 h-[49px] border-b border-white/[0.06] flex items-center px-4 md:px-8 gap-2 overflow-x-auto">
+        <span class="text-[11px] font-mono uppercase tracking-[0.12em] text-white/25 mr-2 shrink-0">Try</span>
+        <div id="presetRow" class="flex items-center gap-2"></div>
+      </div>
+
+      <!-- stage -->
+      <div class="flex-1 relative overflow-hidden flex flex-col items-center">
+        <!-- orb area -->
+        <div class="flex-1 w-full relative flex items-center justify-center">
+          <canvas id="orb" class="absolute inset-0 w-full h-full"></canvas>
+          <div class="relative z-10 flex flex-col items-center">
+            <div id="orbWrap" class="relative w-[300px] h-[300px] md:w-[420px] md:h-[420px] rounded-full flex items-center justify-center">
+              <canvas id="orbFg" width="560" height="560" class="w-full h-full rounded-full"></canvas>
+              <div class="absolute inset-[18%] rounded-full border border-white/[0.07] pointer-events-none"></div>
+              <div class="absolute inset-[36%] rounded-full border border-white/[0.05] pointer-events-none"></div>
+              <div id="centerLabel" class="absolute inset-0 grid place-items-center pointer-events-none">
+                <div class="text-center">
+                  <div id="activeVoiceName" class="font-serif text-[44px] md:text-[56px] leading-[0.9] tracking-[-0.03em]">Alloy</div>
+                  <div id="activeVoiceDesc" class="mt-2 font-mono text-[11px] uppercase tracking-[0.16em] text-white/40">Neutral • Balanced</div>
+                  <div id="playingBadge" class="hidden mt-4 inline-flex items-center gap-1.5 px-2.5 h-6 rounded-full bg-white text-black text-[11px] font-medium"><span class="w-1.5 h-1.5 rounded-full bg-black animate-pulse"></span>speaking</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- karaoke transcript -->
+            <div class="mt-8 md:mt-2 max-w-[620px] px-6 text-center">
+              <p id="karaoke" class="font-serif text-[18px] md:text-[22px] leading-[1.35] tracking-[-0.01em] text-white/50"></p>
+              <p id="subline" class="mt-3 font-mono text-[11px] text-white/25"></p>
+            </div>
+          </div>
+
+          <!-- side transcript panel (desktop) -->
+          <div class="hidden xl:flex absolute right-6 top-1/2 -translate-y-1/2 w-[260px] flex-col gap-3">
+            <div class="rounded-[18px] bg-[#121214] border border-white/[0.07] p-3.5">
+              <div class="flex items-center justify-between mb-3"><span class="text-[11px] font-mono uppercase tracking-widest text-white/30">Script</span><span class="text-[10px] font-mono px-2 h-5 grid place-items-center rounded-full bg-white/10 text-white/50">2 speakers</span></div>
+              <div id="scriptPanel" class="space-y-2.5"></div>
+            </div>
+            <div class="rounded-[18px] bg-white/[0.04] border border-white/[0.07] p-3 flex items-center gap-2.5">
+              <div class="w-8 h-8 rounded-full bg-white/10 grid place-items-center text-[12px]">◐</div>
+              <div class="text-[12px] leading-tight"><div class="font-medium">OpenAI.fm inspired</div><div class="text-white/40 font-mono text-[11px]">Web Speech API • Canvas driven</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- bottom composer -->
+        <div class="w-full border-t border-white/[0.06] bg-[#0e0e10]/90 glass shrink-0">
+          <div class="max-w-[900px] mx-auto px-4 md:px-6 py-4 flex flex-col gap-3">
+            <div class="relative rounded-[28px] bg-[#161618] border border-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_20px_60px_rgba(0,0,0,0.5)]">
+              <textarea id="prompt" class="w-full min-h-[86px] max-h-[160px] bg-transparent resize-none outline-none px-5 md:px-6 pt-4 pb-14 text-[15px] md:text-[16px] leading-[1.5] placeholder:text-white/25" placeholder="What do you want to say? Try: 'In 2030, voice is the new interface. Every app feels alive, like it's listening with intention.'"></textarea>
+              <div class="absolute left-2 right-2 bottom-2 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <button id="playBtn" class="h-[38px] px-4 rounded-full bg-white text-black text-[13.5px] font-medium flex items-center gap-2 hover:bg-zinc-100 transition active:scale-[0.98]">
+                    <span id="playIcon" class="text-[14px]">▶</span><span id="playText">Play</span>
+                  </button>
+                  <button id="stopBtn" class="h-[38px] w-[38px] rounded-full bg-white/[0.08] hover:bg-white/[0.12] grid place-items-center">■</button>
+                  <div class="hidden md:flex items-center gap-2 ml-1 pl-3 border-l border-white/10">
+                    <canvas id="wave" width="120" height="28" class="w-[96px] h-7 opacity-70"></canvas>
+                    <span id="timeLabel" class="font-mono text-[11px] text-white/30 tabular-nums">00:00 / 00:12</span>
+                  </div>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <button class="h-8 px-3 rounded-full bg-white/[0.06] border border-white/[0.08] text-[11px] font-mono text-white/60 hover:text-white transition">Download</button>
+                  <button id="clearBtn" class="h-8 w-8 rounded-full bg-white/[0.06] border border-white/[0.08] grid place-items-center text-white/50 hover:text-white">✕</button>
+                </div>
+              </div>
+            </div>
+            <div class="flex items-center justify-between px-1">
+              <div class="flex items-center gap-2 text-[11px] font-mono text-white/25"><kbd class="px-1.5 h-5 grid place-items-center rounded border border-white/10 bg-white/[0.06] text-[10px]">⌘</kbd><span> + Enter to play</span><span class="hidden md:inline">• 188 chars • streaming synthesis</span></div>
+              <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-400/80"></span><span class="text-[11px] font-mono text-white/30">Latency ~120ms</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- mobile voice drawer -->
+  <div class="md:hidden absolute bottom-[152px] left-3 right-3 z-20 flex gap-2 overflow-x-auto pb-2">
+    <div id="mobileVoices" class="flex gap-2"></div>
+  </div>
+</div>
+
+<script>
+const VOICES = [
+  { id:'alloy', name:'Alloy', role:'Neutral • Balanced', about:'Adaptive, clear general voice', tint:['#c3d9ff','#8a7dff'], filter:'all', mood:'neutral', tag:'warm', pitch:0 },
+  { id:'ash', name:'Ash', role:'Low • Grounded', about:'Calm baritone with weight', tint:['#ffb07a','#ff5a3a'], filter:'warm', mood:'calm', tag:'warm', pitch:-3 },
+  { id:'ballad', name:'Ballad', role:'Soft • Lyrical', about:'Poetic, gentle storyteller', tint:['#ffc6e5','#a07dff'], filter:'warm', mood:'soft', tag:'warm', pitch:1.5 },
+  { id:'coral', name:'Coral', role:'Bright • Upbeat', about:'Energetic optimistic presence', tint:['#ffd6a0','#ff7ad1'], filter:'crisp', mood:'cheerful', tag:'crisp', pitch:2.5 },
+  { id:'echo', name:'Echo', role:'Deep • Cinematic', about:'Trailer, documentary depth', tint:['#a5ffcf','#5a9cff'], filter:'character', mood:'dramatic', tag:'character', pitch:-4 },
+  { id:'sage', name:'Sage', role:'Wise • Measured', about:'Thoughtful guide voice', tint:['#b9ffb8','#6ebaff'], filter:'warm', mood:'wise', tag:'warm', pitch:-1 },
+  { id:'shimmer', name:'Shimmer', role:'Airy • Ethereal', about:'Light, breathy, intimate', tint:['#d7e2ff','#ff9fe7'], filter:'crisp', mood:'whisper', tag:'crisp', pitch:3 },
+  { id:'verse', name:'Verse', role:'Dynamic • Theatrical', about:'High range performer', tint:['#ffe5a8','#ff6b6b'], filter:'character', mood:'excited', tag:'character', pitch:1 },
+];
+
+const PRESETS = [
+  "In 2030, voice is the new interface. Every app feels alive, like it's listening with intention.",
+  "Welcome to FM. Choose a voice, write anything, and hear it breathe.",
+  "Okay, so today we’re diving into why good audio design feels like product therapy.",
+  "There’s a quiet moment before the city wakes. The lights flicker, and then… it begins.",
+  "Hey — it’s me. I know it’s late, but I had to tell you about the idea that won’t let me sleep.",
+  "Breaking: engineers teach AI to improvise jazz. The audience? Absolutely losing it.",
+];
+
+const MOODS = [
+  { id:'neutral', label:'Neutral', emoji:'◍', prompt:'clear neutral tone' },
+  { id:'whisper', label:'Whisper', emoji:'~', prompt:'soft whisper, intimate, close mic' },
+  { id:'excited', label:'Excited', emoji:'↗', prompt:'really excited, fast, bright!' },
+  { id:'sad', label:'Melancholy', emoji:'◒', prompt:'a little sad, reflective, slow' },
+  { id:'cheerful', label:'Cheerful', emoji:'☺', prompt:'cheerful, warm smile, upbeat' },
+  { id:'dramatic', label:'Dramatic', emoji:'⬢', prompt:'cinematic, dramatic pause, deep' },
+];
+
+let state = {
+  voice: VOICES[0],
+  text: PRESETS[0],
+  speed: 1,
+  pitch: -1,
+  mood: 'neutral',
+  playing: false,
+  progress: 0,
+  duration: 12,
+  filter: 'all',
+  search: '',
+};
+
+// DOM
+const voiceListEl = document.getElementById('voiceList');
+const mobileVoicesEl = document.getElementById('mobileVoices');
+const presetRow = document.getElementById('presetRow');
+const promptEl = document.getElementById('prompt');
+const karaokeEl = document.getElementById('karaoke');
+const sublineEl = document.getElementById('subline');
+const orbCanvas = document.getElementById('orb');
+const orbFg = document.getElementById('orbFg');
+const wave = document.getElementById('wave');
+const playBtn = document.getElementById('playBtn');
+const stopBtn = document.getElementById('stopBtn');
+const playIcon = document.getElementById('playIcon');
+const playText = document.getElementById('playText');
+const timeLabel = document.getElementById('timeLabel');
+const speedEl = document.getElementById('speed');
+const pitchEl = document.getElementById('pitch');
+const speedVal = document.getElementById('speedVal');
+const pitchVal = document.getElementById('pitchVal');
+const activeVoiceName = document.getElementById('activeVoiceName');
+const activeVoiceDesc = document.getElementById('activeVoiceDesc');
+const playingBadge = document.getElementById('playingBadge');
+const glow1 = document.getElementById('glow1');
+const glow2 = document.getElementById('glow2');
+const moodChips = document.getElementById('moodChips');
+const scriptPanel = document.getElementById('scriptPanel');
+
+function renderVoices(){
+  const q = state.search.toLowerCase();
+  const list = VOICES.filter(v => (state.filter==='all'||v.tag===state.filter) && (v.name.toLowerCase().includes(q) || v.role.toLowerCase().includes(q)) );
+  voiceListEl.innerHTML = list.map(v=>{
+    const active = state.voice.id===v.id;
+    return `<button data-v="${v.id}" class="voice-card w-full text-left rounded-[18px] border ${active?'bg-white text-black border-white':'bg-[#151518] border-white/[0.06] text-white hover:bg-white/[0.06] hover:border-white/15'} p-3.5 flex gap-3.5">
+      <div class="w-11 h-11 rounded-full shrink-0 grid place-items-center text-[13px] font-serif" style="background: radial-gradient(100% 100% at 30% 20%, ${v.tint[0]}, ${v.tint[1]}); color:${active?'black':'white'}; box-shadow:${active?'none':'inset 0 1px 0 rgba(255,255,255,.2)'}">${v.name[0]}</div>
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2"><span class="font-medium text-[14px] tracking-tight">${v.name}</span><span class="text-[10px] font-mono px-1.5 h-4 rounded-full grid place-items-center ${active?'bg-black text-white/70':'bg-white/10 text-white/40'}">${v.filter.toUpperCase()}</span>${active?'<span class="ml-auto text-[10px]">●</span>':''}</div>
+        <div class="text-[12px] leading-[1.3] ${active?'text-black/60':'text-white/45'} mt-0.5">${v.role}</div>
+        <div class="text-[11px] ${active?'text-black/40':'text-white/25'} mt-1 line-clamp-1">${v.about}</div>
+      </div>
+    </button>`
+  }).join('');
+  voiceListEl.querySelectorAll('[data-v]').forEach(b=> b.addEventListener('click',()=> selectVoice(b.dataset.v)));
+
+  // mobile
+  mobileVoicesEl.innerHTML = VOICES.map(v=>{
+    const active = state.voice.id===v.id;
+    return `<button data-mv="${v.id}" class="shrink-0 h-10 px-3.5 pr-3 rounded-full flex items-center gap-2 border text-[13px] ${active?'bg-white text-black border-white':'bg-black/60 backdrop-blur text-white/70 border-white/10 glass'}"><span class="w-6 h-6 rounded-full grid place-items-center text-[11px]" style="background: radial-gradient(circle at 30% 20%, ${v.tint[0]}, ${v.tint[1]})">${v.name[0]}</span>${v.name}</button>`
+  }).join('');
+  mobileVoicesEl.querySelectorAll('[data-mv]').forEach(b=> b.addEventListener('click',()=> selectVoice(b.dataset.mv)));
+}
+
+function selectVoice(id){
+  state.voice = VOICES.find(v=>v.id===id)||VOICES[0];
+  activeVoiceName.textContent = state.voice.name;
+  activeVoiceDesc.textContent = state.voice.role + ' • ' + MOODS.find(m=>m.id===state.mood)?.label;
+  glow1.style.background = `radial-gradient(circle, ${state.voice.tint[0]}, ${state.voice.tint[1]} 60%)`;
+  glow2.style.background = `radial-gradient(circle, ${state.voice.tint[1]}, ${state.voice.tint[0]} 70%)`;
+  sublineEl.textContent = `${state.voice.name} — ${state.voice.about} · adapted to your system voices`;
+  renderVoices();
+  renderScript();
+  if(document.getElementById('autoplay').checked && promptEl.value.trim()) doPlay();
+}
+
+function renderPresets(){
+  presetRow.innerHTML = PRESETS.map((p,i)=> `<button data-p="${i}" class="shrink-0 h-7 px-3 rounded-full bg-white/[0.06] hover:bg-white/[0.1] border border-white/[0.08] text-[12px] text-white/70 hover:text-white/90 text-left max-w-[320px] truncate">${p.split(' ').slice(0,6).join(' ')}…</button>`).join('');
+  presetRow.querySelectorAll('[data-p]').forEach(b=> b.addEventListener('click',()=>{
+    const t = PRESETS[Number(b.dataset.p)]; promptEl.value=t; state.text=t; renderKaraoke(); if(document.getElementById('autoplay').checked) doPlay();
+  }));
+}
+
+function renderMoods(){
+  moodChips.innerHTML = MOODS.map(m=> `<button data-mood="${m.id}" class="h-7 px-2.5 rounded-full border text-[12px] font-mono flex items-center gap-1.5 ${state.mood===m.id?'bg-white text-black border-white':'bg-white/[0.06] border-white/[0.08] text-white/50 hover:text-white'}"><span>${m.emoji}</span>${m.label}</button>`).join('');
+  moodChips.querySelectorAll('[data-mood]').forEach(b=> b.addEventListener('click',()=>{
+    state.mood=b.dataset.mood;
+    activeVoiceDesc.textContent = state.voice.role + ' • ' + b.textContent.trim();
+    renderMoods();
+    renderKaraoke();
+  }));
+}
+
+function renderKaraoke(){
+  const txt = (promptEl.value || state.text || '').trim() || "Type something to hear it speak…";
+  const words = txt.split(/\s+/);
+  karaokeEl.innerHTML = words.map((w,i)=> `<span class="word transition-colors duration-300" data-i="${i}">${w} </span>`).join('');
+}
+function renderScript(){
+  const other = VOICES[(VOICES.indexOf(state.voice)+2)%VOICES.length];
+  scriptPanel.innerHTML = `
+    <div class="flex gap-2"><div class="w-6 h-6 rounded-full shrink-0 grid place-items-center text-[10px]" style="background: radial-gradient(circle, ${state.voice.tint[0]}, ${state.voice.tint[1]})">${state.voice.name[0]}</div><div class="bg-white text-black rounded-[14px] rounded-tl-[4px] px-3 py-2 text-[12px] leading-[1.35]">${(promptEl.value||state.text).slice(0,92)}…</div></div>
+    <div class="flex gap-2 justify-end"><div class="bg-white/[0.08] border border-white/[0.08] rounded-[14px] rounded-tr-[4px] px-3 py-2 text-[12px] leading-[1.35] text-white/70">${other.name}: That sounded surprisingly human.</div><div class="w-6 h-6 rounded-full shrink-0 grid place-items-center text-[10px]" style="background: radial-gradient(circle, ${other.tint[0]}, ${other.tint[1]})">${other.name[0]}</div></div>
+  `;
+}
+
+// ORB + WAVE visuals
+const ctxFg = orbFg.getContext('2d');
+const ctxWave = wave.getContext('2d');
+const ctxBg = orbCanvas.getContext('2d');
+function resizeBg(){ orbCanvas.width=innerWidth*devicePixelRatio; orbCanvas.height=innerHeight*devicePixelRatio; orbCanvas.style.width=innerWidth+'px'; orbCanvas.style.height=innerHeight+'px'; ctxBg.scale(devicePixelRatio,devicePixelRatio); }
+resizeBg(); addEventListener('resize',resizeBg);
+
+let t=0, audioLevel=0, targetLevel=0;
+function fakeAudioLevel(){
+  if(!state.playing){ targetLevel*=0.92; } else {
+    const k = (Math.sin(t*0.08)+Math.random()*0.6)+0.8;
+    targetLevel = Math.min(1, k*(0.2+state.speed*0.15));
+  }
+  audioLevel += (targetLevel-audioLevel)*0.12;
+}
+
+function drawOrbFg(){
+  const W=orbFg.width, H=orbFg.height, cx=W/2, cy=H/2;
+  ctxFg.clearRect(0,0,W,H);
+  // soft vignette
+  const base = 168;
+  // deformation
+  const pts=220;
+  ctxFg.beginPath();
+  for(let i=0;i<=pts;i++){
+    const ang = (i/pts)*Math.PI*2 - Math.PI*0.5;
+    const f = Math.sin(ang*3 + t*0.02) * 6 + Math.sin(ang*5 - t*0.03)*4;
+    const r = base + f + audioLevel* (28 + Math.sin(ang*2+t*0.05)*10);
+    const x = cx + Math.cos(ang)*r*(0.95 + Math.sin(t*0.01)*0.03);
+    const y = cy + Math.sin(ang)*r*(0.98 + Math.cos(t*0.012)*0.02) + Math.sin(t*0.018+ang)*3*audioLevel;
+    if(i===0) ctxFg.moveTo(x,y); else ctxFg.lineTo(x,y);
+  }
+  ctxFg.closePath();
+  // gradient fill
+  const grad = ctxFg.createRadialGradient(cx - 40, cy - 60, base*0.2, cx, cy, base*1.25);
+  const a = state.voice.tint[0], b = state.voice.tint[1];
+  grad.addColorStop(0, a); grad.addColorStop(0.55, b); grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctxFg.fillStyle = grad; ctxFg.fill();
+
+  // inner highlight stroke
+  ctxFg.strokeStyle = 'rgba(255,255,255,0.22)'; ctxFg.lineWidth=1.2; ctxFg.stroke();
+  // secondary wobble
+  ctxFg.save(); ctxFg.globalAlpha=0.55; ctxFg.beginPath();
+  for(let i=0;i<=pts;i++){
+    const ang=(i/pts)*Math.PI*2;
+    const r = base*0.68 + Math.sin(ang*4 + t*0.05)*6 + audioLevel*12;
+    const x=cx+Math.cos(ang)*r, y=cy+Math.sin(ang)*r;
+    if(i==0)ctxFg.moveTo(x,y); else ctxFg.lineTo(x,y);
+  }
+  ctxFg.closePath(); ctxFg.strokeStyle='rgba(255,255,255,0.12)'; ctxFg.lineWidth=1; ctxFg.stroke(); ctxFg.restore();
+
+  // grain speckles
+  ctxFg.globalAlpha=0.18 + audioLevel*0.2;
+  for(let i=0;i< (state.playing? 32:12); i++){
+    const ang=Math.random()*Math.PI*2, rr= Math.random()*base*0.95;
+    ctxFg.fillStyle='white';
+    ctxFg.beginPath();
+    ctxFg.arc(cx+Math.cos(ang)*rr, cy+Math.sin(ang)*rr, Math.random()*1.2,0,Math.PI*2);
+    ctxFg.fill();
+  }
+  ctxFg.globalAlpha=1;
+}
+
+function drawWave(){
+  const W=wave.width, H=wave.height;
+  ctxWave.clearRect(0,0,W,H);
+  ctxWave.beginPath();
+  const mid=H/2;
+  const bars=42;
+  for(let i=0;i<bars;i++){
+    const p=i/bars;
+    const amp = (state.playing? (0.2+ audioLevel*0.9 + Math.sin(t*0.12 + i*0.6)*0.3):0.06);
+    const h = Math.max(2, H*amp*Math.sin(p*Math.PI));
+    const x = (i+0.5)*(W/bars);
+    ctxWave.fillStyle = p>state.progress ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.9)';
+    ctxWave.fillRect(x-1.5, mid-h/2, 3, h);
+  }
+}
+
+function loop(){
+  t++;
+  fakeAudioLevel();
+  drawOrbFg();
+  // subtle bg drift
+  // update word highlights based on progress
+  if(state.playing){
+    const words = karaokeEl.querySelectorAll('.word');
+    const total=words.length;
+    const activeIdx = Math.floor(state.progress*total);
+    words.forEach((w,i)=>{
+      if(i<activeIdx) { w.className='word text-white/25'; }
+      else if(i===activeIdx){ w.className='word text-white'; w.style.textShadow='0 0 18px rgba(255,255,255,.35)'; }
+      else { w.className='word text-white/35'; w.style.textShadow='none'; }
+    });
+    state.progress+= 0.0035*state.speed*(0.8+audioLevel);
+    if(state.progress>1) { state.progress=1; finish(); }
+    const secs = state.progress * state.duration;
+    timeLabel.textContent = `${String(Math.floor(secs/60)).padStart(2,'0')}:${String(Math.floor(secs%60)).padStart(2,'0')} / ${String(Math.floor(state.duration/60)).padStart(2,'0')}:${String(Math.floor(state.duration%60)).padStart(2,'0')}`;
+  }
+  drawWave();
+  requestAnimationFrame(loop);
+}
+loop();
+
+// speech synthesis
+let utter=null, boundaryTimer=null;
+function getSystemVoice(){
+  const sys = speechSynthesis.getVoices();
+  if(!sys.length) return null;
+  // try match by name, else pick based on pitch
+  const want = state.voice.id;
+  const map = {
+    alloy:'Samantha', ash:'Daniel', ballad:'Karen', coral:'Moira', echo:'Alex', sage:'Fred', shimmer:'Ava', verse:'Veena'
+  };
+  const target = map[want]||'Samantha';
+  return sys.find(v=>v.name.includes(target)) || sys.find(v=>v.lang.startsWith('en')) || sys[0];
+}
+function doPlay(){
+  const text = (promptEl.value||'').trim() || state.text;
+  if(!text) return;
+  if(speechSynthesis.speaking) speechSynthesis.cancel();
+  // mood modifies rate/pitch
+  const mood = MOODS.find(m=>m.id===state.mood);
+  let rate = state.speed;
+  let pitchAdj = state.pitch + (state.voice.pitch||0);
+  if(state.mood==='excited'){ rate*=1.15; pitchAdj+=1.5; }
+  if(state.mood==='whisper'){ rate*=0.85; pitchAdj-=1; }
+  if(state.mood==='sad'){ rate*=0.8; pitchAdj-=1.5; }
+  if(state.mood==='dramatic'){ rate*=0.75; }
+  state.duration = Math.max(4, text.length/13 / rate);
+
+  utter = new SpeechSynthesisUtterance(text);
+  const sysV = getSystemVoice();
+  if(sysV) utter.voice = sysV;
+  utter.rate = Math.min(2, Math.max(0.5, rate));
+  utter.pitch = Math.min(2, Math.max(0, 1 + pitchAdj*0.12));
+  utter.volume = 1;
+  utter.onstart = ()=>{
+    state.playing=true; state.progress=0; playIcon.textContent='❚❚'; playText.textContent='Now playing'; playingBadge.classList.remove('hidden'); activeVoiceName.classList.add('animate-pulse');
+  };
+  utter.onend = ()=> finish(false);
+  utter.onerror = ()=> finish(true);
+  // onboundary for karaoke sync if available
+  utter.onboundary = (e)=>{
+    if(e.charIndex!=null){
+      const ratio = e.charIndex / text.length;
+      state.progress = Math.min(0.98, ratio);
+    }
+  };
+  speechSynthesis.speak(utter);
+  karaokeEl.scrollIntoView({behavior:'smooth',block:'center'});
+  renderKaraoke();
+}
+
+function finish(cancelled){
+  if(!cancelled) state.progress=1;
+  setTimeout(()=>{
+    state.playing=false; playIcon.textContent='▶'; playText.textContent='Play'; playingBadge.classList.add('hidden'); activeVoiceName.classList.remove('animate-pulse');
+    if(utter) { try{ speechSynthesis.cancel(); }catch{} }
+  }, 180);
+}
+function doStop(){ speechSynthesis.cancel(); state.playing=false; state.progress=0; finish(true); timeLabel.textContent=`00:00 / ${String(Math.floor(state.duration)).padStart(2,'0')}:${String(Math.floor((state.duration%1)*60)).padStart(2,'0')}`; karaokeEl.querySelectorAll('.word').forEach(w=>{ w.className='word text-white/50'; w.style.textShadow='none';}); }
+
+// events
+promptEl.value = state.text;
+renderVoices(); renderPresets(); renderMoods(); renderKaraoke(); renderScript();
+speedEl.addEventListener('input', e=>{ state.speed=parseFloat(e.target.value); speedVal.textContent=state.speed.toFixed(2)+'×'; });
+pitchEl.addEventListener('input', e=>{ state.pitch=parseFloat(e.target.value); pitchVal.textContent=(state.pitch>=0?'+':'')+state.pitch.toFixed(1); });
+playBtn.addEventListener('click', ()=> state.playing? doStop(): doPlay());
+stopBtn.addEventListener('click', doStop);
+document.getElementById('clearBtn').addEventListener('click', ()=>{ promptEl.value=''; promptEl.focus(); renderKaraoke(); doStop(); });
+promptEl.addEventListener('keydown', e=>{ if((e.metaKey||e.ctrlKey)&&e.key==='Enter'){ doPlay(); }});
+promptEl.addEventListener('input', ()=>{ state.text=promptEl.value; renderKaraoke(); renderScript(); });
+document.addEventListener('keydown', e=>{ if(e.code==='Space' && e.target.tagName!=='TEXTAREA' && e.target.tagName!=='INPUT'){ e.preventDefault(); state.playing?doStop():doPlay(); }});
+document.getElementById('voiceSearch').addEventListener('input', e=>{ state.search=e.target.value; renderVoices(); });
+document.querySelectorAll('.filter-chip').forEach(ch=> ch.addEventListener('click',()=>{
+  document.querySelectorAll('.filter-chip').forEach(c=>{ c.className='filter-chip shrink-0 h-6 px-2.5 rounded-full bg-white/[0.07] hover:bg-white/[0.12] text-white/70 text-[11px]'; });
+  ch.className='filter-chip shrink-0 h-6 px-2.5 rounded-full bg-white text-black text-[11px] font-medium'; state.filter=ch.dataset.filter; renderVoices();
+}));
+document.getElementById('randomize').addEventListener('click', ()=>{
+  const rv = VOICES[Math.floor(Math.random()*VOICES.length)]; const rm = MOODS[Math.floor(Math.random()*MOODS.length)];
+  selectVoice(rv.id); state.mood=rm.id; speedEl.value=(0.8+Math.random()*0.5).toFixed(2); state.speed=parseFloat(speedEl.value); speedVal.textContent=state.speed.toFixed(2)+'×'; pitchEl.value=(Math.random()*8-4).toFixed(1); state.pitch=parseFloat(pitchEl.value); pitchVal.textContent=pitchEl.value; renderMoods();
+});
+document.getElementById('shareBtn').addEventListener('click', async()=>{
+  const payload = btoa(encodeURIComponent(JSON.stringify({t:promptEl.value.slice(0,280), v:state.voice.id, m:state.mood}))).slice(0,180);
+  const url = location.origin + location.pathname + '#'+payload;
+  try{ await navigator.clipboard.writeText(url); document.getElementById('shareBtn').textContent='Copied ✓'; setTimeout(()=>document.getElementById('shareBtn').textContent='Share',1500);}catch{ prompt('Share link', url); }
+});
+if(location.hash.length>10){
+  try{ const data=JSON.parse(decodeURIComponent(atob(location.hash.slice(1)))); if(data.t){ promptEl.value=data.t; state.text=data.t; } if(data.v) selectVoice(data.v); if(data.m){ state.mood=data.m; renderMoods(); } renderKaraoke(); }catch{}
+}
+speechSynthesis.onvoiceschanged = ()=> getSystemVoice(); // prime
+// ensure resize
+sublineEl.textContent = `${state.voice.name} — ${state.voice.about} · adapted to your system voices`;
+</script>
+</body>
+</html>

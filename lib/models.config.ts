@@ -1,4 +1,4 @@
-export type Provider = "openai" | "anthropic" | "google" | "moonshot" | "z-ai" | "qwen" | "xai" | "thinking-machines";
+export type Provider = "openai" | "anthropic" | "google" | "moonshot" | "z-ai" | "qwen" | "xai" | "meta" | "thinking-machines";
 
 export interface ProviderConfig {
   id: Provider;
@@ -13,6 +13,7 @@ export const providers: ProviderConfig[] = [
   { id: "z-ai", name: "Z.ai" },
   { id: "qwen", name: "Qwen" },
   { id: "xai", name: "xAI" },
+  { id: "meta", name: "Meta" },
   { id: "thinking-machines", name: "Thinking Machines" },
 ];
 
@@ -251,6 +252,14 @@ export const models: ModelConfig[] = [
     provider: "xai",
   },
   {
+    id: "muse-spark-1.1",
+    name: "Muse Spark 1.1",
+    cli: "openrouter",
+    model: "meta/muse-spark-1.1",
+    color: "bg-violet-600",
+    provider: "meta",
+  },
+  {
     id: "inkling",
     name: "Inkling",
     cli: "anthropic-proxy",
@@ -266,7 +275,7 @@ export const models: ModelConfig[] = [
 ];
 
 /** Default models shown in the side-by-side comparison view */
-export const DEFAULT_COMPARISON_MODELS = ["inkling", "opus-4.8", "gpt-5.6-sol"] as const;
+export const DEFAULT_COMPARISON_MODELS = ["muse-spark-1.1", "inkling", "gpt-5.6-sol"] as const;
 
 /** Helper to get a model by ID */
 export function getModel(id: string): ModelConfig | undefined {

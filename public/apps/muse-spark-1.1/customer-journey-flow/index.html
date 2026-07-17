@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Customer Journey Flow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config={theme:{extend:{fontFamily:{sans:['Geist','sans-serif'],serif:['Instrument Serif','serif'],mono:['Geist Mono','monospace']}}}}
+</script>
+<style>
+:root{--bg:#FCFBF8;--ink:#121217;--line:#E9E6DF;--muted:#8A877E}
+*{ -webkit-font-smoothing:antialiased }
+body{background:var(--bg); color:var(--ink); font-family:Geist,sans-serif; overflow:hidden}
+.grid-bg{
+  background-image: radial-gradient(circle at 1px 1px, #E7E2D9 1px, transparent 0);
+  background-size: 28px 28px;
+}
+.stage-card{
+  position:absolute; width:288px; background:white; border:1px solid #ECE8E2;
+  border-radius:20px; box-shadow:0 1px 2px rgba(0,0,0,.04), 0 12px 32px rgba(24,20,16,.06);
+  transition: box-shadow .2s, transform .2s, border-color .2s; will-change:transform;
+  user-select:none;
+}
+.stage-card.selected{ border-color:#111; box-shadow:0 0 0 1px #111, 0 20px 40px rgba(0,0,0,.12); }
+.stage-card:hover{ box-shadow:0 2px 8px rgba(0,0,0,.06), 0 16px 40px rgba(0,0,0,.08) }
+.stage-card.dragging{ z-index:50; transform:rotate(.5deg) scale(1.02); box-shadow:0 20px 50px rgba(0,0,0,.18) }
+.handle{
+  width:14px; height:14px; border-radius:999px; background:white; border:2px solid #111;
+  position:absolute; top:50%; transform:translateY(-50%); cursor:crosshair; z-index:3;
+  transition: all .15s; box-shadow:0 0 0 4px white;
+}
+.handle:hover{ transform:translateY(-50%) scale(1.35); background:#111; }
+.handle.in{ left:-7px } .handle.out{ right:-7px; background:#111 }
+.handle.in.drag-over{ background:#6366F1; border-color:#6366F1; transform:translateY(-50%) scale(1.6) }
+.connection-path{
+  fill:none; stroke-width:2.2; stroke-linecap:round; pointer-events:stroke; cursor:pointer;
+  transition: stroke-width .15s, filter .15s;
+}
+.connection-path:hover{ stroke-width:3.2 }
+.connection-path.selected{ stroke-width:3.4; filter:drop-shadow(0 2px 8px rgba(0,0,0,.15)) }
+.dot{ width:5px; height:5px; border-radius:50%; display:inline-block }
+.scroll-thin::-webkit-scrollbar{ width:4px } .scroll-thin::-webkit-scrollbar-thumb{background:#D8D3CA;border-radius:999px}
+.ins-input{
+  width:100%; background:#F6F3EF; border:1px solid transparent; border-radius:12px;
+  padding:10px 12px; font-size:13.5px; outline:none; transition:.15s;
+}
+.ins-input:focus{ background:white; border-color:#111 }
+.badge{ font-family:Geist Mono; font-size:10.5px; letter-spacing:.04em; padding:3px 7px; border-radius:999px; border:1px solid #E8E2D9; background:#FFFEFD }
+.pill{ display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:999px; background:#F5F1EB; border:1px solid #EDE8E1; font-size:12px; font-weight:500 }
+@keyframes dash { to { stroke-dashoffset: -20 } }
+.temp-path{ stroke-dasharray:8 8; animation:dash .8s linear infinite }
+</style>
+</head>
+<body class="h-[100dvh] w-screen flex flex-col">
+<!-- Top Bar -->
+<header class="h-[56px] shrink-0 bg-white/90 backdrop-blur-xl border-b border-[#ECE8E2] flex items-center justify-between px-4 z-20">
+  <div class="flex items-center gap-5">
+    <div class="flex items-center gap-3">
+      <div class="w-[32px] h-[32px] rounded-[10px] bg-[#111] text-white grid place-items-center font-serif text-[18px] italic">f</div>
+      <div class="leading-[1.05]">
+        <div class="font-semibold text-[14px] tracking-tight">Customer Journey Flow</div>
+        <div class="font-mono text-[10px] text-[#9A958C] uppercase tracking-widest">Live Canvas • 5 stages</div>
+      </div>
+    </div>
+    <div class="hidden md:flex items-center gap-2 pl-5 border-l border-[#ECE8E2]">
+      <div class="flex -space-x-2">
+        <div class="w-7 h-7 rounded-full bg-[#F1EDE6] border-2 border-white grid place-items-center text-[11px]">A</div>
+        <div class="w-7 h-7 rounded-full bg-[#111] border-2 border-white text-white grid place-items-center text-[11px]">S</div>
+      </div>
+      <div class="w-px h-4 bg-[#E8E2D9] mx-1"></div>
+      <div class="flex items-center gap-1.5 text-[12px]"><span class="w-2 h-2 rounded-full bg-[#22C55E] animate-pulse inline-block"></span> Auto-saved</div>
+    </div>
+  </div>
+  <div class="flex items-center gap-2">
+    <div class="hidden lg:flex items-center gap-2 mr-2 bg-[#F7F3EE] rounded-full p-1 border border-[#EDE8E1]">
+      <button id="zoomOut" class="w-7 h-7 grid place-items-center rounded-full hover:bg-white transition">−</button>
+      <span id="zoomLabel" class="font-mono text-[11px] w-[44px] text-center">100%</span>
+      <button id="zoomIn" class="w-7 h-7 grid place-items-center rounded-full hover:bg-white transition">+</button>
+    </div>
+    <button id="fitBtn" class="h-8 px-3 rounded-full border border-[#E8E2D9] text-[12.5px] font-medium hover:bg-[#F7F3EE]">Fit view</button>
+    <button id="exportBtn" class="h-8 px-3 rounded-full border border-[#E8E2D9] text-[12.5px] font-medium hover:bg-[#F7F3EE]">Export</button>
+    <button id="addStageBtn" class="h-8 px-4 rounded-full bg-[#111] text-white text-[12.5px] font-medium hover:bg-black flex items-center gap-1.5"><span class="text-[14px]">＋</span> New stage</button>
+  </div>
+</header>
+
+<div class="flex flex-1 overflow-hidden">
+  <!-- Left Rail -->
+  <aside class="w-[76px] shrink-0 bg-white border-r border-[#ECE8E2] flex flex-col items-center py-4 gap-3 z-10">
+    <div class="font-mono text-[9px] tracking-[0.18em] uppercase text-[#A09B92] mb-1">Library</div>
+    <div id="templateList" class="flex flex-col gap-2.5"></div>
+    <div class="mt-auto flex flex-col gap-2 items-center">
+      <div class="w-9 h-[1px] bg-[#E8E2D9] mb-2"></div>
+      <button id="clearBtn" title="Clear canvas" class="w-10 h-10 grid place-items-center rounded-[12px] border border-[#F0EBE3] hover:bg-[#F7F3EE] text-[14px]">↺</button>
+      <button id="helpBtn" class="w-10 h-10 grid place-items-center rounded-[12px] bg-[#F7F3EE] text-[13px]">?</button>
+    </div>
+  </aside>
+
+  <!-- Canvas -->
+  <main class="flex-1 relative overflow-hidden bg-[#FCFBF8]">
+    <div id="viewport" class="absolute inset-0 overflow-hidden cursor-grab active:cursor-grabbing">
+      <div id="world" class="absolute left-0 top-0 w-[3000px] h-[2000px] grid-bg origin-top-left will-change-transform">
+        <svg id="connectionsLayer" class="absolute inset-0 w-full h-full pointer-events-none" style="overflow:visible">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <g id="paths"></g>
+          <g id="tempPathG"></g>
+        </svg>
+        <div id="nodesLayer" class="absolute inset-0"></div>
+        <!-- origin hint -->
+        <div class="absolute left-[80px] top-[90px] pointer-events-none select-none">
+          <div class="font-serif text-[40px] leading-[0.9] tracking-tight text-[#E8E2D3]">Map how <br/><span class="italic">people become</span><br/>customers.</div>
+          <div class="font-mono text-[10px] uppercase tracking-widest text-[#C2BDB3] mt-3">Drag • Connect • Edit • Measure</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Funnel mini HUD -->
+    <div class="absolute left-4 bottom-4 bg-white/90 backdrop-blur border border-[#ECE8E2] rounded-[16px] p-3 pr-4 flex items-center gap-3 shadow-[0_12px_32px_rgba(0,0,0,.06)]">
+      <div class="font-mono text-[9px] uppercase tracking-widest text-[#9A958C] -rotate-90">Funnel</div>
+      <div id="funnel" class="flex items-end gap-[3px]"></div>
+      <div class="w-px h-8 bg-[#ECE8E2]"></div>
+      <div class="leading-tight">
+        <div id="totalConv" class="font-serif text-[18px] leading-none">—</div>
+        <div class="font-mono text-[10px] text-[#8A877E]">end-to-end</div>
+      </div>
+    </div>
+
+    <div id="hint" class="absolute top-4 left-1/2 -translate-x-1/2 bg-[#111] text-white text-[12px] px-3 py-1.5 rounded-full shadow-lg flex items-center gap-2">
+      <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span> Drag from <span class="font-medium">●</span> to connect stages • Double-click title to edit
+      <button onclick="this.parentElement.remove()" class="ml-2 w-4 h-4 grid place-items-center rounded-full bg-white/15">×</button>
+    </div>
+  </main>
+
+  <!-- Inspector -->
+  <aside class="w-[340px] shrink-0 bg-white border-l border-[#ECE8E2] flex flex-col z-10">
+    <div id="insEmpty" class="flex-1 flex flex-col items-center justify-center p-8 text-center">
+      <div class="w-12 h-12 rounded-[14px] bg-[#F7F3EE] grid place-items-center mb-4 text-[20px]">◐</div>
+      <div class="font-serif text-[18px] leading-tight">Select a stage to<br/>refine the journey</div>
+      <div class="text-[12.5px] text-[#8A877E] mt-2 leading-relaxed">Click any card. You can edit copy, touchpoints, emotion and conversion rates.</div>
+      <div class="mt-6 w-full rounded-[14px] bg-[#FCFBF8] border border-[#F0EBE3] p-3 text-left">
+        <div class="font-mono text-[10px] uppercase tracking-widest text-[#A09B92] mb-2">Journey health</div>
+        <div id="healthList" class="space-y-2"></div>
+      </div>
+    </div>
+
+    <div id="insPanel" class="hidden flex-1 flex flex-col overflow-hidden">
+      <div class="p-5 border-b border-[#F0EBE3]">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex items-center gap-2">
+            <div id="insColor" class="w-3 h-3 rounded-full"></div>
+            <input id="insTitle" class="font-serif text-[22px] bg-transparent outline-none w-[200px] leading-tight tracking-tight" />
+          </div>
+          <button id="deleteStage" class="w-7 h-7 grid place-items-center rounded-full border border-[#F0EBE3] hover:bg-[#FFF1F1] hover:border-[#F4CACA] text-[12px]">✕</button>
+        </div>
+        <input id="insSubtitle" class="font-mono text-[11px] uppercase tracking-widest text-[#9A958C] bg-transparent outline-none border-b border-transparent focus:border-[#E8E2D9] mt-1 w-full" placeholder="Subtitle"/>
+        <textarea id="insDesc" class="ins-input mt-3 min-h-[64px] resize-none leading-relaxed" placeholder="What happens in this stage?"></textarea>
+      </div>
+      <div class="flex-1 overflow-y-auto scroll-thin p-5 space-y-6">
+        <!-- Metrics -->
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <div class="font-mono text-[10px] uppercase tracking-widest text-[#A09B92]">Metrics</div>
+            <span class="badge" id="insConvBadge">100%</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="bg-[#F6F3EF] rounded-[12px] p-3">
+              <div class="font-mono text-[9px] uppercase tracking-widest text-[#A09B92]">Conversion</div>
+              <div class="flex items-center gap-1 mt-1"><input id="insConv" type="range" min="1" max="100" class="w-full accent-[#111]"><span id="insConvVal" class="font-mono text-[12px] w-8 text-right">100%</span></div>
+            </label>
+            <label class="bg-[#F6F3EF] rounded-[12px] p-3">
+              <div class="font-mono text-[9px] uppercase tracking-widest text-[#A09B92]">Avg time</div>
+              <input id="insTime" class="mt-1 w-full bg-transparent font-medium text-[13px] outline-none" placeholder="e.g. 2d"/>
+            </label>
+          </div>
+        </div>
+        <!-- Touchpoints -->
+        <div>
+          <div class="font-mono text-[10px] uppercase tracking-widest text-[#A09B92] mb-2">Touchpoints</div>
+          <div id="insTouchpoints" class="flex flex-wrap gap-1.5"></div>
+          <div class="flex gap-2 mt-2">
+            <input id="touchInput" class="ins-input flex-1 text-[12.5px]" placeholder="Add channel + Enter"/>
+            <button id="addTouchBtn" class="h-[38px] px-3 rounded-[12px] bg-[#111] text-white text-[12px]">Add</button>
+          </div>
+        </div>
+        <!-- Emotion & content -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <div class="font-mono text-[10px] uppercase tracking-widest text-[#A09B92] mb-2">Customer feels</div>
+            <div id="emotionGrid" class="grid grid-cols-4 gap-1.5"></div>
+          </div>
+          <div>
+            <div class="font-mono text-[10px] uppercase tracking-widest text-[#A09B92] mb-2">Color</div>
+            <div id="colorGrid" class="flex flex-wrap gap-1.5"></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="font-mono text-[10px] uppercase tracking-widest text-[#A09B92] mb-2">Connected to</div>
+          <div id="connList" class="space-y-1.5"></div>
+        </div>
+
+        <div class="rounded-[14px] bg-[#111] text-white p-4">
+          <div class="font-mono text-[9px] uppercase tracking-widest opacity-60">Stage insight</div>
+          <div id="insightText" class="font-serif text-[14px] leading-[1.35] mt-2"></div>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- Context menu for connection -->
+<div id="ctxMenu" class="hidden fixed z-50 bg-white border border-[#E8E2D9] rounded-[12px] shadow-[0_16px_40px_rgba(0,0,0,.14)] p-1 min-w-[160px]">
+  <button data-act="label" class="w-full text-left px-3 py-2 rounded-[8px] hover:bg-[#F7F3EE] text-[12.5px]">✎ Edit label</button>
+  <button data-act="delete" class="w-full text-left px-3 py-2 rounded-[8px] hover:bg-[#FFF1F1] text-[12.5px] text-[#B42318]">Delete connection</button>
+</div>
+
+<script>
+const COLORS = [
+  {id:'indigo', hex:'#6366F1', bg:'#EEF0FF'},
+  {id:'amber', hex:'#F59E0B', bg:'#FFF7E1'},
+  {id:'emerald', hex:'#10B981', bg:'#E6F8F0'},
+  {id:'rose', hex:'#F43F5E', bg:'#FFE6EA'},
+  {id:'slate', hex:'#111827', bg:'#EDEEF1'},
+  {id:'violet', hex:'#8B5CF6', bg:'#F1EBFF'},
+  {id:'cyan', hex:'#06B6D4', bg:'#E1F6FA'},
+]
+const EMOTIONS = [
+  {id:'curious', icon:'🤔', label:'Curious'},
+  {id:'excited', icon:'🤩', label:'Excited'},
+  {id:'anxious', icon:'😬', label:'Anxious'},
+  {id:'confused', icon:'😵‍💫', label:'Confused'},
+  {id:'hopeful', icon:'🙏', label:'Hopeful'},
+  {id:'trust', icon:'🤝', label:'Trust'},
+  {id:'delighted', icon:'😍', label:'Delighted'},
+  {id:'frustrated', icon:'😤', label:'Frust'},
+]
+const TEMPLATES = [
+  {title:'Awareness', sub:'DISCOVERY', icon:'👁️', color:'#6366F1', desc:'First touch — ads, press, word of mouth.', touch:['TikTok','Blog','PR']},
+  {title:'Interest', sub:'LEARNING', icon:'💡', color:'#F59E0B', desc:'Exploring features and value prop.', touch:['Landing page','Demo video']},
+  {title:'Consideration', sub:'EVALUATING', icon:'⚖️', color:'#8B5CF6', desc:'Comparing with alternatives.', touch:['Pricing','Reviews','Sales chat']},
+  {title:'Intent', sub:'DECIDING', icon:'🎯', color:'#06B6D4', desc:'Ready to buy, checking details.', touch:['Checkout','Live chat','FAQ']},
+  {title:'Purchase', sub:'CONVERTING', icon:'🛒', color:'#10B981', desc:'Completes transaction.', touch:['Payment','Confirmation']},
+  {title:'Loyalty', sub:'RETENTION', icon:'💜', color:'#F43F5E', desc:'Post-purchase advocacy.', touch:['Email','Community']},
+]
+
+let stages = JSON.parse(localStorage.getItem('cjf_stages')||'null') || [
+  {id:'s1', x:160, y:300, title:'Awareness', subtitle:'DISCOVERY', desc:'Customer first encounters brand via discovery channels. Goal: spark curiosity, not sell.', color:'#6366F1', icon:'👁️', conversion:100, time:'—', touchpoints:['Instagram Ad','TechCrunch','Word of mouth'], emotion:'curious'},
+  {id:'s2', x:540, y:220, title:'Interest', subtitle:'LEARNING', desc:'Dives into website, watches demo, reads story. High intent content matters.', color:'#F59E0B', icon:'💡', conversion:62, time:'1.2d', touchpoints:['Homepage','Demo video','Manifesto'], emotion:'excited'},
+  {id:'s3', x:540, y:520, title:'Comparison', subtitle:'EVALUATING', desc:'Checks alternatives, pricing, social proof. Needs reassurance.', color:'#8B5CF6', icon:'⚖️', conversion:45, time:'3d', touchpoints:['Pricing','G2 Reviews','X threads'], emotion:'anxious'},
+  {id:'s4', x:920, y:320, title:'Intent', subtitle:'DECIDED', desc:'Free trial started, asks sales questions, verifies security.', color:'#06B6D4', icon:'🎯', conversion:38, time:'6h', touchpoints:['Trial','Security doc','Chat'], emotion:'hopeful'},
+  {id:'s5', x:1280, y:300, title:'Purchase', subtitle:'CONVERSION', desc:'Enters card and becomes customer. Celebration moment.', color:'#10B981', icon:'🛒', conversion:29, time:'12m', touchpoints:['Stripe','Welcome email'], emotion:'delighted'},
+]
+
+let connections = JSON.parse(localStorage.getItem('cjf_conns')||'null') || [
+  {id:'c1', from:'s1', to:'s2', label:'62% continue'},
+  {id:'c2', from:'s1', to:'s3', label:'18% skip to compare'},
+  {id:'c3', from:'s2', to:'s4', label:'54% to trial'},
+  {id:'c4', from:'s3', to:'s4', label:'41% convinced'},
+  {id:'c5', from:'s4', to:'s5', label:'76% pay'},
+]
+
+let state = {
+  selectedId: 's1',
+  selectedConn: null,
+  zoom: 0.92,
+  pan: {x:0, y:0},
+  dragging: null,
+  connecting: null,
+  panning: null,
+  worldBBox: {w:3000,h:2000}
+}
+
+const els = {
+  nodesLayer: document.getElementById('nodesLayer'),
+  paths: document.getElementById('paths'),
+  tempPathG: document.getElementById('tempPathG'),
+  viewport: document.getElementById('viewport'),
+  world: document.getElementById('world'),
+  funnel: document.getElementById('funnel'),
+  totalConv: document.getElementById('totalConv'),
+  templateList: document.getElementById('templateList'),
+  insEmpty: document.getElementById('insEmpty'),
+  insPanel: document.getElementById('insPanel'),
+  healthList: document.getElementById('healthList'),
+  ctxMenu: document.getElementById('ctxMenu')
+}
+
+function save(){
+  localStorage.setItem('cjf_stages', JSON.stringify(stages))
+  localStorage.setItem('cjf_conns', JSON.stringify(connections))
+}
+
+function getStage(id){ return stages.find(s=>s.id===id) }
+function uid(p='id'){ return p+Math.random().toString(36).slice(2,8) }
+
+function stageBounds(s){
+  return {x:s.x, y:s.y, w:288, h: document.getElementById('stage-'+s.id)?.offsetHeight || 160}
+}
+
+function connectionPathData(from, to){
+  const fb = stageBounds(from), tb = stageBounds(to)
+  const x1 = fb.x + fb.w, y1 = fb.y + fb.h/2
+  const x2 = tb.x, y2 = tb.y + tb.h/2
+  const dx = Math.abs(x2-x1)
+  const cx = Math.max(dx*0.5, 80)
+  return {x1,y1,x2,y2, d:`M ${x1} ${y1} C ${x1+cx} ${y1}, ${x2-cx} ${y2}, ${x2} ${y2}`}
+}
+
+function renderTemplates(){
+  els.templateList.innerHTML = TEMPLATES.map(t=>`
+    <button class="template-btn w-[48px] h-[48px] rounded-[14px] bg-[#FCFBF8] border border-[#ECE8E2] hover:border-[#111] hover:shadow-md grid place-items-center text-[18px] transition" data-title="${t.title}" title="${t.title} — drag to canvas">
+      ${t.icon}
+    </button>
+  `).join('')
+  document.querySelectorAll('.template-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const tpl = TEMPLATES.find(x=>x.title===btn.dataset.title)
+      addStageFromTemplate(tpl)
+    })
+  })
+}
+
+function addStageFromTemplate(tpl){
+  const vp = els.viewport.getBoundingClientRect()
+  const centerX = (-state.pan.x + vp.width/2)/state.zoom
+  const centerY = (-state.pan.y + vp.height/2)/state.zoom
+  const s = {
+    id: uid('s'),
+    x: centerX + (Math.random()-0.5)*120,
+    y: centerY + (Math.random()-0.5)*120,
+    title: tpl.title,
+    subtitle: tpl.sub,
+    desc: tpl.desc,
+    color: tpl.color,
+    icon: tpl.icon,
+    conversion: Math.round(30+Math.random()*50),
+    time: '—',
+    touchpoints: [...tpl.touch],
+    emotion: 'curious'
+  }
+  stages.push(s)
+  state.selectedId = s.id
+  render(); save()
+}
+
+function renderFunnel(){
+  const ordered = [...stages].sort((a,b)=>a.x-b.x)
+  const maxC = Math.max(...ordered.map(s=>s.conversion),1)
+  els.funnel.innerHTML = ordered.map(s=>`
+    <div title="${s.title}: ${s.conversion}%" class="flex flex-col items-center gap-1">
+      <div style="height:${12+ (s.conversion/maxC)*28}px; width:12px; border-radius:6px; background:${s.color}" class="${state.selectedId===s.id?'ring-2 ring-[#111] ring-offset-1':''}"></div>
+    </div>
+  `).join('')
+  const first = ordered[0]?.conversion||100
+  const last = ordered[ordered.length-1]?.conversion||0
+  els.totalConv.textContent = first? Math.round(last/first*100)+'%' : '—'
+
+  const health = stages.map(s=>{
+    const outConns = connections.filter(c=>c.from===s.id).length
+    const inConns = connections.filter(c=>c.to===s.id).length
+    let status = 'ok', msg='Flowing'
+    if(outConns===0 && s.id!==ordered[ordered.length-1]?.id){ status='warn'; msg='Dead-end' }
+    if(inConns===0 && s.id!==ordered[0]?.id){ status='warn'; msg='Orphaned' }
+    if(s.conversion<25){ status='risk'; msg='High drop' }
+    return {s,status,msg}
+  })
+  document.getElementById('healthList').innerHTML = health.slice(0,5).map(h=>`
+    <div class="flex items-center justify-between text-[12px]">
+      <div class="flex items-center gap-2"><span style="background:${h.s.color}" class="w-2 h-2 rounded-full inline-block"></span>${h.s.title}</div>
+      <span class="text-[10px] px-1.5 py-0.5 rounded-full border ${h.status==='ok'?'bg-[#EAF8F0] border-[#C6E9D6] text-[#166534]': h.status==='warn'?'bg-[#FFF7E1] border-[#F5E0A2] text-[#854D0E]':'bg-[#FFE4E6] border-[#FECDD3] text-[#9F1239]'}">${h.msg}</span>
+    </div>
+  `).join('')
+}
+
+function renderConnections(){
+  els.paths.innerHTML = ''
+  connections.forEach(conn=>{
+    const from = getStage(conn.from), to = getStage(conn.to)
+    if(!from || !to) return
+    const {d,x1,y1,x2,y2} = connectionPathData(from,to)
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g')
+    g.setAttribute('class','conn-group')
+    g.style.color = from.color
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path')
+    path.setAttribute('d', d)
+    path.setAttribute('class', `connection-path ${state.selectedConn===conn.id?'selected':''}`)
+    path.setAttribute('stroke', from.color)
+    path.setAttribute('marker-end','url(#arrow)')
+    path.style.pointerEvents = 'stroke'
+    path.dataset.id = conn.id
+    // wider hit area
+    const hit = document.createElementNS('http://www.w3.org/2000/svg','path')
+    hit.setAttribute('d', d)
+    hit.setAttribute('stroke','transparent')
+    hit.setAttribute('stroke-width','16')
+    hit.setAttribute('fill','none')
+    hit.style.pointerEvents='stroke'
+    hit.style.cursor='pointer'
+    g.appendChild(hit)
+    g.appendChild(path)
+    if(conn.label){
+      const mx = (x1+x2)/2, my=(y1+y2)/2
+      const txtBg = document.createElementNS('http://www.w3.org/2000/svg','g')
+      const text = document.createElementNS('http://www.w3.org/2000/svg','text')
+      text.setAttribute('x', mx)
+      text.setAttribute('y', my - 8)
+      text.setAttribute('text-anchor','middle')
+      text.setAttribute('font-family','Geist Mono')
+      text.setAttribute('font-size','10')
+      text.setAttribute('fill','#6B6B6B')
+      text.textContent = conn.label
+      const bbox = {width: conn.label.length*5.5 + 12, height:16}
+      const rect = document.createElementNS('http://www.w3.org/2000/svg','rect')
+      rect.setAttribute('x', mx - bbox.width/2)
+      rect.setAttribute('y', my - 18)
+      rect.setAttribute('width', bbox.width)
+      rect.setAttribute('height', 14)
+      rect.setAttribute('rx',7)
+      rect.setAttribute('fill','white')
+      rect.setAttribute('stroke','#ECE8E2')
+      txtBg.appendChild(rect)
+      txtBg.appendChild(text)
+      g.appendChild(txtBg)
+    }
+    g.addEventListener('click', (e)=>{
+      e.stopPropagation()
+      state.selectedConn = conn.id
+      state.selectedId = null
+      render()
+    })
+    g.addEventListener('contextmenu', (e)=>{
+      e.preventDefault()
+      state.selectedConn = conn.id
+      showCtx(e.clientX,e.clientY,conn)
+    })
+    els.paths.appendChild(g)
+  })
+}
+
+function renderNodes(){
+  els.nodesLayer.innerHTML=''
+  stages.forEach(s=>{
+    const div = document.createElement('div')
+    div.id = 'stage-'+s.id
+    div.className = `stage-card ${state.selectedId===s.id?'selected':''} ${state.dragging?.id===s.id?'dragging':''}`
+    div.style.left = s.x+'px'
+    div.style.top = s.y+'px'
+    div.innerHTML = `
+      <div class="h-[4px] w-full rounded-t-[20px]" style="background:${s.color}"></div>
+      <div class="p-[14px]">
+        <div class="flex items-start justify-between">
+          <div class="flex gap-2.5 items-center">
+            <div class="w-9 h-9 rounded-[12px] grid place-items-center text-[18px] border" style="background:${s.color}14; border-color:${s.color}28">${s.icon}</div>
+            <div>
+              <div class="stage-title font-semibold text-[14.5px] tracking-tight leading-tight">${s.title}</div>
+              <div class="font-mono text-[10px] uppercase tracking-widest text-[#A09B92] mt-[2px]">${s.subtitle||''}</div>
+            </div>
+          </div>
+          <div class="flex flex-col items-end gap-1">
+            <div class="badge" style="border-color:${s.color}30; color:${s.color}">${s.conversion}%</div>
+            <div class="text-[10px] font-mono text-[#9A958C]">${s.time||'—'}</div>
+          </div>
+        </div>
+        <div class="stage-desc text-[12.5px] leading-[1.45] text-[#4A4742] mt-3 line-clamp-3">${s.desc||''}</div>
+        <div class="flex flex-wrap gap-1 mt-3">
+          ${(s.touchpoints||[]).slice(0,3).map(tp=>`<span class="pill">${tp}</span>`).join('')}
+          ${(s.touchpoints||[]).length>3?`<span class="pill !bg-white">+${(s.touchpoints.length-3)}</span>`:''}
+        </div>
+        <div class="flex items-center justify-between mt-3 pt-3 border-t border-[#F3F0EB]">
+          <div class="flex items-center gap-1.5 text-[11px] text-[#8A877E]"><span>${(EMOTIONS.find(e=>e.id===s.emotion)||EMOTIONS[0]).icon}</span><span class="capitalize">${s.emotion}</span></div>
+          <div class="flex items-center gap-1 text-[10px] font-mono text-[#B8B3A8]"><span class="w-1.5 h-1.5 rounded-full inline-block" style="background:${s.color}"></span>${connections.filter(c=>c.from===s.id||c.to===s.id).length} links</div>
+        </div>
+      </div>
+      <div class="handle in" data-handle="in" data-id="${s.id}"></div>
+      <div class="handle out" data-handle="out" data-id="${s.id}"></div>
+    `
+    // events
+    div.addEventListener('mousedown', (e)=>{
+      if(e.target.classList.contains('handle')) return
+      e.stopPropagation()
+      state.selectedId = s.id
+      state.selectedConn = null
+      renderInspector()
+      const rect = els.viewport.getBoundingClientRect()
+      const startX = (e.clientX - rect.left - state.pan.x)/state.zoom
+      const startY = (e.clientY - rect.top - state.pan.y)/state.zoom
+      state.dragging = {id:s.id, dx:startX - s.x, dy:startY - s.y}
+      div.setPointerCapture?.(e.pointerId)
+    })
+    div.addEventListener('dblclick', (e)=>{
+      if(e.target.closest('.stage-title')){
+        const input = document.createElement('input')
+        input.value = s.title
+        input.className = 'font-semibold text-[14.5px] bg-[#F6F3EF] rounded px-1 outline-none border border-[#111] w-[150px]'
+        e.target.closest('.stage-title').replaceWith(input)
+        input.focus(); input.select()
+        input.addEventListener('blur', ()=>{ s.title=input.value||s.title; save(); render() })
+        input.addEventListener('keydown', ev=>{ if(ev.key==='Enter') input.blur() })
+      }
+    })
+    // handle dragging for connections
+    div.querySelectorAll('.handle').forEach(h=>{
+      h.addEventListener('mousedown', (e)=>{
+        e.stopPropagation()
+        const type = h.dataset.handle
+        state.connecting = {from: type==='out'? s.id : null, to: type==='in'? s.id : null, startType:type, sourceId:s.id, x:s.x, y:s.y}
+        drawTemp(e.clientX,e.clientY)
+        document.addEventListener('mousemove', onConnMove)
+        document.addEventListener('mouseup', onConnUp)
+      })
+      h.addEventListener('mouseenter', ()=>{
+        if(state.connecting && state.connecting.sourceId!==s.id){
+          h.classList.add('drag-over')
+        }
+      })
+      h.addEventListener('mouseleave', ()=> h.classList.remove('drag-over'))
+      h.addEventListener('mouseup', (e)=>{
+        if(state.connecting && state.connecting.sourceId!==s.id){
+          const fromId = state.connecting.startType==='out'? state.connecting.sourceId : s.id
+          const toId = state.connecting.startType==='out'? s.id : state.connecting.sourceId
+          if(fromId!==toId && !connections.some(c=>c.from===fromId && c.to===toId)){
+            const conn = {id:uid('c'), from:fromId, to:toId, label:''}
+            connections.push(conn)
+            save(); render()
+          }
+        }
+      })
+    })
+    els.nodesLayer.appendChild(div)
+  })
+}
+
+function renderInspector(){
+  if(!state.selectedId){
+    els.insEmpty.classList.remove('hidden')
+    els.insPanel.classList.add('hidden')
+    return
+  }
+  const s = getStage(state.selectedId)
+  if(!s){ els.insEmpty.classList.remove('hidden'); els.insPanel.classList.add('hidden'); return }
+  els.insEmpty.classList.add('hidden')
+  els.insPanel.classList.remove('hidden')
+  document.getElementById('insColor').style.background = s.color
+  document.getElementById('insTitle').value = s.title
+  document.getElementById('insSubtitle').value = s.subtitle||''
+  document.getElementById('insDesc').value = s.desc||''
+  document.getElementById('insConv').value = s.conversion
+  document.getElementById('insConvVal').textContent = s.conversion+'%'
+  document.getElementById('insConvBadge').textContent = s.conversion+'%'
+  document.getElementById('insTime').value = s.time||''
+
+  document.getElementById('insTouchpoints').innerHTML = (s.touchpoints||[]).map((tp,i)=>`
+    <span class="pill group">${tp}<button data-i="${i}" class="touch-del w-4 h-4 grid place-items-center rounded-full hover:bg-black hover:text-white">×</button></span>
+  `).join('')
+
+  document.getElementById('emotionGrid').innerHTML = EMOTIONS.map(em=>`
+    <button data-em="${em.id}" class="h-[32px] rounded-[10px] border text-[14px] grid place-items-center ${s.emotion===em.id?'bg-[#111] text-white border-[#111]':'bg-[#F6F3EF] border-[#ECE8E2] hover:border-[#111]'}">${em.icon}</button>
+  `).join('')
+
+  document.getElementById('colorGrid').innerHTML = COLORS.map(c=>`
+    <button data-color="${c.hex}" title="${c.id}" class="w-7 h-7 rounded-full border-2 ${s.color===c.hex?'border-[#111] scale-110':'border-white'} shadow-sm" style="background:${c.hex}"></button>
+  `).join('')
+
+  document.getElementById('connList').innerHTML = connections.filter(c=>c.from===s.id||c.to===s.id).map(c=>{
+    const other = c.from===s.id? getStage(c.to): getStage(c.from)
+    const dir = c.from===s.id?'→':'←'
+    return `<div class="flex items-center justify-between bg-[#F6F3EF] rounded-[10px] px-3 py-2 text-[12px]">
+      <div class="flex items-center gap-2"><span class="font-mono text-[10px]">${dir}</span><span class="w-2 h-2 rounded-full inline-block" style="background:${other?.color}"></span>${other?.title||'—'}</div>
+      <button data-conn="${c.id}" class="text-[11px] underline decoration-dotted">edit</button>
+    </div>`
+  }).join('') || `<div class="text-[12px] text-[#A09B92]">No connections yet. Drag ● to connect.</div>`
+
+  const insights = {
+    curious:'User is window shopping. Use social proof and clear category framing.',
+    excited:'High momentum — show quick wins, keep CTA above fold.',
+    anxious:'Needs reassurance — surface guarantees, case studies, security.',
+    confused:'Too much complexity — simplify copy, add comparison table.',
+    hopeful:'On verge — add ROI calculator or limited trial incentive.',
+    trust:'Trust established — hand off to human or detailed docs.',
+    delighted:'Celebrate! Ask for referral, show next value milestone.',
+    frustrated:'Friction detected — check form fields and loading states.'
+  }
+  document.getElementById('insightText').textContent = insights[s.emotion] || 'Review drop-off between stages.'
+
+  // listeners for dynamic elements (rebind each time)
+  document.querySelectorAll('.touch-del').forEach(b=> b.onclick = ()=>{ s.touchpoints.splice(parseInt(b.dataset.i),1); save(); render() })
+  document.querySelectorAll('[data-em]').forEach(b=> b.onclick=()=>{ s.emotion=b.dataset.em; save(); render() })
+  document.querySelectorAll('[data-color]').forEach(b=> b.onclick=()=>{ s.color=b.dataset.color; save(); render() })
+  document.querySelectorAll('[data-conn]').forEach(b=> b.onclick=()=>{ state.selectedConn = b.dataset.conn; render() })
+}
+
+function render(){
+  document.querySelector('header .font-mono').textContent = `Live Canvas • ${stages.length} stages`
+  renderNodes()
+  renderConnections()
+  renderFunnel()
+  renderInspector()
+  updateTransform()
+}
+function updateTransform(){
+  els.world.style.transform = `translate(${state.pan.x}px, ${state.pan.y}px) scale(${state.zoom})`
+  document.getElementById('zoomLabel').textContent = Math.round(state.zoom*100)+'%'
+}
+
+function screenToWorld(clientX, clientY){
+  const rect = els.viewport.getBoundingClientRect()
+  return {x:(clientX - rect.left - state.pan.x)/state.zoom, y:(clientY - rect.top - state.pan.y)/state.zoom}
+}
+
+function drawTemp(cx, cy){
+  const w = screenToWorld(cx,cy)
+  const src = getStage(state.connecting?.sourceId)
+  if(!src) return
+  const fromX = state.connecting.startType==='out'? src.x+288 : w.x
+  const fromY = state.connecting.startType==='out'? src.y+ (document.getElementById('stage-'+src.id)?.offsetHeight||80)/2 : w.y
+  const toX = state.connecting.startType==='out'? w.x : src.x
+  const toY = state.connecting.startType==='out'? w.y : src.y+ (document.getElementById('stage-'+src.id)?.offsetHeight||80)/2
+  const dx = Math.abs(toX-fromX)
+  const cxOff = Math.max(dx*0.5, 80)
+  const d = state.connecting.startType==='out'
+    ? `M ${fromX} ${fromY} C ${fromX+cxOff} ${fromY}, ${toX-cxOff} ${toY}, ${toX} ${toY}`
+    : `M ${toX} ${toY} C ${toX-cxOff} ${toY}, ${fromX+cxOff} ${fromY}, ${fromX} ${fromY}`
+  els.tempPathG.innerHTML = `<path d="${d}" stroke="${src.color}" stroke-width="2.2" fill="none" class="temp-path" marker-end="url(#arrow)" />`
+}
+
+function onConnMove(e){
+  if(!state.connecting) return
+  drawTemp(e.clientX,e.clientY)
+}
+function onConnUp(e){
+  document.removeEventListener('mousemove', onConnMove)
+  document.removeEventListener('mouseup', onConnUp)
+  els.tempPathG.innerHTML=''
+  document.querySelectorAll('.handle').forEach(h=>h.classList.remove('drag-over'))
+  state.connecting=null
+}
+
+// Pan handling
+els.viewport.addEventListener('mousedown', (e)=>{
+  if(e.target.closest('.stage-card') || e.target.closest('.handle')) return
+  state.panning = {sx:e.clientX, sy:e.clientY, px:state.pan.x, py:state.pan.y}
+  els.viewport.style.cursor='grabbing'
+})
+window.addEventListener('mousemove', (e)=>{
+  if(state.dragging){
+    const world = screenToWorld(e.clientX,e.clientY)
+    const s = getStage(state.dragging.id)
+    if(s){ s.x = world.x - state.dragging.dx; s.y = world.y - state.dragging.dy; renderNodes(); renderConnections() }
+  } else if(state.panning){
+    state.pan.x = state.panning.px + (e.clientX - state.panning.sx)
+    state.pan.y = state.panning.py + (e.clientY - state.panning.sy)
+    updateTransform()
+  } else if(state.connecting){
+    // handled via conn listener
+  }
+})
+window.addEventListener('mouseup', ()=>{
+  if(state.dragging){ save(); state.dragging=null; render() }
+  if(state.panning){ state.panning=null; els.viewport.style.cursor='grab' }
+  if(!state.connecting){ els.tempPathG.innerHTML='' }
+})
+
+els.viewport.addEventListener('wheel', (e)=>{
+  if(e.ctrlKey || e.metaKey){
+    e.preventDefault()
+    const delta = -e.deltaY*0.001
+    const newZoom = Math.min(1.6, Math.max(0.35, state.zoom + delta))
+    // zoom toward cursor
+    const rect = els.viewport.getBoundingClientRect()
+    const cx = e.clientX - rect.left, cy = e.clientY - rect.top
+    const wx = (cx - state.pan.x)/state.zoom
+    const wy = (cy - state.pan.y)/state.zoom
+    state.zoom = newZoom
+    state.pan.x = cx - wx*newZoom
+    state.pan.y = cy - wy*newZoom
+    updateTransform()
+  } else {
+    // pan with wheel
+    state.pan.x -= e.deltaX
+    state.pan.y -= e.deltaY
+    updateTransform()
+  }
+},{passive:false})
+
+els.viewport.addEventListener('click', (e)=>{
+  if(e.target===els.viewport || e.target===els.world || e.target.id==='connectionsLayer'){
+    state.selectedId=null; state.selectedConn=null; render(); els.ctxMenu.classList.add('hidden')
+  }
+})
+
+function showCtx(x,y,conn){
+  els.ctxMenu.style.left=x+'px'; els.ctxMenu.style.top=y+'px'
+  els.ctxMenu.classList.remove('hidden')
+  els.ctxMenu.dataset.conn = conn.id
+}
+window.addEventListener('click', ()=> els.ctxMenu.classList.add('hidden'))
+els.ctxMenu.addEventListener('click', (e)=>{
+  const act = e.target.closest('button')?.dataset.act
+  const conn = connections.find(c=>c.id===els.ctxMenu.dataset.conn)
+  if(!conn) return
+  if(act==='delete'){
+    connections = connections.filter(c=>c.id!==conn.id)
+    state.selectedConn=null; save(); render()
+  }
+  if(act==='label'){
+    const lab = prompt('Connection label', conn.label||'')
+    if(lab!==null){ conn.label=lab; save(); render() }
+  }
+  els.ctxMenu.classList.add('hidden')
+})
+
+// Inspector bindings
+document.getElementById('insTitle').addEventListener('input', e=>{
+  const s=getStage(state.selectedId); if(s){ s.title=e.target.value; renderNodes(); renderFunnel(); save() }
+})
+document.getElementById('insSubtitle').addEventListener('input', e=>{
+  const s=getStage(state.selectedId); if(s){ s.subtitle=e.target.value.toUpperCase(); renderNodes(); save() }
+})
+document.getElementById('insDesc').addEventListener('input', e=>{
+  const s=getStage(state.selectedId); if(s){ s.desc=e.target.value; renderNodes(); save() }
+})
+document.getElementById('insConv').addEventListener('input', e=>{
+  const s=getStage(state.selectedId); if(s){ s.conversion=parseInt(e.target.value); document.getElementById('insConvVal').textContent=s.conversion+'%'; document.getElementById('insConvBadge').textContent=s.conversion+'%'; renderNodes(); renderFunnel(); save() }
+})
+document.getElementById('insTime').addEventListener('input', e=>{
+  const s=getStage(state.selectedId); if(s){ s.time=e.target.value; renderNodes(); save() }
+})
+document.getElementById('touchInput').addEventListener('keydown', e=>{
+  if(e.key==='Enter'){ addTouch() }
+})
+document.getElementById('addTouchBtn').addEventListener('click', addTouch)
+function addTouch(){
+  const input = document.getElementById('touchInput')
+  const v = input.value.trim(); if(!v) return
+  const s=getStage(state.selectedId); if(s){ s.touchpoints.push(v); input.value=''; save(); render() }
+}
+document.getElementById('deleteStage').addEventListener('click', ()=>{
+  if(!state.selectedId) return
+  if(!confirm('Delete this stage and its connections?')) return
+  connections = connections.filter(c=>c.from!==state.selectedId && c.to!==state.selectedId)
+  stages = stages.filter(s=>s.id!==state.selectedId)
+  state.selectedId=null; save(); render()
+})
+
+// Top controls
+document.getElementById('zoomIn').onclick=()=>{ state.zoom=Math.min(1.6, state.zoom+0.1); updateTransform() }
+document.getElementById('zoomOut').onclick=()=>{ state.zoom=Math.max(0.35, state.zoom-0.1); updateTransform() }
+document.getElementById('fitBtn').onclick=()=>{
+  if(!stages.length) return
+  const pad=120
+  const minX=Math.min(...stages.map(s=>s.x)), maxX=Math.max(...stages.map(s=>s.x+288))
+  const minY=Math.min(...stages.map(s=>s.y)), maxY=Math.max(...stages.map(s=>s.y+200))
+  const vp = els.viewport.getBoundingClientRect()
+  const scaleX = (vp.width - pad*2)/(maxX-minX)
+  const scaleY = (vp.height - pad*2)/(maxY-minY)
+  const newZoom = Math.min(1, Math.max(0.4, Math.min(scaleX,scaleY)))
+  state.zoom=newZoom
+  state.pan.x = (vp.width - (maxX-minX)*newZoom)/2 - minX*newZoom
+  state.pan.y = (vp.height - (maxY-minY)*newZoom)/2 - minY*newZoom
+  updateTransform()
+}
+document.getElementById('addStageBtn').onclick=()=> addStageFromTemplate(TEMPLATES[Math.floor(Math.random()*TEMPLATES.length)])
+document.getElementById('exportBtn').onclick=()=>{
+  const blob = new Blob([JSON.stringify({stages,connections},null,2)], {type:'application/json'})
+  const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='journey.json'; a.click(); URL.revokeObjectURL(url)
+}
+document.getElementById('clearBtn').onclick=()=>{
+  if(!confirm('Reset journey to default example?')) return
+  localStorage.removeItem('cjf_stages'); localStorage.removeItem('cjf_conns'); location.reload()
+}
+document.getElementById('helpBtn').onclick=()=>{
+  alert('Tips:\n• Drag cards to reposition\n• Drag ● handles to connect stages\n• Double-click title to quick edit\n• Right-click connection for options\n• Hold Ctrl + scroll to zoom\n• All changes auto-save')
+}
+
+// keyboard
+window.addEventListener('keydown', e=>{
+  if(e.key==='Delete' || e.key==='Backspace'){
+    if(document.activeElement.tagName==='INPUT' || document.activeElement.tagName==='TEXTAREA') return
+    if(state.selectedConn){ connections=connections.filter(c=>c.id!==state.selectedConn); state.selectedConn=null; save(); render() }
+  }
+  if((e.metaKey||e.ctrlKey) && e.key==='0'){ e.preventDefault(); document.getElementById('fitBtn').click() }
+})
+
+renderTemplates(); render(); document.getElementById('fitBtn').click();
+</script>
+</body>
+</html>

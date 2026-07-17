@@ -33,6 +33,7 @@ const TW_HEX: Record<string, string> = {
   "bg-cyan-600": "#0891b2",
   "bg-emerald-600": "#059669",
   "bg-slate-500": "#64748b",
+  "bg-violet-600": "#7c3aed",
 };
 
 export function getModelHex(color: string): string {
