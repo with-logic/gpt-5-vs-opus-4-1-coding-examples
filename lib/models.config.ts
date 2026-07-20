@@ -226,6 +226,14 @@ export const models: ModelConfig[] = [
     provider: "moonshot",
   },
   {
+    id: "kimi-k3",
+    name: "Kimi K3",
+    cli: "openrouter",
+    model: "moonshotai/kimi-k3",
+    color: "bg-fuchsia-600",
+    provider: "moonshot",
+  },
+  {
     id: "qwen-3.7-plus",
     name: "Qwen 3.7 Plus",
     cli: "anthropic-proxy",
@@ -275,7 +283,7 @@ export const models: ModelConfig[] = [
 ];
 
 /** Default models shown in the side-by-side comparison view */
-export const DEFAULT_COMPARISON_MODELS = ["muse-spark-1.1", "inkling", "gpt-5.6-sol"] as const;
+export const DEFAULT_COMPARISON_MODELS = ["kimi-k3", "muse-spark-1.1", "inkling"] as const;
 
 /** Helper to get a model by ID */
 export function getModel(id: string): ModelConfig | undefined {
