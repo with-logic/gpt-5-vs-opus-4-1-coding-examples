@@ -73,6 +73,12 @@ interface GenerateOptions {
   forceAll: boolean; // Force regenerate all apps
   modelFilter: string[]; // Model IDs to generate for (empty = all)
   concurrency: number; // Number of parallel generations
+  interactive: boolean; // Run Claude in its interactive terminal UI
+}
+
+interface SandboxRunOptions {
+  interactive: boolean;
+  maxRetries?: number;
 }
 
 type EnvOverrides = Record<string, string | undefined>;
@@ -128,7 +134,11 @@ function ensureDir(filePath: string): void {
   }
 }
 
-function buildPrompt(spec: ExampleSpec): string {
+function buildPrompt(spec: ExampleSpec, interactive: boolean): string {
+  const sessionGuidance = interactive
+    ? "Work autonomously through the implementation. The user is watching in the interactive Claude Code session."
+    : "This is a non-interactive session, so you will not be able to ask clarifying questions. Use your best judgment.";
+
   return `You are implementing a single self-contained HTML file.
 
 ## App: ${spec.title}
@@ -144,7 +154,7 @@ ${spec.prompt}
 - Do NOT create any other files
 
 ## Important:
-This is a non-interactive session, so you will not be able to ask clarifying questions. Use your best judgment.
+${sessionGuidance}
 
 This implementation will be displayed in a competition alongside other AI models' implementations of the same specification. Your implementation should be the highest quality, most polished, and most impressive version possible. Put your best foot forward.
 
@@ -239,14 +249,17 @@ function buildOpenRouterEnv(model: ModelConfig): EnvOverrides {
 
 function buildCliCommand(
   model: ModelConfig,
-  prompt: string
+  prompt: string,
+  interactive: boolean
 ): { cmd: string; args: string[]; env?: EnvOverrides } {
+  const claudeModeArgs = interactive ? [] : ["-p"];
+
   switch (model.cli) {
     case "claude":
       return {
         cmd: "claude",
         args: [
-          "-p",
+          ...claudeModeArgs,
           "--model",
           model.model,
           "--max-turns",
@@ -296,7 +309,7 @@ function buildCliCommand(
       // Both share the same --bare CLI invocation so multiple proxied models
       // can coexist without manually editing .env between runs.
       const proxyArgs = [
-        "-p",
+        ...claudeModeArgs,
         "--bare",
         "--model",
         model.model,
@@ -426,9 +439,10 @@ async function runCliOnce(
   model: ModelConfig,
   prompt: string,
   tempDir: string,
-  logPrefix: string
+  logPrefix: string,
+  interactive: boolean
 ): Promise<void> {
-  const { cmd, args, env } = buildCliCommand(model, prompt);
+  const { cmd, args, env } = buildCliCommand(model, prompt, interactive);
 
   const spawnEnv = {
     ...process.env,
@@ -448,7 +462,11 @@ async function runCliOnce(
     // audited against the intended model (guards against silent CLI fallbacks).
     const modelFlagIdx = args.indexOf("--model");
     const invokedModel = modelFlagIdx !== -1 ? args[modelFlagIdx + 1] : "(no --model flag)";
-    console.log(`${logPrefix} Command: ${cmd} ${args[0]} --model ${invokedModel} ...`);
+    const invocationMode = interactive ? "(interactive)" : "-p";
+    console.log(`${logPrefix} Command: ${cmd} ${invocationMode} --model ${invokedModel} ...`);
+    if (interactive) {
+      console.log(`${logPrefix} Type /exit when Claude finishes to continue validation (do not press Ctrl+C).`);
+    }
 
     const proc = spawn(cmd, args, {
       stdio: "inherit",
@@ -476,7 +494,7 @@ async function runCliInSandbox(
   destPath: string,
   spec: ExampleSpec,
   logPrefix: string,
-  maxRetries: number = 2
+  { interactive, maxRetries = 2 }: SandboxRunOptions
 ): Promise<void> {
   const tempDir = createTempDir();
   const tempOutputDir = path.join(tempDir, "output");
@@ -487,7 +505,7 @@ async function runCliInSandbox(
 
   try {
     // Initial generation
-    await runCliOnce(model, prompt, tempDir, logPrefix);
+    await runCliOnce(model, prompt, tempDir, logPrefix, interactive);
 
     if (!fs.existsSync(tempOutputFile)) {
       throw new Error(`CLI completed but output/index.html was not created in sandbox`);
@@ -506,7 +524,7 @@ async function runCliInSandbox(
 
       // Run CLI again with fix prompt
       const fixPrompt = buildFixPrompt(spec, validation.errors);
-      await runCliOnce(model, fixPrompt, tempDir, logPrefix);
+      await runCliOnce(model, fixPrompt, tempDir, logPrefix, interactive);
     }
 
     // Final validation (just for logging)
@@ -544,11 +562,18 @@ async function generateApp(
   }
 
   // Build the prompt (agents write to output/index.html in their sandbox)
-  const prompt = buildPrompt(spec);
+  const prompt = buildPrompt(spec, options.interactive);
 
   try {
     // Run CLI in isolated temp directory, then copy result to final location
-    await runCliInSandbox(model, prompt, absoluteOutputPath, spec, logPrefix);
+    await runCliInSandbox(
+      model,
+      prompt,
+      absoluteOutputPath,
+      spec,
+      logPrefix,
+      { interactive: options.interactive }
+    );
 
     // Verify the file was created
     if (fs.existsSync(absoluteOutputPath)) {
@@ -576,6 +601,7 @@ async function main(): Promise<void> {
     forceAll: false,
     modelFilter: [],
     concurrency: 1,
+    interactive: args.includes("--interactive"),
   };
 
   // Parse --force-all flag
@@ -617,9 +643,40 @@ async function main(): Promise<void> {
     ? models.filter(m => options.modelFilter.includes(m.id))
     : models;
 
+  if (options.interactive && options.concurrency !== 1) {
+    console.error("--interactive requires --concurrency 1 so Claude can own the terminal.");
+    process.exit(1);
+  }
+
+  if (options.interactive && (!process.stdin.isTTY || !process.stdout.isTTY)) {
+    console.error("--interactive requires a terminal. Run it directly without piping or redirecting output.");
+    process.exit(1);
+  }
+
+  const nonClaudeModels = targetModels.filter(
+    (model) => !["claude", "anthropic-proxy", "openrouter"].includes(model.cli)
+  );
+  if (options.interactive && nonClaudeModels.length > 0) {
+    console.error(
+      `--interactive only supports Claude-based models. Unsupported: ${nonClaudeModels.map((model) => model.id).join(", ")}`
+    );
+    process.exit(1);
+  }
+
   // Load all examples
   const examples = loadExamples();
-  const targetExampleCount = options.force.length > 0 ? options.force.length : examples.length;
+  const targetExamples = options.force.length > 0
+    ? examples.filter(e => options.force.includes(e.id))
+    : examples;
+  const taskCount = targetModels.length * targetExamples.length;
+
+  if (options.interactive && taskCount !== 1) {
+    console.error(
+      `--interactive requires exactly one model/app task, but ${taskCount} resolved. ` +
+        "Choose one model and one existing app with --force."
+    );
+    process.exit(1);
+  }
 
   console.log(`Found ${examples.length} examples`);
   console.log(`Found ${targetModels.length} model(s) to generate for (${models.length} total)`);
@@ -638,8 +695,9 @@ async function main(): Promise<void> {
     console.log(`Apps: all (skipping existing)`);
   }
 
-  console.log(`Total tasks: ${targetExampleCount * targetModels.length}`);
+  console.log(`Total tasks: ${taskCount}`);
   console.log(`Concurrency: ${options.concurrency}`);
+  console.log(`Claude mode: ${options.interactive ? "interactive" : "print"}`);
   console.log();
 
   // Track stats
@@ -651,9 +709,6 @@ async function main(): Promise<void> {
 
   // Build list of tasks (filtered by --force if specified)
   const tasks: Array<{ model: ModelConfig; spec: ExampleSpec }> = [];
-  const targetExamples = options.force.length > 0
-    ? examples.filter(e => options.force.includes(e.id))
-    : examples;
 
   for (const model of targetModels) {
     for (const spec of targetExamples) {
